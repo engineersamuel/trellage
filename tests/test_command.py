@@ -8,6 +8,8 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
+import runpy
 from pathlib import Path
 
 
@@ -73,6 +75,64 @@ class TestCommand(unittest.TestCase):
                 if process.poll() is None:
                     process.terminate()
                 process.communicate(timeout=10)
+
+    def test_timeout_kills_a_signal_ignoring_process_group(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = Path(directory) / "child.pid"
+            script = (
+                "import os,signal,time,pathlib; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(30)"
+            )
+            started = time.monotonic()
+            result = subprocess.run(
+                [sys.executable, str(COMMAND), "--timeout", "0.3", "slow", "-c", shlex.join([sys.executable,"-c",script])],
+                capture_output=True, text=True, timeout=4,
+            )
+            self.assertEqual(result.returncode, 124, result.stderr)
+            self.assertIn("status=timeout", result.stderr)
+            self.assertLess(time.monotonic() - started, 3)
+            self.assertTrue(pid_file.exists())
+            pid = int(pid_file.read_text())
+            # A killed child can briefly be a zombie until its parent/init reaps it.
+            state = subprocess.run(["ps", "-p", str(pid), "-o", "stat="], capture_output=True, text=True).stdout.strip()
+            self.assertTrue(not state or state.startswith("Z"), state)
+
+    def test_darwin_empty_group_permission_error_preserves_timeout_status(self) -> None:
+        namespace = runpy.run_path(str(COMMAND), run_name="test_command_module")
+        real_killpg = os.killpg
+
+        def darwin_killpg(pgid: int, signum: int) -> None:
+            if signum == signal.SIGKILL:
+                raise PermissionError("empty process group")
+            real_killpg(pgid, signum)
+
+        with patch.object(os, "killpg", darwin_killpg):
+            status = namespace["main"]([str(COMMAND), "--timeout", "0.1", "empty-group", "-c", "exec sleep 30"])
+        self.assertEqual(status, 124)
+
+    def test_permission_error_is_not_hidden_when_group_may_still_be_live(self) -> None:
+        namespace = runpy.run_path(str(COMMAND), run_name="test_command_module")
+        real_killpg = os.killpg
+
+        def denied_killpg(pgid: int, signum: int) -> None:
+            if signum == signal.SIGKILL:
+                raise PermissionError("live group denied")
+            real_killpg(pgid, signum)
+
+        with patch.object(os, "killpg", denied_killpg), patch.dict(
+            namespace["main"].__globals__, {"_group_has_live_members": lambda _pgid: True},
+        ):
+            with self.assertRaisesRegex(PermissionError, "live group denied"):
+                namespace["main"]([str(COMMAND), "--timeout", "0.1", "live-group", "-c", "exec sleep 30"])
+
+    def test_invalid_deadline_does_not_run_recipe(self) -> None:
+        for value in ("0", "-1", "nan", "inf", "not-a-number"):
+            result = subprocess.run(
+                [sys.executable, str(COMMAND), "--timeout", value, "example", "-c", "printf executed"],
+                capture_output=True, text=True, timeout=3,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, "")
 
     def test_preserves_inherited_jobserver_descriptors(self) -> None:
         reader, writer = os.pipe()

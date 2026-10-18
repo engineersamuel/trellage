@@ -166,10 +166,10 @@ endpoints. Use Central Feed Services (CFS) packagefeedproxy instead:
 - Do not weaken or skip repository contracts to make a change pass.
 - Keep changes scoped and preserve unrelated dirty-worktree edits.
 - Every new harness profile MUST mount the host `~/.copilot/models.json` read-only at `/home/agent/.copilot-models.json`.
-- `config.toml` is the only skill-source allowlist. Sources may use an explicit commit or tag; omitted refs track the default branch.
+- `~/.config/trellage/config.toml` is the only skill-source allowlist; `config.example.toml` contains shipped defaults. Sources may use an explicit commit or tag; omitted refs track the default branch.
   Resolved commits, digests, and fetch timestamps belong in derived cache receipts. Third-party selections
   MUST be explicit. Wildcards require `allowWildcard = true`.
-- Native skill selections MUST derive from the selected config.toml profiles,
+- Native skill selections MUST derive from the selected user config profiles,
   including their explicit always-profile selection. Every comparison image MUST use the single
   `comparison-common` snapshot staged for that build operation. These common
   bundles MUST retain the `engineersamuel` source so `ui-guidelines` is
@@ -191,4 +191,4 @@ endpoints. Use Central Feed Services (CFS) packagefeedproxy instead:
   failure. Comparison builds resolve configured sources at build time.
 - `trx skills update` refreshes floating sources and verifies pins; `--check`
   reports available changes, and explicit `--upgrade-pins` atomically updates
-  pinned selectors in config.toml. Cache receipts never become configuration.
+  pinned selectors in the user config. Cache receipts never become configuration.

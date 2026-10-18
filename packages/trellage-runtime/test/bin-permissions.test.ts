@@ -58,7 +58,7 @@ function fixture(relativeRoot = "source") {
   );
   write("bunfig.toml", '[install]\nauto = "disable"\nlinker = "isolated"\n');
   write("tsconfig.base.json", '{"compilerOptions":{"noEmit":true}}');
-  write("config.toml", "{}");
+  write("config.example.toml", "{}");
   const manifest = write(
     "packages/tool/package.json",
     '{"name":"@fixture/tool","version":"1.0.0","type":"module","bin":{"fixture-tool":"src/cli.ts"}}',

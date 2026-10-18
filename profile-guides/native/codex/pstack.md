@@ -1,64 +1,14 @@
 ---
-schemaVersion: 1
-goalExecution:
-  controller: codex-goal
-  workflowIds:
-    - poteto-mode-entry-point
-    - targeted-single-skill
-    - review-and-polish
-capabilities:
-  - pstack-poteto-mode-orchestration
-  - explicit-skill-invocation-workflows
-  - codex-full-access
-  - keyless-proxy-model-routing
-  - isolated-codex-profile-home
-bestFor:
-  - Substantial engineering tasks that benefit from Poteto Mode's playbook selection, verification checkpoints, controlled delegation, and an optional decision trail for long or multi-phase work ($poteto-mode activation marker plus $pstack-for-codex:poteto-mode skill)
-  - Targeted single-operation work such as tracing a subsystem ($pstack-for-codex:how), reconstructing why code looks the way it does ($pstack-for-codex:why), or a skeptical multi-lens diff review ($pstack-for-codex:interrogate)
-  - Reproduce-first bug fixing with $pstack-for-codex:tdd, or removing low-value comments/prose with $pstack-for-codex:no-comments and $pstack-for-codex:unslop
-avoidFor:
-  - Casual prompts that do not name a skill; all 45 pstack-for-codex skills require explicit $name invocation and are not auto-triggered
-  - Tasks needing native OpenAI authentication; the profile routes through copilot-proxy-rs
-  - Multi-writer parallel edits on one shared checkout without isolation; pstack falls back to serial execution when safe isolation is unavailable
-  - Work requiring an OS-level sandbox; use a Trellage Sandbox profile instead
-prerequisites:
-  - id: codex-cli
-    description: Codex CLI 0.146.0 or later installed on the host.
-  - id: fish-shell-config
-    description: An existing readable, writable, regular, non-symlink ~/.config/fish/config.fish (installer requires Fish).
-  - id: proxy-health
-    description: copilot-proxy-rs listening on http://127.0.0.1:8080 for the default keyless model routing.
-  - id: hook-trust
-    description: Interactive TTY sessions may be prompted once to trust pstack-for-codex hooks that keep Poteto Mode active across turns; non-TTY/CI launches bypass this automatically.
-workflows:
-  - id: poteto-mode-entry-point
-    description: Route a substantial engineering task through Poteto Mode, which selects the applicable playbook and principles, plans the work, delegates isolated tasks when useful, and verifies the real result without expanding the agent's authority.
-    skill: pstack-for-codex:poteto-mode
-    examples:
-      - Add a --json flag to this command; keep text output byte-identical and verify both modes
-      - This retry path creates duplicate rows; reproduce it first, fix the root cause, and verify the real behavior
-      - Investigate intermittent test failures
-    promptTemplate: |
-      $poteto-mode
-      $pstack-for-codex:poteto-mode {{intent}}
-  - id: targeted-single-skill
-    description: Use the architect skill directly to define module boundaries and types before implementation, without the full Poteto Mode flow.
-    skill: pstack-for-codex:architect
-    examples:
-      - Settle the types and module boundaries for this feature before I start implementing
-      - Define the module boundaries and public interfaces for this new retry subsystem
-    promptTemplate: |
-      $pstack-for-codex:architect {{intent}}
-  - id: review-and-polish
-    description: Run a skeptical multi-lens review of a diff, then strip low-value comments and machine-shaped prose.
-    skill: pstack-for-codex:interrogate
-    examples:
-      - Review this diff skeptically before I open the PR
-      - Find correctness risks in this change, then remove unnecessary comments and mechanical prose
-    promptTemplate: |
-      $pstack-for-codex:interrogate {{intent}}
-      $pstack-for-codex:no-comments
-      $pstack-for-codex:unslop
+schemaVersion: 2
+templates:
+  poteto-mode-entry-point: |-
+    $poteto-mode
+    $pstack-for-codex:poteto-mode {{intent}}
+  targeted-single-skill: $pstack-for-codex:architect {{intent}}
+  review-and-polish: |-
+    $pstack-for-codex:interrogate {{intent}}
+    $pstack-for-codex:no-comments
+    $pstack-for-codex:unslop
 ---
 
 # Native Codex (`codex`) — `pstack` profile

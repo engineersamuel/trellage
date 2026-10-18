@@ -133,7 +133,7 @@ single JSON object parseable by `JSON.parse`, matching exactly:
 
 Requirements:
 
-- Without `goal`, `candidates` must contain exactly five entries. With `goal`,
+- Without `goal`, `candidates` must contain five entries, or every supplied entry when fewer than five are eligible. Never invent a profile to fill the list. With `goal`,
   it must contain one to five eligible entries.
 - Each `harness` and `profiles` pair must identify one supplied entry. Do not
   invent, abbreviate, reorder, or combine profiles.

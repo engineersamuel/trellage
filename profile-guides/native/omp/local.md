@@ -1,54 +1,13 @@
 ---
-schemaVersion: 1
-capabilities:
-  - keyless-local-proxy-model-routing
-  - lsp-debugger-browser-eval-tools
-  - typed-subagent-fan-out
-  - community-skill-led-orchestration
-  - native-common-skill-bundle
-bestFor:
-  - Fully keyless local model routing where every model role is assigned to the single qwen3.6-35b-a3b-local route
-  - Sessions that retain OMP's full host tool and subagent surface without a Copilot or GitHub credential
-  - Applying the shared poteto-mode, pstack-omp, and orchestrate-omp community skills with the 31 harness-neutral workflow, principle, automation, and support skills
-avoidFor:
-  - Hosts without copilot-proxy-rs listening on http://127.0.0.1:8080 with the local Qwen route registered
-  - Work that needs OMP's native GitHub Copilot model catalog or authenticated Copilot models; use trx run omp default instead
-  - Non-interactive launches that must fail on any user prompt; this profile remains conservative because it has no live headless smoke contract
-prerequisites:
-  - id: host-omp
-    description: A valid host-installed OMP executable; Bun, Homebrew, and mise are supported owners for automatic update and latest-version checks, while manually maintained executables remain usable for setup, launch, repair, doctor, and inventory.
-  - id: proxy-health
-    description: copilot-proxy-rs listening on http://127.0.0.1:8080 with the qwen3.6-35b-a3b-local route registered for every model role.
-  - id: omp-317-community-skills
-    description: OMP 17.3.5 or newer for the bundled community skill directory to be discovered; older host versions remain usable without it.
-  - id: cli-tools
-    description: curl and jq available on the host for setup, doctor, and owner update checks.
-workflows:
-  - id: keyless-local-engineering
-    description: Deliver an engineering outcome with OMP's full tool and typed-subagent surface on the one local model route.
-    examples:
-      - Analyze this failing integration test, implement the smallest fix, and verify it
-      - Use typed subagents to refactor this module and review the integrated result
-    promptTemplate: |
-      Use OMP's keyless local route, available tools, and typed subagents to
-      deliver {{intent}}.
-  - id: poteto-mode-orchestration
-    description: Use the shared poteto-mode community skill to structure multi-step orchestration work on the local model route.
-    skill: skill://poteto-mode
-    examples:
-      - Use poteto-mode to break this task into coordinated phases
-      - Use poteto-mode to plan, implement, and verify this local-model change
-    promptTemplate: |
-      Use skill://poteto-mode to plan and coordinate {{intent}}.
-  - id: pstack-orchestrate-omp
-    description: Combine the pstack-omp and orchestrate-omp community skills for workflow automation on OMP's typed subagent fan-out.
-    skill: skill://pstack-omp
-    examples:
-      - Use the pstack workflow skills to drive this feature through design, implementation, and review
-      - Coordinate specialized subagents to investigate this defect and verify the final patch
-    promptTemplate: |
-      Use skill://pstack-omp together with skill://orchestrate-omp to drive
-      {{intent}} through OMP's typed subagent fan-out.
+schemaVersion: 2
+templates:
+  keyless-local-engineering: |-
+    Use OMP's keyless local route, available tools, and typed subagents to
+    deliver {{intent}}.
+  poteto-mode-orchestration: Use skill://poteto-mode to plan and coordinate {{intent}}.
+  pstack-orchestrate-omp: |-
+    Use skill://pstack-omp together with skill://orchestrate-omp to drive
+    {{intent}} through OMP's typed subagent fan-out.
 ---
 
 # Native Oh My Pi (`omp`): `local` profile

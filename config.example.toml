@@ -1,0 +1,2067 @@
+# Copy this file to ~/.config/trellage/config.toml to create your user configuration.
+# Trellage skill and Native profile defaults.
+# Sources without tag or commit refresh on every profile load.
+schema_version = 1
+
+[skills]
+schema = 1
+
+[skills.sources.engineersamuel]
+repository = "https://github.com/engineersamuel/skills.git"
+select = [ "*" ]
+exclude = [ "deja-history" ]
+required = [ "ui-guidelines" ]
+allowWildcard = true
+allowExecutables = true
+
+[skills.sources.caveman]
+repository = "https://github.com/JuliusBrussee/caveman.git"
+select = [ "caveman" ]
+alwaysOn = true
+allowExecutables = true
+
+[skills.sources.mattpocock]
+repository = "https://github.com/mattpocock/skills.git"
+select = [ "grill-with-docs", "improve-codebase-architecture" ]
+alwaysOn = true
+allowExecutables = true
+
+[skills.sources.mattpocock-optimize]
+repository = "https://github.com/mattpocock/skills.git"
+select = [ "improve-codebase-architecture", "codebase-design" ]
+
+[skills.sources.show-me]
+repository = "https://github.com/humanlayer/skills.git"
+select = [ "show-me" ]
+allowExecutables = true
+
+[skills.sources.i-have-adhd]
+repository = "https://github.com/ayghri/i-have-adhd.git"
+select = [ "i-have-adhd" ]
+
+[skills.sources.ponytail-review]
+repository = "https://github.com/DietrichGebert/ponytail.git"
+select = [ "ponytail-review" ]
+
+[skills.sources.fleet-review]
+repository = "https://github.com/jsturtevant/copilot-plugins.git"
+select = [ "fleet-review" ]
+
+[skills.sources.mattpocock-code-review]
+repository = "https://github.com/mattpocock/skills.git"
+select = [ "code-review" ]
+
+[skills.sources.superpowers]
+repository = "https://github.com/obra/superpowers.git"
+select = [ "brainstorming", "dispatching-parallel-agents", "executing-plans", "finishing-a-development-branch", "receiving-code-review", "requesting-code-review", "subagent-driven-development", "systematic-debugging", "test-driven-development", "using-git-worktrees", "using-superpowers", "verification-before-completion", "writing-plans", "writing-skills" ]
+allowExecutables = true
+
+[skills.sources.impeccable]
+repository = "https://github.com/pbakaus/impeccable.git"
+select = [ "impeccable" ]
+allowExecutables = true
+
+[skills.sources.emil-design]
+repository = "https://github.com/emilkowalski/skills.git"
+select = [ "animate", "animation-vocabulary", "apple-design", "emil-design-eng", "find-animation-opportunities", "improve-animations", "pick-ui-library", "prototype", "review-animations" ]
+allowExecutables = true
+
+[skills.sources.hyperframes]
+repository = "https://github.com/heygen-com/hyperframes.git"
+select = [ "embedded-captions", "faceless-explainer", "figma", "general-video", "hyperframes", "hyperframes-animation", "hyperframes-cli", "hyperframes-core", "hyperframes-creative", "hyperframes-keyframes", "hyperframes-registry", "media-use", "motion-graphics", "music-to-video", "pr-to-video", "product-launch-video", "remotion-to-hyperframes", "slideshow", "talking-head-recut" ]
+allowExecutables = true
+
+[skills.sources.last30days]
+repository = "https://github.com/mvanhorn/last30days-skill.git"
+select = [ "last30days" ]
+allowExecutables = true
+
+[skills.sources.dsebban-omp]
+repository = "https://github.com/dsebban/skills.git"
+select = [ "orchestrate-omp", "poteto-mode", "pstack-omp" ]
+allowExecutables = true
+
+[skills.sources.pstack-portable]
+repository = "https://github.com/Aqua-123/pstack-for-codex.git"
+select = [ "bro", "make-bot-ui", "principle-attack-the-premise", "principle-boundary-discipline", "principle-build-the-lever", "principle-encode-lessons-in-structure", "principle-exhaust-the-design-space", "principle-experience-first", "principle-explain-the-number", "principle-fix-root-causes", "principle-foundational-thinking", "principle-guard-the-context-window", "principle-laziness-protocol", "principle-make-operations-idempotent", "principle-migrate-callers-delete-legacy-apis", "principle-minimize-reader-load", "principle-model-the-domain", "principle-never-block-on-the-human", "principle-outcome-oriented-execution", "principle-prove-it-works", "principle-redesign-from-first-principles", "principle-separate-shared-state", "principle-sequence-verifiable-units", "principle-subtract-before-you-add", "principle-test-behavior-not-implementation", "principle-type-system-discipline", "tdd", "teach", "technical-writing", "typescript-best-practices", "unslop" ]
+allowExecutables = true
+
+[skills.sources.omp-native]
+repository = "https://github.com/can1357/oh-my-pi.git"
+adapter = "omp-native"
+select = [ "semantic-compression", "system-prompts", "tool-prompt-optimization" ]
+allowExecutables = true
+
+[skills.sources.prompt-master]
+repository = "https://github.com/nidhinjs/prompt-master.git"
+select = [ "prompt-master" ]
+
+[skills.sources.astra-orchestrator]
+repository = "https://github.com/donvito/codex-astra-luna-orchestrator.git"
+select = [ "astra-orchestrator" ]
+
+[skills.sources.youtube-skills]
+repository = "https://github.com/ZeroPointRepo/youtube-skills.git"
+select = [ "youtube-full" ]
+
+[skills.sources.academic-pptx]
+repository = "https://github.com/Gabberflast/academic-pptx-skill.git"
+select = [ "academic-pptx" ]
+allowExecutables = true
+
+[skills.sources.slide-maker]
+repository = "https://github.com/addsumtech/slides_maker.git"
+select = [ "slide-maker" ]
+allowExecutables = true
+
+[skills.sources.antislop-core]
+repository = "https://github.com/miqdadbadjuber/anti-slop.git"
+select = [ "antislop" ]
+alwaysOn = true
+
+[skills.sources.antislop-addons]
+repository = "https://github.com/miqdadbadjuber/anti-slop.git"
+select = [ "antislop-ui", "antislop-copywriting", "antislop-human", "antislop-layoutmobile", "antislop-code" ]
+
+[skills.bundles]
+sandbox-common = [ "engineersamuel", "caveman", "mattpocock", "show-me", "i-have-adhd", "antislop-core", "antislop-addons" ]
+native-common = [ "engineersamuel", "show-me", "i-have-adhd", "ponytail-review", "fleet-review", "mattpocock-code-review", "antislop-core", "antislop-addons" ]
+guide-optimize-architecture = [ "mattpocock-optimize" ]
+comparison-common = [ "engineersamuel", "show-me", "i-have-adhd", "astra-orchestrator", "antislop-core", "antislop-addons" ]
+codex-common = [ "astra-orchestrator" ]
+codex-superpowers = [ "superpowers" ]
+claude-frontend-design = [ "impeccable", "emil-design", "hyperframes" ]
+claude-research = [ "last30days" ]
+claude-office = [ "academic-pptx" ]
+claude-office-charts = [ "academic-pptx", "slide-maker" ]
+omp-community = [ "dsebban-omp", "pstack-portable" ]
+pi-oh-my-pi = [ "omp-native" ]
+guide-prompt-master = [ "prompt-master" ]
+youtube = [ "youtube-skills" ]
+
+[native.sources.anti-slop]
+repository = "miqdadbadjuber/anti-slop"
+
+[native.sources.anthropic-skills]
+repository = "anthropics/skills"
+
+[native.sources.compound-engineering]
+repository = "everyinc/compound-engineering-plugin"
+
+[native.sources.hve-core]
+repository = "microsoft/hve-core"
+
+[native.sources.awesome-copilot]
+repository = "github/awesome-copilot"
+
+[native.sources.effective-html]
+repository = "plannotator/effective-html"
+
+[native.sources.tufte-vdqi]
+repository = "gnurio/tufte-vdqi-plugin"
+
+[native.sources.claude-blog]
+repository = "AgriciDaniel/claude-blog"
+
+[native.sources.council-high-intelligence]
+repository = "0xNyk/council-of-high-intelligence"
+
+[native.sources.caveman-plugin]
+repository = "JuliusBrussee/caveman"
+
+# This repository's first-party plugins (plugins/*).
+[native.sources.trellage]
+repository = "engineersamuel/trellage"
+
+[native.sources.ecc]
+repository = "affaan-m/ECC"
+
+[native.sources.ui-ux-pro-max]
+repository = "nextlevelbuilder/ui-ux-pro-max-skill"
+
+[native.sources.taste-skill]
+repository = "leonxlnx/taste-skill"
+
+[native.sources.gsap-skills]
+repository = "greensock/gsap-skills"
+
+[native.sources.social-media-skills]
+repository = "charlie947/social-media-skills"
+
+[native.sources.humanizer]
+repository = "blader/humanizer"
+
+[native.sources.pstack]
+repository = "aqua-123/pstack-for-codex"
+
+[native.sources.ponytail]
+repository = "dietrichgebert/ponytail"
+
+[native.profiles.base]
+label = "Configured Native defaults"
+always = true
+
+[[native.profiles.base.skills]]
+source = "engineersamuel"
+names = [ "*" ]
+
+[[native.profiles.base.skills]]
+source = "show-me"
+names = [ "show-me" ]
+
+[[native.profiles.base.skills]]
+source = "i-have-adhd"
+names = [ "i-have-adhd" ]
+
+[[native.profiles.base.skills]]
+source = "ponytail-review"
+names = [ "ponytail-review" ]
+
+[[native.profiles.base.skills]]
+source = "fleet-review"
+names = [ "fleet-review" ]
+
+[[native.profiles.base.skills]]
+source = "mattpocock-code-review"
+names = [ "code-review" ]
+
+[[native.profiles.base.skills]]
+source = "antislop-core"
+names = [ "antislop" ]
+
+[[native.profiles.base.skills]]
+source = "antislop-addons"
+names = [ "antislop-ui", "antislop-copywriting", "antislop-human", "antislop-layoutmobile", "antislop-code" ]
+
+[native.profiles.superpowers]
+label = "Superpowers"
+
+[[native.profiles.superpowers.skills]]
+source = "superpowers"
+names = [ "brainstorming", "writing-plans", "executing-plans", "test-driven-development", "systematic-debugging", "verification-before-completion", "requesting-code-review", "receiving-code-review", "using-git-worktrees", "finishing-a-development-branch", "subagent-driven-development", "dispatching-parallel-agents", "writing-skills", "using-superpowers" ]
+
+[native.profiles.office]
+label = "Office documents and academic presentations"
+
+[[native.profiles.office.skills]]
+source = "anthropic-skills"
+names = [ "docx", "xlsx", "pptx", "pdf" ]
+
+[[native.profiles.office.skills]]
+source = "academic-pptx"
+names = [ "academic-pptx" ]
+
+[native.profiles.office-charts]
+label = "Office plus chart-heavy slide builder"
+
+[[native.profiles.office-charts.skills]]
+source = "anthropic-skills"
+names = [ "docx", "xlsx", "pptx", "pdf" ]
+
+[[native.profiles.office-charts.skills]]
+source = "academic-pptx"
+names = [ "academic-pptx" ]
+
+[[native.profiles.office-charts.skills]]
+source = "slide-maker"
+names = [ "slide-maker" ]
+
+[native.profiles.compound-engineering]
+label = "Compound Engineering"
+
+[[native.profiles.compound-engineering.skills]]
+source = "compound-engineering"
+names = [ "ce-brainstorm", "ce-plan", "ce-work", "ce-code-review", "ce-debug", "ce-compound", "ce-compound-refresh", "ce-commit", "ce-commit-push-pr", "ce-ideate", "ce-doc-review", "ce-optimize", "ce-polish", "ce-simplify-code", "ce-worktree", "ce-resolve-pr-feedback", "ce-babysit-pr", "lfg" ]
+
+[native.profiles.hve]
+label = "HVE Core RPI"
+
+[[native.profiles.hve.skills]]
+source = "hve-core"
+names = [ "rpi-research", "rpi-plan", "rpi-implement", "rpi-review", "rpi-challenger", "rpi-plan-critique", "rpi-walkthrough", "code-review", "pull-request" ]
+
+[native.profiles.plannotator]
+label = "Effective HTML artifacts"
+
+[[native.profiles.plannotator.skills]]
+source = "effective-html"
+names = [ "html", "html-plan", "html-diagram", "html-wireframe", "html-prototype", "design-artifact" ]
+
+[native.profiles.awesome]
+label = "Awesome Copilot essentials"
+
+[[native.profiles.awesome.skills]]
+source = "awesome-copilot"
+names = [ "git-commit", "code-tour", "breakdown-plan", "update-specification" ]
+
+[native.profiles.pstack]
+label = "pstack poteto-mode"
+
+[[native.profiles.pstack.skills]]
+source = "pstack"
+names = [ "poteto-mode", "tdd", "interrogate", "architect", "swarm", "reflect", "show-me-your-work" ]
+
+[native.profiles.youtube]
+required_environment = ["TRANSCRIPT_API_KEY"]
+label = "YouTube transcripts and research"
+
+[[native.profiles.youtube.skills]]
+source = "youtube-skills"
+names = [ "youtube-full" ]
+
+[native.profiles.ponytail]
+label = "Ponytail review"
+
+[[native.profiles.ponytail.skills]]
+source = "ponytail"
+names = [ "ponytail", "ponytail-review", "ponytail-audit" ]
+
+[native.profiles.tufte-vdqi]
+label = "Tufte visual display of quantitative information"
+
+[[native.profiles.tufte-vdqi.skills]]
+source = "tufte-vdqi"
+names = [ "tufte-chart", "tufte-critique" ]
+
+# Harness-scoped launch presets. Their runtime policy is provided by the registry.
+[native.profiles.preset-agency-azure]
+label = "agency / azure"
+harnesses = [ "agency" ]
+
+[native.profiles.preset-codex-pstack]
+label = "codex / pstack"
+harnesses = [ "codex" ]
+
+[[native.profiles.preset-codex-pstack.skills]]
+source = "pstack"
+names = [ "poteto-mode", "tdd", "interrogate", "architect", "swarm", "reflect", "show-me-your-work" ]
+
+[native.profiles.preset-codex-superpowers]
+label = "codex / superpowers"
+harnesses = [ "codex" ]
+
+[[native.profiles.preset-codex-superpowers.skills]]
+source = "superpowers"
+names = [ "brainstorming", "writing-plans", "executing-plans", "test-driven-development", "systematic-debugging", "verification-before-completion", "requesting-code-review", "receiving-code-review", "using-git-worktrees", "finishing-a-development-branch", "subagent-driven-development", "dispatching-parallel-agents", "writing-skills", "using-superpowers" ]
+
+[native.profiles.preset-codex-youtube]
+required_environment = ["TRANSCRIPT_API_KEY"]
+label = "codex / youtube"
+harnesses = [ "codex" ]
+
+[[native.profiles.preset-codex-youtube.skills]]
+source = "youtube-skills"
+names = [ "youtube-full" ]
+
+[native.profiles.preset-claude-default]
+label = "claude / default"
+harnesses = [ "claude" ]
+
+[native.profiles.preset-claude-office]
+label = "claude / office"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-office.skills]]
+source = "anthropic-skills"
+names = [ "docx", "xlsx", "pptx", "pdf" ]
+
+[[native.profiles.preset-claude-office.skills]]
+source = "academic-pptx"
+names = [ "academic-pptx" ]
+
+[native.profiles.preset-claude-office-charts]
+label = "claude / office-charts"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-office-charts.skills]]
+source = "anthropic-skills"
+names = [ "docx", "xlsx", "pptx", "pdf" ]
+
+[[native.profiles.preset-claude-office-charts.skills]]
+source = "academic-pptx"
+names = [ "academic-pptx" ]
+
+[[native.profiles.preset-claude-office-charts.skills]]
+source = "slide-maker"
+names = [ "slide-maker" ]
+
+[native.profiles.preset-claude-blog]
+label = "claude / blog"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-blog.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-blog.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-blog.plugins]]
+source = "claude-blog"
+harness = "claude"
+path = "."
+name = "claude-blog"
+plugin = "claude-blog"
+marketplace = "agricidaniel-blog"
+
+[native.profiles.preset-claude-council]
+label = "claude / council"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-council.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-council.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-council.plugins]]
+source = "council-high-intelligence"
+harness = "claude"
+path = "."
+name = "council"
+plugin = "council"
+marketplace = "council-of-high-intelligence"
+
+[[native.profiles.preset-claude-council.plugins]]
+source = "caveman-plugin"
+harness = "claude"
+path = "."
+name = "caveman-plugin"
+plugin = "caveman"
+marketplace = "caveman"
+
+[native.profiles.preset-claude-six-hats]
+label = "claude / six-hats"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-six-hats.plugins]]
+source = "trellage"
+harness = "claude"
+path = "plugins/six-hats"
+name = "six-hats"
+
+[native.profiles.preset-claude-ecc]
+label = "claude / ecc"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-ecc.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-ecc.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-ecc.plugins]]
+source = "ecc"
+harness = "claude"
+path = "."
+name = "ecc"
+plugin = "ecc"
+marketplace = "ecc"
+includeMcp = false
+settings = { hooks_enabled = "true", hook_profile = "minimal" }
+
+[native.profiles.preset-claude-frontend-design]
+label = "claude / frontend-design"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-frontend-design.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-frontend-design.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-frontend-design.skills]]
+source = "impeccable"
+names = [ "impeccable" ]
+
+[[native.profiles.preset-claude-frontend-design.skills]]
+source = "emil-design"
+names = [ "animate", "animation-vocabulary", "apple-design", "emil-design-eng", "find-animation-opportunities", "improve-animations", "pick-ui-library", "prototype", "review-animations" ]
+
+[[native.profiles.preset-claude-frontend-design.skills]]
+source = "hyperframes"
+names = [ "embedded-captions", "faceless-explainer", "figma", "general-video", "hyperframes", "hyperframes-animation", "hyperframes-cli", "hyperframes-core", "hyperframes-creative", "hyperframes-keyframes", "hyperframes-registry", "media-use", "motion-graphics", "music-to-video", "pr-to-video", "product-launch-video", "remotion-to-hyperframes", "slideshow", "talking-head-recut" ]
+
+[[native.profiles.preset-claude-frontend-design.plugins]]
+source = "ui-ux-pro-max"
+harness = "claude"
+path = "."
+name = "ui-ux-pro-max"
+plugin = "ui-ux-pro-max"
+marketplace = "ui-ux-pro-max-skill"
+
+[[native.profiles.preset-claude-frontend-design.plugins]]
+source = "taste-skill"
+harness = "claude"
+path = "."
+name = "taste-skill"
+plugin = "taste-skill"
+marketplace = "taste-skill"
+
+[[native.profiles.preset-claude-frontend-design.plugins]]
+source = "gsap-skills"
+harness = "claude"
+path = "."
+name = "gsap-skills"
+plugin = "gsap-skills"
+marketplace = "gsap-skills"
+
+[native.profiles.preset-claude-research]
+label = "claude / research"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-research.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-research.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-research.skills]]
+source = "last30days"
+names = [ "last30days" ]
+
+[native.profiles.preset-claude-social-media]
+label = "claude / social-media"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-social-media.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-social-media.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-social-media.plugins]]
+source = "social-media-skills"
+harness = "claude"
+path = "."
+name = "social-media-skills"
+plugin = "social-media-skills"
+marketplace = "social-media-skills"
+
+[[native.profiles.preset-claude-social-media.plugins]]
+source = "humanizer"
+harness = "claude"
+path = "."
+name = "humanizer"
+plugin = "humanizer"
+marketplace = "humanizer"
+
+[native.profiles.preset-headlong-default]
+label = "headlong / default"
+harnesses = [ "headlong" ]
+
+[native.profiles.preset-copilot-awesome]
+label = "copilot / awesome"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-awesome.skills]]
+source = "awesome-copilot"
+names = [ "git-commit", "code-tour", "breakdown-plan", "update-specification" ]
+
+[native.profiles.preset-copilot-compound-engineering]
+label = "copilot / compound-engineering"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-compound-engineering.skills]]
+source = "compound-engineering"
+names = [ "ce-brainstorm", "ce-plan", "ce-work", "ce-code-review", "ce-debug", "ce-compound", "ce-compound-refresh", "ce-commit", "ce-commit-push-pr", "ce-ideate", "ce-doc-review", "ce-optimize", "ce-polish", "ce-simplify-code", "ce-worktree", "ce-resolve-pr-feedback", "ce-babysit-pr", "lfg" ]
+
+[native.profiles.preset-copilot-hve]
+label = "copilot / hve"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-hve.skills]]
+source = "hve-core"
+names = [ "rpi-research", "rpi-plan", "rpi-implement", "rpi-review", "rpi-challenger", "rpi-plan-critique", "rpi-walkthrough", "code-review", "pull-request" ]
+
+[native.profiles.preset-copilot-plannotator]
+label = "copilot / plannotator"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-plannotator.skills]]
+source = "effective-html"
+names = [ "html", "html-plan", "html-diagram", "html-wireframe", "html-prototype", "design-artifact" ]
+
+[native.profiles.preset-copilot-superpowers]
+label = "copilot / superpowers"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-superpowers.skills]]
+source = "superpowers"
+names = [ "brainstorming", "writing-plans", "executing-plans", "test-driven-development", "systematic-debugging", "verification-before-completion", "requesting-code-review", "receiving-code-review", "using-git-worktrees", "finishing-a-development-branch", "subagent-driven-development", "dispatching-parallel-agents", "writing-skills", "using-superpowers" ]
+
+[native.profiles.preset-copilot-tufte-vdqi]
+label = "copilot / tufte-vdqi"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-tufte-vdqi.skills]]
+source = "tufte-vdqi"
+names = [ "tufte-chart", "tufte-critique" ]
+
+[native.profiles.preset-fx-default]
+label = "fx / default"
+harnesses = [ "fx" ]
+
+[native.profiles.preset-jcode-default]
+label = "jcode / default"
+harnesses = [ "jcode" ]
+
+[native.profiles.preset-omp-default]
+label = "omp / default"
+harnesses = [ "omp" ]
+
+[native.profiles.preset-omp-local]
+label = "omp / local"
+harnesses = [ "omp" ]
+
+[native.profiles.preset-pi-default]
+label = "pi / default"
+harnesses = [ "pi" ]
+
+[native.profiles.preset-prime-default]
+label = "prime / default"
+harnesses = [ "prime" ]
+
+[native.profiles.preset-uji-default]
+label = "uji / default"
+harnesses = [ "uji" ]
+
+# Firstmate (https://github.com/kunchenguid/firstmate) runs from its own clone, kept on the latest main.
+[native.profiles.firstmate]
+label = "Firstmate fleet"
+harnesses = [ "claude", "pi" ]
+current_working_directory = "~/.local/share/trellage/firstmate"
+repository = { url = "https://github.com/kunchenguid/firstmate.git", branch = "main" }
+project_resources = true
+# Workers start in new panes; trx writes the proxy setup where they find it.
+workers = "firstmate"
+
+# Firstmate's required tools, with the install commands from its bin/fm-bootstrap.sh.
+# trx offers to install missing ones before launch. no-mistakes and quota-axi are optional
+# (no-mistakes delivery, quota profiles); add them here if you use those.
+[[native.profiles.firstmate.prerequisites]]
+command = "git"
+install = "brew install git"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "gh"
+install = "brew install gh"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "jq"
+install = "brew install jq"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "node"
+install = "brew install node"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "treehouse"
+install = "curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "gh-axi"
+install = "npm install -g gh-axi && gh-axi setup hooks"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "tasks-axi"
+install = "npm install -g tasks-axi"
+
+# Selection metadata: shared by trx run list and trx guide.
+[native.harnesses.agency.selection]
+description = "Agency's managed Copilot workflow for Azure engineering on the host."
+strengths = [ "Azure-focused engineering with Agency's managed configuration" ]
+weaknesses = [ "Work that requires an OS-level sandbox rather than profile-state isolation" ]
+best_for = [ "Azure-focused engineering with Agency's managed configuration" ]
+avoid_for = [ "Work that requires an OS-level sandbox rather than profile-state isolation" ]
+
+[native.harnesses.claude.selection]
+description = "Claude Code with native plugin workflows and profile-scoped configuration."
+strengths = [ "Engineering and specialist workflows built around Claude plugins", "Interactive collaboration with structured skills" ]
+weaknesses = [ "Untrusted execution requiring a security boundary; profile isolation is not a sandbox" ]
+best_for = [ "Engineering and specialist workflows built around Claude plugins", "Interactive collaboration with structured skills" ]
+avoid_for = [ "Untrusted execution requiring a security boundary; profile isolation is not a sandbox" ]
+
+[native.harnesses.codex.selection]
+description = "Codex with explicit engineering workflows and Full Access by default."
+strengths = [ "Structured implementation and verification using Codex-adapted workflows" ]
+weaknesses = [ "Runs requiring command approvals or an OS sandbox; managed Codex uses Full Access" ]
+best_for = [ "Structured implementation and verification using Codex-adapted workflows" ]
+avoid_for = [ "Runs requiring command approvals or an OS sandbox; managed Codex uses Full Access" ]
+
+[native.harnesses.copilot.selection]
+description = "GitHub Copilot CLI with curated skills, plugins, and custom-agent workflows."
+strengths = [ "Repository engineering with Copilot custom agents and managed plugins" ]
+weaknesses = [ "Tasks requiring a container or a proven OS sandbox" ]
+best_for = [ "Repository engineering with Copilot custom agents and managed plugins" ]
+avoid_for = [ "Tasks requiring a container or a proven OS sandbox" ]
+
+[native.harnesses.fx.selection]
+description = "Fx with shared host context and a managed copilot-proxy-rs provider."
+strengths = [ "Coding sessions that deliberately reuse Fx host context" ]
+weaknesses = [ "Work requiring selected-only configuration isolation" ]
+best_for = [ "Coding sessions that deliberately reuse Fx host context" ]
+avoid_for = [ "Work requiring selected-only configuration isolation" ]
+
+[native.harnesses.headlong.selection]
+description = "Persistent Headlong agent with durable identity, memory, and background thinking."
+strengths = [ "Long-lived work that benefits from persistent agent state" ]
+weaknesses = [ "Stateless or clean-room sessions", "Unattended workflows that require a verified headless contract" ]
+best_for = [ "Long-lived work that benefits from persistent agent state" ]
+avoid_for = [ "Stateless or clean-room sessions", "Unattended workflows that require a verified headless contract" ]
+
+[native.harnesses.jcode.selection]
+description = "JCode with profile-scoped skills and managed proxy routing."
+strengths = [ "Native coding sessions using JCode and explicitly selected skills" ]
+weaknesses = [ "Clean-room sessions; clean launch is not supported" ]
+best_for = [ "Native coding sessions using JCode and explicitly selected skills" ]
+avoid_for = [ "Clean-room sessions; clean launch is not supported" ]
+
+[native.harnesses.omp.selection]
+description = "Oh My Pi with managed profiles and an explicit local-model workflow option."
+strengths = [ "Coding sessions using OMP's tools and selected skill bundles" ]
+weaknesses = [ "Clean-room sessions; clean launch is not supported" ]
+best_for = [ "Coding sessions using OMP's tools and selected skill bundles" ]
+avoid_for = [ "Clean-room sessions; clean launch is not supported" ]
+
+[native.harnesses.pi.selection]
+description = "Pi with composable skills, custom tools, and extension-supported workflows."
+strengths = [ "Customizable coding workflows with Pi tools and extensions", "Profile-isolated sessions with explicitly selected skills" ]
+weaknesses = [ "Work requiring an OS-level sandbox; isolated agent state is not a security boundary" ]
+best_for = [ "Customizable coding workflows with Pi tools and extensions", "Profile-isolated sessions with explicitly selected skills" ]
+avoid_for = [ "Work requiring an OS-level sandbox; isolated agent state is not a security boundary" ]
+
+[native.harnesses.prime.selection]
+description = "Prime agent with managed proxy routing and a Python/IPython execution runtime."
+strengths = [ "Engineering sessions that benefit from an IPython execution kernel" ]
+weaknesses = [ "Minimal setups without the Python runtime dependencies" ]
+best_for = [ "Engineering sessions that benefit from an IPython execution kernel" ]
+avoid_for = [ "Minimal setups without the Python runtime dependencies" ]
+
+[native.harnesses.grok.selection]
+description = "Grok with native workspace sandboxing and managed proxy authentication configuration."
+strengths = [ "Workspace coding with Grok's native OS-level sandbox" ]
+weaknesses = [ "Clean-room configuration isolation, which is not proven for Grok" ]
+best_for = [ "Workspace coding with Grok's native OS-level sandbox" ]
+avoid_for = [ "Clean-room configuration isolation, which is not proven for Grok" ]
+
+[native.harnesses.uji.selection]
+description = "Uji with profile-scoped Lua tools, configuration, and session storage."
+strengths = [ "Coding workflows using Uji's Lua tools and managed profile state" ]
+weaknesses = [ "Runs requiring per-tool approvals or an OS sandbox; managed tools are allowed by default" ]
+best_for = [ "Coding workflows using Uji's Lua tools and managed profile state" ]
+avoid_for = [ "Runs requiring per-tool approvals or an OS sandbox; managed tools are allowed by default" ]
+
+[native.profiles.preset-jcode-default.selection]
+description = "jcode for memory-backed, browser-driven, and coordinated-swarm work, with persistent sessions and keyless gpt-5.6-sol routing."
+strengths = [ "keyless proxy model routing", "semantic memory", "firefox browser automation", "persistent sessions", "coordinated agent swarms", "native common skill bundle" ]
+weaknesses = [ "Tasks that need OS-level sandboxing or containment; jcx adds no containment and jcode runs with all host access available to the process", "Sessions that must avoid any telemetry surface; note that JCODE_NO_TELEMETRY=1 is set on every launch, but this is jcode's own opt-out flag, not a Trellage guarantee about upstream behavior", "Work that requires native OpenAI-style credentials; no API key is written and the profile always routes through the local proxy" ]
+best_for = [ "Sessions that want jcode's built-in semantic memory to recall prior discussions, decisions, and patterns across sessions", "Browser-driven tasks that benefit from jcode's Firefox automation instead of a headless-only tool", "Multi-agent or coordinated-swarm work that jcode's own orchestration handles natively, without a separate plugin" ]
+avoid_for = [ "Tasks that need OS-level sandboxing or containment; jcx adds no containment and jcode runs with all host access available to the process", "Sessions that must avoid any telemetry surface; note that JCODE_NO_TELEMETRY=1 is set on every launch, but this is jcode's own opt-out flag, not a Trellage guarantee about upstream behavior", "Work that requires native OpenAI-style credentials; no API key is written and the profile always routes through the local proxy" ]
+capabilities = [ "keyless-proxy-model-routing", "semantic-memory", "firefox-browser-automation", "persistent-sessions", "coordinated-agent-swarms", "native-common-skill-bundle" ]
+
+[native.profiles.preset-jcode-default.guide]
+document = "shipped:native/jcode/default.md"
+
+[[native.profiles.preset-jcode-default.guide.prerequisites]]
+id = "mise"
+description = "mise installed on the host; setup uses it to resolve and pin the eligible jcode release."
+
+[[native.profiles.preset-jcode-default.guide.prerequisites]]
+id = "proxy-health"
+description = "copilot-proxy-rs listening on http://127.0.0.1:8080 for the default gpt-5.6-sol (medium reasoning) routing."
+
+[[native.profiles.preset-jcode-default.guide.prerequisites]]
+id = "cli-tools"
+description = "curl and jq available on the host for setup, doctor, and update checks."
+
+[[native.profiles.preset-jcode-default.guide.workflows]]
+id = "recall-prior-context"
+description = "Use jcode's semantic memory to recall decisions or patterns from earlier sessions before starting related work."
+examples = [ "What did we decide about the retry strategy in an earlier session on this repo?", "Recall the earlier design constraints for this feature before proposing the next change" ]
+
+[[native.profiles.preset-jcode-default.guide.workflows]]
+id = "browser-driven-task"
+description = "Drive jcode's Firefox browser automation for a task that needs real page interaction rather than a headless fetch."
+examples = [ "Open this internal dashboard in the browser and confirm the new deployment banner is visible", "Use Firefox to reproduce this checkout error and identify the failing request" ]
+
+[[native.profiles.preset-jcode-default.guide.workflows]]
+id = "coordinated-swarm-delivery"
+description = "Coordinate a larger outcome through jcode's native agent swarm while keeping the main task integrated."
+examples = [ "Coordinate a swarm to investigate this performance regression, implement the fix, and verify it", "Split this cross-cutting feature among a swarm, then integrate and test the complete result" ]
+
+[native.profiles.preset-copilot-superpowers.selection]
+description = "GitHub Copilot CLI for design-first TDD, root-cause fixes, review, verification, and clean branches through Superpowers."
+strengths = [ "superpowers tdd and debugging workflows", "rundown briefing output style", "autopilot no ask user launch", "native common skill bundle", "isolated copilot home" ]
+weaknesses = [ "Tasks scoped to discovering/importing Copilot agents, instructions, or skills — use trx run copilot awesome instead", "Sessions that need an approval pause; every launch passes --autopilot --allow-all --no-ask-user", "Mixing in the hve-core plugin in the same profile; setup and launch manage exactly one cataloged plugin per profile", "Work needing isolation; choose the codex-superpowers Trellage Sandbox profile for Codex or `trx run grok superpowers` for Grok's native OS sandbox" ]
+best_for = [ "Test-driven development and systematic root-cause debugging with GitHub Copilot CLI using the superpowers skill library", "Branch lifecycle discipline — writing plans, executing them, and finishing a development branch cleanly", "Code-review loops using requesting-code-review and receiving-code-review, plus subagent-driven or parallel-agent dispatch" ]
+avoid_for = [ "Tasks scoped to discovering/importing Copilot agents, instructions, or skills — use trx run copilot awesome instead", "Sessions that need an approval pause; every launch passes --autopilot --allow-all --no-ask-user", "Mixing in the hve-core plugin in the same profile; setup and launch manage exactly one cataloged plugin per profile", "Work needing isolation; choose the codex-superpowers Trellage Sandbox profile for Codex or `trx run grok superpowers` for Grok's native OS sandbox" ]
+capabilities = [ "superpowers-tdd-and-debugging-workflows", "rundown-briefing-output-style", "autopilot-no-ask-user-launch", "native-common-skill-bundle", "isolated-copilot-home" ]
+
+[native.profiles.preset-copilot-superpowers.guide]
+document = "shipped:native/copilot/superpowers.md"
+
+[[native.profiles.preset-copilot-superpowers.guide.prerequisites]]
+id = "copilot-cli"
+description = "GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host."
+
+[[native.profiles.preset-copilot-superpowers.guide.prerequisites]]
+id = "cli-tools"
+description = "jq and curl available on the host for setup, doctor, and update checks."
+
+[[native.profiles.preset-copilot-superpowers.guide.workflows]]
+id = "test-driven-development"
+description = "Drive an implementation from a failing test using the test-driven-development and systematic-debugging skills."
+skill = "test-driven-development"
+examples = [ "Fix this bug by first writing a failing test that reproduces it", "Add this feature test-first and keep the test suite green throughout" ]
+
+[[native.profiles.preset-copilot-superpowers.guide.workflows]]
+id = "plan-then-execute-branch"
+description = "Write a plan, execute it, and finish the development branch cleanly using writing-plans, executing-plans, and finishing-a-development-branch."
+skill = "writing-plans"
+examples = [ "Plan, implement, and verify this feature before preparing the branch for review", "Complete this approved implementation plan and finish the branch cleanly" ]
+
+[[native.profiles.preset-copilot-superpowers.guide.workflows]]
+id = "parallel-review-and-dispatch"
+description = "Dispatch independent slices of work to parallel subagents and run a code-review exchange using dispatching-parallel-agents, subagent-driven-development, requesting-code-review, and receiving-code-review."
+skill = "dispatching-parallel-agents"
+examples = [ "Split this refactor into independent pieces and dispatch them in parallel", "Assign separate review passes for the API, UI, and migration portions of this change" ]
+
+[native.profiles.preset-copilot-awesome.selection]
+description = "GitHub Copilot CLI for discovering and importing curated repository agents, instructions, and skills through Awesome Copilot meta-skills."
+strengths = [ "awesome copilot discovery meta skills", "rundown briefing output style", "autopilot no ask user launch", "isolated copilot home" ]
+weaknesses = [ "General coding, debugging, or review work unrelated to discovering/importing Copilot assets — use trx run copilot hve or trx run copilot superpowers instead", "Environments without Docker; the awesome-copilot plugin's bundled MCP server starts via docker run and fails without it", "Sessions that need a human approval pause; every launch passes --autopilot --allow-all --no-ask-user" ]
+best_for = [ "Discovering and importing curated GitHub Copilot agents, instructions, and skills into the current repository", "Auditing a repository for outdated or duplicate agents/instructions/skills against the upstream awesome-copilot collection", "Bootstrapping a new repository's Copilot configuration from community-curated assets rather than writing it from scratch" ]
+avoid_for = [ "General coding, debugging, or review work unrelated to discovering/importing Copilot assets — use trx run copilot hve or trx run copilot superpowers instead", "Environments without Docker; the awesome-copilot plugin's bundled MCP server starts via docker run and fails without it", "Sessions that need a human approval pause; every launch passes --autopilot --allow-all --no-ask-user" ]
+capabilities = [ "awesome-copilot-discovery-meta-skills", "rundown-briefing-output-style", "autopilot-no-ask-user-launch", "isolated-copilot-home" ]
+
+[native.profiles.preset-copilot-awesome.guide]
+document = "shipped:native/copilot/awesome.md"
+
+[[native.profiles.preset-copilot-awesome.guide.prerequisites]]
+id = "copilot-cli"
+description = "GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host."
+
+[[native.profiles.preset-copilot-awesome.guide.prerequisites]]
+id = "docker"
+description = "Docker installed and on PATH; the awesome-copilot plugin's MCP server runs via docker run ... ghcr.io/microsoft/mcp-dotnet-samples/awesome-copilot:latest."
+
+[[native.profiles.preset-copilot-awesome.guide.prerequisites]]
+id = "cli-tools"
+description = "jq and curl available on the host for setup, doctor, and update checks."
+
+[[native.profiles.preset-copilot-awesome.guide.workflows]]
+id = "suggest-agents"
+description = "Suggest relevant GitHub Copilot custom agents from the awesome-copilot repository based on current repository context, avoiding duplicates with existing custom agents."
+skill = "awesome-copilot:suggest-awesome-github-copilot-agents"
+examples = [ "Suggest custom agents from awesome-copilot that fit this repository", "Find agents relevant to our current tech stack and flag any that are already installed but outdated" ]
+
+[[native.profiles.preset-copilot-awesome.guide.workflows]]
+id = "suggest-instructions"
+description = "Suggest relevant GitHub Copilot instruction files from the awesome-copilot repository, avoiding duplicates with existing instructions and flagging outdated ones."
+skill = "awesome-copilot:suggest-awesome-github-copilot-instructions"
+examples = [ "Suggest instruction files that match the languages and frameworks used here", "Find a maintained instruction file for our test conventions and identify duplicates we already have" ]
+
+[[native.profiles.preset-copilot-awesome.guide.workflows]]
+id = "suggest-skills"
+description = "Suggest relevant GitHub Copilot skills from the awesome-copilot repository, avoiding duplicates with existing skills and flagging outdated ones."
+skill = "awesome-copilot:suggest-awesome-github-copilot-skills"
+examples = [ "Suggest skills we're missing given the current repository content", "Recommend curated skills for this API project and flag installed skills that overlap" ]
+
+[native.profiles.preset-copilot-hve.selection]
+description = "GitHub Copilot CLI for evidence-backed Research-Plan-Implement-Review delivery through native HVE Core RPI and specialist workflows."
+strengths = [ "evidence backed rpi delivery", "rundown briefing output style", "autopilot no ask user launch", "native common skill bundle", "isolated copilot home", "interactive customer discovery", "assumption testing", "evidence backed requirements" ]
+weaknesses = [ "Tasks scoped to discovering/importing Copilot agents, instructions, or skills — use trx run copilot awesome instead", "Unattended customer interviews or automatic customer signoff; interactive workflows require a human present", "Live meeting ingestion or external reporting without separately approved access and data handling", "Mixing in the superpowers plugin in the same profile; setup and launch manage exactly one cataloged plugin per profile" ]
+best_for = [ "Durable Research-Plan-Implement (RPI) SDLC work with GitHub Copilot CLI — research notes, plan critique, implementation evidence, and review", "Specialist HVE Core workflows spanning accessibility, coding-standards, data-science, design-thinking, project-planning, rai, and security categories", "Sessions where an autonomous, non-interactive Copilot CLI run with a durable evidence trail is preferred over ad hoc prompting", "Host-native RPI work with Copilot CLI and shared floating skills, rather than the containerized GitHub-native `copilot-hve` Sandbox harness", "Human-led customer discovery, Minimum Viable Experiments, business or product requirements, and focused UX or architecture work" ]
+avoid_for = [ "Tasks scoped to discovering/importing Copilot agents, instructions, or skills — use trx run copilot awesome instead", "Unattended customer interviews or automatic customer signoff; interactive workflows require a human present", "Live meeting ingestion or external reporting without separately approved access and data handling", "Mixing in the superpowers plugin in the same profile; setup and launch manage exactly one cataloged plugin per profile" ]
+capabilities = [ "evidence-backed-rpi-delivery", "rundown-briefing-output-style", "autopilot-no-ask-user-launch", "native-common-skill-bundle", "isolated-copilot-home", "interactive-customer-discovery", "assumption-testing", "evidence-backed-requirements" ]
+
+[native.profiles.preset-copilot-hve.guide]
+document = "shipped:native/copilot/hve.md"
+
+[[native.profiles.preset-copilot-hve.guide.prerequisites]]
+id = "copilot-cli"
+description = "GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host."
+
+[[native.profiles.preset-copilot-hve.guide.prerequisites]]
+id = "cli-tools"
+description = "jq and curl available on the host; verified interactive customer workflows also need Python 3 and Copilot CLI 1.0.81 or later."
+
+[[native.profiles.preset-copilot-hve.guide.workflows]]
+id = "rpi-agent-cycle"
+description = "Run HVE Core's dedicated RPI Agent through a complete Research, Plan, Implement, and Review cycle."
+examples = [ "Build this feature through research, planning, implementation, and review", "Investigate and fix this issue with durable evidence at every stage", "Take this repository change through the full RPI workflow" ]
+launch_agent = "hve-core:rpi-agent"
+
+[[native.profiles.preset-copilot-hve.guide.workflows]]
+id = "rpi-research"
+description = "Open a durable research phase before planning or implementing, producing a research note that a later plan phase can cite."
+examples = [ "Research how the existing retry logic handles partial failures before we change it", "Investigate why this endpoint intermittently times out and write up findings" ]
+
+[[native.profiles.preset-copilot-hve.guide.workflows]]
+id = "rpi-plan-and-critique"
+description = "Draft an implementation plan from prior research, then subject it to rpi-plan-critique before implementation starts."
+examples = [ "Turn the research above into a phased implementation plan", "Critique this plan for missed edge cases before I start coding" ]
+
+[[native.profiles.preset-copilot-hve.guide.workflows]]
+id = "rpi-implement-and-review"
+description = "Implement against an approved plan and close the loop with rpi-review evidence."
+examples = [ "Implement the approved plan and show the verification evidence", "Execute this reviewed migration plan and record the evidence from the affected checks" ]
+
+[[native.profiles.preset-copilot-hve.guide.workflows]]
+id = "customer-discovery"
+description = "Discover the customer's problem and stakeholders, or resume Design Thinking at the method supported by existing evidence. Use for vague AI ambitions or an unvalidated solution request, not approved implementation work."
+frame = "fixed"
+examples = [ "A customer wants an AI chatbot; help us discover the real user problem before choosing a solution", "Resume customer discovery from these validated concepts without restarting the workshop", "Start Design Thinking discovery to validate an unproven customer problem before we build a new capability" ]
+launch_agent = "hve-core:dt-coach"
+
+[native.profiles.preset-copilot-hve.guide.workflows.interaction]
+mode = "interactive"
+required_skills = [ "dt-coaching-foundation", "dt-methods", "dt-rpi-integration" ]
+
+[[native.profiles.preset-copilot-hve.guide.workflows]]
+id = "test-assumption"
+description = "Design a Minimum Viable Experiment for a falsifiable customer, feasibility, adoption, or performance assumption before investment. Separate learning and partner ownership from a demo or mini-product."
+frame = "fixed"
+examples = [ "Design a feasibility experiment with our partner before we commit to a full product", "Test whether this intervention improves task completion without assuming the claimed 30 percent benefit" ]
+launch_agent = "hve-core:experiment-designer"
+
+[native.profiles.preset-copilot-hve.guide.workflows.interaction]
+mode = "interactive"
+required_skills = [ "experiment-design" ]
+
+[[native.profiles.preset-copilot-hve.guide.workflows]]
+id = "business-requirements"
+description = "Agree on solution-neutral business requirements, constraints, owners, and signoff from an understood customer problem. Use BRD Builder when problem evidence exists."
+frame = "fixed"
+examples = [ "Turn these confirmed business needs into a BRD with requirement IDs and explicit signoff", "We understand the customer problem; agree on business constraints without designing the product yet" ]
+launch_agent = "hve-core:brd-builder"
+
+[native.profiles.preset-copilot-hve.guide.workflows.interaction]
+mode = "interactive"
+required_skills = [ "requirements-author" ]
+
+[[native.profiles.preset-copilot-hve.guide.workflows]]
+id = "product-requirements"
+description = "Define product behavior and acceptance criteria from supported customer needs. Use PRD Builder for product scope and approval, not BRD business framing or automatic implementation."
+frame = "fixed"
+examples = [ "Write a PRD from the agreed business needs with product acceptance criteria and traceable requirements", "Refine this product specification with the customer without silently approving or implementing it" ]
+launch_agent = "hve-core:prd-builder"
+
+[native.profiles.preset-copilot-hve.guide.workflows.interaction]
+mode = "interactive"
+required_skills = [ "requirements-author" ]
+
+[[native.profiles.preset-copilot-hve.guide.workflows]]
+id = "focused-ux-coaching"
+description = "Resolve one bounded UX problem-framing, critique, or stakeholder-advocacy question through UX UI Designer. Do not start the full Design Thinking lifecycle for a single coaching moment."
+frame = "fixed"
+examples = [ "Help frame this single UX problem without running a full customer-discovery workshop", "Help me explain this design critique to stakeholders with honest evidence rather than persuasion claims" ]
+launch_agent = "hve-core:ux-ui-designer"
+
+[native.profiles.preset-copilot-hve.guide.workflows.interaction]
+mode = "interactive"
+required_skills = [ "ux-coaching" ]
+
+[[native.profiles.preset-copilot-hve.guide.workflows]]
+id = "review-architecture"
+description = "Review system architecture trade-offs against customer needs and constraints with System Architecture Reviewer. Produce evidence for a human decision rather than coding or approving the design."
+frame = "fixed"
+examples = [ "Review this system architecture against the customer's availability and privacy constraints", "Compare these architecture options using our agreed needs and identify decisions the owner must make" ]
+launch_agent = "hve-core:system-architecture-reviewer"
+
+[native.profiles.preset-copilot-hve.guide.workflows.interaction]
+mode = "interactive"
+required_skills = [ "architecture-review" ]
+
+[[native.profiles.preset-copilot-hve.guide.workflows]]
+id = "functional-planning"
+description = "Convert mature, agreed requirements into a reviewed work hierarchy with Functional Planner. Prepare a tracker-ready plan without creating or updating work items."
+frame = "fixed"
+examples = [ "Break this approved PRD into a reviewed hierarchy of work without writing to the tracker", "Plan dependencies from our mature requirements while keeping requirement IDs and approval boundaries" ]
+launch_agent = "hve-core:functional-planner"
+
+[native.profiles.preset-copilot-hve.guide.workflows.interaction]
+mode = "interactive"
+required_skills = [ "functional-planner" ]
+
+[native.profiles.preset-copilot-plannotator.selection]
+description = "GitHub Copilot CLI for self-contained visual HTML artifacts, wireframes, prototypes, plans, and diagrams through Effective HTML skills."
+strengths = [ "visual html artifact creation", "rundown briefing output style", "autopilot no ask user launch", "native common skill bundle", "isolated copilot home" ]
+weaknesses = [ "General implementation, debugging, or review work that does not need a visual HTML artifact", "Native application or production frontend work where a self-contained HTML file is not the deliverable", "Sessions that need an approval pause; every launch passes --autopilot --allow-all --no-ask-user" ]
+best_for = [ "Creating self-contained HTML artifacts with a deliberate visual direction", "Producing focused HTML wireframes, interactive prototypes, implementation plans, and diagrams", "Turning technical or product information into pragmatic visual documents that work in a browser" ]
+avoid_for = [ "General implementation, debugging, or review work that does not need a visual HTML artifact", "Native application or production frontend work where a self-contained HTML file is not the deliverable", "Sessions that need an approval pause; every launch passes --autopilot --allow-all --no-ask-user" ]
+capabilities = [ "visual-html-artifact-creation", "rundown-briefing-output-style", "autopilot-no-ask-user-launch", "native-common-skill-bundle", "isolated-copilot-home" ]
+
+[native.profiles.preset-copilot-plannotator.guide]
+document = "shipped:native/copilot/plannotator.md"
+
+[[native.profiles.preset-copilot-plannotator.guide.prerequisites]]
+id = "copilot-cli"
+description = "GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host."
+
+[[native.profiles.preset-copilot-plannotator.guide.prerequisites]]
+id = "cli-tools"
+description = "jq and curl available on the host for setup, doctor, and update checks."
+
+[[native.profiles.preset-copilot-plannotator.guide.workflows]]
+id = "visual-artifact"
+description = "Create a polished, self-contained HTML artifact using the broad HTML router and its design guidance."
+skill = "html"
+examples = [ "Turn this architecture summary into a self-contained visual HTML report", "Create a polished HTML explainer from these implementation notes" ]
+
+[[native.profiles.preset-copilot-plannotator.guide.workflows]]
+id = "wireframe-or-prototype"
+description = "Choose low-fidelity structure with html-wireframe or polished interaction with html-prototype."
+skill = "html-prototype"
+examples = [ "Create a responsive wireframe for this workflow", "Build an interactive HTML prototype for this feature" ]
+
+[[native.profiles.preset-copilot-plannotator.guide.workflows]]
+id = "plan-or-diagram"
+description = "Present implementation work with html-plan or explain relationships and sequence with html-diagram."
+skill = "html-plan"
+examples = [ "Turn this migration plan into a clear visual HTML document", "Diagram the service interactions and request sequence" ]
+
+[native.profiles.preset-copilot-compound-engineering.selection]
+description = "GitHub Copilot CLI for the Compound Engineering loop: create repository-informed plans, ship requirements-ready work hands-off to an open pull request with lfg, and capture verified solutions so each change makes the next easier."
+strengths = [ "compound engineering loop", "requirements to implementation ready planning", "repository local solution reuse", "verified one learning per run capture", "requirements ready autonomous lfg delivery" ]
+weaknesses = [ "Vague product discovery through a generated one-shot prompt; start `trx run copilot compound-engineering` and run ce-brainstorm", "Generated implementation-only work that must stop before commit or push; no headless ce-work workflow is exposed, so use ce-work mode:return-to-caller from a conversational session", "Evidence-heavy Research-Plan-Implement work that needs HVE artifacts - use trx run copilot hve instead", "Strict test-first debugging, verification, and branch-finishing discipline - use trx run copilot superpowers instead", "Finding or importing Copilot agents, instructions, or skills from Awesome Copilot - use trx run copilot awesome instead", "Approval-required work; every launch uses --autopilot --allow-all --no-ask-user", "Work that needs OS isolation; this Native Copilot profile has host access, so use Trellage Sandbox or composed `trx run grok`" ]
+best_for = [ "Turning raw intent, settled requirements, or a requirements-only CE plan into a reviewed implementation-ready plan that reuses repository solutions", "Planning a new change from known past bugs or docs/solutions so prior root causes and constraints become implementation decisions", "Capturing exactly one verified, non-trivial solved problem with ce-compound so later agents reuse the root cause, fix, and prevention", "Shipping requirements-ready software hands-off to an open pull request with lfg when commit, push, PR creation, and CI access are allowed" ]
+avoid_for = [ "Vague product discovery through a generated one-shot prompt; start `trx run copilot compound-engineering` and run ce-brainstorm", "Generated implementation-only work that must stop before commit or push; no headless ce-work workflow is exposed, so use ce-work mode:return-to-caller from a conversational session", "Evidence-heavy Research-Plan-Implement work that needs HVE artifacts - use trx run copilot hve instead", "Strict test-first debugging, verification, and branch-finishing discipline - use trx run copilot superpowers instead", "Finding or importing Copilot agents, instructions, or skills from Awesome Copilot - use trx run copilot awesome instead", "Approval-required work; every launch uses --autopilot --allow-all --no-ask-user", "Work that needs OS isolation; this Native Copilot profile has host access, so use Trellage Sandbox or composed `trx run grok`" ]
+capabilities = [ "compound-engineering-loop", "requirements-to-implementation-ready-planning", "repository-local-solution-reuse", "verified-one-learning-per-run-capture", "requirements-ready-autonomous-lfg-delivery" ]
+
+[native.profiles.preset-copilot-compound-engineering.guide]
+document = "shipped:native/copilot/compound-engineering.md"
+
+[[native.profiles.preset-copilot-compound-engineering.guide.prerequisites]]
+id = "copilot-cli"
+description = "GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host."
+
+[[native.profiles.preset-copilot-compound-engineering.guide.prerequisites]]
+id = "cli-tools"
+description = "jq and curl available on the host for setup, doctor, and update checks."
+
+[[native.profiles.preset-copilot-compound-engineering.guide.prerequisites]]
+id = "compound-setup"
+description = "On first use in a repository, start a bare conversational session and run /ce-setup manually to check capabilities and optionally create the repo-local Compound Engineering configuration."
+
+[[native.profiles.preset-copilot-compound-engineering.guide.prerequisites]]
+id = "lfg-delivery"
+description = "For lfg delivery, use a trusted worktree with a Git remote, authenticated gh access, and permission to commit, push, open a PR, and watch CI."
+
+[[native.profiles.preset-copilot-compound-engineering.guide.prerequisites]]
+id = "project-tools"
+description = "The current repository's required build, test, browser, Xcode, and other project tools must be installed on the host for the selected skills."
+
+[[native.profiles.preset-copilot-compound-engineering.guide.workflows]]
+id = "plan-with-compound-knowledge"
+description = "In the generated headless run, accept raw intent, settled requirements, or a requirements-only CE plan and use upstream ce-plan's Durable path to produce an implementation-ready unified plan with document review, informed by relevant repository learning. It plans but does not implement."
+skill = "ce-plan"
+examples = [ "Turn the requirements-only plan at docs/plans/tenant-api-keys-plan.md into a reviewed implementation plan, reusing relevant solutions from earlier authentication work", "Plan this migration using lessons from past zero-downtime failures, these constraints, and these acceptance criteria", "Use what this repository learned from past bugs to plan the next change, including constraints and acceptance criteria" ]
+
+[[native.profiles.preset-copilot-compound-engineering.guide.workflows]]
+id = "autonomous-lfg-plan-to-pr"
+description = "For requirements-ready software or an existing plan, run the hands-off pipeline to plan, implement, simplify, review and fix, browser test, commit, push, open a PR, and watch CI. Best results follow ce-brainstorm or include detailed scope, constraints, and acceptance criteria. By default it stops at an open PR and does not merge; an explicit stack-land instruction authorizes landing a managed PR stack. Without a remote it leaves local commits, and it can stop before a PR when planning, implementation, or review gates report a blocker. A bounded repair loop can finish with residuals."
+skill = "lfg"
+examples = [ "Implement the approved plan at docs/plans/tenant-api-keys-plan.md, verify it, open the pull request, watch CI, and stop before merge", "Requirements are settled for resumable uploads: preserve completed chunks, recover after process crashes, and prove retry safety; ship the implementation through an open PR without check-ins", "Replace invoice polling with webhook updates under the approved contract, keep the fallback during migration, commit and push the work, open the PR, and watch CI" ]
+
+[[native.profiles.preset-copilot-compound-engineering.guide.workflows]]
+id = "capture-verified-repository-learning"
+description = "After verified work, record exactly one non-trivial solved problem per run as repository-local solution knowledge, including the root cause, evidence, fix, and prevention. The fresh one-shot run does not inherit the earlier Copilot conversation, so the intent must carry those facts and the solved change must be visible in the current tree. It can skip when no valid learning exists."
+skill = "ce-compound"
+examples = [ "Capture the verified stale-permission-cache failure with its trigger, root cause, fix, proof, and prevention so later authorization work reuses it", "Record why the zero-downtime enum migration failed, the evidence that isolated the cause, and the validated deployment sequence that fixed it", "Save the verified webhook deduplication race, the database constraint that solved it, and the test that prevents regression" ]
+
+[native.profiles.preset-copilot-tufte-vdqi.selection]
+description = "Data-visualization specialist for critiquing and rebuilding quantitative charts with Edward Tufte's VDQI principles. Detects misleading scales, lie factor, and chartjunk; recommends better chart forms; and creates publication-ready static SVG or offline HTML from structured data, including time series, small multiples, quartile plots, and range-frame scatterplots. Not for interactive dashboards or general UI design."
+strengths = [ "tufte vdqi chart critique", "lie factor and chartjunk analysis", "chart genre selection", "static svg chart generation", "time series small multiples quartile range frame", "inflation adjusted monetary series", "offline tufte html publishing", "autopilot no ask user launch", "isolated copilot home" ]
+weaknesses = [ "Interactive dashboards, application-integrated chart components, or exploratory plotting systems", "Tasks that require PNG or PDF export, browser-driven visual regression, or a broad statistical chart grammar", "Sessions that need an approval pause; every launch passes --autopilot --allow-all --no-ask-user" ]
+best_for = [ "Scoring an existing chart, graph, plot, or dashboard against Tufte principles with concrete evidence and prioritized remedies", "Detecting misleading scales, lie factor, chartjunk, weak data-ink ratio, redundant encoding, and poor chart-genre choices", "Rebuilding a cluttered or misleading quantitative graphic as a publication-ready static SVG or offline HTML artifact", "Creating time series, small multiples, quartile plots, and range-frame scatterplots from structured data", "Adjusting monetary time series with real CPI values before plotting or publishing them" ]
+avoid_for = [ "Interactive dashboards, application-integrated chart components, or exploratory plotting systems", "Tasks that require PNG or PDF export, browser-driven visual regression, or a broad statistical chart grammar", "Sessions that need an approval pause; every launch passes --autopilot --allow-all --no-ask-user" ]
+capabilities = [ "tufte-vdqi-chart-critique", "lie-factor-and-chartjunk-analysis", "chart-genre-selection", "static-svg-chart-generation", "time-series-small-multiples-quartile-range-frame", "inflation-adjusted-monetary-series", "offline-tufte-html-publishing", "autopilot-no-ask-user-launch", "isolated-copilot-home" ]
+
+[native.profiles.preset-copilot-tufte-vdqi.guide]
+document = "shipped:native/copilot/tufte-vdqi.md"
+
+[[native.profiles.preset-copilot-tufte-vdqi.guide.prerequisites]]
+id = "copilot-cli"
+description = "GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host."
+
+[[native.profiles.preset-copilot-tufte-vdqi.guide.prerequisites]]
+id = "cli-tools"
+description = "Python 3, jq, and curl available on the host for rendering, setup, doctor, and update checks."
+
+[[native.profiles.preset-copilot-tufte-vdqi.guide.workflows]]
+id = "critique-visualization"
+description = "Score an existing chart, graph, plot, or dashboard with the nine-criterion VDQI rubric and return named, prioritized remedies."
+skill = "tufte-critique"
+examples = [ "Is this chart misleading, cluttered, or using the wrong visual form?", "Score this dashboard graphic for lie factor, chartjunk, data-ink ratio, and labeling" ]
+
+[[native.profiles.preset-copilot-tufte-vdqi.guide.workflows]]
+id = "critique-and-rebuild"
+description = "Critique an existing quantitative graphic, then rebuild it as a clearer static SVG with the Tufte chart workflow."
+skill = "tufte-critique"
+examples = [ "Diagnose this cluttered chart and rebuild it with direct labels and less non-data ink", "Explain why this graph is misleading, then replace it with a more honest static visualization" ]
+
+[[native.profiles.preset-copilot-tufte-vdqi.guide.workflows]]
+id = "build-tufte-chart"
+description = "Choose a suitable Tufte chart genre and create a publication-ready static SVG or offline HTML artifact from structured data."
+skill = "tufte-chart"
+examples = [ "Design a Tufte-style chart from these quantitative values and save the SVG", "Visualize this small dataset, but use a table if that communicates the numbers more clearly" ]
+
+[[native.profiles.preset-copilot-tufte-vdqi.guide.workflows]]
+id = "adjust-monetary-series"
+description = "Convert a multi-year currency series to real terms with verified CPI values, then render an accurately labeled time-series chart."
+skill = "tufte-chart"
+examples = [ "Adjust this revenue history for inflation and chart it in real 2025 dollars", "Compare these annual prices without letting nominal currency changes distort the trend" ]
+
+[[native.profiles.preset-copilot-tufte-vdqi.guide.workflows]]
+id = "publish-offline-html"
+description = "Wrap a generated SVG in a shareable offline HTML page with bundled Tufte typography and no network dependency."
+skill = "tufte-chart"
+examples = [ "Turn this chart into a self-contained Tufte-styled page I can open offline", "Publish the SVG with a title and caption as portable HTML" ]
+
+[[native.profiles.preset-copilot-tufte-vdqi.guide.workflows]]
+id = "compare-many-series"
+description = "Compare many related series with shared scales, usually as ordered small multiples instead of an unreadable overplot."
+skill = "tufte-chart"
+examples = [ "Compare these regional time series as shared-scale small multiples", "Replace this crowded multi-line chart with a clearer set of comparable panels" ]
+
+[[native.profiles.preset-copilot-tufte-vdqi.guide.workflows]]
+id = "compare-distributions"
+description = "Compare distributions across groups with a stripped-down quartile plot and an optional strip-plot or histogram alternative."
+skill = "tufte-chart"
+examples = [ "Compare these treatment distributions with Tufte quartile plots", "Show the spread and medians for these groups without conventional box-plot clutter" ]
+
+[[native.profiles.preset-copilot-tufte-vdqi.guide.workflows]]
+id = "build-range-frame-scatter"
+description = "Plot bivariate data with axes limited to the observed range and optional dot-dash marginal distributions."
+skill = "tufte-chart"
+examples = [ "Make a range-frame scatterplot for these two variables", "Add dot-dash marginals so this scatterplot also shows each variable's distribution" ]
+
+[native.profiles.preset-fx-default.selection]
+description = "Fx with shared host context and a managed copilot-proxy-rs provider. Work that needs existing GitHub CLI, Git, SSH, shell, or Fx state."
+strengths = [ "native agent", "host context" ]
+weaknesses = [ "Work requiring profile-scoped credentials or configuration isolation", "Strict selected-only skill isolation" ]
+best_for = [ "Work that needs existing GitHub CLI, Git, SSH, shell, or Fx state", "Interactive Fx sessions launched through Trellage" ]
+avoid_for = [ "Work requiring profile-scoped credentials or configuration isolation", "Strict selected-only skill isolation" ]
+capabilities = [ "native-agent", "host-context" ]
+
+[native.profiles.preset-fx-default.guide]
+document = "shipped:native/fx/default.md"
+
+[[native.profiles.preset-fx-default.guide.prerequisites]]
+id = "mise"
+description = "mise installed on the host; setup uses it to resolve and pin the eligible Fx release."
+
+[[native.profiles.preset-fx-default.guide.prerequisites]]
+id = "copilot-proxy"
+description = "copilot-proxy-rs listening on http://127.0.0.1:8080 with gpt-6.1-sol and gpt-6-astra available."
+
+[[native.profiles.preset-fx-default.guide.prerequisites]]
+id = "shared-host-state"
+description = "Accept that Fx will read and write the existing host ~/.fx state rather than a profile-scoped home."
+
+[[native.profiles.preset-fx-default.guide.workflows]]
+id = "interactive"
+description = "Start Fx with the host context intact"
+examples = [ "Inspect and modify this repository", "Use my existing GitHub CLI and SSH authentication" ]
+
+[native.profiles.preset-claude-default.selection]
+description = "Isolated Claude Code for autonomous engineering and Rundown status output, routed keylessly to Claude Sonnet 5.5 with Opus 5.5 plan mode through the local proxy."
+strengths = [ "opusplan sonnet 5 5 proxy routing", "keyless copilot proxy auth", "isolated claude profile home", "rundown briefing output style", "native common skill bundle", "autonomous no prompt launch" ]
+weaknesses = [ "Tasks that require direct Anthropic, Bedrock, Vertex, AWS, Google, or Azure credentials, since launch strips those environment variables before starting Claude", "Work that needs OS-level sandboxing or containment; this Native Claude profile grants full host access with no security boundary", "Sessions that need interactive approval prompts or AskUserQuestion; every launch bypasses permissions and disallows that tool" ]
+best_for = [ "One-shot or scripted Claude Code sessions that must not read or write a developer's personal ~/.claude state, theme, or credentials", "Teams standardizing on Claude Sonnet 5.5 for normal turns and Opus 5.5 for plan mode through a shared keyless copilot-proxy-rs endpoint instead of individual Anthropic API keys", "Status updates, standups, or PR summaries where the built-in Rundown TL;DR-plus-checklist output style should apply automatically" ]
+avoid_for = [ "Tasks that require direct Anthropic, Bedrock, Vertex, AWS, Google, or Azure credentials, since launch strips those environment variables before starting Claude", "Work that needs OS-level sandboxing or containment; this Native Claude profile grants full host access with no security boundary", "Sessions that need interactive approval prompts or AskUserQuestion; every launch bypasses permissions and disallows that tool" ]
+capabilities = [ "opusplan-sonnet-5-5-proxy-routing", "keyless-copilot-proxy-auth", "isolated-claude-profile-home", "rundown-briefing-output-style", "native-common-skill-bundle", "autonomous-no-prompt-launch" ]
+
+[native.profiles.preset-claude-default.guide]
+document = "shipped:native/claude/default.md"
+
+[[native.profiles.preset-claude-default.guide.prerequisites]]
+id = "claude-code-cli"
+description = "Host `claude` (Claude Code) executable installed and resolvable on PATH."
+
+[[native.profiles.preset-claude-default.guide.prerequisites]]
+id = "proxy-health"
+description = "copilot-proxy-rs listening on http://127.0.0.1:8080 and advertising claude-sonnet-5.5 and claude-opus-5.5."
+
+[[native.profiles.preset-claude-default.guide.prerequisites]]
+id = "cldx-setup-complete"
+description = "trx setup claude run once so first-run onboarding and the managed output style are staged."
+
+[[native.profiles.preset-claude-default.guide.prerequisites]]
+id = "cli-tools"
+description = "curl and jq available on the host for health checks used by setup, doctor, and launch."
+
+[[native.profiles.preset-claude-default.guide.workflows]]
+id = "rundown-status-and-handoff"
+description = "Produce a concise project status, blockers, and next action in the profile's automatic Rundown format."
+examples = [ "Summarize this branch's progress, current blockers, and the next action", "Turn these investigation notes into a concise handoff for the next engineer" ]
+
+[[native.profiles.preset-claude-default.guide.workflows]]
+id = "general-engineering-task"
+description = "Delegate an implementation, debugging, or review task to Claude Sonnet 5.5 (Opus 5.5 in plan mode), with the shared native-common skill bundle (engineersamuel skills, show-me, and manually activated i-have-adhd) available for repository hygiene, naming, and review support."
+examples = [ "Review this PR diff for correctness and naming issues", "Debug why this test intermittently fails", "Implement this API validation change and verify the affected behavior" ]
+
+[native.profiles.preset-claude-default.guide.goal_execution]
+controller = "claude-goal"
+workflow_ids = [ "rundown-status-and-handoff", "general-engineering-task" ]
+
+[native.profiles.firstmate.selection]
+description = "Firstmate fleet supervisor for coordinating parallel workers from its own managed clone."
+strengths = [ "firstmate fleet supervisor", "parallel isolated worktree workers", "ship and scout tasks", "pull request delivery", "captain merge authority", "fleet status bearings", "copilot proxy workers", "latest upstream firstmate" ]
+weaknesses = [ "One small edit or question that a single agent can finish; use trx run claude default", "Work on uncommitted changes, because workers start from the remote base branch and cannot see the local worktree", "Untrusted repositories or tasks that need a container boundary; workers run on the host with permissions bypassed" ]
+best_for = [ "Several related engineering tasks on one GitHub project that one supervisor should split, run in parallel isolated worktrees, and deliver as pull requests", "Mixed investigation and implementation, where read-only scouts answer open questions before ship tasks change code", "Long-running work where the human only approves decisions and merges instead of coordinating each agent", "Checking fleet progress, open pull requests, and pending decisions in a running Firstmate session" ]
+avoid_for = [ "One small edit or question that a single agent can finish; use trx run claude default", "Work on uncommitted changes, because workers start from the remote base branch and cannot see the local worktree", "Untrusted repositories or tasks that need a container boundary; workers run on the host with permissions bypassed" ]
+capabilities = [ "firstmate-fleet-supervisor", "parallel-isolated-worktree-workers", "ship-and-scout-tasks", "pull-request-delivery", "captain-merge-authority", "fleet-status-bearings", "copilot-proxy-workers", "latest-upstream-firstmate" ]
+
+[[native.profiles.firstmate.guide.prerequisites]]
+id = "firstmate-tools"
+description = "git, gh, jq, node, treehouse, gh-axi and tasks-axi on PATH; trx run claude firstmate offers to install missing ones before launch."
+
+[[native.profiles.firstmate.guide.prerequisites]]
+id = "proxy-health"
+description = "copilot-proxy-rs listening on http://127.0.0.1:8080; the supervisor and its workers reach models through it."
+
+[[native.profiles.firstmate.guide.prerequisites]]
+id = "github-auth"
+description = "gh authenticated for the target GitHub project, because workers push branches and open pull requests."
+
+[[native.profiles.firstmate.guide.workflows]]
+id = "fleet-delivery"
+description = "Split a goal on one GitHub project into ship and scout tasks that run in parallel worktrees and return pull requests or reports."
+examples = [ "Fix the flaky login test and add dark mode to my web app", "Find out why the test suite is slow, then speed it up once I approve a fix", "Update the SDK to the new version and document the isolation status of every adapter" ]
+
+[[native.profiles.firstmate.guide.workflows]]
+id = "fleet-investigation"
+description = "Run read-only scouts that answer questions about a project with measured evidence and return reports, without changing code."
+examples = [ "Find which code paths can leak the API key into a child process", "Measure the slowest tests and explain the cause of each" ]
+
+[[native.profiles.firstmate.guide.workflows]]
+id = "fleet-status"
+description = "Report the running fleet's tasks, pull requests, reports and decisions waiting on the captain, without starting work."
+examples = [ "What is the fleet working on and what needs my decision", "Which pull requests are ready to merge" ]
+
+[native.profiles.firstmate.guide.documents]
+claude = "shipped:native/claude/firstmate.md"
+pi = "shipped:native/pi/firstmate.md"
+
+[native.profiles.preset-claude-office-charts.selection]
+description = "Office document profile with the optional slide-maker builder for chart-heavy presentations."
+strengths = [ "anthropic document skills", "academic pptx editorial layer", "slide maker builder", "native common skill bundle", "isolated claude profile home" ]
+weaknesses = [ "Document work that does not need slide-maker; use office", "Tasks that require OS sandboxing or interactive permission approval" ]
+best_for = [ "Presentations with many charts or data-heavy slide layouts", "Building or redesigning decks with the slide-maker workflow" ]
+avoid_for = [ "Document work that does not need slide-maker; use office", "Tasks that require OS sandboxing or interactive permission approval" ]
+capabilities = [ "anthropic-document-skills", "academic-pptx-editorial-layer", "slide-maker-builder", "native-common-skill-bundle", "isolated-claude-profile-home" ]
+
+[native.profiles.preset-claude-office-charts.guide]
+document = "shipped:native/claude/office-charts.md"
+
+[[native.profiles.preset-claude-office-charts.guide.prerequisites]]
+id = "office-charts-profile"
+description = "Run trx setup claude office-charts to install the document plugin and managed skills."
+
+[[native.profiles.preset-claude-office-charts.guide.prerequisites]]
+id = "proxy"
+description = "Host Claude Code, curl, jq, and the local copilot-proxy-rs endpoint must be available."
+
+[[native.profiles.preset-claude-office-charts.guide.workflows]]
+id = "chart-heavy-presentations"
+description = "Build a data-heavy presentation with the optional slide-maker builder."
+examples = [ "Build a deck that explains these experiment results with charts", "Redesign these data-heavy slides for a stakeholder review" ]
+
+[native.profiles.preset-claude-office-charts.guide.goal_execution]
+controller = "claude-goal"
+workflow_ids = [ "chart-heavy-presentations" ]
+
+[native.profiles.preset-claude-blog.selection]
+description = "Native Claude Code for publication-ready technical blogs and docs-as-blog with the Claude Blog plugin."
+strengths = [ "blog post writing", "seo optimization", "content briefs and outlines", "editorial calendars", "ai citation readiness audit", "multilingual publishing", "content repurposing" ]
+weaknesses = [ "App coding sprints or feature implementation", "Short-form social copy (use claude-social-media instead)", "One-off Q&A without a delivery-contract need" ]
+best_for = [ "Long-form technical blog posts and docs-as-blog content that need a full 5-gate delivery contract", "SEO and AI-citation-readiness audits of existing published posts", "Editorial calendars, content briefs, outlines, and topic-cluster planning" ]
+avoid_for = [ "App coding sprints or feature implementation", "Short-form social copy (use claude-social-media instead)", "One-off Q&A without a delivery-contract need" ]
+capabilities = [ "blog-post-writing", "seo-optimization", "content-briefs-and-outlines", "editorial-calendars", "ai-citation-readiness-audit", "multilingual-publishing", "content-repurposing" ]
+
+[native.profiles.preset-claude-blog.guide]
+document = "shipped:native/claude/blog.md"
+prerequisites = []
+
+[[native.profiles.preset-claude-blog.guide.workflows]]
+id = "write-new-post"
+description = "Generate a new blog post from a topic and push it through the 5-gate delivery contract (capability discovery, format completeness, visual verification, content review, asset/link integrity)."
+skill = "blog-write"
+examples = [ "Write me a blog post about zero-trust networking for platform engineers", "/blog write agentic coding workflows for enterprise teams", "Create a reviewed docs-as-blog article that explains our new deployment model to SRE leads" ]
+
+[[native.profiles.preset-claude-blog.guide.workflows]]
+id = "audit-existing-post"
+description = "Score an existing draft or published URL against the 0-100 quality rubric and surface P0/P1 issues."
+skill = "blog-analyze"
+examples = [ "Analyze https://example.com/blog/my-post for SEO and citation gaps", "Audit this published engineering post and list the P0 issues blocking publication" ]
+
+[[native.profiles.preset-claude-blog.guide.workflows]]
+id = "content-brief"
+description = "Produce a detailed content brief for a topic before any writing starts."
+skill = "blog-brief"
+examples = [ "Give me a content brief for a post about Kubernetes cost optimization", "Plan a three-post topic cluster for platform-engineering observability" ]
+
+[native.profiles.preset-claude-blog.guide.goal_execution]
+controller = "claude-goal"
+workflow_ids = [ "write-new-post", "audit-existing-post", "content-brief" ]
+
+[native.profiles.preset-claude-social-media.selection]
+description = "Native Claude Code with Social Media Skills and Humanizer."
+strengths = [ "voice profile building", "linkedin post drafting", "post performance scoring", "carousel generation", "content idea planning", "reel script reverse engineering", "youtube thumbnail prompting", "pinned comment generation", "ai writing tell removal" ]
+weaknesses = [ "Long-form SEO blogs or docs-as-blog — use claude-blog instead", "Deep multi-source research — use claude-research instead", "Engineering delivery or app coding" ]
+best_for = [ "Public short-form content across LinkedIn, Instagram, X, and YouTube that must sound like a real person", "Turning a newsletter or outlier post into other content formats (carousels, reel scripts, thumbnails, pinned comments)" ]
+avoid_for = [ "Long-form SEO blogs or docs-as-blog — use claude-blog instead", "Deep multi-source research — use claude-research instead", "Engineering delivery or app coding" ]
+capabilities = [ "voice-profile-building", "linkedin-post-drafting", "post-performance-scoring", "carousel-generation", "content-idea-planning", "reel-script-reverse-engineering", "youtube-thumbnail-prompting", "pinned-comment-generation", "ai-writing-tell-removal" ]
+
+[native.profiles.preset-claude-social-media.guide]
+document = "shipped:native/claude/social-media.md"
+
+[[native.profiles.preset-claude-social-media.guide.prerequisites]]
+id = "voice-builder"
+description = "Run voice-builder first in this project so about-me.md and voice.md exist. Every downstream social-media skill reads these files before drafting anything."
+
+[[native.profiles.preset-claude-social-media.guide.prerequisites]]
+id = "apify-api-token"
+description = "Optional. Set APIFY_API_TOKEN to enable Apify-backed workflows such as post-scorer (pulling post history) and reels-scripting (reverse-engineering an outlier Reel)."
+
+[[native.profiles.preset-claude-social-media.guide.prerequisites]]
+id = "google-ai-api-key"
+description = "Optional. Set GOOGLE_AI_API_KEY to enable API-backed Google AI workflows such as gemini-carousel."
+
+[[native.profiles.preset-claude-social-media.guide.workflows]]
+id = "voice-builder"
+description = "Interview the user and produce about-me.md and voice.md as the foundation every other social-media skill reads before drafting."
+skill = "social-media-skills:voice-builder"
+examples = [ "Build my voice", "Interview me and create the voice files for this founder-content project" ]
+
+[[native.profiles.preset-claude-social-media.guide.workflows]]
+id = "post-writer"
+description = "Draft a LinkedIn post in the user's voice using the voice files produced by voice-builder."
+skill = "social-media-skills:post-writer"
+examples = [ "Write me a post about AI agents", "Draft a LinkedIn post from this customer lesson in my established voice" ]
+
+[[native.profiles.preset-claude-social-media.guide.workflows]]
+id = "post-scorer"
+description = "Pull the user's post history via Apify and score a draft against what actually performs for them."
+skill = "social-media-skills:post-scorer"
+examples = [ "Score this draft against my history", "Assess this launch post against the patterns in my prior high-performing posts" ]
+
+[[native.profiles.preset-claude-social-media.guide.workflows]]
+id = "gemini-carousel"
+description = "Generate a slide-by-slide carousel from source content, with an approval gate before finalizing."
+skill = "social-media-skills:gemini-carousel"
+examples = [ "Make me a carousel from this", "Convert this newsletter section into a seven-slide LinkedIn carousel in my voice" ]
+
+[[native.profiles.preset-claude-social-media.guide.workflows]]
+id = "niche-research"
+description = "Surface the week's most relevant niche stories (via Reddit, X, and Google, with verified dates) to decide what to post this week."
+skill = "social-media-skills:niche-research"
+examples = [ "What should I post this week", "Find current stories in my niche that could become timely posts this week" ]
+
+[[native.profiles.preset-claude-social-media.guide.workflows]]
+id = "content-matrix"
+description = "Alternative to niche-research for 'what should I post this week' — pair content pillars with 8 formats for 32+ post ideas in one table."
+skill = "social-media-skills:content-matrix"
+examples = [ "What should I post this week from my existing content pillars, not current outside news", "Build me a content matrix from my three pillars" ]
+
+[[native.profiles.preset-claude-social-media.guide.workflows]]
+id = "reels-scripting"
+description = "Reverse-engineer an outlier Reel via Apify plus Gemini 2.5 Flash and write a new script in the user's voice, sourced from their newsletter."
+skill = "social-media-skills:reels-scripting"
+examples = [ "Turn this outlier Reel into a script", "Reverse-engineer this high-performing Reel and write an original script from my newsletter" ]
+
+[[native.profiles.preset-claude-social-media.guide.workflows]]
+id = "youtube-thumbnail"
+description = "Turn a video title into a branded YouTube thumbnail prompt for Gemini."
+skill = "social-media-skills:youtube-thumbnail"
+examples = [ "I need a thumbnail for 'How I fired my team'", "Create a branded thumbnail prompt for my video about incident-response leadership" ]
+
+[[native.profiles.preset-claude-social-media.guide.workflows]]
+id = "pinned-comment"
+description = "Write a meme-style pinned comment with a matching image generation prompt."
+skill = "social-media-skills:pinned-comment"
+examples = [ "Write me a pinned comment", "Write a meme-style pinned comment and image prompt for this launch video" ]
+
+[[native.profiles.preset-claude-social-media.guide.workflows]]
+id = "humanize-draft"
+description = "Strip AI writing tells from a drafted post without inventing facts, using the bundled Humanizer plugin."
+examples = [ "Make this draft sound less like AI wrote it, don't add or invent claims", "Remove generic AI phrasing from this post while preserving every factual claim" ]
+
+[native.profiles.preset-claude-social-media.guide.goal_execution]
+controller = "claude-goal"
+workflow_ids = [ "voice-builder", "post-writer", "post-scorer", "gemini-carousel", "niche-research", "content-matrix", "reels-scripting", "youtube-thumbnail", "pinned-comment" ]
+
+[native.profiles.preset-claude-research.selection]
+description = "Native Claude Code for vault-backed research with the Hyperresearch workflow."
+strengths = [ "bounded factual research", "source backed comparisons", "recency scored social pulls", "persistent research vault" ]
+weaknesses = [ "Full adversarial/deep-research pipelines that need maximum rigor over cost", "App coding or feature implementation", "Short social copy drafting — use claude-social-media" ]
+best_for = [ "Source-backed answers to bounded factual queries, surveys, and comparisons", "Checking what people are currently saying across Reddit, X, YouTube, HN, Polymarket, GitHub, and the web in the last ~30 days" ]
+avoid_for = [ "Full adversarial/deep-research pipelines that need maximum rigor over cost", "App coding or feature implementation", "Short social copy drafting — use claude-social-media" ]
+capabilities = [ "bounded-factual-research", "source-backed-comparisons", "recency-scored-social-pulls", "persistent-research-vault" ]
+
+[native.profiles.preset-claude-research.guide]
+document = "shipped:native/claude/research.md"
+prerequisites = []
+
+[[native.profiles.preset-claude-research.guide.workflows]]
+id = "vault-backed-research"
+description = "Run the focused 5-step hyperresearch pipeline for a bounded factual query, survey, or comparison, saved to the persistent research vault."
+skill = "hyperresearch"
+examples = [ "/hyperresearch compare Postgres and CockroachDB for a multi-region OLTP workload", "Research whether passkeys reduce support costs for an enterprise SaaS, and save the evidence for the implementation decision" ]
+
+[[native.profiles.preset-claude-research.guide.workflows]]
+id = "last-30-days-pulse"
+description = "Pull recency-scored takes on a topic from the last ~30 days across social and community sources."
+skill = "last30days"
+examples = [ "/last30days nvidia earnings reaction", "/last30days OpenClaw vs Hermes" ]
+
+[native.profiles.preset-claude-research.guide.goal_execution]
+controller = "claude-goal"
+workflow_ids = [ "vault-backed-research", "last-30-days-pulse" ]
+
+[native.profiles.preset-claude-office.selection]
+description = "Isolated Claude Code for Word, Excel, PDF, and presentation work with Anthropic document skills and academic presentation editing."
+strengths = [ "anthropic document skills", "academic pptx editorial layer", "native common skill bundle", "isolated claude profile home" ]
+weaknesses = [ "Chart-heavy slide production that needs the optional slide-maker builder; use office-charts", "Tasks that require OS sandboxing or interactive permission approval" ]
+best_for = [ "Creating and editing Word documents, Excel workbooks, PDFs, and PowerPoint presentations", "Research talks and academic presentations that need a clear argument and evidence" ]
+avoid_for = [ "Chart-heavy slide production that needs the optional slide-maker builder; use office-charts", "Tasks that require OS sandboxing or interactive permission approval" ]
+capabilities = [ "anthropic-document-skills", "academic-pptx-editorial-layer", "native-common-skill-bundle", "isolated-claude-profile-home" ]
+
+[native.profiles.preset-claude-office.guide]
+document = "shipped:native/claude/office.md"
+
+[[native.profiles.preset-claude-office.guide.prerequisites]]
+id = "office-profile"
+description = "Run trx setup claude office to install the document plugin and managed skills."
+
+[[native.profiles.preset-claude-office.guide.prerequisites]]
+id = "proxy"
+description = "Host Claude Code, curl, jq, and the local copilot-proxy-rs endpoint must be available."
+
+[[native.profiles.preset-claude-office.guide.workflows]]
+id = "office-documents"
+description = "Create or edit Office documents using the Anthropic document skills."
+examples = [ "Turn these notes into a formatted Word report", "Build an Excel workbook from this data with formulas and charts" ]
+
+[[native.profiles.preset-claude-office.guide.workflows]]
+id = "academic-presentations"
+description = "Plan the presentation argument with academic-pptx and build it with the document plugin."
+examples = [ "Build a conference talk from this research paper", "Improve the argument and structure of this thesis defense" ]
+
+[native.profiles.preset-claude-office.guide.goal_execution]
+controller = "claude-goal"
+workflow_ids = [ "office-documents", "academic-presentations" ]
+
+[native.profiles.preset-claude-council.selection]
+description = "Native Claude Code Council with Council of High Intelligence and Caveman plugins."
+strengths = [ "multi perspective deliberation", "architecture tradeoff analysis", "dissent preservation", "compressed communication" ]
+weaknesses = [ "Factual lookups or simple research questions", "Small, reversible edits", "Pure implementation throughput where deliberation only adds latency" ]
+best_for = [ "Hard architecture or product tradeoffs where a single-shot answer is likely to miss real risks", "High-stakes design calls that benefit from structured, multi-lens deliberation with preserved dissent and kill criteria" ]
+avoid_for = [ "Factual lookups or simple research questions", "Small, reversible edits", "Pure implementation throughput where deliberation only adds latency" ]
+capabilities = [ "multi-perspective-deliberation", "architecture-tradeoff-analysis", "dissent-preservation", "compressed-communication" ]
+
+[native.profiles.preset-claude-council.guide]
+document = "shipped:native/claude/council.md"
+prerequisites = []
+
+[[native.profiles.preset-claude-council.guide.workflows]]
+id = "run-council-deliberation"
+description = "Run a structured multi-lens council deliberation on a hard decision, preserving dissenting views, kill criteria, and next steps."
+skill = "council"
+examples = [ "Should we adopt event sourcing for the billing service?", "/council pick a database migration strategy for our multi-tenant SaaS" ]
+
+[[native.profiles.preset-claude-council.guide.workflows]]
+id = "compressed-handoff-notes"
+description = "Use caveman compressed-communication mode to turn a council verdict into terse status or handoff notes."
+examples = [ "Summarize the council's verdict in compressed notes for the team channel", "Turn the recorded dissent and decision into a terse handoff for the next engineering shift" ]
+
+[native.profiles.preset-claude-council.guide.goal_execution]
+controller = "claude-goal"
+workflow_ids = [ "run-council-deliberation", "compressed-handoff-notes" ]
+
+[native.profiles.preset-claude-ecc.selection]
+description = "Native Claude Code with ECC and its minimal lifecycle and safety hooks."
+strengths = [ "broad software engineering", "workflow discovery", "implementation planning", "test driven development", "systematic debugging", "code review", "delivery verification" ]
+weaknesses = [ "Focused research, blogging, social content, frontend design, or council deliberation with a dedicated Trellage profile", "Small one-shot questions where a large workflow catalog adds unnecessary choice", "Work that explicitly requires ECC's standard or strict hook automation" ]
+best_for = [ "Broad software delivery when one profile should provide planning, implementation, debugging, review, and verification workflows", "Existing repositories that benefit from a large catalog of engineering skills and specialist agents", "Teams that want ECC's lifecycle and safety hooks without its heavier automatic formatting, type-check, or tmux behavior" ]
+avoid_for = [ "Focused research, blogging, social content, frontend design, or council deliberation with a dedicated Trellage profile", "Small one-shot questions where a large workflow catalog adds unnecessary choice", "Work that explicitly requires ECC's standard or strict hook automation" ]
+capabilities = [ "broad-software-engineering", "workflow-discovery", "implementation-planning", "test-driven-development", "systematic-debugging", "code-review", "delivery-verification" ]
+
+[native.profiles.preset-claude-ecc.guide]
+document = "shipped:native/claude/ecc.md"
+prerequisites = []
+
+[[native.profiles.preset-claude-ecc.guide.workflows]]
+id = "discover-ecc-workflow"
+description = "Inspect the installed ECC catalog and choose the smallest current skill, command, or agent set for the requested engineering task."
+skill = "ecc:ecc-guide"
+examples = [ "Find the best ECC workflow for migrating this service from REST to gRPC", "Show me which installed ECC skills fit a production incident investigation" ]
+
+[[native.profiles.preset-claude-ecc.guide.workflows]]
+id = "plan-change"
+description = "Ground a substantial code change in repository evidence and produce an approval-gated implementation plan."
+skill = "ecc:plan"
+examples = [ "Plan a safe migration from session cookies to short-lived access tokens", "Create an implementation plan for splitting the billing worker into idempotent stages" ]
+
+[[native.profiles.preset-claude-ecc.guide.workflows]]
+id = "tdd-implementation"
+description = "Implement a feature, fix, or refactor with ECC's test-driven development workflow and repository-specific validation."
+skill = "ecc:tdd-workflow"
+examples = [ "Implement the approved rate-limiter plan with tests first", "Fix this intermittent checkout failure using a test that reproduces the root cause" ]
+
+[[native.profiles.preset-claude-ecc.guide.workflows]]
+id = "review-and-verify"
+description = "Review a local change or pull request, fix confirmed defects when requested, and run the relevant completion checks before delivery."
+skill = "ecc:code-review"
+examples = [ "Review the current uncommitted authentication changes and verify the final fix", "Review pull request 42 for correctness risks, then verify the accepted changes" ]
+
+[native.profiles.preset-claude-ecc.guide.goal_execution]
+controller = "claude-goal"
+workflow_ids = [ "discover-ecc-workflow", "plan-change", "tdd-implementation", "review-and-verify" ]
+
+[native.profiles.preset-claude-frontend-design.selection]
+description = "Native Claude Code with UI UX Pro Max, Taste, and GSAP design plugins."
+strengths = [ "landing page design", "ui design system generation", "anti slop design critique", "gsap motion animation", "html to video rendering" ]
+weaknesses = [ "Backend-only work", "Short social copy (use claude-social-media instead)", "Quick one-off UI tweaks with no design constraints or polish pass needed" ]
+best_for = [ "Agency-quality landing pages and marketing UI polish with explicit constraints (audience, one CTA, ban lists, reference screenshots)", "Motion-heavy frontends needing GSAP animation work plus a taste/anti-slop critique pass", "Turning a finished HTML page or component into a HyperFrames product-launch or PR video" ]
+avoid_for = [ "Backend-only work", "Short social copy (use claude-social-media instead)", "Quick one-off UI tweaks with no design constraints or polish pass needed" ]
+capabilities = [ "landing-page-design", "ui-design-system-generation", "anti-slop-design-critique", "gsap-motion-animation", "html-to-video-rendering" ]
+
+[native.profiles.preset-claude-frontend-design.guide]
+document = "shipped:native/claude/frontend-design.md"
+prerequisites = []
+
+[[native.profiles.preset-claude-frontend-design.guide.workflows]]
+id = "design-system-pass"
+description = "Generate or critique a UI design system (styles, palettes, type pairings, stack guidance) for a stated audience and constraint set."
+examples = [ "Design a landing page for a fintech SaaS, one CTA, audience is CFOs, no stock photos", "Define the visual system for an enterprise security product page aimed at CISOs, with no blue-gradient clichés" ]
+
+[[native.profiles.preset-claude-frontend-design.guide.workflows]]
+id = "anti-slop-review"
+description = "Run a taste/anti-slop critique pass on a drafted UI to remove generic AI-design tells before it ships."
+examples = [ "Review this landing page draft for generic AI-slop patterns and suggest fixes", "Critique this pricing page against its premium brand references before the design review" ]
+
+[[native.profiles.preset-claude-frontend-design.guide.workflows]]
+id = "motion-polish"
+description = "Add or refine GSAP-driven scroll and interaction motion on an existing frontend as a separate polish pass."
+examples = [ "Add a GSAP ScrollTrigger reveal animation to this pricing section", "Refine the product-demo transitions so they support the page hierarchy without distracting motion" ]
+
+[[native.profiles.preset-claude-frontend-design.guide.workflows]]
+id = "html-to-video"
+description = "Convert a finished HTML page or component into a HyperFrames product-launch or PR video."
+examples = [ "Turn this landing page into a 30-second product launch video", "Create a short PR demo video from the finished settings component" ]
+
+[native.profiles.preset-claude-frontend-design.guide.goal_execution]
+controller = "claude-goal"
+workflow_ids = [ "design-system-pass", "anti-slop-review", "motion-polish", "html-to-video" ]
+
+[native.profiles.preset-claude-six-hats.selection]
+description = "Native Claude Code with the Six Thinking Hats decision plugin: six hat subagents and /six-hats:decide."
+strengths = [ "six hats deliberation", "parallel perspective analysis", "green hat scratch prototyping" ]
+weaknesses = [ "Factual lookups or small, reversible edits", "Tasks that should change the launching checkout during deliberation" ]
+best_for = [ "Decisions that need facts, intuition, benefits, risks, alternatives, and a final plan kept distinct", "Technical choices where a disposable prototype can test the green hat's ideas" ]
+avoid_for = [ "Factual lookups or small, reversible edits", "Tasks that should change the launching checkout during deliberation" ]
+capabilities = [ "six-hats-deliberation", "parallel-perspective-analysis", "green-hat-scratch-prototyping" ]
+
+[native.profiles.preset-claude-six-hats.guide]
+document = "shipped:native/claude/six-hats.md"
+
+[[native.profiles.preset-claude-six-hats.guide.prerequisites]]
+id = "proxy"
+description = "Host Claude Code, curl, jq, and the local copilot-proxy-rs endpoint must be available."
+
+[[native.profiles.preset-claude-six-hats.guide.workflows]]
+id = "run-six-hats-deliberation"
+description = "Run all six thinking hats and finish with the blue hat's decision plan without changing the checkout."
+skill = "six-hats:decide"
+examples = [ "Decide whether to replace this queue with a transactional outbox", "Choose an API migration strategy for these clients" ]
+
+[native.profiles.preset-claude-six-hats.guide.goal_execution]
+controller = "claude-goal"
+workflow_ids = [ "run-six-hats-deliberation" ]
+
+[native.profiles.preset-agency-azure.selection]
+description = "Agency's managed Copilot workflow for Azure engineering on the host. Inspecting Azure subscriptions, resource groups, ACR repositories, storage, and resource health while working in the Trellage repository."
+strengths = [ "agency named profile", "isolated copilot home", "microsoft learn", "read only azure inventory" ]
+weaknesses = [ "Azure deployment or write operations; the profile exposes read-only tools only", "Work outside a Trellage worktree; the first release requires repository-root agency.toml", "Tasks that need a container security boundary; agx runs directly on the host" ]
+best_for = [ "Inspecting Azure subscriptions, resource groups, ACR repositories, storage, and resource health while working in the Trellage repository", "Using Agency-managed Copilot with a deterministic repository-local MCP profile" ]
+avoid_for = [ "Azure deployment or write operations; the profile exposes read-only tools only", "Work outside a Trellage worktree; the first release requires repository-root agency.toml", "Tasks that need a container security boundary; agx runs directly on the host" ]
+capabilities = [ "agency-named-profile", "isolated-copilot-home", "microsoft-learn", "read-only-azure-inventory" ]
+
+[native.profiles.preset-agency-azure.guide]
+document = "shipped:native/agency/azure.md"
+
+[[native.profiles.preset-agency-azure.guide.prerequisites]]
+id = "agency"
+description = "Microsoft Agency installed and available on PATH."
+
+[[native.profiles.preset-agency-azure.guide.prerequisites]]
+id = "azure-auth"
+description = "Complete Azure environment credentials or an existing authenticated Azure CLI session."
+
+[[native.profiles.preset-agency-azure.guide.prerequisites]]
+id = "node-tools"
+description = "Node.js, npm, and npx available with the correct host package registry."
+
+[[native.profiles.preset-agency-azure.guide.workflows]]
+id = "inspect-azure-inventory"
+description = "Read subscription, resource-group, ACR, storage, and resource-health inventory without deployment or mutation tools."
+examples = [ "List the Azure resource groups and registries used by this repository", "Inspect storage accounts and resource health without changing anything", "Show which subscriptions contain unhealthy resources" ]
+
+[native.profiles.preset-codex-superpowers.selection]
+description = "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for TDD, root-cause fixes, reviews, and clean branches through the Codex-adapted Superpowers workflow."
+strengths = [ "superpowers tdd and debugging workflows", "subagent dispatch workflow", "codex full access", "keyless proxy model routing", "isolated codex profile home" ]
+weaknesses = [ "Tasks that need native OpenAI authentication; the profile routes through copilot-proxy-rs", "Anything needing a command approval pause; launch uses Full Access and disables user-input requests", "Sessions that need a different marketplace's skill set installed alongside superpowers; setup and launch remove forbidden Superpowers variants rather than mixing them", "Work requiring an OS-level sandbox; use the codex-superpowers Trellage Sandbox profile instead" ]
+best_for = [ "Test-driven development and systematic root-cause debugging using the superpowers skill library ported from obra/superpowers", "Branch lifecycle discipline — writing plans, executing them, and finishing a development branch cleanly", "Code-review loops that want both requesting-code-review and receiving-code-review conventions plus subagent-driven or parallel-agent dispatch" ]
+avoid_for = [ "Tasks that need native OpenAI authentication; the profile routes through copilot-proxy-rs", "Anything needing a command approval pause; launch uses Full Access and disables user-input requests", "Sessions that need a different marketplace's skill set installed alongside superpowers; setup and launch remove forbidden Superpowers variants rather than mixing them", "Work requiring an OS-level sandbox; use the codex-superpowers Trellage Sandbox profile instead" ]
+capabilities = [ "superpowers-tdd-and-debugging-workflows", "subagent-dispatch-workflow", "codex-full-access", "keyless-proxy-model-routing", "isolated-codex-profile-home" ]
+
+[native.profiles.preset-codex-superpowers.guide]
+document = "shipped:native/codex/superpowers.md"
+
+[[native.profiles.preset-codex-superpowers.guide.prerequisites]]
+id = "codex-cli"
+description = "Codex CLI 0.146.0 or later installed on the host."
+
+[[native.profiles.preset-codex-superpowers.guide.prerequisites]]
+id = "fish-shell-config"
+description = "An existing readable, writable, regular, non-symlink ~/.config/fish/config.fish (installer requires Fish)."
+
+[[native.profiles.preset-codex-superpowers.guide.prerequisites]]
+id = "proxy-health"
+description = "copilot-proxy-rs listening on http://127.0.0.1:8080 for the default keyless model routing."
+
+[[native.profiles.preset-codex-superpowers.guide.workflows]]
+id = "test-driven-development"
+description = "Drive an implementation from a failing test using the test-driven-development and systematic-debugging skills."
+skill = "test-driven-development"
+examples = [ "Fix this bug by first writing a failing test that reproduces it", "Add this feature test-first and keep the test suite green throughout" ]
+
+[[native.profiles.preset-codex-superpowers.guide.workflows]]
+id = "plan-then-execute-branch"
+description = "Write a plan, execute it, and finish the development branch cleanly using writing-plans, executing-plans, and finishing-a-development-branch."
+skill = "writing-plans"
+examples = [ "Plan, implement, and verify this feature before preparing the branch for review", "Complete this approved implementation plan and finish the branch cleanly" ]
+
+[[native.profiles.preset-codex-superpowers.guide.workflows]]
+id = "parallel-review-and-dispatch"
+description = "Dispatch independent slices of work to parallel subagents and run a code-review exchange using dispatching-parallel-agents, subagent-driven-development, requesting-code-review, and receiving-code-review."
+skill = "dispatching-parallel-agents"
+examples = [ "Split this refactor into independent pieces and dispatch them in parallel", "Review the API, UI, and migration changes independently before integrating the feature" ]
+
+[native.profiles.preset-codex-superpowers.guide.goal_execution]
+controller = "codex-goal"
+workflow_ids = [ "test-driven-development", "plan-then-execute-branch", "parallel-review-and-dispatch" ]
+
+[native.profiles.preset-codex-pstack.selection]
+description = "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for structured, verified multi-step engineering through the explicit Aqua-123 pstack $pstack-for-codex:poteto-mode workflow."
+strengths = [ "pstack poteto mode orchestration", "explicit skill invocation workflows", "codex full access", "keyless proxy model routing", "isolated codex profile home" ]
+weaknesses = [ "Casual prompts that do not name a skill; all 45 pstack-for-codex skills require explicit $name invocation and are not auto-triggered", "Tasks needing native OpenAI authentication; the profile routes through copilot-proxy-rs", "Multi-writer parallel edits on one shared checkout without isolation; pstack falls back to serial execution when safe isolation is unavailable", "Work requiring an OS-level sandbox; use a Trellage Sandbox profile instead" ]
+best_for = [ "Substantial engineering tasks that benefit from Poteto Mode's playbook selection, verification checkpoints, controlled delegation, and an optional decision trail for long or multi-phase work ($poteto-mode activation marker plus $pstack-for-codex:poteto-mode skill)", "Targeted single-operation work such as tracing a subsystem ($pstack-for-codex:how), reconstructing why code looks the way it does ($pstack-for-codex:why), or a skeptical multi-lens diff review ($pstack-for-codex:interrogate)", "Reproduce-first bug fixing with $pstack-for-codex:tdd, or removing low-value comments/prose with $pstack-for-codex:no-comments and $pstack-for-codex:unslop" ]
+avoid_for = [ "Casual prompts that do not name a skill; all 45 pstack-for-codex skills require explicit $name invocation and are not auto-triggered", "Tasks needing native OpenAI authentication; the profile routes through copilot-proxy-rs", "Multi-writer parallel edits on one shared checkout without isolation; pstack falls back to serial execution when safe isolation is unavailable", "Work requiring an OS-level sandbox; use a Trellage Sandbox profile instead" ]
+capabilities = [ "pstack-poteto-mode-orchestration", "explicit-skill-invocation-workflows", "codex-full-access", "keyless-proxy-model-routing", "isolated-codex-profile-home" ]
+
+[native.profiles.preset-codex-pstack.guide]
+document = "shipped:native/codex/pstack.md"
+
+[[native.profiles.preset-codex-pstack.guide.prerequisites]]
+id = "codex-cli"
+description = "Codex CLI 0.146.0 or later installed on the host."
+
+[[native.profiles.preset-codex-pstack.guide.prerequisites]]
+id = "fish-shell-config"
+description = "An existing readable, writable, regular, non-symlink ~/.config/fish/config.fish (installer requires Fish)."
+
+[[native.profiles.preset-codex-pstack.guide.prerequisites]]
+id = "proxy-health"
+description = "copilot-proxy-rs listening on http://127.0.0.1:8080 for the default keyless model routing."
+
+[[native.profiles.preset-codex-pstack.guide.prerequisites]]
+id = "hook-trust"
+description = "Interactive TTY sessions may be prompted once to trust pstack-for-codex hooks that keep Poteto Mode active across turns; non-TTY/CI launches bypass this automatically."
+
+[[native.profiles.preset-codex-pstack.guide.workflows]]
+id = "poteto-mode-entry-point"
+description = "Route a substantial engineering task through Poteto Mode, which selects the applicable playbook and principles, plans the work, delegates isolated tasks when useful, and verifies the real result without expanding the agent's authority."
+skill = "pstack-for-codex:poteto-mode"
+examples = [ "Add a --json flag to this command; keep text output byte-identical and verify both modes", "This retry path creates duplicate rows; reproduce it first, fix the root cause, and verify the real behavior", "Investigate intermittent test failures" ]
+
+[[native.profiles.preset-codex-pstack.guide.workflows]]
+id = "targeted-single-skill"
+description = "Use the architect skill directly to define module boundaries and types before implementation, without the full Poteto Mode flow."
+skill = "pstack-for-codex:architect"
+examples = [ "Settle the types and module boundaries for this feature before I start implementing", "Define the module boundaries and public interfaces for this new retry subsystem" ]
+
+[[native.profiles.preset-codex-pstack.guide.workflows]]
+id = "review-and-polish"
+description = "Run a skeptical multi-lens review of a diff, then strip low-value comments and machine-shaped prose."
+skill = "pstack-for-codex:interrogate"
+examples = [ "Review this diff skeptically before I open the PR", "Find correctness risks in this change, then remove unnecessary comments and mechanical prose" ]
+
+[native.profiles.preset-codex-pstack.guide.goal_execution]
+controller = "codex-goal"
+workflow_ids = [ "poteto-mode-entry-point", "targeted-single-skill", "review-and-polish" ]
+
+[native.profiles.preset-codex-youtube.selection]
+description = "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for transcript-backed YouTube search, summaries, channel browsing, and playlist research through TranscriptAPI."
+strengths = [ "youtube transcript analysis", "youtube topic research", "youtube channel and playlist review", "codex full access", "keyless proxy model routing", "isolated codex profile home" ]
+weaknesses = [ "Visual analysis of frames, editing, camera work, graphics, or other content that is not present in transcripts and metadata", "Work that must not use paid TranscriptAPI credits or cannot provide an existing TRANSCRIPT_API_KEY at launch", "General tasks that do not need YouTube access; youtube-full has broad proactive triggers, so keep this profile opt-in", "Work requiring an OS-level sandbox; use a Trellage Sandbox profile instead" ]
+best_for = [ "Analyzing one or more YouTube transcripts for claims, themes, evidence, summaries, or reusable notes", "Researching a topic through YouTube search results and transcript content instead of relying only on titles and descriptions", "Reviewing a channel or playlist across multiple videos to compare themes, coverage, repetition, and changes over time" ]
+avoid_for = [ "Visual analysis of frames, editing, camera work, graphics, or other content that is not present in transcripts and metadata", "Work that must not use paid TranscriptAPI credits or cannot provide an existing TRANSCRIPT_API_KEY at launch", "General tasks that do not need YouTube access; youtube-full has broad proactive triggers, so keep this profile opt-in", "Work requiring an OS-level sandbox; use a Trellage Sandbox profile instead" ]
+capabilities = [ "youtube-transcript-analysis", "youtube-topic-research", "youtube-channel-and-playlist-review", "codex-full-access", "keyless-proxy-model-routing", "isolated-codex-profile-home" ]
+
+[native.profiles.preset-codex-youtube.guide]
+document = "shipped:native/codex/youtube.md"
+
+[[native.profiles.preset-codex-youtube.guide.prerequisites]]
+id = "codex-cli"
+description = "Codex CLI 0.146.0 or later installed on the host."
+
+[[native.profiles.preset-codex-youtube.guide.prerequisites]]
+id = "node-runtime"
+description = "Node.js 22 or later for the bundled Varlock and floating-skill runtimes."
+
+[[native.profiles.preset-codex-youtube.guide.prerequisites]]
+id = "fish-shell-config"
+description = "An existing readable, writable, regular, non-symlink ~/.config/fish/config.fish (installer requires Fish)."
+
+[[native.profiles.preset-codex-youtube.guide.prerequisites]]
+id = "proxy-health"
+description = "copilot-proxy-rs listening on http://127.0.0.1:8080 for the default keyless model routing."
+
+[[native.profiles.preset-codex-youtube.guide.prerequisites]]
+id = "transcript-api-key"
+description = "An existing nonempty TRANSCRIPT_API_KEY in the user Varlock source or launch environment. TranscriptAPI requests can consume paid credits."
+
+[[native.profiles.preset-codex-youtube.guide.workflows]]
+id = "transcript-analysis"
+description = "Retrieve and analyze transcripts for specific YouTube videos, with explicit separation between source content and conclusions."
+skill = "youtube-full"
+examples = [ "Summarize the main claims in these YouTube videos and compare the evidence each speaker gives", "Extract every implementation recommendation from this YouTube tutorial and organize them by topic" ]
+
+[[native.profiles.preset-codex-youtube.guide.workflows]]
+id = "youtube-topic-research"
+description = "Search YouTube for a topic, select relevant results, and synthesize findings from transcript evidence."
+skill = "youtube-full"
+examples = [ "Research how experienced maintainers use coding agents and cite the relevant YouTube transcript evidence", "Find recent YouTube discussions of local AI inference and compare the technical recommendations" ]
+
+[[native.profiles.preset-codex-youtube.guide.workflows]]
+id = "channel-playlist-review"
+description = "Review videos from one channel or playlist to identify recurring themes, coverage gaps, and changes over time."
+skill = "youtube-full"
+examples = [ "Review this YouTube channel's videos about Rust and identify recurring advice and missing topics", "Compare the videos in this playlist and show how its recommendations changed over time" ]
+
+[native.profiles.preset-codex-youtube.guide.goal_execution]
+controller = "codex-goal"
+workflow_ids = [ "transcript-analysis", "youtube-topic-research", "channel-playlist-review" ]
+
+[native.profiles.preset-headlong-default.selection]
+description = "Persistent Headlong agent with durable identity, memory, and background thinking. Long investigations that should keep making progress between your terminal sessions."
+strengths = [ "persistent agent world", "autonomous exploration", "durable identity and memory", "background thinkers", "shell based agency", "append only trajectory", "loopback web dashboard" ]
+weaknesses = [ "Short tasks that should end with the terminal session", "Work that needs a sandbox or must not use persistent model calls" ]
+best_for = [ "Long investigations that should keep making progress between your terminal sessions", "Implementation and reliability work that benefits from persistent background progress", "Work that benefits from durable identity, memory, evidence, and dashboard visibility" ]
+avoid_for = [ "Short tasks that should end with the terminal session", "Work that needs a sandbox or must not use persistent model calls" ]
+capabilities = [ "persistent-agent-world", "autonomous-exploration", "durable-identity-and-memory", "background-thinkers", "shell-based-agency", "append-only-trajectory", "loopback-web-dashboard" ]
+
+[native.profiles.preset-headlong-default.guide]
+document = "shipped:native/headlong/default.md"
+
+[[native.profiles.preset-headlong-default.guide.prerequisites]]
+id = "install-headlong"
+description = "Install Headlong on the host and ensure ada and headlong-init are available on PATH."
+
+[[native.profiles.preset-headlong-default.guide.prerequisites]]
+id = "local-proxy"
+description = "Run copilot-proxy-rs on the host at 127.0.0.1:8080."
+
+[[native.profiles.preset-headlong-default.guide.prerequisites]]
+id = "explicit-shutdown"
+description = "Use ada stop when the background mind should stop making model calls."
+
+[[native.profiles.preset-headlong-default.guide.workflows]]
+id = "persistent-investigation"
+description = "Investigate a difficult problem with durable evidence and continued work between interactions."
+examples = [ "Investigate intermittent test failures and keep testing likely causes after I leave the terminal", "Diagnose a recurring production outage and track evidence across several days" ]
+
+[[native.profiles.preset-headlong-default.guide.workflows]]
+id = "continue-agent-world"
+description = "Continue an existing Headlong identity without losing its memories or trajectory."
+examples = [ "Continue the architecture investigation and test the next unresolved lead", "Resume the deployment reliability investigation and add new evidence to its trajectory" ]
+
+[native.profiles.preset-omp-default.selection]
+description = "Oh My Pi with managed profiles and an explicit local-model workflow option. Work that should use OMP's native GitHub Copilot authentication and full discovered model catalog instead of the local proxy."
+strengths = [ "native copilot auth model catalog", "lsp debugger browser eval tools", "typed subagent fan out", "community skill led orchestration", "native common skill bundle", "host token auth forwarding" ]
+weaknesses = [ "Hosts without a host-installed OMP executable or usable GitHub Copilot credential", "Fully offline or airgapped model routing; use trx run omp local for the keyless proxy-backed profile instead", "Non-interactive launches that must fail on any user prompt unless host OMP is exactly 18.8.5; only that version has the verified prompt/text contract" ]
+best_for = [ "Work that should use OMP's native GitHub Copilot authentication and full discovered model catalog instead of the local proxy", "Sessions that lean on OMP's built-in LSP, debugger, browser, and eval tools alongside typed subagent fan-out", "Applying the shared poteto-mode, pstack-omp, and orchestrate-omp community skills with the 31 harness-neutral workflow, principle, automation, and support skills" ]
+avoid_for = [ "Hosts without a host-installed OMP executable or usable GitHub Copilot credential", "Fully offline or airgapped model routing; use trx run omp local for the keyless proxy-backed profile instead", "Non-interactive launches that must fail on any user prompt unless host OMP is exactly 18.8.5; only that version has the verified prompt/text contract" ]
+capabilities = [ "native-copilot-auth-model-catalog", "lsp-debugger-browser-eval-tools", "typed-subagent-fan-out", "community-skill-led-orchestration", "native-common-skill-bundle", "host-token-auth-forwarding" ]
+
+[native.profiles.preset-omp-default.guide]
+document = "shipped:native/omp/default.md"
+
+[[native.profiles.preset-omp-default.guide.prerequisites]]
+id = "host-omp"
+description = "A valid host-installed OMP executable; Bun, Homebrew, and mise are supported owners for automatic update and latest-version checks, while manually maintained executables remain usable for setup, launch, repair, doctor, and inventory."
+
+[[native.profiles.preset-omp-default.guide.prerequisites]]
+id = "copilot-credential"
+description = "A usable GitHub Copilot credential in COPILOT_GITHUB_TOKEN, GH_TOKEN, GITHUB_TOKEN, gh auth token, or (macOS) the copilot-cli Keychain entry, or profile-scoped auth via trx run omp default auth-broker login github-copilot."
+
+[[native.profiles.preset-omp-default.guide.prerequisites]]
+id = "omp-317-community-skills"
+description = "OMP 17.3.5 or newer for the bundled community skill directory to be discovered; older host versions remain usable without it."
+
+[[native.profiles.preset-omp-default.guide.prerequisites]]
+id = "cli-tools"
+description = "curl and jq available on the host for setup, doctor, and owner update checks."
+
+[[native.profiles.preset-omp-default.guide.workflows]]
+id = "native-copilot-tool-assisted-engineering"
+description = "Deliver a complex engineering outcome with OMP's native Copilot provider, tool surface, and typed subagents."
+examples = [ "Trace this production failure with the debugger, implement the fix, and verify the regression test", "Use typed subagents to complete this refactor and review the integrated result" ]
+
+[[native.profiles.preset-omp-default.guide.workflows]]
+id = "poteto-mode-orchestration"
+description = "Use the shared poteto-mode community skill to structure multi-step orchestration work."
+skill = "skill://poteto-mode"
+examples = [ "Use poteto-mode to break this migration into coordinated phases", "Use poteto-mode to plan, implement, and verify this cross-service change" ]
+
+[[native.profiles.preset-omp-default.guide.workflows]]
+id = "pstack-orchestrate-omp"
+description = "Combine the pstack-omp and orchestrate-omp community skills for workflow automation on OMP's typed subagent fan-out."
+skill = "skill://pstack-omp"
+examples = [ "Use the pstack workflow skills to drive this feature through design, implementation, and review", "Coordinate specialized subagents to debug this regression and verify the final patch" ]
+
+[native.profiles.preset-omp-local.selection]
+description = "OMP for keyless local-model engineering: one Qwen route serves every model role while retaining OMP tools and typed subagents."
+strengths = [ "keyless local proxy model routing", "lsp debugger browser eval tools", "typed subagent fan out", "community skill led orchestration", "native common skill bundle" ]
+weaknesses = [ "Hosts without copilot-proxy-rs listening on http://127.0.0.1:8080 with the local Qwen route registered", "Work that needs OMP's native GitHub Copilot model catalog or authenticated Copilot models; use trx run omp default instead", "Non-interactive launches that must fail on any user prompt; this profile remains conservative because it has no live headless smoke contract" ]
+best_for = [ "Fully keyless local model routing where every model role is assigned to the single qwen3.6-35b-a3b-local route", "Sessions that retain OMP's full host tool and subagent surface without a Copilot or GitHub credential", "Applying the shared poteto-mode, pstack-omp, and orchestrate-omp community skills with the 31 harness-neutral workflow, principle, automation, and support skills" ]
+avoid_for = [ "Hosts without copilot-proxy-rs listening on http://127.0.0.1:8080 with the local Qwen route registered", "Work that needs OMP's native GitHub Copilot model catalog or authenticated Copilot models; use trx run omp default instead", "Non-interactive launches that must fail on any user prompt; this profile remains conservative because it has no live headless smoke contract" ]
+capabilities = [ "keyless-local-proxy-model-routing", "lsp-debugger-browser-eval-tools", "typed-subagent-fan-out", "community-skill-led-orchestration", "native-common-skill-bundle" ]
+
+[native.profiles.preset-omp-local.guide]
+document = "shipped:native/omp/local.md"
+
+[[native.profiles.preset-omp-local.guide.prerequisites]]
+id = "host-omp"
+description = "A valid host-installed OMP executable; Bun, Homebrew, and mise are supported owners for automatic update and latest-version checks, while manually maintained executables remain usable for setup, launch, repair, doctor, and inventory."
+
+[[native.profiles.preset-omp-local.guide.prerequisites]]
+id = "proxy-health"
+description = "copilot-proxy-rs listening on http://127.0.0.1:8080 with the qwen3.6-35b-a3b-local route registered for every model role."
+
+[[native.profiles.preset-omp-local.guide.prerequisites]]
+id = "omp-317-community-skills"
+description = "OMP 17.3.5 or newer for the bundled community skill directory to be discovered; older host versions remain usable without it."
+
+[[native.profiles.preset-omp-local.guide.prerequisites]]
+id = "cli-tools"
+description = "curl and jq available on the host for setup, doctor, and owner update checks."
+
+[[native.profiles.preset-omp-local.guide.workflows]]
+id = "keyless-local-engineering"
+description = "Deliver an engineering outcome with OMP's full tool and typed-subagent surface on the one local model route."
+examples = [ "Analyze this failing integration test, implement the smallest fix, and verify it", "Use typed subagents to refactor this module and review the integrated result" ]
+
+[[native.profiles.preset-omp-local.guide.workflows]]
+id = "poteto-mode-orchestration"
+description = "Use the shared poteto-mode community skill to structure multi-step orchestration work on the local model route."
+skill = "skill://poteto-mode"
+examples = [ "Use poteto-mode to break this task into coordinated phases", "Use poteto-mode to plan, implement, and verify this local-model change" ]
+
+[[native.profiles.preset-omp-local.guide.workflows]]
+id = "pstack-orchestrate-omp"
+description = "Combine the pstack-omp and orchestrate-omp community skills for workflow automation on OMP's typed subagent fan-out."
+skill = "skill://pstack-omp"
+examples = [ "Use the pstack workflow skills to drive this feature through design, implementation, and review", "Coordinate specialized subagents to investigate this defect and verify the final patch" ]
+
+[native.profiles.preset-pi-default.selection]
+description = "Pi with explicit skill loading, builtin codemode tools, and managed plan and goal extensions in profile-scoped state."
+strengths = ["Explicit selection of skills and extensions","Builtin codemode tooling","Plan mode and goal tracking"]
+weaknesses = ["Runs requiring an OS-level sandbox; isolated profile state is not a security boundary","Work that assumes pi-subagents, pi-dynamic-workflows, Plannotator, or additional MCP integrations are installed by this profile","Clean-room sessions without repository context; choose the clean profile instead"]
+best_for = ["Everyday coding with explicitly selected skills and codemode tools", "Multi-step engineering with plan mode and goal tracking"]
+avoid_for = ["Runs requiring an OS-level sandbox; isolated profile state is not a security boundary","Work that assumes pi-subagents, pi-dynamic-workflows, Plannotator, or additional MCP integrations are installed by this profile","Clean-room sessions without repository context; choose the clean profile instead"]
+capabilities = ["daily-coding", "codemode-tools", "plan-mode", "goal-tracking", "profile-scoped-state"]
+
+[native.profiles.preset-pi-default.guide]
+document = "shipped:native/pi/default.md"
+
+[[native.profiles.preset-pi-default.guide.prerequisites]]
+id = "mise"
+description = "mise installed on the host; setup resolves and pins the eligible Pi coding agent release."
+
+[[native.profiles.preset-pi-default.guide.prerequisites]]
+id = "proxy-health"
+description = "copilot-proxy-rs configured locally; service reachability and model availability are not verified by listing."
+
+[[native.profiles.preset-pi-default.guide.prerequisites]]
+id = "cli-tools"
+description = "curl and jq available on the host for setup, doctor, and update checks."
+
+[[native.profiles.preset-pi-default.guide.workflows]]
+id = "daily-coding-with-extension-support"
+description = "Complete a daily coding task with Pi's fixed extension set providing context, fast file work, and workflow support."
+examples = [ "Investigate this bug, update the smallest correct code path, and verify the result", "Use the available context and file tools to implement this focused repository change" ]
+
+[[native.profiles.preset-pi-default.guide.workflows]]
+id = "goal-and-plan-tracking"
+description = "Use the managed pi-plan-mode and pi-goal extensions to track a multi-step objective and its plan."
+examples = [ "Set a goal for this refactor and annotate the plan as each step completes", "Track this migration goal, keep the plan current, and verify each completed stage" ]
+
+[[native.profiles.preset-pi-default.guide.workflows]]
+id = "subagent-and-workflow-fanout"
+description = "Coordinate subagents only when suitable additional tools are installed; report missing tools instead of assuming this profile supplies them."
+examples = [ "Split this migration into subagent tasks driven by a dynamic workflow", "Coordinate subagents on this cross-cutting refactor and integrate the verified result" ]
+
+[native.profiles.preset-prime-default.selection]
+description = "Prime Agent for persistent exploratory analysis and multi-turn work through daemon-backed IPython/RLM subagents and managed clarification."
+strengths = [ "persistent ipython rlm subagents", "daemon session persistence", "managed ask user extension", "keyless proxy model routing", "isolated prime profile home" ]
+weaknesses = [ "Hosts without network access to a PyPI simple index for kernel bootstrap; files.pythonhosted.org unreachable falls back to a mirror, but full offline bootstrap is not supported", "One-shot automation that assumes background workers exit with the process; long sessions can leave resident workers on the profile daemon socket until trx shutdown prime runs", "Tasks that need OS-level sandboxing or containment; prx adds no containment and Prime Agent runs with all host access available to the process" ]
+best_for = [ "Long-running or exploratory tasks that benefit from Prime's persistent IPython/RLM subagents and a resident daemon session", "Work where the agent needs to ask clarifying questions through the managed ask_user extension instead of guessing", "Tasks that should route through proxy-backed claude-opus-5.5 without any host Anthropic/OpenAI/Copilot credentials present" ]
+avoid_for = [ "Hosts without network access to a PyPI simple index for kernel bootstrap; files.pythonhosted.org unreachable falls back to a mirror, but full offline bootstrap is not supported", "One-shot automation that assumes background workers exit with the process; long sessions can leave resident workers on the profile daemon socket until trx shutdown prime runs", "Tasks that need OS-level sandboxing or containment; prx adds no containment and Prime Agent runs with all host access available to the process" ]
+capabilities = [ "persistent-ipython-rlm-subagents", "daemon-session-persistence", "managed-ask-user-extension", "keyless-proxy-model-routing", "isolated-prime-profile-home" ]
+
+[native.profiles.preset-prime-default.guide]
+document = "shipped:native/prime/default.md"
+
+[[native.profiles.preset-prime-default.guide.prerequisites]]
+id = "mise"
+description = "mise installed on the host; setup resolves and pins the eligible Prime Agent release, and bootstraps uv if missing (mise use -g uv)."
+
+[[native.profiles.preset-prime-default.guide.prerequisites]]
+id = "node-npm"
+description = "Node.js 22+ and npm on the host for the managed npm-prefixed Prime Agent install."
+
+[[native.profiles.preset-prime-default.guide.prerequisites]]
+id = "uv"
+description = "uv available to bootstrap the isolated Prime IPython kernel venv."
+
+[[native.profiles.preset-prime-default.guide.prerequisites]]
+id = "proxy-health"
+description = "copilot-proxy-rs listening on http://127.0.0.1:8080 (Anthropic Messages API) and advertising claude-opus-5.5."
+
+[[native.profiles.preset-prime-default.guide.prerequisites]]
+id = "cli-tools"
+description = "curl and jq available on the host for setup, doctor, and update checks."
+
+[[native.profiles.preset-prime-default.guide.workflows]]
+id = "persistent-exploratory-investigation"
+description = "Investigate a complex code or data question across turns with persistent daemon-backed IPython/RLM subagents."
+examples = [ "Explore this dataset across several turns, test the hypotheses, and report the evidence", "Investigate this intermittent failure with a persistent kernel and carry the findings into the fix" ]
+
+[[native.profiles.preset-prime-default.guide.workflows]]
+id = "ask-user-clarification"
+description = "Rely on the managed ask_user extension so the agent pauses to ask a clarifying question instead of guessing on ambiguous instructions."
+examples = [ "This task is ambiguous; ask me before choosing an approach", "Before changing the API contract, ask which backward-compatibility option I want" ]
+
+[[native.profiles.preset-prime-default.guide.workflows]]
+id = "ipython-rlm-analysis"
+description = "Use Prime's persistent IPython/RLM subagents for exploratory data or code analysis that benefits from a resident kernel across turns."
+examples = [ "Load this dataset into the kernel and iteratively explore it across several turns", "Use the persistent kernel to compare these implementation options with measurements across turns" ]
+
+[native.profiles.base.selection]
+description = "Always-on shared skill selection applied before named profiles."
+best_for = [ "Shared supporting skills" ]
+
+[native.profiles.superpowers.selection]
+description = "Superpowers skills for test-driven implementation, root-cause debugging, review, and branch completion."
+best_for = [ "Test-driven feature work", "Root-cause bug fixes" ]
+
+[native.profiles.office.selection]
+description = "Document and spreadsheet skills selected from the Office skill bundle."
+best_for = [ "Create and revise office documents" ]
+
+[native.profiles.office-charts.selection]
+description = "Office document and chart skills for communicating data."
+best_for = [ "Build charts and data-backed office deliverables" ]
+
+[native.profiles.compound-engineering.selection]
+description = "Compound engineering skills for planning, implementation, review, and reusable learning."
+best_for = [ "Iterative engineering with explicit planning and review" ]
+
+[native.profiles.hve.selection]
+description = "HVE skills for structured engineering and investigation workflows."
+best_for = [ "Engineering tasks using HVE's skill guidance" ]
+
+[native.profiles.plannotator.selection]
+description = "Plannotator skills for working with annotated implementation plans."
+best_for = [ "Review and annotate implementation plans" ]
+
+[native.profiles.awesome.selection]
+description = "Awesome Copilot's selected skills for repository engineering."
+best_for = [ "Coding tasks supported by curated Copilot skills" ]
+
+[native.profiles.pstack.selection]
+description = "Pstack skills for structured multi-step engineering."
+best_for = [ "Planned engineering with explicit verification" ]
+
+[native.profiles.youtube.selection]
+description = "YouTube skills for transcript-backed video research."
+best_for = [ "Research and summarize videos using transcripts" ]
+
+[native.profiles.ponytail.selection]
+description = "Ponytail skills for Pi-oriented development workflows."
+best_for = [ "Development using the selected Ponytail skill guidance" ]
+
+[native.profiles.tufte-vdqi.selection]
+description = "Tufte visual-display guidance for presenting quantitative information."
+best_for = [ "Improve quantitative charts and data displays" ]
+
+[native.profiles.preset-uji-default.selection]
+description = "Uji with selected skills, managed Lua tools, and profile-scoped session storage."
+best_for = [ "Coding tasks using Uji's Lua tools and selected skill bundle" ]
+
+[native.profiles.preset-claude-clean]
+harnesses = [ "claude" ]
+
+[native.profiles.preset-claude-clean.selection]
+description = "claude without skills, instructions, hooks, MCP servers, or plugins from Trellage, the repository, or the host."
+best_for = [ "Clean-room sessions without configured integrations" ]
+strengths = [ "No profile setup or integration loading" ]
+weaknesses = [ "No configured skills, plugins, or MCP tools" ]
+avoid_for = [ "Tasks requiring configured integrations" ]
+
+[native.profiles.preset-codex-clean]
+harnesses = [ "codex" ]
+
+[native.profiles.preset-codex-clean.selection]
+description = "codex without skills, instructions, hooks, MCP servers, or plugins from Trellage, the repository, or the host."
+best_for = [ "Clean-room sessions without configured integrations" ]
+strengths = [ "No profile setup or integration loading" ]
+weaknesses = [ "No configured skills, plugins, or MCP tools" ]
+avoid_for = [ "Tasks requiring configured integrations" ]
+
+[native.profiles.preset-copilot-clean]
+harnesses = [ "copilot" ]
+
+[native.profiles.preset-copilot-clean.selection]
+description = "copilot without skills, instructions, hooks, MCP servers, or plugins from Trellage, the repository, or the host."
+best_for = [ "Clean-room sessions without configured integrations" ]
+strengths = [ "No profile setup or integration loading" ]
+weaknesses = [ "No configured skills, plugins, or MCP tools" ]
+avoid_for = [ "Tasks requiring configured integrations" ]
+
+[native.profiles.preset-pi-clean]
+harnesses = [ "pi" ]
+
+[native.profiles.preset-pi-clean.selection]
+description = "pi without skills, instructions, hooks, MCP servers, or plugins from Trellage, the repository, or the host."
+best_for = [ "Clean-room sessions without configured integrations" ]
+strengths = [ "No profile setup or integration loading" ]
+weaknesses = [ "No configured skills, plugins, or MCP tools" ]
+avoid_for = [ "Tasks requiring configured integrations" ]

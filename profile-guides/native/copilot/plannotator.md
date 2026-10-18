@@ -1,52 +1,15 @@
 ---
-schemaVersion: 1
-capabilities:
-  - visual-html-artifact-creation
-  - rundown-briefing-output-style
-  - autopilot-no-ask-user-launch
-  - native-common-skill-bundle
-  - isolated-copilot-home
-bestFor:
-  - Creating self-contained HTML artifacts with a deliberate visual direction
-  - Producing focused HTML wireframes, interactive prototypes, implementation plans, and diagrams
-  - Turning technical or product information into pragmatic visual documents that work in a browser
-avoidFor:
-  - General implementation, debugging, or review work that does not need a visual HTML artifact
-  - Native application or production frontend work where a self-contained HTML file is not the deliverable
-  - Sessions that need an approval pause; every launch passes --autopilot --allow-all --no-ask-user
-prerequisites:
-  - id: copilot-cli
-    description: GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host.
-  - id: cli-tools
-    description: jq and curl available on the host for setup, doctor, and update checks.
-workflows:
-  - id: visual-artifact
-    description: Create a polished, self-contained HTML artifact using the broad HTML router and its design guidance.
-    skill: html
-    examples:
-      - Turn this architecture summary into a self-contained visual HTML report
-      - Create a polished HTML explainer from these implementation notes
-    promptTemplate: |
-      Use the html skill to create a self-contained visual artifact for
-      {{intent}}.
-  - id: wireframe-or-prototype
-    description: Choose low-fidelity structure with html-wireframe or polished interaction with html-prototype.
-    skill: html-prototype
-    examples:
-      - Create a responsive wireframe for this workflow
-      - Build an interactive HTML prototype for this feature
-    promptTemplate: |
-      Use html-wireframe for a low-fidelity structure or html-prototype for a
-      polished interactive result that addresses {{intent}}.
-  - id: plan-or-diagram
-    description: Present implementation work with html-plan or explain relationships and sequence with html-diagram.
-    skill: html-plan
-    examples:
-      - Turn this migration plan into a clear visual HTML document
-      - Diagram the service interactions and request sequence
-    promptTemplate: |
-      Use html-plan for execution structure or html-diagram for relationships
-      and sequence while presenting {{intent}}.
+schemaVersion: 2
+templates:
+  visual-artifact: |-
+    Use the html skill to create a self-contained visual artifact for
+    {{intent}}.
+  wireframe-or-prototype: |-
+    Use html-wireframe for a low-fidelity structure or html-prototype for a
+    polished interactive result that addresses {{intent}}.
+  plan-or-diagram: |-
+    Use html-plan for execution structure or html-diagram for relationships
+    and sequence while presenting {{intent}}.
 ---
 
 # Native Copilot CLI (`copilot`) — `plannotator` profile

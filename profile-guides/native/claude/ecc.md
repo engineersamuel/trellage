@@ -1,80 +1,37 @@
 ---
-schemaVersion: 1
-goalExecution:
-  controller: claude-goal
-  workflowIds:
-    - discover-ecc-workflow
-    - plan-change
-    - tdd-implementation
-    - review-and-verify
-capabilities:
-- broad-software-engineering
-- workflow-discovery
-- implementation-planning
-- test-driven-development
-- systematic-debugging
-- code-review
-- delivery-verification
-bestFor:
-- Broad software delivery when one profile should provide planning, implementation, debugging, review,
-  and verification workflows
-- Existing repositories that benefit from a large catalog of engineering skills and specialist agents
-- Teams that want ECC's lifecycle and safety hooks without its heavier automatic formatting, type-check,
-  or tmux behavior
-avoidFor:
-- Focused research, blogging, social content, frontend design, or council deliberation with a dedicated
-  Trellage profile
-- Small one-shot questions where a large workflow catalog adds unnecessary choice
-- Work that explicitly requires ECC's standard or strict hook automation
-prerequisites: []
-workflows:
-- id: discover-ecc-workflow
-  description: Inspect the installed ECC catalog and choose the smallest current skill, command, or agent
-    set for the requested engineering task.
-  skill: ecc:ecc-guide
-  examples:
-  - Find the best ECC workflow for migrating this service from REST to gRPC
-  - Show me which installed ECC skills fit a production incident investigation
-  promptTemplate: |
+schemaVersion: 2
+templates:
+  discover-ecc-workflow: >-
     /ecc:ecc-guide {{intent}}
 
-    Read the installed ECC catalog before recommending a workflow. Select the smallest relevant set
+
+    Read the installed ECC catalog before recommending a workflow. Select the
+    smallest relevant set
+
     of current skills, commands, or agents and explain the next action.
-- id: plan-change
-  description: Ground a substantial code change in repository evidence and produce an approval-gated
-    implementation plan.
-  skill: ecc:plan
-  examples:
-  - Plan a safe migration from session cookies to short-lived access tokens
-  - Create an implementation plan for splitting the billing worker into idempotent stages
-  promptTemplate: |
+  plan-change: >-
     /ecc:plan {{intent}}
 
-    Ground the plan in this repository's existing patterns, tests, and error handling. Do not edit code
+
+    Ground the plan in this repository's existing patterns, tests, and error
+    handling. Do not edit code
+
     until I approve the plan.
-- id: tdd-implementation
-  description: Implement a feature, fix, or refactor with ECC's test-driven development workflow and
-    repository-specific validation.
-  skill: ecc:tdd-workflow
-  examples:
-  - Implement the approved rate-limiter plan with tests first
-  - Fix this intermittent checkout failure using a test that reproduces the root cause
-  promptTemplate: |
+  tdd-implementation: >-
     /ecc:tdd-workflow {{intent}}
 
-    Use the repository's existing test tools, preserve unrelated changes, and provide evidence for the
+
+    Use the repository's existing test tools, preserve unrelated changes, and
+    provide evidence for the
+
     failing test, the fix, and final validation.
-- id: review-and-verify
-  description: Review a local change or pull request, fix confirmed defects when requested, and run the
-    relevant completion checks before delivery.
-  skill: ecc:code-review
-  examples:
-  - Review the current uncommitted authentication changes and verify the final fix
-  - Review pull request 42 for correctness risks, then verify the accepted changes
-  promptTemplate: |
+  review-and-verify: >-
     /ecc:code-review {{intent}}
 
-    After the review findings are resolved as requested, use /ecc:verification-loop before claiming
+
+    After the review findings are resolved as requested, use
+    /ecc:verification-loop before claiming
+
     the work is complete.
 ---
 

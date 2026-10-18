@@ -12,7 +12,7 @@ import { bunArguments, bunExecutable } from "@trellage/runtime"
 
 const repository = fileURLToPath(new URL("../../../", import.meta.url))
 const managerPath = path.join(repository, "scripts/floating-skills.ts")
-const catalogPath = path.join(repository, "config.toml")
+const catalogPath = path.join(repository, "config.example.toml")
 const skill = "i-have-adhd"
 const policy = "policy:\n  allow_implicit_invocation: false\n"
 const instructions = (version: number) =>

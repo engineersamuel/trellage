@@ -1,9 +1,9 @@
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { loadRunCatalog } from "../src/run-catalog.ts"
-import { buildRunList, formatRunList } from "../src/run-list-cli.ts"
+import { loadRunListCatalog } from "../src/run-list-catalog.ts"
+import { formatRunList, parseRunListArguments } from "../src/run-list.ts"
 
 const temporaryDirectories: string[] = []
 
@@ -14,6 +14,8 @@ afterEach(async () => {
 const loadFixtureCatalog = async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "trellage-run-list-"))
   temporaryDirectories.push(directory)
+  await mkdir(path.join(directory, "bin"))
+  await symlink(process.execPath, path.join(directory, "bin/pi"))
   const config = path.join(directory, "config.toml")
   await writeFile(config, `
 [native.profiles.base]
@@ -26,46 +28,42 @@ harnesses = ["claude"]
 
 [native.profiles.optional]
 label = "Optional tools"
+[native.profiles.optional.selection]
+description = "Optional tools"
+best_for = ["Useful optional work"]
 `, { mode: 0o600 })
   await chmod(config, 0o600)
-  return loadRunCatalog({ environment: { ...process.env, TRELLAGE_CONFIG: config }, home: directory, cwd: directory, includeModels: false })
+  return loadRunListCatalog({
+    environment: { HOME: directory, PATH: path.join(directory, "bin"), TRELLAGE_CONFIG: config },
+    home: directory,
+    cwd: directory,
+  })
 }
 
 describe("run list", () => {
-  it("resolves presets, harness-limited profiles, always profiles, shared profiles, and clean", async () => {
-    const document = buildRunList(await loadFixtureCatalog())
-    const claude = document.harnesses.find((entry) => entry.harness === "claude")
-    const grok = document.harnesses.find((entry) => entry.harness === "grok")
-    const fx = document.harnesses.find((entry) => entry.harness === "fx")
-
+  it("lists ready harnesses and groups profiles by their definition", async () => {
+    const document = await loadFixtureCatalog()
     expect(document.schemaVersion).toBe(2)
-    expect(claude?.presets).toContain("social-media")
-    expect(claude?.profiles).toEqual(expect.arrayContaining(["base", "claude-only", "optional", "firstmate", "clean", "default"]))
-    expect(grok?.profiles).toEqual(expect.arrayContaining(["base", "optional"]))
-    expect(grok?.profiles).not.toEqual(expect.arrayContaining(["claude-only", "firstmate", "clean"]))
-    expect(fx).toMatchObject({ canonical: false, presets: ["default"] })
-    expect(document.profiles).toEqual(expect.arrayContaining([
-      { name: "base", label: "Shared defaults", kind: "config", always: true, harnesses: null },
-      { name: "claude-only", label: "Claude tools", kind: "config", always: false, harnesses: ["claude"] },
-      { name: "firstmate", label: expect.any(String), kind: "shared", always: false, harnesses: ["claude", "pi"] },
-    ]))
-    expect(document.profiles.find((entry) => entry.name === "clean")).toMatchObject({
-      label: "Clean",
-      kind: "special",
-      always: false,
-      harnesses: expect.arrayContaining(["claude", "copilot", "codex", "pi"]),
+    expect(document.harnesses.map((entry) => entry.id)).toEqual(["pi"])
+    expect(document.harnesses[0]).not.toHaveProperty("profiles")
+    expect(document.profiles.find((entry) => entry.id === "optional")).toMatchObject({
+      argument: "optional",
+      readyHarnesses: ["pi"],
+      metadataStatus: "complete",
+      guideEligibility: { eligible: true },
     })
+    expect(document.profiles.find((entry) => entry.id === "optional")?.harnesses).toContain("pi")
+    expect(document.unavailable.profiles.find((entry) => entry.id === "claude-only")?.harnesses).toEqual(["claude"])
+    expect(document.profiles.some((entry) => entry.id === "base")).toBe(false)
   })
 
-  it("formats compact aligned tables", async () => {
-    const output = formatRunList(buildRunList(await loadFixtureCatalog()))
-    expect(output).toContain("HARNESS")
-    expect(output).toContain("BUILT-IN PRESETS")
-    expect(output).toContain("PROFILE")
-    expect(output).toContain("APPLIES TO")
-    expect(output).toContain("base")
-    expect(output).toContain("always")
-    expect(output).toContain("claude-only")
-    expect(output).toContain("claude")
+  it("formats readiness and validates its arguments", async () => {
+    const output = formatRunList(await loadFixtureCatalog())
+    expect(output).toContain("Harnesses")
+    expect(output).toContain("Unavailable")
+    expect(output).toContain("optional")
+    expect(parseRunListArguments(["--json"])).toEqual({ format: "json", help: false })
+    expect(parseRunListArguments(["--help"])).toEqual({ format: "text", help: true })
+    expect(() => parseRunListArguments(["--json", "--json"])).toThrow("Usage: trx run list")
   })
 })

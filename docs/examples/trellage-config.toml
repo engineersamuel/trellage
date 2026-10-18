@@ -1,5 +1,8 @@
-# Seed for ~/.config/trellage/config.toml, adapted from the Native launcher
-# catalogs and composed harnesses. Install with: cp docs/examples/trellage-config.toml ~/.config/trellage/config.toml
+# Minimal composition-authoring example; this is not the shipped default seed.
+# Use config.example.toml at the repository root for shipped defaults.
+# Review an existing ~/.config/trellage/config.toml before replacing it.
+# This example's styles/rundown.md instruction must be supplied alongside the config.
+# Add selection metadata to custom profiles before asking trx guide to recommend them.
 # Unpinned sources track the default branch and refresh on every `trx run`.
 # Pin with tag = "v1.2.3" or commit = "<40-hex>" to install once and reuse the cache.
 # Each profile lists skills only; plugin-only content (hooks, MCP, agents) is not composed yet.
@@ -87,6 +90,11 @@ skills = [{ source = "superpowers", names = [
   "receiving-code-review", "using-git-worktrees", "finishing-a-development-branch",
   "subagent-driven-development", "dispatching-parallel-agents", "writing-skills", "using-superpowers",
 ] }]
+
+[native.profiles.superpowers.selection]
+description = "A custom Superpowers skill selection for disciplined engineering."
+best_for = ["Test-driven implementation", "Root-cause investigation followed by verified fixes"]
+# Omitted strengths/weaknesses are unknown, not claims of no limitations.
 
 [native.profiles.office]
 label = "Office documents and academic presentations"

@@ -1,63 +1,17 @@
 ---
-schemaVersion: 1
-goalExecution:
-  controller: codex-goal
-  workflowIds:
-    - test-driven-development
-    - plan-then-execute-branch
-    - parallel-review-and-dispatch
-capabilities:
-  - superpowers-tdd-and-debugging-workflows
-  - subagent-dispatch-workflow
-  - codex-full-access
-  - keyless-proxy-model-routing
-  - isolated-codex-profile-home
-bestFor:
-  - Test-driven development and systematic root-cause debugging using the superpowers skill library ported from obra/superpowers
-  - Branch lifecycle discipline — writing plans, executing them, and finishing a development branch cleanly
-  - Code-review loops that want both requesting-code-review and receiving-code-review conventions plus subagent-driven or parallel-agent dispatch
-avoidFor:
-  - Tasks that need native OpenAI authentication; the profile routes through copilot-proxy-rs
-  - Anything needing a command approval pause; launch uses Full Access and disables user-input requests
-  - Sessions that need a different marketplace's skill set installed alongside superpowers; setup and launch remove forbidden Superpowers variants rather than mixing them
-  - Work requiring an OS-level sandbox; use the codex-superpowers Trellage Sandbox profile instead
-prerequisites:
-  - id: codex-cli
-    description: Codex CLI 0.146.0 or later installed on the host.
-  - id: fish-shell-config
-    description: An existing readable, writable, regular, non-symlink ~/.config/fish/config.fish (installer requires Fish).
-  - id: proxy-health
-    description: copilot-proxy-rs listening on http://127.0.0.1:8080 for the default keyless model routing.
-workflows:
-  - id: test-driven-development
-    description: Drive an implementation from a failing test using the test-driven-development and systematic-debugging skills.
-    skill: test-driven-development
-    examples:
-      - Fix this bug by first writing a failing test that reproduces it
-      - Add this feature test-first and keep the test suite green throughout
-    promptTemplate: |
-      Use the test-driven-development and systematic-debugging skills to
-      address {{intent}}.
-  - id: plan-then-execute-branch
-    description: Write a plan, execute it, and finish the development branch cleanly using writing-plans, executing-plans, and finishing-a-development-branch.
-    skill: writing-plans
-    examples:
-      - Plan, implement, and verify this feature before preparing the branch for review
-      - Complete this approved implementation plan and finish the branch cleanly
-    promptTemplate: |
-      Use the writing-plans skill to draft a plan for {{intent}}, then
-      executing-plans to carry it out, and finishing-a-development-branch to
-      close it out.
-  - id: parallel-review-and-dispatch
-    description: Dispatch independent slices of work to parallel subagents and run a code-review exchange using dispatching-parallel-agents, subagent-driven-development, requesting-code-review, and receiving-code-review.
-    skill: dispatching-parallel-agents
-    examples:
-      - Split this refactor into independent pieces and dispatch them in parallel
-      - Review the API, UI, and migration changes independently before integrating the feature
-    promptTemplate: |
-      Use dispatching-parallel-agents and subagent-driven-development to
-      split up {{intent}}, then run requesting-code-review and
-      receiving-code-review before merging.
+schemaVersion: 2
+templates:
+  test-driven-development: |-
+    Use the test-driven-development and systematic-debugging skills to
+    address {{intent}}.
+  plan-then-execute-branch: |-
+    Use the writing-plans skill to draft a plan for {{intent}}, then
+    executing-plans to carry it out, and finishing-a-development-branch to
+    close it out.
+  parallel-review-and-dispatch: |-
+    Use dispatching-parallel-agents and subagent-driven-development to
+    split up {{intent}}, then run requesting-code-review and
+    receiving-code-review before merging.
 ---
 
 # Native Codex (`codex`) — `superpowers` profile
@@ -100,7 +54,7 @@ review, verification, and branch-finishing discipline. See
 - `using-git-worktrees` and `using-superpowers` are meta-skills worth invoking
   early in a session to establish workflow conventions before diving into a
   specific task.
-- These skill names come directly from this repository's own `config.toml`
+- These skill names come directly from this repository's own `config.example.toml`
   `superpowers` source selection (`https://github.com/obra/superpowers.git`),
   which the installed `superpowers-marketplace` plugin wraps — treat them as
   the vocabulary to reference in prompts.

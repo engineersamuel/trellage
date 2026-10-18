@@ -5,7 +5,8 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    "./cli": "./src/cli.tsx"
+    "./cli": "./src/cli.tsx",
+    "./run-catalog": "./src/run-catalog.ts"
   },
   "bin": {
     "trellage-launcher": "src/cli.tsx"

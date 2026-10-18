@@ -83,10 +83,10 @@ readonly kernel_identity_stamp="$profile_home/kernel-runtime-identity.json"
 readonly runtime_identity_schema=1
 readonly kernel_spec_version=1
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
-floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/config.toml"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/config.example.toml"
 if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
-  floating_skills_catalog="$runtime_root/../../config.toml"
+  floating_skills_catalog="$runtime_root/../../config.example.toml"
 fi
 bun_runner="${floating_skills_manager%/*}/run-source.sh"
 

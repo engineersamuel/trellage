@@ -1,45 +1,16 @@
 ---
-schemaVersion: 1
-goalExecution:
-  controller: claude-goal
-  workflowIds:
-    - run-council-deliberation
-    - compressed-handoff-notes
-capabilities:
-- multi-perspective-deliberation
-- architecture-tradeoff-analysis
-- dissent-preservation
-- compressed-communication
-bestFor:
-- Hard architecture or product tradeoffs where a single-shot answer is likely to miss real risks
-- High-stakes design calls that benefit from structured, multi-lens deliberation with preserved dissent
-  and kill criteria
-avoidFor:
-- Factual lookups or simple research questions
-- Small, reversible edits
-- Pure implementation throughput where deliberation only adds latency
-prerequisites: []
-workflows:
-- id: run-council-deliberation
-  description: Run a structured multi-lens council deliberation on a hard decision, preserving dissenting
-    views, kill criteria, and next steps.
-  skill: council
-  examples:
-  - Should we adopt event sourcing for the billing service?
-  - /council pick a database migration strategy for our multi-tenant SaaS
-  promptTemplate: |
+schemaVersion: 2
+templates:
+  run-council-deliberation: >-
     /council Pressure-test this idea and its implementation: {{intent}}
 
-    Challenge the assumptions, identify risks and failure modes, compare credible alternatives,
-    assess feasibility and implementation tradeoffs, and recommend concrete next steps.
-- id: compressed-handoff-notes
-  description: Use caveman compressed-communication mode to turn a council verdict into terse status or
-    handoff notes.
-  examples:
-  - Summarize the council's verdict in compressed notes for the team channel
-  - Turn the recorded dissent and decision into a terse handoff for the next engineering shift
-  promptTemplate: |
-    {{intent}}
+
+    Challenge the assumptions, identify risks and failure modes, compare
+    credible alternatives,
+
+    assess feasibility and implementation tradeoffs, and recommend concrete next
+    steps.
+  compressed-handoff-notes: "{{intent}}"
 ---
 
 # claude / council

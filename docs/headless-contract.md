@@ -7,7 +7,7 @@ to conservative values.
 Use these inventory commands:
 
 ```bash
-trx list --json
+trx run list --json
 ```
 
 ## Capability schema

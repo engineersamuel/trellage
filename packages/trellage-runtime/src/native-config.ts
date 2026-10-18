@@ -5,6 +5,8 @@ import path from "node:path"
 import { Data, Effect, Either, ParseResult, Schema } from "effect"
 import { parse } from "smol-toml"
 import { parseCatalog } from "./skill-config.ts"
+import { parseSelectionMetadata } from "@trellage/guide-core"
+import { resolveShippedResource } from "./native-run/resources.ts"
 
 const NonEmpty = Schema.String.pipe(Schema.minLength(1))
 const LowercaseIdentity = Schema.transform(Schema.String, Schema.String, {
@@ -81,7 +83,9 @@ const NativePluginSelection = Schema.Struct({
 })
 
 const NativeInstruction = Schema.Struct({
-  file: RelativePluginPath,
+  file: Schema.Union(RelativePluginPath, NonEmpty.pipe(Schema.filter(value => {
+    try { resolveShippedResource(value,"/shipped"); return true } catch { return false }
+  }))),
 })
 
 /** Absolute or home-relative (`~/...`) directory. */
@@ -101,7 +105,45 @@ const NativePrerequisite = Schema.Struct({
   install: NonEmpty.pipe(Schema.filter((value) => !hasControlCharacters(value))),
 })
 
+const NativeSelection = Schema.Struct({
+  description: Schema.optional(NonEmpty),
+  strengths: Schema.optional(Schema.Array(NonEmpty)),
+  weaknesses: Schema.optional(Schema.Array(NonEmpty)),
+  best_for: Schema.optional(Schema.Array(NonEmpty)),
+  avoid_for: Schema.optional(Schema.Array(NonEmpty)),
+  capabilities: Schema.optional(Schema.Array(Identifier)),
+}).pipe(Schema.filter((value) => {
+  try { parseSelectionMetadata(value, "selection"); return true } catch { return false }
+}))
+
+const NativeWorkflow = Schema.Struct({
+  id: Identifier,
+  description: NonEmpty,
+  examples: Schema.Array(NonEmpty),
+  skill: Schema.optional(NonEmpty),
+  launch_agent: Schema.optional(NonEmpty),
+  interaction: Schema.optional(Schema.Struct({
+    mode: Schema.Literal("interactive"),
+    required_skills: Schema.Array(Identifier),
+  })),
+  frame: Schema.optional(Schema.Literal("fixed")),
+})
+const NativeGuide = Schema.Struct({
+  document: Schema.optional(NonEmpty),
+  documents: Schema.optional(Schema.Record({ key: Identifier, value: NonEmpty })),
+  workflows: Schema.optional(Schema.Array(NativeWorkflow)),
+  prerequisites: Schema.optional(Schema.Array(Schema.Struct({ id: Identifier, description: NonEmpty }))),
+  goal_execution: Schema.optional(Schema.Struct({
+    controller: Schema.Literal("codex-goal", "claude-goal"),
+    workflow_ids: Schema.Array(Identifier),
+  })),
+})
+export type NativeWorkflowConfig = Schema.Schema.Type<typeof NativeGuide>
+
 const NativeProfile = Schema.Struct({
+  selection: Schema.optional(NativeSelection),
+  required_environment: Schema.optional(Schema.Array(NonEmpty.pipe(Schema.pattern(/^[A-Za-z_][A-Za-z0-9_]*$/)))),
+  guide: Schema.optional(NativeGuide),
   label: Schema.optional(NonEmpty),
   /** Apply to every run, before the profiles the user selects. */
   always: Schema.optionalWith(Schema.Boolean, { default: () => false }),
@@ -123,6 +165,7 @@ const NativeProfile = Schema.Struct({
 })
 
 const NativeCatalog = Schema.Struct({
+  harnesses: Schema.optional(Schema.Record({ key: Identifier, value: Schema.Struct({ selection: Schema.optional(NativeSelection) }) })),
   sources: Schema.optionalWith(Schema.Record({ key: Identifier, value: NativeSource }), { default: () => ({}) }),
   instructions: Schema.optionalWith(Schema.Record({ key: Identifier, value: NativeInstruction }), { default: () => ({}) }),
   profiles: Schema.optionalWith(Schema.Record({ key: Identifier, value: NativeProfile }), { default: () => ({}) }),
@@ -156,6 +199,7 @@ export interface TrellageConfigLocation {
 export interface LoadedTrellageConfig {
   readonly path: string
   readonly present: boolean
+  readonly nativeDeclared: boolean
   readonly config: TrellageConfig
 }
 
@@ -303,7 +347,7 @@ export const loadTrellageConfig = (
       },
     })
     const config = yield* parseTrellageConfig(source ?? "")
-    return { path: configPath, present: source !== undefined, config }
+    return { path: configPath, present: source !== undefined, nativeDeclared: source !== undefined && Object.hasOwn(parse(source), "native"), config }
   })
 
 export const readTrellageConfig = async (location: TrellageConfigLocation = {}): Promise<LoadedTrellageConfig> => {

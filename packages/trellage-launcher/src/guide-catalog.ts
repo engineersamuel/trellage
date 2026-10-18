@@ -10,6 +10,7 @@ import {
   type ProfileGuideInteraction,
   isProfileGuideGoalController,
   profileGuideGoalExecutionProblem,
+  validateResolvedProfileGuide,
   type ProfileGuideGoalExecution,
   type ProfileGuideIdentity,
   type ProfileGuidePrerequisite,
@@ -150,6 +151,10 @@ export const validateProfileGuideV1 = (
   context?: { readonly identity: ProfileGuideIdentity; readonly harness: string },
 ): ProfileGuideV1 => {
   const fields = record(value, path)
+  if (fields.schemaVersion === 2) {
+    if (context === undefined) return fail(path, "resolved guide requires an identity")
+    return validateResolvedProfileGuide(value, context.identity)
+  }
   exactKeys(
     fields,
     path,

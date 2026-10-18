@@ -84,7 +84,7 @@ require_json_lines() {
 }
 
 for harness in copilot claude omp; do
-  trx list "$harness" --json >"$temp_root/$harness-inventory.json"
+  trx run list --json | jq --arg harness "$harness" '{profiles: [.profiles[] | select(.readyHarnesses | index($harness)) | . + {name: .argument}]}' >"$temp_root/$harness-inventory.json"
 done
 
 jq -e '

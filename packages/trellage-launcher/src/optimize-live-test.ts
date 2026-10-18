@@ -55,7 +55,7 @@ const main = async (): Promise<number> => {
   const env = {
     ...process.env,
     TRELLAGE_GUIDE_SKILLS_MANAGER: path.join(repo, "scripts/floating-skills.ts"),
-    TRELLAGE_GUIDE_SKILLS_CATALOG: path.join(repo, "config.toml"),
+    TRELLAGE_GUIDE_SKILLS_CATALOG: path.join(repo, "config.example.toml"),
     TRELLAGE_GUIDE_OPTIMIZE_SKILLS_CACHE: path.join(os.homedir(), ".local/share/trellage/common/guide-optimize-architecture-skills"),
   }
   const signal = AbortSignal.timeout(Number(values["timeout-seconds"]) * 1000)

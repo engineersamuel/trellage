@@ -320,7 +320,7 @@ test("installed source execution heals inventory drift without accepting source 
 test("upgrades an owned legacy skills.json snapshot without accepting changed legacy policy", () => {
   const { root, destination, home } = sourceFixture(true)
   expect(run("install", root, destination, { HOME: home }).status).toBe(0)
-  rmSync(path.join(destination, "config.toml"))
+  rmSync(path.join(destination, "config.example.toml"))
   write(destination, "skills.json", "{}")
   writeReadiness(destination)
   expect(run("validate-replaceable-owned", destination).status).toBe(0)
@@ -331,7 +331,26 @@ test("upgrades an owned legacy skills.json snapshot without accepting changed le
   const upgraded = run("install", root, destination, { HOME: home })
   expect(upgraded.status, upgraded.stderr).toBe(0)
   expect(existsSync(path.join(destination, "skills.json"))).toBe(false)
-  expect(readFileSync(path.join(destination, "config.toml"), "utf8")).toBe("{}")
+  expect(readFileSync(path.join(destination, "config.example.toml"), "utf8")).toBe("{}")
+  expect(() => requireOwnedWorkspace(destination)).not.toThrow()
+})
+
+test("upgrades an owned legacy config.toml snapshot without changing user config", () => {
+  const { root, destination, home } = sourceFixture(true)
+  const userConfig = path.join(home, ".config/trellage/config.toml")
+  const userConfigContents = "user = true\n"
+  write(home, ".config/trellage/config.toml", userConfigContents)
+  expect(run("install", root, destination, { HOME: home }).status).toBe(0)
+  rmSync(path.join(destination, "config.example.toml"))
+  write(destination, "config.toml", "{}")
+  writeReadiness(destination)
+  expect(run("validate-replaceable-owned", destination).status).toBe(0)
+
+  const upgraded = run("install", root, destination, { HOME: home })
+  expect(upgraded.status, upgraded.stderr).toBe(0)
+  expect(existsSync(path.join(destination, "config.toml"))).toBe(false)
+  expect(readFileSync(path.join(destination, "config.example.toml"), "utf8")).toBe("{}")
+  expect(readFileSync(userConfig, "utf8")).toBe(userConfigContents)
   expect(() => requireOwnedWorkspace(destination)).not.toThrow()
 })
 
@@ -382,7 +401,7 @@ test.each(["metadata", "dependencies"])("replacement validation accepts %s inven
   expect(run("validate-owned", destination).status).toBe(1)
 })
 
-test.each(["packages/library/src/index.ts", "packages/library/package.json", "bun.lock", "config.toml"])(
+test.each(["packages/library/src/index.ts", "packages/library/package.json", "bun.lock", "config.example.toml"])(
   "replacement validation refuses changed published %s without rewriting readiness",
   (relative) => {
     const { root, destination, home } = sourceFixture(true)
@@ -428,7 +447,7 @@ function sourceFixture(withShellRunner = false) {
   )
   write(root, "bunfig.toml", '[install]\nauto = "disable"\nlinker = "isolated"\n')
   write(root, "tsconfig.base.json", '{"compilerOptions":{"strict":true,"noEmit":true}}')
-  write(root, "config.toml", "{}")
+  write(root, "config.example.toml", "{}")
   write(
     root,
     "packages/library/package.json",

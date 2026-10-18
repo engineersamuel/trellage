@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises"
+import { lstat, readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -205,9 +205,12 @@ const nativeCatalogFamily = async (
 
 const nativeCatalogs = async (): Promise<ReadonlyMap<string, NativeCatalogMetadata>> => {
   const prototypes = path.join(repositoryRoot, "prototypes")
-  const families = (await readdir(prototypes, { withFileTypes: true }))
-    .filter((directory) => directory.isDirectory() && /^trellage-.+-profiles$/u.test(directory.name))
-    .map(({ name }) => name)
+  const families: string[] = []
+  for (const entry of await readdir(prototypes, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^trellage-.+-profiles$/u.test(entry.name)) continue
+    const catalog = await lstat(path.join(prototypes, entry.name, "catalog.json")).catch(() => undefined)
+    if (catalog?.isFile()) families.push(entry.name)
+  }
   const entries = await Promise.all(families.map((family) => nativeCatalogFamily(prototypes, family)))
   // Mirrors the router's interactive firstmate config profiles (trx build_profile_list).
   const firstmate = (harness: string) =>

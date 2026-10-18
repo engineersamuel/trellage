@@ -1,47 +1,17 @@
 ---
-schemaVersion: 1
-goalExecution:
-  controller: claude-goal
-  workflowIds:
-    - vault-backed-research
-    - last-30-days-pulse
-capabilities:
-- bounded-factual-research
-- source-backed-comparisons
-- recency-scored-social-pulls
-- persistent-research-vault
-bestFor:
-- Source-backed answers to bounded factual queries, surveys, and comparisons
-- Checking what people are currently saying across Reddit, X, YouTube, HN, Polymarket, GitHub, and the
-  web in the last ~30 days
-avoidFor:
-- Full adversarial/deep-research pipelines that need maximum rigor over cost
-- App coding or feature implementation
-- Short social copy drafting — use claude-social-media
-prerequisites: []
-workflows:
-- id: vault-backed-research
-  description: Run the focused 5-step hyperresearch pipeline for a bounded factual query, survey, or comparison,
-    saved to the persistent research vault.
-  skill: hyperresearch
-  examples:
-  - /hyperresearch compare Postgres and CockroachDB for a multi-region OLTP workload
-  - Research whether passkeys reduce support costs for an enterprise SaaS, and save the evidence for the
-    implementation decision
-  promptTemplate: |
-    /hyperresearch Research the evidence that should inform this request before implementation: {{intent}}
+schemaVersion: 2
+templates:
+  vault-backed-research: >-
+    /hyperresearch Research the evidence that should inform this request before
+    implementation: {{intent}}
 
-    Find relevant prior art and source-backed evidence, identify unresolved questions and risks,
-    compare implementation options, and explain how the findings should change the approach.
-- id: last-30-days-pulse
-  description: Pull recency-scored takes on a topic from the last ~30 days across social and community
-    sources.
-  skill: last30days
-  examples:
-  - /last30days nvidia earnings reaction
-  - /last30days OpenClaw vs Hermes
-  promptTemplate: |
-    /last30days {{intent}}
+
+    Find relevant prior art and source-backed evidence, identify unresolved
+    questions and risks,
+
+    compare implementation options, and explain how the findings should change
+    the approach.
+  last-30-days-pulse: /last30days {{intent}}
 ---
 
 # claude / research

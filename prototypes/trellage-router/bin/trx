@@ -12,6 +12,7 @@ if ! pwd -P >/dev/null 2>&1; then
   printf 'trx: current working directory no longer exists; continuing from %s\n' "$HOME" >&2
 fi
 
+unset TRELLAGE_RUN_TRANSCRIPT_API_KEY_PRESENT
 unset trx_transcript_api_key trx_transcript_api_key_is_set
 trx_transcript_api_key_is_set=false
 trx_transcript_api_key=""
@@ -333,6 +334,17 @@ case "${1-}" in
   run)
     shift
     case "${1-}" in
+      list)
+        shift
+        [[ "$#" -eq 0 || ( "$#" -eq 1 && ( "$1" == --json || "$1" == --help || "$1" == -h || "$1" == help ) ) ]] \
+          || die 'usage: trx run list [--json]'
+        if [[ "${1-}" == --help || "${1-}" == -h || "${1-}" == help ]]; then
+          printf '%s\n' 'Usage: trx run list [--json]' 'Read-only local harness and profile selection catalog.'
+          exit 0
+        fi
+        mode='run-list'
+        run_list_args=("$@")
+        ;;
       '')
         mode='compose-select'
         compose_args=()
@@ -536,11 +548,26 @@ load_optional_jev_api_key() {
 
 picker_path="$source_workspace/packages/trellage-launcher/src/cli.tsx"
 floating_skills_manager="$source_workspace/scripts/floating-skills.ts"
-floating_skills_catalog="$source_workspace/config.toml"
+floating_skills_catalog="$source_workspace/config.example.toml"
 router_command_path="$runtime/bin/trx"
 [[ "$script_path" == "$router_command_path" && -f "$router_command_path" \
     && -x "$router_command_path" && ! -L "$router_command_path" ]] \
   || die 'current router command is missing or unsafe'
+if [[ "$mode" == run-list || "$mode" == guide ]]; then
+  if [[ "$trx_transcript_api_key_is_set" == true && -n "$trx_transcript_api_key" ]]; then
+    export TRELLAGE_RUN_TRANSCRIPT_API_KEY_PRESENT=1
+  fi
+fi
+if [[ "$mode" == run-list ]]; then
+  [[ -f "$source_workspace/scripts/bun-runtime.sh" && ! -L "$source_workspace/scripts/bun-runtime.sh" ]] \
+    || die 'source runtime is missing; install trx from a prepared checkout'
+  . "$source_workspace/scripts/bun-runtime.sh"
+  trellage_bun_runtime "$source_workspace" || die 'listing requires the installed pinned Bun runtime'
+  TRELLAGE_READINESS_MEMO=0 "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/workspace-cli.ts" check "$source_workspace" \
+    || die 'source runtime is not ready; run scripts/install-source-runtime.sh --prepare explicitly'
+  TRELLAGE_RUN_SOURCE_ROOT="$source_workspace" TRELLAGE_RUN_GUIDE_ROOT="$guide_root" TRELLAGE_RUN_ROUTER_PATH="$router_command_path" \
+    exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-launcher/src/run-list-catalog-cli.ts" ${run_list_args[@]+"${run_list_args[@]}"}
+fi
 if [[ "$mode" == lifecycle ]]; then
   require_source_runtime
   exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/native-run/lifecycle-cli.ts" "${lifecycle_args[@]}"

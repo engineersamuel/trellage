@@ -1,54 +1,13 @@
 ---
-schemaVersion: 1
-capabilities:
-  - persistent-ipython-rlm-subagents
-  - daemon-session-persistence
-  - managed-ask-user-extension
-  - keyless-proxy-model-routing
-  - isolated-prime-profile-home
-bestFor:
-  - Long-running or exploratory tasks that benefit from Prime's persistent IPython/RLM subagents and a resident daemon session
-  - Work where the agent needs to ask clarifying questions through the managed ask_user extension instead of guessing
-  - Tasks that should route through proxy-backed claude-opus-5.5 without any host Anthropic/OpenAI/Copilot credentials present
-avoidFor:
-  - Hosts without network access to a PyPI simple index for kernel bootstrap; files.pythonhosted.org unreachable falls back to a mirror, but full offline bootstrap is not supported
-  - One-shot automation that assumes background workers exit with the process; long sessions can leave resident workers on the profile daemon socket until trx shutdown prime runs
-  - Tasks that need OS-level sandboxing or containment; prx adds no containment and Prime Agent runs with all host access available to the process
-prerequisites:
-  - id: mise
-    description: mise installed on the host; setup resolves and pins the eligible Prime Agent release, and bootstraps uv if missing (mise use -g uv).
-  - id: node-npm
-    description: Node.js 22+ and npm on the host for the managed npm-prefixed Prime Agent install.
-  - id: uv
-    description: uv available to bootstrap the isolated Prime IPython kernel venv.
-  - id: proxy-health
-    description: copilot-proxy-rs listening on http://127.0.0.1:8080 (Anthropic Messages API) and advertising claude-opus-5.5.
-  - id: cli-tools
-    description: curl and jq available on the host for setup, doctor, and update checks.
-workflows:
-  - id: persistent-exploratory-investigation
-    description: Investigate a complex code or data question across turns with persistent daemon-backed IPython/RLM subagents.
-    examples:
-      - Explore this dataset across several turns, test the hypotheses, and report the evidence
-      - Investigate this intermittent failure with a persistent kernel and carry the findings into the fix
-    promptTemplate: |
-      Use persistent IPython/RLM subagents to investigate {{intent}} across
-      turns, retain the evidence, and report the resulting conclusion.
-  - id: ask-user-clarification
-    description: Rely on the managed ask_user extension so the agent pauses to ask a clarifying question instead of guessing on ambiguous instructions.
-    examples:
-      - This task is ambiguous; ask me before choosing an approach
-      - Before changing the API contract, ask which backward-compatibility option I want
-    promptTemplate: |
-      {{intent}}
-  - id: ipython-rlm-analysis
-    description: Use Prime's persistent IPython/RLM subagents for exploratory data or code analysis that benefits from a resident kernel across turns.
-    examples:
-      - Load this dataset into the kernel and iteratively explore it across several turns
-      - Use the persistent kernel to compare these implementation options with measurements across turns
-    promptTemplate: |
-      Use Prime's persistent IPython/RLM subagents to analyze {{intent}}
-      across turns and retain the findings in the resident session.
+schemaVersion: 2
+templates:
+  persistent-exploratory-investigation: |-
+    Use persistent IPython/RLM subagents to investigate {{intent}} across
+    turns, retain the evidence, and report the resulting conclusion.
+  ask-user-clarification: "{{intent}}"
+  ipython-rlm-analysis: |-
+    Use Prime's persistent IPython/RLM subagents to analyze {{intent}}
+    across turns and retain the findings in the resident session.
 ---
 
 # Native Prime Agent (`prime`) — `default` profile

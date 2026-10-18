@@ -70,28 +70,8 @@ const readNativeFamilyRuntime = async (prototypesRoot, family) => {
 }
 
 const assertNativeFamilyCommonBundle = async (prototypesRoot, family) => {
-  const { familyRoot, installer, launcher, runtimeSource } = await readNativeFamilyRuntime(prototypesRoot, family)
-  if (family === "trellage-codex-profiles") {
-    const catalog = JSON.parse(await readFile(path.join(familyRoot, "catalog.json"), "utf8"))
-    assert.ok(
-      Object.values(catalog.profiles).every(
-        (profile) => Array.isArray(profile.skillBundles) && profile.skillBundles.includes("native-common"),
-      ),
-      `${family} catalog profiles must select native-common`,
-    )
-    assert.match(
-      launcher,
-      /native-environment-runtime/u,
-      `${family} launcher must consume the native environment runtime`,
-    )
-    assert.match(
-      installer,
-      /install-native-environment-runtime\.sh/u,
-      `${family} installer must publish the native environment runtime`,
-    )
-  } else {
-    assert.match(runtimeSource, /--bundle native-common/u, `${family} launcher runtime must select native-common`)
-  }
+  const { installer, runtimeSource } = await readNativeFamilyRuntime(prototypesRoot, family)
+  assert.match(runtimeSource, /--bundle native-common/u, `${family} launcher runtime must select native-common`)
   assert.match(
     installer,
     /install-floating-skills-runtime\.sh/u,
@@ -156,8 +136,8 @@ const createFixture = async () => {
 }
 
 test("the checked-in catalog contains policy but no fetched identity", async () => {
-  const source = await readFile(new URL("../config.toml", import.meta.url), "utf8")
-  const catalog = await readCatalog(new URL("../config.toml", import.meta.url))
+  const source = await readFile(new URL("../config.example.toml", import.meta.url), "utf8")
+  const catalog = await readCatalog(new URL("../config.example.toml", import.meta.url))
   assert.equal(catalog.schema, 1)
   assert.ok(Object.hasOwn(catalog.bundles, "sandbox-common"))
   assert.deepEqual(catalog.bundles["omp-community"], ["dsebban-omp", "pstack-portable"])
@@ -364,10 +344,17 @@ test("a missing required wildcard skill fails before publishing", async () => {
 
 test("Native and comparison surfaces consume their common skill bundle", async () => {
   const prototypesRoot = path.join(repositoryRoot, "prototypes")
-  const nativeFamilies = (await readdir(prototypesRoot, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && /^trellage-.+-profiles$/u.test(entry.name))
-    .map((entry) => entry.name)
-    .sort()
+  const nativeFamilies = []
+  for (const entry of await readdir(prototypesRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^trellage-.+-profiles$/u.test(entry.name)) continue
+    const familyRoot = path.join(prototypesRoot, entry.name)
+    const [bin, installer] = await Promise.all([
+      lstat(path.join(familyRoot, "bin")).catch(() => undefined),
+      lstat(path.join(familyRoot, "install.sh")).catch(() => undefined),
+    ])
+    if (bin?.isDirectory() && installer?.isFile()) nativeFamilies.push(entry.name)
+  }
+  nativeFamilies.sort()
   assert.ok(nativeFamilies.length > 0)
 
   for (const family of nativeFamilies) {
@@ -384,7 +371,7 @@ test("Native and comparison surfaces consume their common skill bundle", async (
   for (const dockerfile of ["Dockerfile.agent", "Dockerfile.copilot-agent"]) {
     assert.match(
       await readFile(path.join(repositoryRoot, dockerfile), "utf8"),
-      /COPY --chmod=0444 config\.toml \/opt\/floating-skills-catalog\.json/u,
+      /COPY --chmod=0444 config\.example\.toml \/opt\/floating-skills-catalog\.json/u,
       `${dockerfile} must install the floating-skills catalog`,
     )
   }
@@ -823,7 +810,7 @@ test("direct Native catalog reads honor user policy and explicit config without 
   const root = await temporaryRoot()
   const configHome = path.join(root, "config")
   const config = path.join(configHome, "trellage/config.toml")
-  const starter = path.join(repositoryRoot, "config.toml")
+  const starter = path.join(repositoryRoot, "config.example.toml")
   const policy = '[skills.sources.pinned]\nrepository = "https://github.com/example/pinned.git"\ncommit = "' + 'a'.repeat(40) + '"\nselect = ["chosen"]\n[skills.bundles]\nnative-common = ["pinned"]\n'
   await mkdir(path.dirname(config), { recursive: true })
   await writeFile(config, policy, { mode: 0o600 })

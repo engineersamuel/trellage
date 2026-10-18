@@ -1,63 +1,9 @@
 ---
-schemaVersion: 1
-capabilities:
-  - compound-engineering-loop
-  - requirements-to-implementation-ready-planning
-  - repository-local-solution-reuse
-  - verified-one-learning-per-run-capture
-  - requirements-ready-autonomous-lfg-delivery
-bestFor:
-  - Turning raw intent, settled requirements, or a requirements-only CE plan into a reviewed implementation-ready plan that reuses repository solutions
-  - Planning a new change from known past bugs or docs/solutions so prior root causes and constraints become implementation decisions
-  - Capturing exactly one verified, non-trivial solved problem with ce-compound so later agents reuse the root cause, fix, and prevention
-  - Shipping requirements-ready software hands-off to an open pull request with lfg when commit, push, PR creation, and CI access are allowed
-avoidFor:
-  - Vague product discovery through a generated one-shot prompt; start `trx run copilot compound-engineering` and run ce-brainstorm
-  - Generated implementation-only work that must stop before commit or push; no headless ce-work workflow is exposed, so use ce-work mode:return-to-caller from a conversational session
-  - Evidence-heavy Research-Plan-Implement work that needs HVE artifacts - use trx run copilot hve instead
-  - Strict test-first debugging, verification, and branch-finishing discipline - use trx run copilot superpowers instead
-  - Finding or importing Copilot agents, instructions, or skills from Awesome Copilot - use trx run copilot awesome instead
-  - Approval-required work; every launch uses --autopilot --allow-all --no-ask-user
-  - Work that needs OS isolation; this Native Copilot profile has host access, so use Trellage Sandbox or composed `trx run grok`
-prerequisites:
-  - id: copilot-cli
-    description: GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host.
-  - id: cli-tools
-    description: jq and curl available on the host for setup, doctor, and update checks.
-  - id: compound-setup
-    description: On first use in a repository, start a bare conversational session and run /ce-setup manually to check capabilities and optionally create the repo-local Compound Engineering configuration.
-  - id: lfg-delivery
-    description: For lfg delivery, use a trusted worktree with a Git remote, authenticated gh access, and permission to commit, push, open a PR, and watch CI.
-  - id: project-tools
-    description: The current repository's required build, test, browser, Xcode, and other project tools must be installed on the host for the selected skills.
-workflows:
-  - id: plan-with-compound-knowledge
-    description: In the generated headless run, accept raw intent, settled requirements, or a requirements-only CE plan and use upstream ce-plan's Durable path to produce an implementation-ready unified plan with document review, informed by relevant repository learning. It plans but does not implement.
-    skill: ce-plan
-    examples:
-      - Turn the requirements-only plan at docs/plans/tenant-api-keys-plan.md into a reviewed implementation plan, reusing relevant solutions from earlier authentication work
-      - Plan this migration using lessons from past zero-downtime failures, these constraints, and these acceptance criteria
-      - Use what this repository learned from past bugs to plan the next change, including constraints and acceptance criteria
-    promptTemplate: |
-      /ce-plan {{intent}}
-  - id: autonomous-lfg-plan-to-pr
-    description: For requirements-ready software or an existing plan, run the hands-off pipeline to plan, implement, simplify, review and fix, browser test, commit, push, open a PR, and watch CI. Best results follow ce-brainstorm or include detailed scope, constraints, and acceptance criteria. By default it stops at an open PR and does not merge; an explicit stack-land instruction authorizes landing a managed PR stack. Without a remote it leaves local commits, and it can stop before a PR when planning, implementation, or review gates report a blocker. A bounded repair loop can finish with residuals.
-    skill: lfg
-    examples:
-      - Implement the approved plan at docs/plans/tenant-api-keys-plan.md, verify it, open the pull request, watch CI, and stop before merge
-      - "Requirements are settled for resumable uploads: preserve completed chunks, recover after process crashes, and prove retry safety; ship the implementation through an open PR without check-ins"
-      - Replace invoice polling with webhook updates under the approved contract, keep the fallback during migration, commit and push the work, open the PR, and watch CI
-    promptTemplate: |
-      /lfg {{intent}}
-  - id: capture-verified-repository-learning
-    description: After verified work, record exactly one non-trivial solved problem per run as repository-local solution knowledge, including the root cause, evidence, fix, and prevention. The fresh one-shot run does not inherit the earlier Copilot conversation, so the intent must carry those facts and the solved change must be visible in the current tree. It can skip when no valid learning exists.
-    skill: ce-compound
-    examples:
-      - Capture the verified stale-permission-cache failure with its trigger, root cause, fix, proof, and prevention so later authorization work reuses it
-      - Record why the zero-downtime enum migration failed, the evidence that isolated the cause, and the validated deployment sequence that fixed it
-      - Save the verified webhook deduplication race, the database constraint that solved it, and the test that prevents regression
-    promptTemplate: |
-      /ce-compound mode:non-interactive {{intent}}
+schemaVersion: 2
+templates:
+  plan-with-compound-knowledge: /ce-plan {{intent}}
+  autonomous-lfg-plan-to-pr: /lfg {{intent}}
+  capture-verified-repository-learning: /ce-compound mode:non-interactive {{intent}}
 ---
 
 # Native Copilot CLI (`copilot`) - `compound-engineering`

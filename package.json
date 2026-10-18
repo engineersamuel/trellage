@@ -27,7 +27,7 @@
     "profiles",
     "prototypes",
     "scripts",
-    "config.toml"
+    "config.example.toml"
   ],
   "scripts": {
     "preinstall": "bash scripts/check-package-manager.sh",
