@@ -315,7 +315,7 @@ HOME="${refresh_home}" SOURCE_CONTRACT_ARGS="${source_args}" NATIVE_CONTRACT_ARG
 printf '%s\n' "$(cd "${refresh_fixture}" && pwd -P)" >"${lefthook_regression_root}/expected-source-args"
 cmp -s "${lefthook_regression_root}/expected-source-args" "${source_args}" \
   || fail "native freshness check did not prepare the active source worktree"
-printf '%s\n' --native-only >"${lefthook_regression_root}/expected-native-args"
+printf '%s\n' >"${lefthook_regression_root}/expected-native-args"
 cmp -s "${lefthook_regression_root}/expected-native-args" "${native_args}" \
   || fail "native freshness check did not refresh a stale installation"
 [[ "$(<"${refresh_home}/.local/share/trellage/.native-stack-sources")" == worktree ]] \

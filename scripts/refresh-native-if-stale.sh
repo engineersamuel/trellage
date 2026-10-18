@@ -43,7 +43,7 @@ if [[ -n "$installed_sources" && "$installed_sources" == "$current_sources" ]]; 
 fi
 
 printf 'refresh-native-if-stale: installed Native runtime is stale; refreshing from %s\n' "$repo_root" >&2
-"$refresh" --native-only
+"$refresh"
 
 [[ -d "$runtime_parent" && ! -L "$runtime_parent" ]] \
   || fail "native refresh did not publish a safe runtime parent: $runtime_parent"
