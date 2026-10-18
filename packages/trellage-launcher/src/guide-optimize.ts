@@ -1,13 +1,13 @@
 import { adapters } from "@trellage/runtime/native-run"
 import {
   approveAll,
-  CopilotClient,
   RuntimeConnection,
   type CopilotClientOptions,
   type SessionConfig,
 } from "@github/copilot-sdk"
 import { findExecutableOnPath, runCleanupStep } from "./copilot-guide-provider.ts"
 import type { GuideModelConfig } from "./guide-model-routing.ts"
+import { createLiveCopilotClient } from "./provider-clients.ts"
 
 /** One Optimize skill: a standing instruction an agent applies to the whole repository. */
 export interface GuideOptimizeSkill {
@@ -165,7 +165,7 @@ const activityText = (event: { readonly type: string; readonly data: unknown }):
  */
 export const runGuideOptimizeSdk = async (options: GuideOptimizeSdkOptions): Promise<void> => {
   const copilotCliPath = findExecutableOnPath("copilot")
-  const client = (options.clientFactory ?? ((config) => new CopilotClient(config)))({
+  const client = (options.clientFactory ?? createLiveCopilotClient)({
     mode: "copilot-cli",
     ...(copilotCliPath === undefined ? {} : { connection: RuntimeConnection.forStdio({ path: copilotCliPath }) }),
     workingDirectory: options.cwd,

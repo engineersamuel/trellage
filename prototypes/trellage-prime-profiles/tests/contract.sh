@@ -70,7 +70,7 @@ trap 'if [[ "${PRX_TEST_KEEP_FIXTURE:-0}" != 1 ]]; then rm -rf -- "$fixture_root
 fixture_registry="$(npm config get registry --workspaces=false)" \
   || fail 'could not discover the host npm registry'
 [[ -n "$fixture_registry" ]] || fail 'host npm registry is empty'
-export BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache"
+export BUN_INSTALL_CACHE_DIR="${TRELLAGE_TEST_PACKAGE_CACHE:-$fixture_root/bun-cache}"
 export npm_config_registry="$fixture_registry"
 
 fake_bin="$fixture_root/fake-bin"
@@ -385,6 +385,8 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 ln -s "$(command -v jq)" "$fake_bin/jq"
 seed_floating_skills_cache "$home"
+seed_native_skills_fixture "$home"
+ln -s "$(command -v ps)" "$fake_bin/ps"
 
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="$home"

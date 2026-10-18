@@ -20,6 +20,7 @@ enum PtyCommand {
   Input = "input",
   Signal = "signal",
   Resize = "resize",
+  TerminalState = "terminal-state",
 }
 
 const isExitStatus = (value: unknown): value is Required<Pick<SourcePtyExit, "exitCode" | "signal">> =>
@@ -88,6 +89,9 @@ export const spawnSourcePty = (executable: string, args: readonly string[], opti
   )
   const dataListeners = new Set<(data: string) => void>()
   const exitListeners = new Set<(status: SourcePtyExit) => void>()
+  const stateRequests = new Map<number, { resolve: (raw: boolean) => void; reject: (error: Error) => void }>()
+  let nextRequestId = 0
+  let pendingStderr = ""
   let stderr = ""
   let failure: string | undefined
   let exit: SourcePtyExit | undefined
@@ -98,25 +102,38 @@ export const spawnSourcePty = (executable: string, args: readonly string[], opti
     for (const listener of dataListeners) listener(data)
   })
   child.stderr.on("data", (data: string) => {
-    stderr += data
-    if (processId !== undefined || failure !== undefined) return
-    const newline = stderr.indexOf("\n")
-    if (newline < 0) return
-    const message = stderr.slice(0, newline)
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(message)
-    } catch (error) {
-      if (!(error instanceof SyntaxError)) throw error
-      failure = `Invalid PTY startup status: ${message}`
-      return
+    pendingStderr += data
+    while (pendingStderr.includes("\n")) {
+      const newline = pendingStderr.indexOf("\n")
+      const message = pendingStderr.slice(0, newline)
+      pendingStderr = pendingStderr.slice(newline + 1)
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(message)
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error
+        failure ??= `Invalid PTY status: ${message}`
+        stderr += `${message}\n`
+        continue
+      }
+      if (processId === undefined) {
+        if (isProcessStatus(parsed)) processId = parsed.pid
+        else failure ??= `Invalid PTY child process: ${message}`
+      } else if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "requestId" in parsed &&
+        typeof parsed.requestId === "number" &&
+        "raw" in parsed &&
+        typeof parsed.raw === "boolean"
+      ) {
+        const request = stateRequests.get(parsed.requestId)
+        if (request) request.resolve(parsed.raw)
+        else failure ??= `Unknown PTY state reply: ${message}`
+      } else {
+        stderr += `${message}\n`
+      }
     }
-    if (!isProcessStatus(parsed)) {
-      failure = `Invalid PTY child process: ${message}`
-      return
-    }
-    processId = parsed.pid
-    stderr = stderr.slice(newline + 1)
   })
   child.on("error", (error) => {
     failure = error.message
@@ -125,11 +142,14 @@ export const spawnSourcePty = (executable: string, args: readonly string[], opti
     failure = error.message
   })
   child.on("close", (code) => {
+    stderr += pendingStderr
     exit = exitStatus(
       code,
       stderr,
       failure ?? (processId === undefined ? `Missing PTY child process: ${stderr}` : undefined),
     )
+    for (const request of stateRequests.values())
+      request.reject(new Error("PTY exited before reporting terminal state"))
     for (const listener of exitListeners) listener(exit)
   })
   const send = (message: object): void => {
@@ -143,6 +163,34 @@ export const spawnSourcePty = (executable: string, args: readonly string[], opti
     write: (data: string): void => send({ kind: PtyCommand.Input, data }),
     kill: (value: NodeJS.Signals = "SIGHUP"): void => send({ kind: PtyCommand.Signal, signal: value }),
     resize: (columns: number, rows: number): void => send({ kind: PtyCommand.Resize, columns, rows }),
+    rawMode: (): Promise<boolean> =>
+      new Promise((resolve, reject) => {
+        const requestId = ++nextRequestId
+        const finish = () => {
+          clearTimeout(timeout)
+          stateRequests.delete(requestId)
+        }
+        const timeout = setTimeout(() => {
+          finish()
+          reject(new Error("PTY terminal state query timed out"))
+        }, 5000)
+        stateRequests.set(requestId, {
+          resolve: (raw) => {
+            finish()
+            resolve(raw)
+          },
+          reject: (error) => {
+            finish()
+            reject(error)
+          },
+        })
+        try {
+          send({ kind: PtyCommand.TerminalState, requestId })
+        } catch (error) {
+          finish()
+          reject(error)
+        }
+      }),
     onData(listener: (data: string) => void): void {
       dataListeners.add(listener)
     },
@@ -154,3 +202,11 @@ export const spawnSourcePty = (executable: string, args: readonly string[], opti
 }
 
 export type SourcePty = ReturnType<typeof spawnSourcePty>
+
+export const waitForRawInput = async (child: SourcePty, timeoutMs = 15000): Promise<void> => {
+  const deadline = Date.now() + timeoutMs
+  while (!(await child.rawMode())) {
+    if (Date.now() >= deadline) throw new Error("Terminal did not enable raw input")
+    await Bun.sleep(20)
+  }
+}

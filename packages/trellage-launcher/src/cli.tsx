@@ -3,6 +3,7 @@ import { constants, openSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { createInterface } from "node:readline"
 import tty from "node:tty"
+import { openControllingTerminalInput } from "./controlling-terminal-input.ts"
 import path from "node:path"
 import React from "react"
 import { render } from "ink"
@@ -181,7 +182,7 @@ const releaseStdin = (): void => {
 const openInteractiveTerminalStreams = (): InteractiveTerminalStreams => {
   let input: NodeJS.ReadStream | undefined
   try {
-    input = process.stdin.isTTY ? process.stdin : new tty.ReadStream(openSync("/dev/tty", constants.O_RDONLY))
+    input = process.stdin.isTTY ? process.stdin : openControllingTerminalInput()
     const openedInput = input
     const output = process.stderr.isTTY ? process.stderr : new tty.WriteStream(openSync("/dev/tty", constants.O_WRONLY))
     return {
@@ -824,7 +825,6 @@ export const main = async (): Promise<void> => {
   }
   throw new Error(`unknown launcher mode: ${process.argv[2] ?? "(missing)"}`)
 }
-
 
 if (import.meta.main) {
   try {

@@ -180,6 +180,26 @@ function hostileBunEnvironment(cwd: string): NodeJS.ProcessEnv {
   }
 }
 
+test("source copies preserve sibling files and executable modes without sharing mutable state", () => {
+  const { root } = sourceFixture()
+  write(root, "scripts/nested/first.sh", "#!/bin/sh\necho first\n")
+  write(root, "scripts/nested/second.txt", "second")
+  chmodSync(path.join(root, "scripts/nested/first.sh"), 0o755)
+  const first = fixture()
+  const second = fixture()
+  copySources(root, first)
+  copySources(root, second)
+  expect(readFileSync(path.join(first, "scripts/nested/second.txt"), "utf8")).toBe("second")
+  expect(statSync(path.join(first, "scripts/nested/first.sh")).mode & 0o777).toBe(0o755)
+  expect(sourceFingerprint(first)).toBe(sourceFingerprint(root))
+  write(first, "scripts/nested/second.txt", "changed")
+  expect(readFileSync(path.join(second, "scripts/nested/second.txt"), "utf8")).toBe("second")
+  expect(readFileSync(path.join(root, "scripts/nested/second.txt"), "utf8")).toBe("second")
+  expect(() => copySources(root, first)).toThrow("source stage must be empty")
+  symlinkSync(path.join(root, "scripts/nested/second.txt"), path.join(root, "scripts/linked"))
+  expect(() => copySources(root, fixture())).toThrow("source workspace contains a symlink")
+})
+
 test("native profile state is excluded from source fingerprints and staging", async () => {
   const { root } = sourceFixture()
   const profile = "prototypes/trellage-jcode-profiles"

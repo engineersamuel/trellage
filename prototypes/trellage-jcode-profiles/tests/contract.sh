@@ -130,11 +130,12 @@ install_fixture_node "$fake_bin"
 seed_floating_skills_cache "$home"
 manual_cache="$home/.local/share/trellage/common/skills"
 mkdir -p "$manual_cache/skills/i-have-adhd/agents"
-printf '%s\n' '---' 'name: i-have-adhd' 'disable-model-invocation: true' '---' '' \
+printf '%s\n' '---' 'name: i-have-adhd' 'description: Offline manual skill fixture' 'disable-model-invocation: true' '---' '' \
   'Manual output fixture.' >"$manual_cache/skills/i-have-adhd/SKILL.md"
 printf '%s\n' 'policy:' '  allow_implicit_invocation: false' \
   >"$manual_cache/skills/i-have-adhd/agents/openai.yaml"
 printf '%s\n' fixture-personal i-have-adhd show-me >"$manual_cache/managed-skills.txt"
+seed_native_skills_fixture "$home" i-have-adhd
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="$home"
 export FAKE_MISE_LOG="$fixture_root/mise.log"

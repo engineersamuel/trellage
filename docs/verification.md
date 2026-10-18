@@ -100,6 +100,114 @@ make test
 git diff --check
 ```
 
+Local offline test optimization runs can record their protocol, first-change ordering,
+and outstanding verification in `test-performance.json`. This generated report is
+ignored by Git and is not shipped with the repository. Incomplete measurements
+must be marked explicitly and do not establish a speedup.
+The default suite includes `cli-matrix-contract`: inventory drift checks, Cartesian
+generator checks, guide parser regressions against independently declared
+mode conflicts and input classes, and audited guide model fixtures for every
+catalog profile, both optimization outcomes, and matching with both backends.
+It also runs detached router help checks, real run-selector navigation,
+cancellation, and launch checks, and real guide entrypoint checks for JSON, previews, interactive
+modes, and a synthetic next-steps conversation.
+Process fixtures use private homes and audited model mocks; they require a clean
+audit receipt after normal exit. Run
+`python3 scripts/test-offline.py -- bun tests/exhaustive/guide-process-regression.ts --all-terminal-widths`
+to repeat the process checks at 69, 70, and 100 columns.
+Run the corresponding `tests/exhaustive/run-selector-regression.ts --all-terminal-widths`
+command through the same offline wrapper for 35 selector cases. These include
+model and effort propagation through the real parser and clean Pi adapter,
+dry-run without a child, and natural exit with the mocked child's status.
+The run executor checks actual Bash dispatch before invoking runtime behavior.
+Selector combinations currently use a fixed Pi clean selection and exercise
+cancellation and launch at all three widths, plus detached rejection. Option
+overrides, literal forwarded flags, and expected usage rejection are checked
+through real parsing and runtime behavior. The full selector harness/profile
+selection product remains part of the unfinished domain audit.
+Root `-h`, `--help`, and `help` are combined with every command option state.
+These cases run the actual router with the alias before `run` or `guide` and
+assert that no Bun entrypoint starts. Inventory checks reject new root flags or
+help aliases until their coverage is declared.
+These checks do not constitute the complete
+Cartesian command execution required from the separate exhaustive workload.
+`make test-exhaustive` runs the process regressions at all three terminal widths,
+then both complete declared Cartesian products without range limits.
+Each run writes unique evidence under `.test-performance/exhaustive-*/`.
+Completion requires exact declared and executed counts, matching source identities,
+and successful child receipts; a partial range never counts as completion.
+Executors check tracked and nonignored source inputs at checkpoints and completion
+and refuse source symlinks. Keep source inputs unchanged during a run. The
+`test-performance.json` evidence output, installed dependencies, and ignored
+generated files are outside that source identity.
+The current declaration contains 281,568,563,797,248 run cases and 31,762,612,224,000 guide
+cases. Full execution has not completed, and the global-option, syntax, and
+process-context domain audit remains open. This target is separate from the
+default developer suite and is not yet evidence that exhaustive verification passed.
+Run model, effort, and skill domains include separated and inline values, repeated
+and duplicate occurrences, empty earlier occurrences, missing values, and values
+shaped like flags. Scalar options retain their last value; skill selections
+accumulate and validate every occurrence.
+Run boolean flags include repeated occurrences. Both orders of the isolation
+flags and all six orders of continue, resume picker, and explicit resume ID
+are crossed with earlier states; the last flag wins.
+Launch assertions check translated resume arguments, including Codex's `exec`
+placement and Copilot's forwarded planning flag. External harnesses own
+conversation lookup; these offline fixtures do not run their conversation stores.
+JSON guide requests include 15 stdin classes, covering valid text boundaries,
+malformed streams, schema errors, and invalid intent. Explicit CLI intent bypasses
+stdin. The default suite checks all 60 input/override/matching-or-generation
+combinations in process and four through stdin pipes; the exhaustive target runs
+all 60 pipe cases as well. Invalid requests must fail before model-client access.
+The command matrix also varies JSON profile, model, effort, workflow, goal, and original
+intent independently of CLI options. Workflow IDs come from the profile guides
+and are checked against the actual catalog. A workflow requires an effective
+profile. Generation preserves original intent or rejects it without truncation:
+the field accepts 60,000 UTF-16 units, but generated prompts have an 8,000-unit
+limit including framing and the specification. The maintained request-resolution
+checks cover 16,384 override combinations and 920 goal/original-intent combinations;
+86 real service cases check command effects, including every declared goal workflow,
+both goal controllers, unsupported selections, protected objectives, and launch transport.
+The exhaustive preconditions expand this to 1,029 cases with all 23 goal fixtures.
+Those goal states also cross every command axis in the declared Cartesian matrix.
+Neither complete command product has been executed; interactive goal refinement and
+the remaining syntax/process-context audit are still pending.
+`make test` runs inside inherited network isolation (macOS Seatbelt or a Linux
+network namespace). TCP access, including host provider proxies, is unavailable;
+Unix fixture sockets remain available. The wrapper removes inherited `HERDR_*`
+context so tests cannot implicitly address the host agent's control socket or
+pane. Fixtures establish their own context inside the isolated command.
+Both `make test` and `make test-exhaustive` first run the isolation canaries
+outside the restriction, where they can create local TCP listeners to verify
+that isolated children cannot reach them. These canaries never contact providers.
+Unexpected default LLM client construction
+fails under explicit test configuration and leaves a violation receipt, so catching
+that error cannot silently turn the run green. `make offline-llm-contract` checks
+the isolation with local canaries and no provider traffic.
+
+Tests require Python 3.11 or newer on `PATH`. Run `make test-prepare` once after changing locked dependencies to populate
+`.test-performance/package-cache` using the repository's frozen source preparer
+and the configured package feed, and install the separately locked Playwright
+test dependencies with `npm ci`. This is setup, measured separately from warm
+tests. Fixtures still execute the frozen installer and receive independent
+dependency files; they reuse downloaded package bytes through
+`TRELLAGE_TEST_PACKAGE_CACHE`. Tests never fall back to an unrestricted network.
+
+Use `python3 scripts/test-performance.py --reference REFERENCE --candidate CANDIDATE
+--package-cache CACHE --inventory test-performance.json --output NEW_REPORT.json`
+to collect five alternating warm pairs. Both trees must have prepared dependencies;
+keep their source files unchanged throughout the run. The runner refuses failed,
+incomplete, changed-source, or contended samples. Acceptance requires an improvement
+greater than both 5% of the reference median and three times the larger MAD
+(median absolute deviation). Retain the output JSON and adjacent raw logs.
+
+Run the same command with `--phase clean-start --pairs 1` and a new output path
+for separate fresh-checkout measurements. Each sample uses a new local source
+snapshot, separately timed frozen dependency preparation, then its first test run.
+Package and operating-system caches remain warm; these are not machine-cold or
+dependency-cold measurements. The snapshots and their mise trust entries remain
+for inspection; untrust each snapshot before deleting it.
+
 Each recipe in `make test` emits `[test-timing]` start and end records with its
 target name, elapsed seconds, and exit status. Targets with multiple recipe
 lines emit a pair for each line. Failed targets are reported immediately, even

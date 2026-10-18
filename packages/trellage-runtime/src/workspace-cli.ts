@@ -12,7 +12,7 @@ import {
 } from "node:fs"
 import { lstat } from "node:fs/promises"
 import { execFile, spawn } from "node:child_process"
-import { promisify } from "node:util"
+import { promisify, stripVTControlCharacters } from "node:util"
 import path from "node:path"
 import { bunExecutable } from "./index.ts"
 import { acquirePreparationLock } from "./preparation-lock.ts"
@@ -163,30 +163,51 @@ async function installFrozenDependencies(root: string, env: NodeJS.ProcessEnv, i
     }
   }
   await withRegistryTransport(root, registry, async () => {
-    const child = spawn(
-      bunExecutable(),
-      [
-        "--no-env-file",
-        "install",
-        "--frozen-lockfile",
-        "--ignore-scripts",
-        "--no-progress",
-        "--backend=copyfile",
-        `--config=${path.join(root, "bunfig.toml")}`,
-      ],
-      { cwd: root, env: { ...env, HOME: installHome }, stdio: ["ignore", 2, 2], signal: cancellation.signal },
-    )
-    await new Promise<void>((resolve, reject) => {
-      let failure: Error | undefined
-      child.once("error", (error) => {
-        failure = error
+    let backend = process.platform === "darwin" ? "clonefile" : "copyfile"
+    while (true) {
+      cancellation.signal.throwIfAborted()
+      let diagnostics = ""
+      let normalFailure = false
+      const child = spawn(
+        bunExecutable(),
+        [
+          "--no-env-file",
+          "install",
+          "--frozen-lockfile",
+          "--ignore-scripts",
+          "--no-progress",
+          `--backend=${backend}`,
+          `--config=${path.join(root, "bunfig.toml")}`,
+        ],
+        { cwd: root, env: { ...env, HOME: installHome }, stdio: ["ignore", 2, "pipe"], signal: cancellation.signal },
+      )
+      child.stderr!.on("data", (data: Buffer) => {
+        diagnostics += data.toString()
+        process.stderr.write(data)
       })
-      child.once("close", (code, signal) => {
-        if (failure !== undefined) reject(failure)
-        else if (code !== 0) reject(new Error(`frozen source dependency installation failed (${code ?? signal})`))
-        else resolve()
-      })
-    })
+      try {
+        await new Promise<void>((resolve, reject) => {
+          let failure: Error | undefined
+          child.once("error", (error) => {
+            failure = error
+          })
+          child.once("close", (code, signal) => {
+            normalFailure = failure === undefined && signal === null && code !== null && code !== 0
+            if (failure !== undefined) reject(failure)
+            else if (code !== 0) reject(new Error(`frozen source dependency installation failed (${code ?? signal})`))
+            else resolve()
+          })
+        })
+        return
+      } catch (cause) {
+        cancellation.signal.throwIfAborted()
+        const unsupported = /^(?:ENOTSUP|EXDEV):[^\n]*failed to link package:[^\n]*\(clonefile\)/mu
+        if (backend !== "clonefile" || !normalFailure || !unsupported.test(stripVTControlCharacters(diagnostics)))
+          throw cause
+        process.stderr.write("trellage source runtime: cloning unsupported; retrying frozen install with independent copies\n")
+        backend = "copyfile"
+      }
+    }
   })
 }
 

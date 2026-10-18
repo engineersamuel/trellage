@@ -19,7 +19,8 @@
  */
 import os from "node:os"
 import path from "node:path"
-import { CopilotClient, RuntimeConnection, type CopilotClientOptions, type SessionConfig } from "@github/copilot-sdk"
+import { RuntimeConnection, type CopilotClientOptions, type SessionConfig } from "@github/copilot-sdk"
+import { createLiveCopilotClient } from "./provider-clients.ts"
 import {
   GuideModelCapabilityError,
   GuideModelCleanupError,
@@ -65,7 +66,7 @@ export interface DoctorFailureDiagnosisProviderOptions {
   readonly clientFactory?: (options: CopilotClientOptions) => GuideModelClient
 }
 
-const defaultClientFactory = (options: CopilotClientOptions): GuideModelClient => new CopilotClient(options)
+const defaultClientFactory = (options: CopilotClientOptions): GuideModelClient => createLiveCopilotClient(options)
 
 const defaultModel = "gpt-5.6-sol"
 const defaultEffort: GuideReasoningEffort = "medium"

@@ -30,7 +30,7 @@ wait
     { mode: 0o755 },
   );
   const child = spawn(process.execPath, [lifecycle, "setup", "copilot", "hve"], {
-    env: { HOME: home, PATH: "/usr/bin:/bin" },
+    env: { HOME: home, PATH: [process.env.TRELLAGE_TEST_BIN, "/usr/bin", "/bin"].filter(Boolean).join(path.delimiter) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   try {

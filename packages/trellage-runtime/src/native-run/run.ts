@@ -140,7 +140,9 @@ const parseValuedRunArgument = (
   }
   if (argument === "--skill" || argument.startsWith("--skill=")) {
     const parsed = optionValue(argument, "--skill", own, index)
-    if (!/^[a-z0-9._-]+\/[a-z0-9._-]+:[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(parsed.value))
+    // Match the repository identities accepted by Native config: owners cannot
+    // be paths, and a repository cannot be the dot or parent directory name.
+    if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\/(?!\.{1,2}:)[a-z0-9._-]+:[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(parsed.value))
       throw new NativeRunError("usage", `--skill requires OWNER/REPO:NAME, got ${parsed.value}`)
     state.skills = [...(state.skills ?? []), parsed.value]
     return parsed.index
@@ -966,13 +968,13 @@ export const runNative = async (options: RunOptions, dependencies: RunDependenci
   return launchPreparedRun(prepared, effectiveOptions, dependencies, environment, cwd, paths, write)
 }
 
-export const main = async (argv: ReadonlyArray<string>): Promise<number> => {
+export const main = async (argv: ReadonlyArray<string>, dependencies: RunDependencies = {}): Promise<number> => {
   if (argv.length === 0 || argv[0] === "-h" || argv[0] === "--help") {
     process.stdout.write(`${RUN_USAGE}\n`)
     return argv.length === 0 ? 2 : 0
   }
   try {
-    return await runNative(parseRunArguments(argv))
+    return await runNative(parseRunArguments(argv), dependencies)
   } catch (error) {
     if (error instanceof NativeRunError) {
       process.stderr.write(`trx run: ${error.message}\n`)

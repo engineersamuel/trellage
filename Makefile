@@ -17,8 +17,35 @@ endif
 PARALLEL_TEST_TARGETS := test-command native-copilot-profiles native-prime-profile launcher conversation-source source-runtime dependency-bootstrap development-resolution-contract rebuild-profiles-bun-runtime publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge azure-fresh-install-contract agent-harness native-harness-version native-agency-profile native-jcode-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test trellage-statusline
 TIMING_SENSITIVE_TEST_TARGETS := native-omp-profile native-claude-profile native-tui-matrix-test
 FINAL_TEST_TARGETS := native-profile-router
+PARALLEL_TEST_TARGETS += cli-matrix-contract
 
 test:
+	+$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-llm-contract
+	+python3 scripts/test-offline.py -- $(MAKE) --no-print-directory test-offline-workload
+
+.PHONY: test-exhaustive
+test-exhaustive:
+	+$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-llm-contract
+	python3 scripts/test-offline.py -- bun tests/exhaustive/execute.ts
+
+.PHONY: cli-matrix-contract
+cli-matrix-contract:
+	bun test tests/exhaustive/*.test.ts
+	python3 scripts/test-offline.py -- python3 tests/exhaustive/router-help-processes.py
+	python3 scripts/test-offline.py -- bun tests/exhaustive/guide-process-regression.ts
+	python3 scripts/test-offline.py -- bun tests/exhaustive/controlling-input-regression.ts
+	python3 scripts/test-offline.py -- bun tests/exhaustive/run-selector-regression.ts
+
+.PHONY: test-offline-workload offline-llm-contract test-prepare
+test-prepare:
+	bash scripts/prepare-test-cache.sh
+
+offline-llm-contract:
+	python3 tests/offline_llm_contract.py
+	python3 scripts/test-offline.py -- bun test tests/offline_provider.test.ts
+
+test-offline-workload:
+	@test "$$TRELLAGE_TEST_OFFLINE" = 1 || { echo 'Use make test for enforced offline execution' >&2; exit 1; }
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j$(TEST_JOBS) $(PARALLEL_TEST_TARGETS)
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 profile-compiler-fingerprint
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 $(TIMING_SENSITIVE_TEST_TARGETS)
@@ -36,6 +63,8 @@ shell-syntax:
 
 test-command:
 	python3 tests/test_command.py
+	python3 tests/test_performance.py
+	python3 tests/test_performance_clean_start.py
 
 dependency-bootstrap:
 	bash tests/dependency_bootstrap_contract.sh
@@ -61,7 +90,7 @@ agent-profile-hup-contract:
 	bash tests/agent_profile_hup_contract.sh
 
 floating-skills-contract:
-	bun test tests/floating_skills.test.mjs tests/composed_skill_snapshot.test.ts prototypes/trellage-claude-common/tests/composed-instructions.test.ts
+	bun test tests/floating_skills.test.mjs tests/floating_skill_process.test.ts tests/composed_skill_snapshot.test.ts prototypes/trellage-claude-common/tests/composed-instructions.test.ts
 
 profile-guide-core:
 	cd packages/trellage-guide-core && bun run check && bun run test

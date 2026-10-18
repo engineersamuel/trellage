@@ -286,6 +286,11 @@ const temporaryPackDirectories = async (): Promise<ReadonlyArray<string>> =>
   (await readdir(os.tmpdir())).filter((entry) => entry.startsWith("trellage-guide-pack-"))
 
 describe("codebase augmentation", () => {
+  const repositoryJev: JevSystemOneClient = {
+    systemOne: async () => ({ answers: { decision: { type: "noul", noul: 1 } } }),
+  }
+  const repositoryDecision = () => ({ jev: { cwd: workspace, client: repositoryJev } })
+
   it("keeps a clear request unchanged and skips repository packing when Jev is confident", async () => {
     const runner = new FakeRunner(async () => {
       throw new Error("repository packing must not run")
@@ -314,7 +319,7 @@ describe("codebase augmentation", () => {
       return { intent: "Fix the flaky test in src/guide-ui.tsx" }
     })
 
-    const result = await runCodebaseAugment("fix the flaky test", provider, contextFor(runner))
+    const result = await runCodebaseAugment("fix the flaky test", provider, contextFor(runner), repositoryDecision())
 
     expect(result).toBe("Fix the flaky test in src/guide-ui.tsx")
     expect(seen?.intent).toBe("fix the flaky test")
@@ -342,7 +347,7 @@ describe("codebase augmentation", () => {
       return { intent: "narrowed" }
     })
 
-    expect(await runCodebaseAugment("intent", provider, contextFor(runner))).toBe("narrowed")
+    expect(await runCodebaseAugment("intent", provider, contextFor(runner), repositoryDecision())).toBe("narrowed")
     expect(runner.calls).toHaveLength(3)
     expect(runner.calls[0]?.args).toContain("--ignore")
     expect(runner.calls[0]?.args).not.toContain("--include")
@@ -358,7 +363,7 @@ describe("codebase augmentation", () => {
       return ok()
     })
 
-    await runCodebaseAugment("intent", providerWith(async () => ({ intent: "kept" })), contextFor(runner))
+    await runCodebaseAugment("intent", providerWith(async () => ({ intent: "kept" })), contextFor(runner), repositoryDecision())
 
     expect(runner.calls).toHaveLength(1)
   })
@@ -370,7 +375,7 @@ describe("codebase augmentation", () => {
     })
 
     await expect(
-      runCodebaseAugment("intent", providerWith(async () => ({ intent: "unused" })), contextFor(runner)),
+      runCodebaseAugment("intent", providerWith(async () => ({ intent: "unused" })), contextFor(runner), repositoryDecision()),
     ).rejects.toThrow(/repomix\.config\.json/u)
   })
 
@@ -381,7 +386,7 @@ describe("codebase augmentation", () => {
       return ok()
     })
 
-    await runCodebaseAugment("intent", providerWith(async () => ({ intent: "kept" })), contextFor(runner))
+    await runCodebaseAugment("intent", providerWith(async () => ({ intent: "kept" })), contextFor(runner), repositoryDecision())
 
     expect(activity).toContain("Packing 12 files")
     expect(activity).toContain("Done")
@@ -394,7 +399,7 @@ describe("codebase augmentation", () => {
     })
 
     await expect(
-      runCodebaseAugment("intent", providerWith(async () => ({ intent: "unused" })), contextFor(runner)),
+      runCodebaseAugment("intent", providerWith(async () => ({ intent: "unused" })), contextFor(runner), repositoryDecision()),
     ).rejects.toThrow(GuideAugmentError)
     expect(await temporaryPackDirectories()).toEqual(before)
   })

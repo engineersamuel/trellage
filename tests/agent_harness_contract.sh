@@ -83,7 +83,7 @@ for required_ci_line in \
   "        run: ${ci_tool_probe}" \
   '          bun-version: 1.4.2' \
   '        run: bash scripts/install-source-runtime.sh --prepare' \
-  '        run: npm ci --prefix tests/playwright' \
+  '        run: make test-prepare' \
   '    runs-on: macos-latest' \
   '        run: make launcher conversation-source source-runtime profile-guide-contract' \
   "        if: github.event_name == 'pull_request'" \

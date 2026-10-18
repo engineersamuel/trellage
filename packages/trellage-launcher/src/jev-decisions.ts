@@ -1,8 +1,8 @@
 import { lstat, readFile } from "node:fs/promises"
 import path from "node:path"
 import { parseEnv } from "node:util"
+import { createLiveTypeSafeClient } from "./provider-clients.ts"
 import {
-  TypeSafeClient,
   choice,
   noul,
   type Questions,
@@ -26,7 +26,7 @@ export const jevModel = "jev-1.13.0"
 export const jevTimeoutMs = 3_000
 
 const loadClient = (apiKey: string): JevSystemOneClient =>
-  new TypeSafeClient({
+  createLiveTypeSafeClient({
     apiKey,
     defaultModel: jevModel,
     retry: { maxRetries: 0 },

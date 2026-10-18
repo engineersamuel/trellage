@@ -46,6 +46,10 @@ def command(line: bytes, master: int, child: subprocess.Popen[bytes]) -> None:
         signal_child(child, signal.Signals[message["signal"]])
     elif kind == "resize":
         resize(master, message.get("columns"), message.get("rows"))
+    elif kind == "terminal-state" and type(message.get("requestId")) is int:
+        flags = termios.tcgetattr(master)[3]
+        raw = not bool(flags & (termios.ICANON | termios.ECHO | termios.ISIG))
+        print(json.dumps({"requestId": message["requestId"], "raw": raw}), file=sys.stderr, flush=True)
     else:
         raise ValueError(f"Invalid PTY command: {kind!r}")
 
