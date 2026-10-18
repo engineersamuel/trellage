@@ -2,10 +2,16 @@ import { parse } from "yaml"
 import { lstat, readFile, readdir, realpath } from "node:fs/promises"
 import path from "node:path"
 import { exactKeys, fail, identifier, identityPart, record, text } from "./validation.ts"
+import type { SelectionMetadata } from "./run-selection.ts"
+import { loadShippedProfileGuide } from "./shipped-guide.ts"
 
 export * from "./conversation.ts"
 export * from "./conversation-sanitization.ts"
 export * from "./guide-limits.ts"
+export * from "./profile-instructions.ts"
+export * from "./run-selection.ts"
+export * from "./shipped-guide.ts"
+export * from "./native-identity.ts"
 export { ProfileGuideValidationError } from "./validation.ts"
 
 export interface ProfileGuideIdentity {

@@ -129,7 +129,6 @@ export interface GuideEnrichResult {
 }
 
 export interface GuideMatchInput {
-  readonly catalogRevision?: string
   readonly intent: string
   readonly entries: ReadonlyArray<GuideMatchCatalogEntry>
   readonly goal?: PreparedGuideGoal
@@ -174,9 +173,9 @@ export const guideBodyMaximumLength = 128_000
  */
 export const guideEnrichPackMaximumLength = 400_000
 
-/** Locally filtered catalogs and goals may contain fewer than three eligible entries. */
+/** Goal matching can rank one eligible entry; ordinary matching still requires three. */
 export const assertGuideMatchInput = (input: GuideMatchInput): GuideMatchInput => {
-  const minimum = input.goal !== undefined || input.entries.every(entry => entry.profileSelection !== undefined) ? 1 : 3
+  const minimum = input.goal === undefined ? 3 : 1
   if (input.entries.length < minimum) {
     fail("match input.entries", `must contain at least ${minimum} entries to rank: got ${input.entries.length}`)
   }
@@ -316,7 +315,7 @@ export const validateGuideMatchResult = (
   const fields = record(value, "match result")
   exactKeys(fields, "match result", ["candidates"])
   const rawCandidates = array(fields.candidates, "match result.candidates", {
-    minimum: goal === undefined ? Math.max(1, Math.min(3, workflowIndex.size)) : 1,
+    minimum: goal === undefined ? 3 : 1,
     maximum: 5,
   })
   const candidates = rawCandidates.map((item, index) =>

@@ -70,28 +70,8 @@ const readNativeFamilyRuntime = async (prototypesRoot, family) => {
 }
 
 const assertNativeFamilyCommonBundle = async (prototypesRoot, family) => {
-  const { familyRoot, installer, launcher, runtimeSource } = await readNativeFamilyRuntime(prototypesRoot, family)
-  if (family === "trellage-codex-profiles") {
-    const catalog = JSON.parse(await readFile(path.join(familyRoot, "catalog.json"), "utf8"))
-    assert.ok(
-      Object.values(catalog.profiles).every(
-        (profile) => Array.isArray(profile.skillBundles) && profile.skillBundles.includes("native-common"),
-      ),
-      `${family} catalog profiles must select native-common`,
-    )
-    assert.match(
-      launcher,
-      /native-environment-runtime/u,
-      `${family} launcher must consume the native environment runtime`,
-    )
-    assert.match(
-      installer,
-      /install-native-environment-runtime\.sh/u,
-      `${family} installer must publish the native environment runtime`,
-    )
-  } else {
-    assert.match(runtimeSource, /--bundle native-common/u, `${family} launcher runtime must select native-common`)
-  }
+  const { installer, runtimeSource } = await readNativeFamilyRuntime(prototypesRoot, family)
+  assert.match(runtimeSource, /--bundle native-common/u, `${family} launcher runtime must select native-common`)
   assert.match(
     installer,
     /install-floating-skills-runtime\.sh/u,
@@ -364,10 +344,17 @@ test("a missing required wildcard skill fails before publishing", async () => {
 
 test("Native and comparison surfaces consume their common skill bundle", async () => {
   const prototypesRoot = path.join(repositoryRoot, "prototypes")
-  const nativeFamilies = (await readdir(prototypesRoot, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && /^trellage-.+-profiles$/u.test(entry.name))
-    .map((entry) => entry.name)
-    .sort()
+  const nativeFamilies = []
+  for (const entry of await readdir(prototypesRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^trellage-.+-profiles$/u.test(entry.name)) continue
+    const familyRoot = path.join(prototypesRoot, entry.name)
+    const [bin, installer] = await Promise.all([
+      lstat(path.join(familyRoot, "bin")).catch(() => undefined),
+      lstat(path.join(familyRoot, "install.sh")).catch(() => undefined),
+    ])
+    if (bin?.isDirectory() && installer?.isFile()) nativeFamilies.push(entry.name)
+  }
+  nativeFamilies.sort()
   assert.ok(nativeFamilies.length > 0)
 
   for (const family of nativeFamilies) {

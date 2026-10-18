@@ -132,7 +132,7 @@ export const assembleProfileGuide = (
     resolved.some((workflow) => workflow.interaction !== undefined) &&
     !(
       policy.identity.surface === "native" &&
-      policy.identity.launcher === "copilot" &&
+      policy.identity.harness === "copilot" &&
       policy.identity.profile === "hve"
     )
   ) {

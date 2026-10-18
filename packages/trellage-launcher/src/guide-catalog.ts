@@ -10,6 +10,7 @@ import {
   type ProfileGuideInteraction,
   isProfileGuideGoalController,
   profileGuideGoalExecutionProblem,
+  validateResolvedProfileGuide,
   type ProfileGuideGoalExecution,
   type ProfileGuideIdentity,
   type ProfileGuidePrerequisite,
@@ -285,7 +286,7 @@ export interface CompactProfileGuideWorkflow {
 }
 
 export interface CompactProfileGuide {
-  readonly schemaVersion: 1 | 2
+  readonly schemaVersion: 1
   readonly capabilities: ReadonlyArray<string>
   readonly bestFor: ReadonlyArray<string>
   readonly avoidFor: ReadonlyArray<string>
@@ -327,9 +328,6 @@ export const compactProfileGuide = (guide: ProfileGuideV1): CompactProfileGuide 
 })
 
 export interface GuideMatchCatalogEntry {
-  readonly harnessSelection?: SelectionMetadata
-  readonly profileSelection?: SelectionMetadata
-  readonly executionFactsKnown?: boolean
   readonly ref: string
   readonly harness: string
   readonly profiles: ReadonlyArray<string>

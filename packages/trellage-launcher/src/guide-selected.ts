@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto"
-import { loadRunCatalog, optionsFromRunSource, toGuideCatalog } from "./run-catalog.ts"
 import {
   loadProfileGuide,
   type LoadedProfileGuide,
@@ -75,18 +73,6 @@ export const loadSelectedGuide = async (
   guideRoot: string,
   ref: string,
 ): Promise<SelectedGuideDocument> => {
-  if (catalog.runSource !== undefined) {
-    const snapshot = await loadRunCatalog(optionsFromRunSource(catalog.runSource))
-    const canonical = canonicalProfileRef(ref)
-    const original = catalog.native.find(entry => `native:${entry.harness}/${entry.name}` === canonical)
-    const current = toGuideCatalog(snapshot).native.find(entry => `native:${entry.harness}/${entry.name}` === canonical)
-    const loaded = snapshot.guides.get(canonical)
-    if (!original || !current || !loaded) throw new SelectedGuideError(`Profile is no longer eligible: ${canonical}; inspect trx run list`)
-    const revision = createHash("sha256").update(JSON.stringify(loaded)).digest("hex")
-    if (original.guideRevision !== revision || JSON.stringify(original.harnessSelection) !== JSON.stringify(current.harnessSelection))
-      throw new SelectedGuideError(`Profile guide changed after catalog collection: ${canonical}`)
-    return {ref:canonical,guide:loaded.guide,body:loaded.body}
-  }
   const source = findSelectedGuideSource(catalog, guideRoot, ref)
   let loaded: LoadedProfileGuide
   try {

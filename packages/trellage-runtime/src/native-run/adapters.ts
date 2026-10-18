@@ -30,6 +30,7 @@ import { nativePresetProfiles } from "./presets.ts"
 import { childSettlement } from "./child-settlement.ts"
 import { digestDirectory } from "./source.ts"
 import { pickCopilotSession } from "./session-picker.ts"
+import { resolveNativeBinary } from "./requirements.ts"
 
 const execFileAsync = promisify(execFile)
 

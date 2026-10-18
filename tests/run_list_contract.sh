@@ -56,9 +56,13 @@ assert any(p['id']=='blocked' for p in result['unavailable']['profiles'])
 with open(sys.argv[2]) as f: text=f.read()
 assert 'Local patch review' in text and 'Unavailable' in text
 PY
-if run list --json >"$work/retired.out" 2>"$work/retired.err"; then echo 'retired list unexpectedly succeeded' >&2; exit 1; fi
-test ! -s "$work/retired.out"
-grep -Fq 'mise run trx -- run list' "$work/retired.err"
+run list --json >"$work/compat-list.json"
+python3 - "$work/compat-list.json" <<'PY'
+import json,sys
+with open(sys.argv[1]) as f: result=json.load(f)
+assert result['schemaVersion']==2
+assert any(h['harness']=='pi' for h in result['harnesses'])
+PY
 if run run list --json --json >"$work/invalid.out" 2>"$work/invalid.err"; then exit 1; fi
 test ! -s "$work/invalid.out"
 # No automatic dependency preparation, even in source mode.

@@ -722,6 +722,9 @@ jq -e '
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'JSON list schema 2 shape differs'
 
+"$fixture_bin/trx" run list --json >"$fixture_root/run-list.json" \
+  || fail 'Native run catalog failed'
+
 # Listing refuses stale dependencies in source mode; preparation is explicit.
 mv "$fixture_source/.managed-by-trellage-source" "$fixture_root/source-ownership.saved"
 rm "$fixture_source/.trellage-source-ready.json"
@@ -734,7 +737,7 @@ refresh_fixture_source
 TRELLAGE_TRX_SOURCE_ROOT="$fixture_source/prototypes/trellage-router" \
   TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides" \
   "$fixture_source/prototypes/trellage-router/bin/trx" run list --json >"$fixture_root/source-list.json" || fail 'prepared source list failed'
-cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" || fail 'source and installed catalog differ'
+cmp -s "$fixture_root/source-list.json" "$fixture_root/run-list.json" || fail 'source and installed catalog differ'
 mv "$fixture_root/source-ownership.saved" "$fixture_source/.managed-by-trellage-source"
 refresh_fixture_source
 

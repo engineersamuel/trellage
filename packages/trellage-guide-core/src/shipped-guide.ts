@@ -37,7 +37,7 @@ export const loadShippedProfileGuide = async (
     identity.surface === "native"
       ? identity.profile === "firstmate"
         ? "firstmate"
-        : `preset-${identity.launcher}-${identity.profile}`
+        : `preset-${identity.harness}-${identity.profile}`
       : identity.profile
   const profile = record(profiles[key], key)
   const guide = record(profile.guide, `${key}.guide`)

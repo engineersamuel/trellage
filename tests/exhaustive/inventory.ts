@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
-import { discoverProfileGuideRelativePaths, parseProfileGuide } from "@trellage/guide-core"
+import { discoverProfileGuideRelativePaths, loadProfileGuide, parseProfileGuideIdentity } from "@trellage/guide-core"
 import { readTrellageConfig } from "../../packages/trellage-runtime/src/native-config.ts"
 import { adapters } from "../../packages/trellage-runtime/src/native-run/adapters.ts"
 import { nativeHarnessPresets, nativeSharedPresets } from "../../packages/trellage-runtime/src/native-run/presets.ts"
@@ -141,7 +141,7 @@ const sourcePaths = [
   "packages/trellage-launcher/src/basket-preview.tsx",
   "packages/trellage-launcher/src/fork-preview.tsx",
   "packages/trellage-launcher/src/ritual-catalog.ts",
-  "config.toml",
+  "config.example.toml",
 ] as const
 
 export const commandInventory = async (root: string) => {
@@ -162,7 +162,7 @@ export const commandInventory = async (root: string) => {
   )
   assertFlagInventory(guideParser, guideFlags)
   const { config } = await readTrellageConfig({
-    environment: { TRELLAGE_CONFIG: path.join(root, "config.toml") },
+    environment: { TRELLAGE_CONFIG: path.join(root, "config.example.toml") },
   })
   const profiles = [
     ...new Set([
@@ -176,7 +176,8 @@ export const commandInventory = async (root: string) => {
   const guideSources = await Promise.all(
     (await discoverProfileGuideRelativePaths(guideRoot)).map(async (relative) => {
       const source = await readFile(path.join(guideRoot, relative), "utf8")
-      return { relative, source, document: parseProfileGuide(relative, source) }
+      const document = await loadProfileGuide(guideRoot, parseProfileGuideIdentity(relative))
+      return { relative, source, document }
     }),
   )
   return {

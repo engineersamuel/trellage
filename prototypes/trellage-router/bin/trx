@@ -212,7 +212,6 @@ case "${1-}" in
     else
       die 'list accepts only --json or HARNESS [--json]'
     fi
-    die 'trx list is retired; use trx run list or trx run list --json'
     ;;
   guide)
     mode='guide'
@@ -567,7 +566,7 @@ if [[ "$mode" == run-list ]]; then
   TRELLAGE_READINESS_MEMO=0 "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/workspace-cli.ts" check "$source_workspace" \
     || die 'source runtime is not ready; run scripts/install-source-runtime.sh --prepare explicitly'
   TRELLAGE_RUN_SOURCE_ROOT="$source_workspace" TRELLAGE_RUN_GUIDE_ROOT="$guide_root" TRELLAGE_RUN_ROUTER_PATH="$router_command_path" \
-    exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-launcher/src/run-list-cli.ts" ${run_list_args[@]+"${run_list_args[@]}"}
+    exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-launcher/src/run-list-catalog-cli.ts" ${run_list_args[@]+"${run_list_args[@]}"}
 fi
 if [[ "$mode" == lifecycle ]]; then
   require_source_runtime

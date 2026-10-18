@@ -9,7 +9,7 @@ import { nativePresetProfiles, nativePresetProfile } from "../../packages/trella
 const [home, ...harnesses] = process.argv.slice(2)
 if (!home || harnesses.length === 0) throw new Error("usage: native-preset-sources.ts HOME HARNESS [HARNESS...]")
 const { config } = await readTrellageConfig({
-  environment: { TRELLAGE_CONFIG: path.resolve(import.meta.dir, "../../config.toml") },
+  environment: { TRELLAGE_CONFIG: path.resolve(import.meta.dir, "../../config.example.toml") },
 })
 const selections = new Map<string, Set<string>>()
 for (const harness of harnesses) {

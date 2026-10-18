@@ -2,7 +2,7 @@ import { expect, test } from "vitest"
 import { parseSelectionMetadata } from "../src/run-selection.ts"
 import { assembleProfileGuide, parseProfileInstructions } from "../src/profile-instructions.ts"
 const selection = () => parseSelectionMetadata({ description: "Review", best_for: ["Review a patch"] }, "selection")
-const policy = { identity: { surface: "native", launcher: "pi", profile: "review" } as const }
+const policy = { identity: { surface: "native", harness: "pi", profile: "review" } as const }
 const document = (template = "{{intent}}") => `---
 schemaVersion: 2
 templates:
@@ -60,7 +60,7 @@ test("duplicate IDs and invalid invocation or goal policies remain rejected", ()
 })
 test("goal policies cannot declare empty or duplicate workflow sets", () => {
   const instructions = parseProfileInstructions(document(), "guide")
-  const codex = { identity: { surface: "native", launcher: "codex", profile: "review" } as const }
+  const codex = { identity: { surface: "native", harness: "codex", profile: "review" } as const }
   for (const workflowIds of [[], ["review", "review"]])
     expect(() =>
       assembleProfileGuide(selection(), [workflow], instructions, {

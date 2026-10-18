@@ -192,7 +192,7 @@ const fixtureFor = async (context: TestContext, descriptor: LauncherDescriptor |
   fixture.env = {
     HOME: home,
     PATH: `${fixture.bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
-    BUN_INSTALL_CACHE_DIR: path.join(root, "bun-cache"),
+    BUN_INSTALL_CACHE_DIR: process.env.TRELLAGE_TEST_PACKAGE_CACHE ?? path.join(root, "bun-cache"),
     TRELLAGE_CONFIG: path.join(workspace, "config.toml"),
     TMPDIR: path.join(root, "work"),
     SKILLS_FORBIDDEN_LOG: fixture.forbiddenLog,
