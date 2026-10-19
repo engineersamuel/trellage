@@ -51,6 +51,23 @@ class OfflineContract(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_host_config_does_not_override_fixture_home(self):
+        host_settings = {
+            "XDG_CONFIG_HOME": "/host/config",
+            "XDG_DATA_HOME": "/host/data",
+            "XDG_STATE_HOME": "/host/state",
+            "XDG_CACHE_HOME": "/host/cache",
+            "TRELLAGE_CONFIG": "/host/config.toml",
+        }
+        with patch.dict(os.environ, host_settings):
+            result = self.run_offline(
+                "import os; "
+                f"assert not set({list(host_settings)!r}) & os.environ.keys(); "
+                "os.environ['XDG_CONFIG_HOME']='/fixture/config'; "
+                "assert os.environ['XDG_CONFIG_HOME']=='/fixture/config'"
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_isolation_preserves_user_and_ancestor_ownership(self):
         paths = [str(ROOT), *(str(parent) for parent in ROOT.parents)]
         expected = [(path, os.stat(path).st_uid, os.stat(path).st_gid) for path in paths]

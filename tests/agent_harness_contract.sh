@@ -79,7 +79,7 @@ ci_tool_probe='for tool in jq curl git make fish rg bun node python3; do command
 for required_ci_line in \
   '          ref: ${{ github.event.pull_request.head.sha || github.sha }}' \
   '          fetch-depth: 2' \
-  '        run: sudo apt-get install --yes --no-install-recommends fish ripgrep' \
+  '        run: sudo apt-get install --yes --no-install-recommends fish ripgrep libseccomp2' \
   "        run: ${ci_tool_probe}" \
   '          bun-version: 1.4.2' \
   '        run: bash scripts/install-source-runtime.sh --prepare' \

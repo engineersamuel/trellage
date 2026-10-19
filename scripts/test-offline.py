@@ -39,6 +39,10 @@ def main(argv: list[str]) -> int:
             "TRELLAGE_TEST_OFFLINE": "1",
             "TRELLAGE_TEST_VIOLATIONS": str(violations),
         }
+        # Fixtures replace HOME; inherited absolute paths would still select the
+        # host's config and make parallel tests share mutable Native state.
+        for key in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "TRELLAGE_CONFIG"):
+            env.pop(key, None)
         # Resolve the pinned executable before fixtures replace HOME. A mise shim
         # would otherwise consult the fixture's empty trust database on every call.
         bun = subprocess.run(

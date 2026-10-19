@@ -186,7 +186,11 @@ the remaining syntax/process-context audit are still pending.
 seccomp). TCP access, including host provider proxies, is unavailable;
 Unix fixture sockets remain available. The wrapper removes inherited `HERDR_*`
 context so tests cannot implicitly address the host agent's control socket or
-pane. Fixtures establish their own context inside the isolated command.
+pane. It also removes inherited `XDG_CONFIG_HOME`, `XDG_DATA_HOME`,
+`XDG_STATE_HOME`, `XDG_CACHE_HOME`, and `TRELLAGE_CONFIG` so fixture homes do
+not share host configuration or mutable state. Fixtures establish their own
+context inside the isolated command; explicit test package-cache settings remain
+available.
 Both `make test` and `make test-exhaustive` first run the isolation canaries
 outside the restriction, where they can create local TCP listeners to verify
 that isolated children cannot reach them. These canaries never contact providers.
