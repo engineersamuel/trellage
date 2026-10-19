@@ -5,6 +5,7 @@ import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { chmod, mkdir, readFile, readdir, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { parse as parseToml } from "smol-toml"
 import {
   claudeAdapter,
   codexAdapter,
@@ -1343,6 +1344,59 @@ test("canonical launches preserve signal exit status", async () => {
       () => {},
     ),
   ).toBe(143)
+})
+
+test("Codex saves folder trust before spawning in each new worktree and preserves profile settings", async () => {
+  const { root, work, dependencies } = await world()
+  await git(work, "commit", "--allow-empty", "-qm", "initial")
+  const linked = path.join(root, 'linked "worktree"')
+  await git(work, "worktree", "add", "-qb", "linked", linked)
+  const alias = path.join(root, "worktree-alias")
+  await symlink(linked, alias)
+  let generation: string | undefined
+  for (const workspace of [work, alias]) {
+    const status = await runNative(
+      { ...base, harness: "codex", profiles: ["office"], allowUnprovenIsolation: true },
+      {
+        ...dependencies(async (launch, _environment, cwd, onSpawn) => {
+          expect(cwd).toBe(workspace)
+          const home = launch.env.CODEX_HOME!
+          if (generation) expect(home).toBe(generation)
+          generation = home
+          const file = path.join(home, "config.toml")
+          const config = parseToml(await readFile(file, "utf8"))
+          expect(config.projects).toMatchObject({
+            [workspace]: { trust_level: "trusted" },
+            [await realpath(workspace)]: { trust_level: "trusted" },
+          })
+          if (workspace === work)
+            await writeFile(file, `model = "saved-model"\n${await readFile(file, "utf8")}`)
+          else {
+            expect(config.model).toBe("saved-model")
+            expect(config.projects).toMatchObject({ [work]: { trust_level: "trusted" } })
+          }
+          onSpawn(undefined)
+          return 0
+        }),
+        cwd: workspace,
+      },
+    )
+    expect(status).toBe(0)
+  }
+})
+
+test("Codex refuses invalid saved configuration instead of discarding it or launching", async () => {
+  const { dependencies, work } = await world()
+  const prepared = await prepareRun(
+    { ...base, harness: "codex", profiles: ["office"], allowUnprovenIsolation: true },
+    dependencies(),
+  )
+  const file = path.join(prepared.layout.generationPath, "config.toml")
+  for (const text of ["not valid toml [", 'projects = "invalid"\n']) {
+    await writeFile(file, text)
+    await expect(codexAdapter.trustWorkspace!(prepared.layout, work)).rejects.toThrow()
+    expect(await readFile(file, "utf8")).toBe(text)
+  }
 })
 
 test("Grok publishes a proxy-only home and keeps conversation state across generations", async () => {

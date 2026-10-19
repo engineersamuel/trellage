@@ -36,7 +36,11 @@ native sandbox by default.
   both authentication paths and both interactive and non-interactive launches.
   Commands run with the host account's permissions, without command approval
   prompts or a Codex OS sandbox. Profile-state isolation is not a security
-  boundary. Hook trust remains a separate control.
+  boundary. Before each launch, trx saves trust for the launch directory in
+  the isolated Codex profile, including new worktrees and resolved symlink
+  paths. No folder-trust confirmation is needed, and the host's global Codex
+  settings are not changed. Only launch from folders you trust. Hook trust
+  remains a separate control.
 - **Composed Grok**: uses `--sandbox workspace` alongside
   `--permission-mode bypassPermissions --always-approve`. Per xAI's docs,
   `workspace` is the only built-in profile that keeps network access
