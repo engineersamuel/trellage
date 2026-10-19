@@ -51,6 +51,18 @@ class OfflineContract(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_isolation_preserves_user_and_ancestor_ownership(self):
+        paths = [str(ROOT), *(str(parent) for parent in ROOT.parents)]
+        expected = [(path, os.stat(path).st_uid, os.stat(path).st_gid) for path in paths]
+        result = self.run_offline(
+            "import os; "
+            f"assert (os.getuid(),os.getgid()) == {(os.getuid(), os.getgid())!r}; "
+            f"expected={expected!r}; "
+            "actual=[(p,os.stat(p).st_uid,os.stat(p).st_gid) for p,_,_ in expected]; "
+            "assert actual == expected, (actual, expected)"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_permission_rejection_fixtures_keep_exact_mode_bits(self):
         result = self.run_offline(
             "import os,tempfile; from pathlib import Path; "
@@ -103,6 +115,32 @@ class OfflineContract(unittest.TestCase):
                 "a,_=s.accept(); c.sendall(b'fixture'); assert a.recv(7)==b'fixture'"
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux syscall isolation contract")
+    def test_linux_denies_datagram_raw_and_io_uring_network_paths(self):
+        result = self.run_offline("""
+import ctypes, errno, socket
+for family, kind in [(socket.AF_INET, socket.SOCK_DGRAM),
+                     (socket.AF_INET6, socket.SOCK_STREAM),
+                     (socket.AF_INET6, socket.SOCK_DGRAM),
+                     (socket.AF_PACKET, socket.SOCK_RAW),
+                     (socket.AF_NETLINK, socket.SOCK_RAW)]:
+    try:
+        socket.socket(family, kind)
+    except OSError as error:
+        assert error.errno == errno.EPERM, error
+    else:
+        raise AssertionError((family, kind, 'network socket permitted'))
+library = ctypes.CDLL('libseccomp.so.2')
+library.seccomp_syscall_resolve_name.argtypes = [ctypes.c_char_p]
+number = library.seccomp_syscall_resolve_name(b'io_uring_setup')
+assert number >= 0
+libc = ctypes.CDLL(None, use_errno=True)
+parameters = ctypes.create_string_buffer(256)
+assert libc.syscall(number, 1, ctypes.byref(parameters)) == -1
+assert ctypes.get_errno() == errno.EPERM
+""")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_caught_provider_violation_still_fails_command(self):
         result = self.run_offline(

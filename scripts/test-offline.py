@@ -19,11 +19,9 @@ def isolated_command(command: list[str]) -> list[str]:
             "(deny network*)(allow network* (local unix-socket))",
             *command,
         ]
-    if platform.system() == "Linux" and shutil.which("unshare"):
-        # A new network namespace has no route to host proxies or providers.
-        # Unix fixture sockets do not use the network namespace.
-        return ["unshare", "--user", "--map-root-user", "--net", "--", *command]
-    raise RuntimeError("offline tests require macOS sandbox-exec or Linux network namespaces")
+    if platform.system() == "Linux":
+        return [sys.executable, str(Path(__file__).with_name("test-offline-linux.py")), *command]
+    raise RuntimeError("offline tests require macOS sandbox-exec or Linux libseccomp")
 
 
 def main(argv: list[str]) -> int:
