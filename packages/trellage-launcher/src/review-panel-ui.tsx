@@ -20,6 +20,7 @@ import {
 } from "./review-contracts.ts"
 import { appendReviewOutput, safeOutput } from "./review-ui.tsx"
 import { useTheme } from "./termcn/use-theme.ts"
+import { spinnerFrameAt } from "./guide-spinner.ts"
 
 const messageOf = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
 const movement = (input: string, key: Key): number => {
@@ -59,6 +60,8 @@ const useReview = (props: ReviewProps) => {
   const [statuses, setStatuses] = useState<ReadonlyMap<string, string>>(new Map())
   const [tab, setTab] = useState("overview")
   const [scrollPositions, setScrollPositions] = useState<ReadonlyMap<string, number>>(new Map())
+  const [lastEventAt, setLastEventAt] = useState<ReadonlyMap<string, number>>(new Map())
+  const [startedAt, setStartedAt] = useState(Date.now())
   const [error, setError] = useState<string | undefined>()
   const [saving, setSaving] = useState(false)
   const active = useRef<AbortController | undefined>(undefined)
@@ -80,6 +83,8 @@ const useReview = (props: ReviewProps) => {
     setStatuses(new Map([...reviewerIds].map((id) => [id, "queued"])))
     setTab([...reviewerIds][0] ?? "overview")
     setOutputs(new Map())
+    setLastEventAt(new Map())
+    setStartedAt(Date.now())
     setScrollPositions(new Map())
     setMode("running")
     try {
@@ -91,6 +96,9 @@ const useReview = (props: ReviewProps) => {
         },
         (event: ReviewEvent) => {
           if (!mounted.current) return
+          const at = Date.now()
+          const owner = event.kind === "synthesis" ? "synthesis" : event.kind === "artifact" ? event.artifact.checkId : event.checkId
+          setLastEventAt((current) => new Map(current).set("any", at).set(owner, at))
           if (event.kind === "status") setStatuses((current) => new Map(current).set(event.checkId, event.status))
           else if (event.kind === "synthesis") setStatuses((current) => new Map(current).set("synthesis", event.status))
           else if (event.kind === "text" || event.kind === "activity")
@@ -178,6 +186,8 @@ const useReview = (props: ReviewProps) => {
     progress,
     outputs,
     statuses,
+    lastEventAt,
+    startedAt,
     tab,
     setTab,
     scrollPositions,
@@ -272,7 +282,7 @@ const consentDocument = (flow: ReviewFlow): string => {
 
 const waitingReport = (flow: ReviewFlow): string =>
   flow.mode === "running"
-    ? `${flow.tab}: ${flow.statuses.get(flow.tab) ?? "queued"}.\nWaiting for streamed output. Tab switches reviews; Esc cancels and saves partial evidence.`
+    ? `${flow.tab}: ${flow.statuses.get(flow.tab) ?? "queued"}.\nWaiting for streamed output. The spinner above shows the SDK is alive. Tab switches reviews; Esc cancels and saves partial evidence.`
     : flow.tab === "synthesis" && flow.props.review ? sharedReviewDocument(flow.props.review) : "No output was saved for this review."
 
 const savedReportContent = (review: ReviewRun | undefined, tab: string): string | undefined => {
@@ -302,8 +312,44 @@ const reportTabStatus = (flow: ReviewFlow, id: string): string => {
   if (id === "synthesis" && review) return reviewSynthesisStatus(review)
   const result = review?.results.find((entry) => entry.id === id)
   if (result) return result.status
-  if (flow.mode === "running") return id === "overview" ? "running" : "queued"
+  if (flow.mode === "running") {
+    if (id !== "overview") return "queued"
+    const open = [...flow.statuses].some(([, status]) => status === "queued" || status === "running")
+    return open ? "running" : "finishing"
+  }
   return review?.status ?? "failed"
+}
+
+const stalledAfterMs = 180_000
+const formatElapsed = (ms: number): string => {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  return `${Math.floor(total / 60)}m${String(total % 60).padStart(2, "0")}s`
+}
+
+/** Ticks every 250ms so the spinner and silence timer move while the SDK is quiet. */
+const LiveStatus = ({ flow }: { readonly flow: ReviewFlow }) => {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick((current) => current + 1), 250)
+    return () => clearInterval(timer)
+  }, [])
+  const now = Date.now()
+  const running = [...flow.statuses].filter(([, status]) => status === "running").map(([id]) => id)
+  const waiting = running.length > 0 ? running : [...flow.statuses].filter(([, status]) => status === "queued").map(([id]) => id)
+  const last = flow.lastEventAt.get("any") ?? flow.startedAt
+  const silent = now - last
+  const stalled = silent >= stalledAfterMs
+  const done = [...flow.statuses].filter(([id, status]) => id !== "synthesis" && status === "complete").map(([id]) => id)
+  return <Box flexDirection="column">
+    <Text color={stalled ? "red" : "cyan"} wrap="truncate-end">
+      {stalled ? "!" : spinnerFrameAt(tick)} {stalled
+        ? `No SDK activity for ${formatElapsed(silent)}. It may be hung. Esc cancels and saves partial evidence.`
+        : `Working on ${waiting.length > 0 ? waiting.join(", ") : "final steps"} · total ${formatElapsed(now - flow.startedAt)} · last SDK activity ${formatElapsed(silent)} ago`}
+    </Text>
+    <Text dimColor wrap="truncate-end">{done.length > 0 && waiting.length > 0
+      ? `Done: ${done.join(", ")}. Next: findings open automatically when Synthesis ends.`
+      : "Next: findings open automatically when the review ends."}</Text>
+  </Box>
 }
 
 const ReviewReports = ({ flow, height }: { readonly flow: ReviewFlow; readonly height: number }) => {
@@ -359,7 +405,8 @@ const ReviewReports = ({ flow, height }: { readonly flow: ReviewFlow; readonly h
       borderStyle="round" borderColor={theme.colors.border} paddingX={1}>
       <Text bold wrap="truncate-end">{selected.title} · {selected.status} · {live ? "Live output" : savedOnly ? "Saved report" : "Report"} · Tab {tabs.indexOf(flow.tab) + 1}/{tabs.length}</Text>
       <Text color={theme.colors.mutedForeground} wrap="truncate-end">{notice}</Text>
-      <MarkdownTextViewport value={safeOutput(reportContent(flow, savedOnly))} width={flow.props.width - 4} height={Math.max(1, panelHeight - 4)}
+      {live ? <LiveStatus flow={flow} /> : null}
+      <MarkdownTextViewport value={safeOutput(reportContent(flow, savedOnly))} width={flow.props.width - 4} height={Math.max(1, panelHeight - (live ? 6 : 4))}
       startLine={flow.scrollPositions.get(`${flow.tab}:${savedOnly}`) ?? 0}
       onStartLineChange={(line) => flow.setScrollPositions((current) => new Map(current).set(`${flow.tab}:${savedOnly}`, line))}
         renderDiffs />
