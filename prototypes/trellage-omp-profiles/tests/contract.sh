@@ -2213,7 +2213,10 @@ touch "$isolated_failure_release"
 if wait "$isolated_failure_pid"; then
   fail 'failing isolated fresh launch unexpectedly succeeded'
 fi
-wait "$isolated_success_pid" || fail 'successful isolated fresh launch failed after rollback'
+if ! wait "$isolated_success_pid"; then
+  cat "$fixture_root/isolated-failure.out" "$fixture_root/isolated-success.out" >&2
+  fail 'successful isolated fresh launch failed after rollback'
+fi
 cmp -s "$fixture_root/expected-local-models.yml" \
   "$isolated_profile/agent/models.yml" \
   || fail 'successful isolated fresh launch lost its provider after rollback'
