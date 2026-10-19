@@ -16,7 +16,7 @@ test("source guard detects edits, additions, deletions and modes but ignores gen
     await writeFile(path.join(root, "test-performance.json"), "updated evidence")
     identity.assertUnchanged()
     await writeFile(path.join(root, "input.ts"), "edited")
-    expect(() => identity.assertUnchanged()).toThrow("Source changed")
+    expect(() => identity.assertUnchanged()).toThrow("results are invalid: input.ts")
     await writeFile(path.join(root, "input.ts"), "original")
     identity.assertUnchanged()
     await chmod(path.join(root, "input.ts"), 0o755)

@@ -43,7 +43,7 @@ export async function guideWorld(repositoryRoot: string) {
         guideRoot: ${JSON.stringify(guideRoot)},
         commandPath: ${JSON.stringify(path.join(repositoryRoot, "bin/trx"))},
       })
-      console.log(JSON.stringify(catalog))
+      await Bun.write(Bun.stdout, JSON.stringify(catalog))
     `
     const catalogProcess = Bun.spawn([process.execPath, "-e", catalogSource], {
       cwd: repositoryRoot,

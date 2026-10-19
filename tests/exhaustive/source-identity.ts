@@ -17,6 +17,7 @@ export function captureSourceIdentity(root: string) {
       ),
     ].sort()
     const hash = createHash("sha256")
+    const entries = new Map<string, string>()
     for (const name of names) {
       if (path.isAbsolute(name) || name.split("/").includes("..")) throw Error(`Unsafe source path: ${name}`)
       hash.update(JSON.stringify(name) + "\n")
@@ -35,20 +36,30 @@ export function captureSourceIdentity(root: string) {
           const content = readFileSync(entry)
           hash.update(`${stat.mode & 0o7777}:${content.length}:`)
           hash.update(content)
+          entries.set(name, `${stat.mode & 0o7777}:${createHash("sha256").update(content).digest("hex")}`)
         }
       }
-      if (missing) hash.update("missing")
+      if (missing) {
+        hash.update("missing")
+        entries.set(name, "missing")
+      }
       hash.update("\0")
     }
-    return hash.digest("hex")
+    return { sha256: hash.digest("hex"), entries }
   }
-  const sha256 = digest()
+  const original = digest()
+  const { sha256 } = original
   return {
     sha256,
     scope:
       "Git tracked and nonignored untracked inputs, including modes and deletions; symbolic links refused; test-performance.json evidence output, installed dependencies and ignored outputs excluded",
     assertUnchanged() {
-      if (digest() !== sha256) throw Error("Source changed during Cartesian execution; results are invalid")
+      const current = digest()
+      if (current.sha256 !== sha256) {
+        const changed = [...new Set([...original.entries.keys(), ...current.entries.keys()])]
+          .filter((name) => original.entries.get(name) !== current.entries.get(name)).sort()
+        throw Error(`Source changed during Cartesian execution; results are invalid: ${changed.join(", ")}`)
+      }
     },
   }
 }
