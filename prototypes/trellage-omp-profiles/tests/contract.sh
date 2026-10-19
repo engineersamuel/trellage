@@ -36,6 +36,15 @@ wait_for_file() {
   omp_fixture_wait "$1" "$2" || fail "$2 did not reach its synchronization point"
 }
 
+file_identity() {
+  local identity
+  # GNU stat -f emits filesystem details even when the BSD format fails.
+  if ! identity="$(stat -f '%d:%i' "$1" 2>/dev/null)"; then
+    identity="$(stat -c '%d:%i' "$1")" || return 1
+  fi
+  printf '%s\n' "$identity"
+}
+
 assert_community_skills() {
   local target="$1" label="$2" skill_name skill_count
 
@@ -1005,14 +1014,13 @@ reap_race_launcher_pid=$!
 wait_for_file "$reap_race_ps_ready" 'reap identical replacement race observation'
 cp -p "$reap_claim" "$fixture_root/reap-identical-replacement"
 mv -f -- "$fixture_root/reap-identical-replacement" "$reap_claim"
-reap_replacement_identity="$(stat -f '%d:%i' "$reap_claim" 2>/dev/null \
-  || stat -c '%d:%i' "$reap_claim")"
+reap_replacement_identity="$(file_identity "$reap_claim")" || fail 'could not read replacement claim identity'
 touch "$reap_race_ps_release"
 wait "$reap_race_launcher_pid" || reap_race_status=$?
 [[ "$reap_race_status" -ne 0 ]] || fail 'reap deleted an identical replacement claim'
 grep -Fqx "$reap_race_pid $reap_stale_birth $reap_race_pid-3" "$reap_claim" \
   || fail 'reap deleted or changed an identical replacement claim'
-[[ "$(stat -f '%d:%i' "$reap_claim" 2>/dev/null || stat -c '%d:%i' "$reap_claim")" \
+[[ "$(file_identity "$reap_claim")" \
   == "$reap_replacement_identity" ]] || fail 'reap replaced an identical replacement claim'
 kill "$reap_race_pid" 2>/dev/null || true
 wait "$reap_race_pid" 2>/dev/null || true
@@ -1384,7 +1392,10 @@ grep -Fqx "    - \"$copilot_agent_root/community-skills\"" "$copilot_overlay" \
 assert_community_skills "$copilot_agent_root/community-skills" 'Copilot profile'
 
 for overlay in "$local_overlay" "$copilot_overlay"; do
-  [[ "$(stat -f '%Lp' "$overlay" 2>/dev/null || stat -c '%a' "$overlay")" == 600 ]] \
+  if ! overlay_mode="$(stat -f '%Lp' "$overlay" 2>/dev/null)"; then
+    overlay_mode="$(stat -c '%a' "$overlay")" || fail 'could not read overlay permissions'
+  fi
+  [[ "$overlay_mode" == 600 ]] \
     || fail 'managed overlay permissions differ'
   for setting in '  checkUpdate: false' '  setupWizard: false' '  autoUpdate: off' \
     '  approvalMode: yolo' '  gitGuard: true' '  enabled: true' '  cacheWarming: streaming'; do
