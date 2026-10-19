@@ -60,6 +60,7 @@ results/
 /docs/review/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-review*.md
 /docs/review/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-review*.json
 /packages/trellage-launcher/.review-backend-test-*
+/packages/trellage-launcher/test/.continuation-state-*/
 /.six-hats/
 /.test-performance/
 /test-performance.json
