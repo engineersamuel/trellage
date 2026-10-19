@@ -182,11 +182,15 @@ The exhaustive preconditions expand this to 1,029 cases with all 23 goal fixture
 Those goal states also cross every command axis in the declared Cartesian matrix.
 Neither complete command product has been executed; interactive goal refinement and
 the remaining syntax/process-context audit are still pending.
-`make test` runs inside inherited network isolation (macOS Seatbelt or a Linux
-network namespace). TCP access, including host provider proxies, is unavailable;
+`make test` runs inside inherited network isolation (macOS Seatbelt or Linux
+seccomp). TCP access, including host provider proxies, is unavailable;
 Unix fixture sockets remain available. The wrapper removes inherited `HERDR_*`
 context so tests cannot implicitly address the host agent's control socket or
-pane. Fixtures establish their own context inside the isolated command.
+pane. It also removes inherited `XDG_CONFIG_HOME`, `XDG_DATA_HOME`,
+`XDG_STATE_HOME`, `XDG_CACHE_HOME`, and `TRELLAGE_CONFIG` so fixture homes do
+not share host configuration or mutable state. Fixtures establish their own
+context inside the isolated command; explicit test package-cache settings remain
+available.
 Both `make test` and `make test-exhaustive` first run the isolation canaries
 outside the restriction, where they can create local TCP listeners to verify
 that isolated children cannot reach them. These canaries never contact providers.
@@ -195,6 +199,17 @@ fails under explicit test configuration and leaves a violation receipt, so catch
 that error cannot silently turn the run green. `make offline-llm-contract` checks
 the isolation with local canaries and no provider traffic.
 
+Linux requires `libseccomp.so.2` (Ubuntu package `libseccomp2`). The wrapper
+installs an inherited syscall filter that denies socket families other than
+`AF_UNIX` and disables `io_uring_setup`, which could otherwise create network
+sockets without a socket syscall. Filter setup fails closed. Tests retain the
+caller's UID/GID and filesystem ownership view, including root-owned ancestors.
+The former user namespace approach was blocked by Ubuntu 24.04 AppArmor and,
+even when permitted, remapped root-owned ancestors to an unmapped UID. No
+AppArmor setting changes or privileged test execution are needed. `make test-pr`
+also runs the isolation and ownership canaries so setup regressions are caught
+before merge.
+
 Tests require Python 3.11 or newer on `PATH`. Run `make test-prepare` once after changing locked dependencies to populate
 `.test-performance/package-cache` using the repository's frozen source preparer
 and the configured package feed, and install the separately locked Playwright
@@ -202,6 +217,18 @@ test dependencies with `npm ci`. This is setup, measured separately from warm
 tests. Fixtures still execute the frozen installer and receive independent
 dependency files; they reuse downloaded package bytes through
 `TRELLAGE_TEST_PACKAGE_CACHE`. Tests never fall back to an unrestricted network.
+Preparation installs into a source-only copy: staging an already prepared
+workspace can reuse `node_modules` without filling the download cache.
+`make test` checks a fresh offline installation before starting the parallel
+contracts, so an incomplete cache fails immediately. Lint, formatting, and root
+TypeScript checks also run in the full suite.
+
+Codex uses the shared Native source installer and composition adapter. Its
+installation coverage lives in `packages/trellage-runtime/test/runtime.test.ts`;
+launch and instruction behavior live in `test/native-run/run.test.ts` under the
+same package. These tests use local fixtures and do not install or invoke a
+paid Codex session. OMP process tests observe fixture process exit before checking
+for late writes, instead of sleeping after already completed cleanup.
 
 Use `python3 scripts/test-performance.py --reference REFERENCE --candidate CANDIDATE
 --package-cache CACHE --inventory test-performance.json --output NEW_REPORT.json`

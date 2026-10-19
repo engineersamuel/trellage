@@ -19,10 +19,23 @@ const waitForFile = async (file: string): Promise<void> => {
   throw new Error(`fixture did not publish ${file}`)
 }
 
+const waitForLeafExit = async (ready: string): Promise<void> => {
+  const pid = (await readFile(ready, "utf8")).trim()
+  if (!/^\d+$/.test(pid)) throw new Error("invalid fixture PID")
+  const deadline = Date.now() + 4_000
+  for (;;) {
+    const status = Bun.spawnSync(["ps", "-p", pid, "-o", "stat="], { stdout: "pipe", stderr: "pipe" })
+    const state = status.stdout.toString().trim()
+    if ((status.exitCode === 1 && state === "" && status.stderr.length === 0) || (status.exitCode === 0 && state.startsWith("Z"))) return
+    if (status.exitCode !== 0) throw new Error(`fixture process check failed: ${status.stderr}`)
+    if (Date.now() >= deadline) throw new Error(`fixture leaf ${pid} did not exit`)
+    await Bun.sleep(25)
+  }
+}
+
 const admissionFixture = async (mode: "orphan" | "cancel") => {
   const root = await tempRoot("omp-admission-process")
   const ready = path.join(root, "ready")
-  const leafDone = path.join(root, "leaf.done")
   const late = path.join(root, "late")
   const lifecycle = path.join(root, "admission")
   await writeFile(lifecycle, `#!${process.execPath}
@@ -33,7 +46,6 @@ if (process.argv[2] === "leaf") {
   writeFileSync(${JSON.stringify(ready)}, String(process.pid));
   setTimeout(() => {
     writeFileSync(${JSON.stringify(late)}, "late admission write");
-    writeFileSync(${JSON.stringify(leafDone)}, "done");
     process.exit(0);
   }, 3_500);
 } else {
@@ -84,8 +96,9 @@ if (process.argv[2] === "leaf") {
         await guard.waitForTree(admissionPid, 1_000)
       }
       await outcome
-      // Every leaf expires itself; failed regression runs never signal a saved PID.
-      await Bun.sleep(3_600)
+      // Observe exit without signalling a saved PID. Failed runs still self-expire.
+      if (await Bun.file(ready).exists()) await waitForLeafExit(ready)
+      else await Bun.sleep(3_600)
       if (!released) guard.release()
     },
   }
@@ -99,7 +112,7 @@ test("OMP admission settles a descendant whose root exited before the first clea
     fixture.release()
     const mutation = acquireProfileGuard("omp", ["default"], "repair", fixture.root)
     mutation.release()
-    await Bun.sleep(3_600)
+    await waitForLeafExit(fixture.ready)
     expect(await Bun.file(fixture.late).exists()).toBe(false)
   } finally {
     await fixture.cleanup()

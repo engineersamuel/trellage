@@ -956,8 +956,8 @@ sleep 0.2
 kill -0 "$lock_waiter_pid" 2>/dev/null \
   || fail 'profile mutation lock did not serialize a concurrent doctor'
 : >"$lock_marker.continue"
-wait "$lock_owner_pid" || fail 'profile mutation lock owner failed'
-wait "$lock_waiter_pid" || fail 'profile mutation lock waiter failed'
+wait "$lock_owner_pid" || { cat "$fixture_root/lock-owner.err" >&2; fail 'profile mutation lock owner failed'; }
+wait "$lock_waiter_pid" || { cat "$fixture_root/lock-waiter.err" >&2; fail 'profile mutation lock waiter failed'; }
 
 stale_owner="$profile_root/.mutation.lock-owned.stale"
 mkdir "$stale_owner"

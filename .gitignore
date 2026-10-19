@@ -60,6 +60,11 @@ results/
 /docs/review/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-review*.md
 /docs/review/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-review*.json
 /packages/trellage-launcher/.review-backend-test-*
+/packages/trellage-launcher/.shared-review-*/
+/packages/trellage-launcher/.guide-goal-skills-test-*/
+/packages/trellage-launcher/.review-pty-*/
+/packages/trellage-launcher/tests/.agent-harness-debugger-*.ts
+/packages/trellage-launcher/test/.continuation-state-*/
 /.six-hats/
 /.test-performance/
 /test-performance.json

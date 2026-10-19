@@ -821,13 +821,16 @@ publish_managed_overlay() (
 )
 
 publish_profile() (
-  local transaction='' marker_stage='' path index mode committed_count=0
-  local publication_paths=("$managed_overlay_path" "$profile_marker")
-  local publication_existing=()
-  local publication_directories=(
+  # EXIT may run after Bash unwinds function locals on an errexit failure.
+  # The subshell already isolates this rollback state from the caller.
+  transaction='' marker_stage='' committed_count=0
+  local path index mode
+  publication_paths=("$managed_overlay_path" "$profile_marker")
+  publication_existing=()
+  publication_directories=(
     "$HOME/.omp" "$HOME/.omp/profiles" "$profile_root" "$agent_root" "$runtime_root/overlays"
   )
-  local publication_directory_modes=()
+  publication_directory_modes=()
 
   require_safe_profile_path
   profile_is_owned_or_adoptable || die "refusing unrelated existing profile files: $profile_root"

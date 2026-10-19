@@ -48,7 +48,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-node-26.3.0-bun-1.4.2-deps-v1-
       - name: Install required system tools
-        run: sudo apt-get install --yes --no-install-recommends fish ripgrep
+        run: sudo apt-get install --yes --no-install-recommends fish ripgrep libseccomp2
       - name: Verify required system tools
         run: for tool in jq curl git make fish rg bun node python3; do command -v "$tool" >/dev/null; done
       - name: Require a checkout without installed dependencies

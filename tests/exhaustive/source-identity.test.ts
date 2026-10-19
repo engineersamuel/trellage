@@ -16,7 +16,7 @@ test("source guard detects edits, additions, deletions and modes but ignores gen
     await writeFile(path.join(root, "test-performance.json"), "updated evidence")
     identity.assertUnchanged()
     await writeFile(path.join(root, "input.ts"), "edited")
-    expect(() => identity.assertUnchanged()).toThrow("Source changed")
+    expect(() => identity.assertUnchanged()).toThrow("results are invalid: input.ts")
     await writeFile(path.join(root, "input.ts"), "original")
     identity.assertUnchanged()
     await chmod(path.join(root, "input.ts"), 0o755)
@@ -41,6 +41,10 @@ test("repository source identity ignores generated native contract fixtures whil
     ["prototypes/trellage-prime-profiles", ".contract-work/fixture/bin"],
     ["tests", ".evidence-contract.123/bin"],
     ["tests", ".harness-runner.123/bin"],
+    ["packages/trellage-launcher/test", ".continuation-state-fixture/state"],
+    ["packages/trellage-launcher", ".shared-review-fixture/repo"],
+    ["packages/trellage-launcher", ".guide-goal-skills-test-fixture/skills"],
+    ["packages/trellage-launcher", ".review-pty-fixture/home"],
   ]) {
     const root = await mkdtemp(path.join(os.tmpdir(), "trx-copilot-fixture-identity-"))
     try {

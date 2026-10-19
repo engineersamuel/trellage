@@ -10,8 +10,13 @@ mkdir -p "$root/.test-performance" "$cache"
 temporary="$(mktemp -d "$root/.test-performance/cache-prepare.XXXXXX")"
 trap 'rm -rf -- "$temporary"' EXIT
 
-# Populate all locked packages through the repository's frozen preparer. This
-# setup step may access the configured package feed; test execution may not.
-BUN_INSTALL_CACHE_DIR="$cache" "$root/scripts/install-source-runtime.sh" --stage "$temporary/runtime"
+# A ready --stage reuses node_modules and does not populate the download cache.
+# Prepare a source-only copy so a fresh frozen install downloads every package.
+mkdir "$temporary/runtime"
+bun --no-env-file --no-install --config="$root/bunfig.toml" -e '
+  import { copySources } from "@trellage/runtime/workspace";
+  copySources(process.argv[1], process.argv[2]);
+' "$root" "$temporary/runtime"
+BUN_INSTALL_CACHE_DIR="$cache" "$temporary/runtime/scripts/install-source-runtime.sh" --prepare
 npm --prefix "$root/tests/playwright" ci
 printf 'Offline test package cache prepared: %s\n' "$cache"

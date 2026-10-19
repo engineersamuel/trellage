@@ -89,7 +89,8 @@ export const inspectProfileReadiness = async (
         })
     }
     if (profile.name !== "clean")
-      for (const [id, instruction] of Object.entries(profile.catalog.instructions)) {
+      for (const id of new Set(definitions.flatMap((definition) => definition.instructions))) {
+        const instruction = profile.catalog.instructions[id]!
         const file = resolveInstructionFile(
           instruction.file,
           context.configDirectory ?? context.cwd,

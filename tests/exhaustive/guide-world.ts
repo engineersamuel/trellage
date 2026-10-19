@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { loadCompositionCatalog } from "../../packages/trellage-launcher/src/composition-catalog.ts"
 import { nativeMatrixWorld } from "./native-world.ts"
@@ -37,27 +37,28 @@ export async function guideWorld(repositoryRoot: string) {
     const listing: { profiles: object[] } = JSON.parse(stdout)
     assert.ok(listing.profiles.length > 0)
     const guideRoot = path.join(repositoryRoot, "profile-guides")
+    const catalogFile = path.join(world.root, "guide-catalog.json")
     const catalogSource = `
+      import { writeFile } from "node:fs/promises"
       import { loadCompositionCatalog } from ${JSON.stringify(path.join(repositoryRoot, "packages/trellage-launcher/src/composition-catalog.ts"))}
       const catalog = await loadCompositionCatalog({
         guideRoot: ${JSON.stringify(guideRoot)},
         commandPath: ${JSON.stringify(path.join(repositoryRoot, "bin/trx"))},
       })
-      console.log(JSON.stringify(catalog))
+      await writeFile(${JSON.stringify(catalogFile)}, JSON.stringify(catalog), { mode: 0o600, flag: "wx" })
     `
     const catalogProcess = Bun.spawn([process.execPath, "-e", catalogSource], {
       cwd: repositoryRoot,
       env: environment,
-      stdout: "pipe",
+      stdout: "ignore",
       stderr: "pipe",
     })
-    const [catalogOutput, catalogError, catalogStatus] = await Promise.all([
-      new Response(catalogProcess.stdout).text(),
+    const [catalogError, catalogStatus] = await Promise.all([
       new Response(catalogProcess.stderr).text(),
       catalogProcess.exited,
     ])
     assert.equal(catalogStatus, 0, catalogError)
-    const catalog = JSON.parse(catalogOutput)
+    const catalog = JSON.parse(await readFile(catalogFile, "utf8"))
     assert.ok(catalog.entries.length > 0)
     const catalogWithGuides = {
       ...catalog,
@@ -69,7 +70,6 @@ export async function guideWorld(repositoryRoot: string) {
       }),
     }
     assert.ok(catalogWithGuides.native.length > 0)
-    const catalogFile = path.join(world.root, "guide-catalog.json")
     await writeFile(catalogFile, JSON.stringify(catalogWithGuides), { mode: 0o600 })
     const promptMasterSkillDirectory = path.join(world.root, "prompt-master")
     await mkdir(promptMasterSkillDirectory)
