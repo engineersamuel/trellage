@@ -21,7 +21,7 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import { parse as parseToml } from "smol-toml"
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml"
 import { NativeRunCancelledError, NativeRunError } from "./paths.ts"
 import { PRIME_DEFAULT_MODEL, PRIME_MANAGED_FLAGS, ensurePrimeRuntime, primeLaunchCommand, primeRuntimePaths } from "./prime-runtime.ts"
 import type { GenerationLayout, CompositionPlan } from "./compose.ts"
@@ -1802,7 +1802,7 @@ export const copilotAdapter: NativeAdapter = {
   },
 }
 
-// Route Codex through copilot-proxy-rs without writing a config.toml into the generation.
+// Keep provider routing launch-scoped; config.toml only records workspace trust and Codex's own settings.
 const CODEX_PROXY_OVERRIDES: ReadonlyArray<string> = [
   'model_provider="copilotproxy"',
   'model_providers.copilotproxy.name="copilot-proxy-rs"',
@@ -1926,7 +1926,7 @@ export const codexAdapter: NativeAdapter = {
   skillsSubdirectory: "skills",
   instructionsFile: "AGENTS.md",
   efforts: ["minimal", "low", "medium", "high", "xhigh"],
-  policyVersion: "codex-6",
+  policyVersion: "codex-7",
   providerPolicy: () => "codex-native",
   effectivePolicy: (model, effort) => ({
     normal: `${model ?? "harness default"} · effort ${effort ?? "harness default"}`,
@@ -1943,6 +1943,28 @@ export const codexAdapter: NativeAdapter = {
     "--full-auto",
   ],
   writeAdapterFiles: async () => {},
+  trustWorkspace: async (layout, workspace) => {
+    const file = path.join(layout.generationPath, "config.toml")
+    const text = await readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return ""
+      throw error
+    })
+    const config = parseToml(text)
+    const projects = config.projects ?? {}
+    if (!projects || typeof projects !== "object" || Array.isArray(projects) || projects instanceof Date)
+      throw new NativeRunError("launch", `invalid Codex projects configuration: ${file}`)
+    const nextProjects = { ...projects }
+    for (const directory of new Set([workspace, await realpath(workspace)]))
+      nextProjects[directory] = { trust_level: "trusted" }
+    const temporary = path.join(layout.generationPath, `.config-${randomUUID()}.toml`)
+    try {
+      // Codex's folder-access dialog reads saved configuration, not just CLI overrides.
+      await writeFile(temporary, stringifyToml({ ...config, projects: nextProjects }), { flag: "wx", mode: 0o600 })
+      await rename(temporary, file)
+    } finally {
+      await rm(temporary, { force: true })
+    }
+  },
   persistentState: ["sessions", "archived_sessions"],
   resumeArgs: (resume) =>
     resume.kind === "continue" ? ["resume", "--last"] : resume.id ? ["resume", resume.id] : ["resume"],
