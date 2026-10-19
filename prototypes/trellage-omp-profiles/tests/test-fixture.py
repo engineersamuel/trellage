@@ -18,6 +18,45 @@ spec.loader.exec_module(supervisor)
 
 
 class FixtureTests(unittest.TestCase):
+    def test_failed_profile_publication_removes_partial_state(self):
+        source = (HERE.parent / "bin/omp").read_text()
+        publication = source.split("publish_profile() (", 1)[1].split("\ncompose_pi_config_files()", 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "runtime"
+            runtime.mkdir()
+            script = r'''
+runtime_root="$HOME/runtime"
+profile_root="$HOME/.omp/profiles/test"
+agent_root="$profile_root/agent"
+profile_marker="$profile_root/marker"
+profile_marker_value=managed
+managed_overlay_path="$runtime_root/overlays/test.yml"
+profile_kind=local
+require_safe_profile_path() { :; }
+profile_is_owned_or_adoptable() { :; }
+require_safe_overlay_path() { :; }
+prepare_profile_directories() { mkdir -p "$agent_root" "$runtime_root/overlays"; }
+publish_local_models() { printf models >"$agent_root/models.yml"; }
+publish_managed_overlay() { printf overlay >"$managed_overlay_path"; }
+mv() {
+  if [[ "${3-}" == "$profile_marker" ]]; then
+    printf 'injected marker publication failure\n' >&2
+    return 23
+  fi
+  command mv "$@"
+}
+'''
+            result = subprocess.run(
+                ["/bin/bash", "-euc", script + "\npublish_profile() (" + publication + "\npublish_profile\n"],
+                env={**os.environ, "HOME": directory}, capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 23, result.stderr)
+            self.assertIn("injected marker publication failure", result.stderr)
+            self.assertNotIn("unbound variable", result.stderr)
+            self.assertFalse((root / ".omp").exists(), result.stderr)
+            self.assertEqual(list(runtime.iterdir()), [], result.stderr)
+
     def test_output_and_failure_status(self):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "output"
