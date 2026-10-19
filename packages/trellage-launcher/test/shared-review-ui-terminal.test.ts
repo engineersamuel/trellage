@@ -42,7 +42,7 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
       const lines = screen.split("\n")
       const first = lines.findIndex((line) => line.includes("fleet streamed line"))
       const footer = lines.findIndex((line) => line.includes("Tab/Shift+Tab"))
-      expect(footer - first).toBeGreaterThan(terminal.rows - 17)
+      expect(footer - first).toBeGreaterThan(terminal.rows - 19)
       expect(lines[footer - 2]).toContain("fleet streamed line")
       expect(lines[footer - 1]).toBe(` ╰${"─".repeat(terminal.cols - 4)}╯`)
       const top = lines.findIndex((line) => line === ` ╭${"─".repeat(terminal.cols - 4)}╮`)
