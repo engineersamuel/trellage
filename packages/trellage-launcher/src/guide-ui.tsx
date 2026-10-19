@@ -4374,12 +4374,12 @@ const OptimizeStage = ({ props, state, dispatch }: {
   readonly state: GuideUiState
   readonly dispatch: React.Dispatch<GuideUiAction>
 }) => {
-  const { rows } = useGuideWindowSize()
+  const { rows, columns } = useGuideWindowSize()
   const { exit } = useApp()
   const herdrContext = props.herdrAvailabilityProbe ? getHerdrContext(props.herdrEnv) : null
   return <GuideOptimizeScreen
     catalog={props.catalog} cwd={props.cwd} runner={props.runner} herdrContext={herdrContext}
-    model={props.routing.optimize} rows={rows} terminalBlockedReason={optimizeTerminalBlockReason(state)}
+    model={props.routing.optimize} rows={rows} columns={columns} terminalBlockedReason={optimizeTerminalBlockReason(state)}
     {...(props.runOptimizeSdk === undefined ? {} : { runSdk: props.runOptimizeSdk })}
     {...(props.ensureOptimizeSkills === undefined ? {} : { ensureSkills: props.ensureOptimizeSkills })}
     onBack={() => dispatch({ type: GuideUiActionType.OptimizeBack })}
@@ -5862,22 +5862,51 @@ const handleMatchFailedInput: GuideInputHandler = ({ props, state, dispatch, can
   }
 }
 
-const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch, cancel }, input, key) => {
-  const lenses = pinnedGuideLenses(props.catalog)
-  const confirmLens = (pinnedLens: GuidePinnedLens): void => {
-    const goalUnavailableReason = goalRecommendationReason(props.catalog, guideProfileGoal(state), pinnedLens.recommendation)
-    dispatch({
-      type: GuideUiActionType.RecommendationsConfirm,
-      selectedProfile: selectedProfileForPinnedLens(props.catalog, pinnedLens),
-      recommendation: pinnedLens.recommendation,
-      ...(goalUnavailableReason === undefined ? {} : { goalUnavailableReason }),
-    })
-  }
+const confirmPinnedGuideLens = ({ props, state, dispatch }: GuideInputContext, pinnedLens: GuidePinnedLens): void => {
+  const goalUnavailableReason = goalRecommendationReason(props.catalog, guideProfileGoal(state), pinnedLens.recommendation)
+  dispatch({
+    type: GuideUiActionType.RecommendationsConfirm,
+    selectedProfile: selectedProfileForPinnedLens(props.catalog, pinnedLens),
+    recommendation: pinnedLens.recommendation,
+    ...(goalUnavailableReason === undefined ? {} : { goalUnavailableReason }),
+  })
+}
+
+const handleDecideChooserInput: GuideInputHandler = (context, input, key) => {
+  const decisionLens = pinnedGuideLenses(context.props.catalog).find((lens) => lens.decision && lens.key === input)
+  if (decisionLens !== undefined) confirmPinnedGuideLens(context, decisionLens)
+  else if (key.escape || input === "b") context.dispatch({ type: GuideUiActionType.DecideClose })
+  else if (input === "q") context.cancel()
+}
+
+const confirmCurrentRecommendation = ({ props, state, dispatch }: GuideInputContext): void => {
+  const selection = guideProfileSelection(state)
+  if (selection.recommendations === undefined || selection.recommendations.length === 0) return
+  const recommendation = recommendationAt(selection.recommendations, selection.recommendationIndex)
+  const goalUnavailableReason = goalRecommendationReason(props.catalog, guideProfileGoal(state), recommendation)
+  dispatch({
+    type: GuideUiActionType.RecommendationsConfirm,
+    selectedProfile: selectedProfileFromCatalogRef(
+      props.catalog,
+      recommendation.ref,
+      recommendation.workflowId,
+    ),
+    ...(goalUnavailableReason === undefined ? {} : { goalUnavailableReason }),
+  })
+}
+
+const handleRecommendationNavigationInput: GuideInputHandler = (context, input, key) => {
+  const { dispatch, cancel } = context
+  if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: -1 })
+  else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: 1 })
+  else if (key.return) confirmCurrentRecommendation(context)
+  else if (input === "q") cancel()
+}
+
+const handleRecommendationsInput: GuideInputHandler = (context, input, key) => {
+  const { props, state, dispatch } = context
   if (state.decideChooserOpen) {
-    const decisionLens = lenses.find((lens) => lens.decision && lens.key === input)
-    if (decisionLens !== undefined) confirmLens(decisionLens)
-    else if (key.escape || input === "b") dispatch({ type: GuideUiActionType.DecideClose })
-    else if (input === "q") cancel()
+    handleDecideChooserInput(context, input, key)
     return
   }
   if (input === "o") {
@@ -5888,32 +5917,14 @@ const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch,
     dispatch({ type: GuideUiActionType.PromptReviewOpen })
     return
   }
+  const lenses = pinnedGuideLenses(props.catalog)
   if (input === guideDecideKey && lenses.some(({ decision }) => decision)) {
     dispatch({ type: GuideUiActionType.DecideOpen })
     return
   }
   const pinnedLens = lenses.find((lens) => !lens.decision && lens.key === input)
-  if (pinnedLens !== undefined) {
-    confirmLens(pinnedLens)
-    return
-  }
-
-  const selection = guideProfileSelection(state)
-  if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: -1 })
-  else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: 1 })
-  else if (key.return && selection.recommendations !== undefined && selection.recommendations.length > 0) {
-    const recommendation = recommendationAt(selection.recommendations, selection.recommendationIndex)
-    const goalUnavailableReason = goalRecommendationReason(props.catalog, guideProfileGoal(state), recommendation)
-    dispatch({
-      type: GuideUiActionType.RecommendationsConfirm,
-      selectedProfile: selectedProfileFromCatalogRef(
-        props.catalog,
-        recommendation.ref,
-        recommendation.workflowId,
-      ),
-      ...(goalUnavailableReason === undefined ? {} : { goalUnavailableReason }),
-    })
-  } else if (input === "q") cancel()
+  if (pinnedLens !== undefined) confirmPinnedGuideLens(context, pinnedLens)
+  else handleRecommendationNavigationInput(context, input, key)
 }
 
 const handlePromptReviewInput: GuideInputHandler = ({ state, dispatch }, input, key) => {

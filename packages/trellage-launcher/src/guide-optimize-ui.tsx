@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react"
+import { stripVTControlCharacters } from "node:util"
 import { Box, Text, useInput, type Key } from "ink"
 import {
   buildGuideOptimizeHarnessCommand,
@@ -11,6 +12,8 @@ import {
   GuideOptimizeRunner,
   runGuideOptimizeSdk,
   selectGuideOptimizeSkills,
+  updateGuideOptimizeLog,
+  type GuideOptimizeActivity,
   type GuideOptimizeSdkOptions,
 } from "./guide-optimize.ts"
 import type { CompositionCatalog } from "./composition-catalog.ts"
@@ -25,6 +28,7 @@ import {
   type NativeSelectedProfile,
 } from "./guide-launch.ts"
 import type { GuideModelConfig } from "./guide-model-routing.ts"
+import { wrapGuideText } from "./guide-markdown.tsx"
 
 /** A harness launch: `command` is `trx run HARNESS --no-always --skill ... -- PROMPT`. */
 interface HarnessLaunch {
@@ -58,6 +62,7 @@ export interface GuideOptimizeScreenProps {
   readonly herdrContext: HerdrContext | null
   readonly model: GuideModelConfig
   readonly rows: number
+  readonly columns: number
   readonly terminalBlockedReason?: string | undefined
   readonly runSdk?: (options: GuideOptimizeSdkOptions) => Promise<void>
   readonly ensureSkills?: typeof ensureOptimizeSkills
@@ -71,7 +76,44 @@ type Stage =
   | { readonly kind: "preparing"; readonly runner: GuideOptimizeRunner }
   | { readonly kind: "harness"; readonly runner: GuideOptimizeRunner }
   | { readonly kind: "branch"; readonly harness: GuideOptimizeHarness; readonly branch: string; readonly checking: boolean }
-  | { readonly kind: "sdk"; readonly status: "running" | "done" | "failed"; readonly log: ReadonlyArray<string> }
+  | { readonly kind: "sdk"; readonly status: "running" | "done" | "failed"; readonly log: ReadonlyArray<GuideOptimizeActivity> }
+
+export const guideOptimizeDisplayLines = (log: ReadonlyArray<GuideOptimizeActivity>, columns: number) =>
+  log.flatMap((entry) => {
+    const tool = entry.kind === "tool"
+    const text = tool ? `> ${entry.text.split("\n")[0]} [${entry.status}]` : entry.text
+    const body = tool ? [...entry.text.split("\n").slice(1), ...entry.output.split("\n")] : []
+    return [
+      ...wrapGuideText(stripVTControlCharacters(text), columns).map((line) => ({ text: line, kind: entry.kind })),
+      ...body.filter((line) => line !== "").flatMap((line) =>
+        wrapGuideText(stripVTControlCharacters(line), columns - 4).map((part) => ({ text: `  | ${part}`, kind: "output" as const }))),
+      { text: "", kind: "status" as const },
+    ]
+  })
+
+const OptimizeSdkLog = ({ log, rows, columns }: {
+  readonly log: ReadonlyArray<GuideOptimizeActivity>
+  readonly rows: number
+  readonly columns: number
+}) => {
+  const [scroll, setScroll] = useState(0)
+  const lines = guideOptimizeDisplayLines(log, columns - 2)
+  const page = Math.max(1, rows - 9)
+  const maxScroll = Math.max(0, lines.length - page)
+  useInput((_input, key) => {
+    if (key.pageUp || key.upArrow) setScroll((current) => Math.min(maxScroll, current + (key.pageUp ? page : 1)))
+    else if (key.pageDown || key.downArrow) setScroll((current) => Math.max(0, current - (key.pageDown ? page : 1)))
+    else if (key.end) setScroll(0)
+  })
+  const end = lines.length - Math.min(scroll, maxScroll)
+  return <Box flexDirection="column">
+    {lines.slice(Math.max(0, end - page), end).map((line, lineIndex) => (
+      <Text key={lineIndex} wrap="truncate-end" bold={line.kind === "tool"}
+        dimColor={line.kind === "output" || line.kind === "status"}
+        {...(line.kind === "error" ? { color: "red" } : line.kind === "tool" ? { color: "cyan" } : {})}>{line.text}</Text>
+    ))}
+  </Box>
+}
 
 const cycle = (index: number, delta: number, length: number): number => (length === 0 ? 0 : (index + delta + length) % length)
 const movement = (input: string, key: Key): number | undefined =>
@@ -85,6 +127,149 @@ const Choice = ({ active, children }: { readonly active: boolean; readonly child
     {children}
   </Text>
 )
+
+const optimizeFooter = (stage: Stage): string => {
+  switch (stage.kind) {
+    case "skills": return "↑/↓ or j/k move · Space select · ↵ continue · Esc back · q close"
+    case "preparing": return "Esc cancel"
+    case "branch": return stage.checking ? "Checking the branch…" : "Type a branch name · ↵ create worktree · Esc back"
+    case "sdk": return `↑/↓ or PgUp/PgDn scroll · End latest · ${stage.status === "running" ? "Esc stop the agent" : "↵ or Esc return to Guide"}`
+    default: return "↑/↓ or j/k move · ↵ choose · b back · q close"
+  }
+}
+
+const OptimizeStageContent = ({ stage, index, selected, runners, model, rows, columns }: {
+  readonly stage: Stage
+  readonly index: number
+  readonly selected: ReadonlySet<string>
+  readonly runners: ReadonlyArray<GuideOptimizeRunner>
+  readonly model: GuideModelConfig
+  readonly rows: number
+  readonly columns: number
+}) => {
+  switch (stage.kind) {
+    case "skills": return guideOptimizeSkills.map((skill, itemIndex) => (
+      <Choice key={skill.id} active={itemIndex === index}>
+        [{selected.has(skill.id) ? "x" : " "}] {skill.title}
+        <Text dimColor> · {skill.description}</Text>
+      </Choice>
+    ))
+    case "runner": return runners.map((runner, itemIndex) => (
+      <Choice key={runner} active={itemIndex === index}>{guideOptimizeRunnerLabels[runner]}</Choice>
+    ))
+    case "harness": return <>
+      <Text>Harness for {guideOptimizeRunnerLabels[stage.runner]}. Guide loads only the selected skills; the harness keeps its own permission settings.</Text>
+      {guideOptimizeHarnesses.map((harness, itemIndex) => (
+        <Choice key={harness.id} active={itemIndex === index}>
+          {harness.label}{harness.composable ? "" : <Text dimColor> · preset profiles only</Text>}
+        </Choice>
+      ))}
+    </>
+    case "preparing": return <Text>Preparing managed skills…</Text>
+    case "branch": return <Text>Branch: {stage.branch}<Text inverse> </Text></Text>
+    case "sdk": return <>
+      <Text>
+        Copilot SDK · {model.model} / {model.effort} · {stage.status === "done" ? "finished" : stage.status}
+      </Text>
+      <OptimizeSdkLog log={stage.log} rows={rows} columns={columns} />
+    </>
+  }
+}
+
+const handleOptimizeSdkInput = (
+  stage: Extract<Stage, { kind: "sdk" }>, input: string, key: Key, abort: () => void, back: () => void,
+): void => {
+  if (stage.status === "running") {
+    if (key.escape || (key.ctrl && input === "c")) abort()
+  } else if (key.escape || key.return || input === "q") back()
+}
+
+const handleOptimizeBranchInput = (
+  stage: Extract<Stage, { kind: "branch" }>, input: string, key: Key,
+  setStage: (stage: Stage) => void, back: () => void,
+  confirm: (stage: Extract<Stage, { kind: "branch" }>) => void,
+): void => {
+  if (stage.checking) return
+  if (key.escape) back()
+  else if (key.return) confirm(stage)
+  else if (key.backspace || key.delete) setStage({ ...stage, branch: stage.branch.slice(0, -1) })
+  else if (printable(input, key)) setStage({ ...stage, branch: stage.branch + input })
+}
+
+const handleOptimizeSkillInput = (
+  input: string, key: Key, index: number, selected: ReadonlySet<string>,
+  setSelected: (selected: ReadonlySet<string>) => void,
+  setError: (error: string | undefined) => void, next: () => void,
+): void => {
+  const skill = guideOptimizeSkills[index]
+  if (input === " " && skill !== undefined) {
+    const selection = new Set(selected)
+    if (!selection.delete(skill.id)) selection.add(skill.id)
+    setSelected(selection)
+    setError(undefined)
+  } else if (key.return) {
+    if (selected.size === 0) setError("Press Space to select one or more skills.")
+    else next()
+  }
+}
+
+const confirmOptimizeHarness = (
+  stage: Extract<Stage, { kind: "harness" }>, index: number,
+  setError: (error: string) => void, choose: (runner: GuideOptimizeRunner, harness: GuideOptimizeHarness) => void,
+): void => {
+  const harness = guideOptimizeHarnesses[index]
+  if (harness === undefined) return
+  if (!harness.composable) setError(`${harness.label} uses preset profiles and cannot load individual skills yet.`)
+  else choose(stage.runner, harness.id)
+}
+
+interface OptimizeChoiceInput {
+  readonly stage: Extract<Stage, { kind: "skills" | "runner" | "harness" }>
+  readonly index: number
+  readonly runners: ReadonlyArray<GuideOptimizeRunner>
+  readonly selected: ReadonlySet<string>
+  readonly setIndex: React.Dispatch<React.SetStateAction<number>>
+  readonly setSelected: (selected: ReadonlySet<string>) => void
+  readonly setError: (error: string | undefined) => void
+  readonly goto: (stage: Stage) => void
+  readonly back: () => void
+  readonly chooseRunner: (runner: GuideOptimizeRunner) => void
+  readonly chooseHarness: (runner: GuideOptimizeRunner, harness: GuideOptimizeHarness) => void
+}
+
+const handleOptimizeChoiceConfirm = (context: OptimizeChoiceInput, input: string, key: Key): void => {
+  const { stage, index, runners } = context
+  switch (stage.kind) {
+    case "skills":
+      handleOptimizeSkillInput(input, key, index, context.selected, context.setSelected, context.setError, () => context.goto({ kind: "runner" }))
+      break
+    case "runner": {
+      const runner = runners[index]
+      if (key.return && runner !== undefined) context.chooseRunner(runner)
+      break
+    }
+    case "harness":
+      if (key.return) confirmOptimizeHarness(stage, index, context.setError, context.chooseHarness)
+      break
+  }
+}
+
+const handleOptimizeChoiceInput = (context: OptimizeChoiceInput, input: string, key: Key): void => {
+  const { stage } = context
+  if (key.escape || input === "b") {
+    if (stage.kind === "skills") context.back()
+    else context.goto(stage.kind === "runner" ? { kind: "skills" } : { kind: "runner" })
+    return
+  }
+  if (input === "q") {
+    context.back()
+    return
+  }
+  const lengths = { skills: guideOptimizeSkills.length, runner: context.runners.length, harness: guideOptimizeHarnesses.length }
+  const delta = movement(input, key)
+  if (delta !== undefined) context.setIndex((current) => cycle(current, delta, lengths[stage.kind]))
+  else handleOptimizeChoiceConfirm(context, input, key)
+}
 
 export const GuideOptimizeScreen = (props: GuideOptimizeScreenProps) => {
   const [stage, setStage] = useState<Stage>({ kind: "skills" })
@@ -114,15 +299,15 @@ export const GuideOptimizeScreen = (props: GuideOptimizeScreenProps) => {
     const text = prompt(directory)
     const abort = new AbortController()
     controller.current = abort
-    goto({ kind: "sdk", status: "running", log: ["Starting Copilot SDK."] })
-    const append = (line: string) =>
-      setStage((current) => (current.kind === "sdk" ? { ...current, log: [...current.log, line].slice(-200) } : current))
+    goto({ kind: "sdk", status: "running", log: [{ kind: "status", id: "starting", text: "Starting Copilot SDK." }] })
+    const append = (activity: GuideOptimizeActivity) =>
+      setStage((current) => (current.kind === "sdk" ? { ...current, log: updateGuideOptimizeLog(current.log, activity) } : current))
     void (props.runSdk ?? runGuideOptimizeSdk)({
       cwd: props.cwd, prompt: text, skillDirectory: directory, model: props.model, signal: abort.signal, onActivity: append,
     }).then(
       () => setStage((current) => (current.kind === "sdk" ? { ...current, status: "done" } : current)),
       (cause: unknown) => {
-        append(cause instanceof Error ? cause.message : String(cause))
+        append({ kind: "error", id: "failure", text: cause instanceof Error ? cause.message : String(cause) })
         setStage((current) => (current.kind === "sdk" ? { ...current, status: "failed" } : current))
       },
     )
@@ -193,106 +378,34 @@ export const GuideOptimizeScreen = (props: GuideOptimizeScreenProps) => {
   }
 
   useInput((input, key) => {
-    if (stage.kind === "sdk") {
-      if (stage.status === "running" && (key.escape || (key.ctrl && input === "c"))) controller.current?.abort()
-      else if (stage.status !== "running" && (key.escape || key.return || input === "q")) props.onBack()
-      return
-    }
-    if (stage.kind === "preparing") {
-      if (key.escape) controller.current?.abort()
-      return
-    }
-    if (stage.kind === "branch") {
-      if (stage.checking) return
-      if (key.escape) goto({ kind: "runner" })
-      else if (key.return) confirmBranch(stage)
-      else if (key.backspace || key.delete) setStage({ ...stage, branch: stage.branch.slice(0, -1) })
-      else if (printable(input, key)) setStage({ ...stage, branch: stage.branch + input })
-      return
-    }
-    if (key.escape || input === "b") {
-      if (stage.kind === "skills") props.onBack()
-      else goto(stage.kind === "runner" ? { kind: "skills" } : { kind: "runner" })
-      return
-    }
-    if (input === "q") {
-      props.onBack()
-      return
-    }
-    const length = stage.kind === "skills" ? guideOptimizeSkills.length : stage.kind === "runner" ? runners.length : guideOptimizeHarnesses.length
-    const delta = movement(input, key)
-    if (delta !== undefined) {
-      setIndex((current) => cycle(current, delta, length))
-      return
-    }
-    if (stage.kind === "skills") {
-      const skill = guideOptimizeSkills[index]
-      if (input === " " && skill !== undefined) {
-        const next = new Set(selected)
-        if (!next.delete(skill.id)) next.add(skill.id)
-        setSelected(next)
-        setError(undefined)
-      } else if (key.return) {
-        if (selected.size === 0) setError("Press Space to select one or more skills.")
-        else goto({ kind: "runner" })
-      }
-    } else if (key.return && stage.kind === "runner") {
-      const runner = runners[index]
-      if (runner !== undefined) chooseRunner(runner)
-    } else if (key.return && stage.kind === "harness") {
-      const harness = guideOptimizeHarnesses[index]
-      if (harness !== undefined && !harness.composable)
-        setError(`${harness.label} uses preset profiles and cannot load individual skills yet.`)
-      else if (harness !== undefined) chooseHarness(stage.runner, harness.id)
+    const abort = () => controller.current?.abort()
+    switch (stage.kind) {
+      case "sdk":
+        handleOptimizeSdkInput(stage, input, key, abort, props.onBack)
+        break
+      case "preparing":
+        if (key.escape) abort()
+        break
+      case "branch":
+        handleOptimizeBranchInput(stage, input, key, setStage, () => goto({ kind: "runner" }), confirmBranch)
+        break
+      default:
+        handleOptimizeChoiceInput({
+          stage, index, runners, selected, setIndex, setSelected, setError, goto, back: props.onBack, chooseRunner, chooseHarness,
+        }, input, key)
     }
   })
-
-  const footer =
-    stage.kind === "skills" ? "↑/↓ or j/k move · Space select · ↵ continue · Esc back · q close"
-      : stage.kind === "preparing" ? "Esc cancel"
-      : stage.kind === "branch" ? (stage.checking ? "Checking the branch…" : "Type a branch name · ↵ create worktree · Esc back")
-        : stage.kind === "sdk" ? (stage.status === "running" ? "Esc stop the agent" : "↵ or Esc return to Guide")
-          : "↑/↓ or j/k move · ↵ choose · b back · q close"
 
   return (
     <Box flexDirection="column" paddingX={1} height={Math.max(3, props.rows - 1)} overflowY="hidden">
       <Text bold color="cyan">Optimize · {props.cwd}</Text>
       <Text dimColor>Runs skills on the whole repository, not on a change set.</Text>
       <Box flexDirection="column" flexGrow={1} marginTop={1}>
-        {stage.kind === "skills" && guideOptimizeSkills.map((skill, itemIndex) => (
-          <Choice key={skill.id} active={itemIndex === index}>
-            [{selected.has(skill.id) ? "x" : " "}] {skill.title}
-            <Text dimColor> · {skill.description}</Text>
-          </Choice>
-        ))}
-        {stage.kind === "runner" && runners.map((runner, itemIndex) => (
-          <Choice key={runner} active={itemIndex === index}>{guideOptimizeRunnerLabels[runner]}</Choice>
-        ))}
-        {stage.kind === "harness" && (
-          <>
-            <Text>Harness for {guideOptimizeRunnerLabels[stage.runner]}. Guide loads only the selected skills; the harness keeps its own permission settings.</Text>
-            {guideOptimizeHarnesses.map((harness, itemIndex) => (
-              <Choice key={harness.id} active={itemIndex === index}>
-                {harness.label}{harness.composable ? "" : <Text dimColor> · preset profiles only</Text>}
-              </Choice>
-            ))}
-          </>
-        )}
-        {stage.kind === "preparing" && <Text>Preparing managed skills…</Text>}
-        {stage.kind === "branch" && <Text>Branch: {stage.branch}<Text inverse> </Text></Text>}
-        {stage.kind === "sdk" && (
-          <>
-            <Text>
-              Copilot SDK · {props.model.model} / {props.model.effort} · {stage.status === "running" ? "running" : stage.status === "done" ? "finished" : "failed"}
-            </Text>
-            {stage.log.slice(-Math.max(1, props.rows - 8)).map((line, lineIndex) => (
-              <Text key={lineIndex} wrap="truncate-end">{line}</Text>
-            ))}
-          </>
-        )}
+        <OptimizeStageContent stage={stage} index={index} selected={selected} runners={runners}
+          model={props.model} rows={props.rows} columns={props.columns} />
       </Box>
       {error === undefined ? null : <Text color="yellow">{error}</Text>}
-      <Text dimColor>{footer}</Text>
+      <Text dimColor>{optimizeFooter(stage)}</Text>
     </Box>
   )
 }
