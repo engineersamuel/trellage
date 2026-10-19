@@ -42,6 +42,9 @@ test("repository source identity ignores generated native contract fixtures whil
     ["tests", ".evidence-contract.123/bin"],
     ["tests", ".harness-runner.123/bin"],
     ["packages/trellage-launcher/test", ".continuation-state-fixture/state"],
+    ["packages/trellage-launcher", ".shared-review-fixture/repo"],
+    ["packages/trellage-launcher", ".guide-goal-skills-test-fixture/skills"],
+    ["packages/trellage-launcher", ".review-pty-fixture/home"],
   ]) {
     const root = await mkdtemp(path.join(os.tmpdir(), "trx-copilot-fixture-identity-"))
     try {
