@@ -63,11 +63,16 @@ const main = async (): Promise<number> => {
   const skillDirectory = await ensureOptimizeSkills(createNodeCommandRunner(), skillIds, signal, env)
   if (skillDirectory !== undefined) process.stderr.write(`Managed skills: ${skillDirectory}\n`)
   const model = resolveGuideModelRouting({}, process.env).optimize
-  const activity: string[] = []
+  const toolCalls = new Set<string>()
   await runGuideOptimizeSdk({
     cwd: root, prompt: buildGuideOptimizePrompt(skills, skillDirectory), skillDirectory, model, signal,
-    onActivity: (text) => {
-      activity.push(text)
+    onActivity: (entry) => {
+      if (entry.kind === "assistant" && entry.append) return
+      if (entry.kind === "tool") {
+        if (toolCalls.has(entry.id)) return
+        toolCalls.add(entry.id)
+      }
+      const text = entry.kind === "tool" ? `Tool: ${entry.text}` : entry.text
       process.stderr.write(`${text.split("\n")[0]}\n`)
     },
   })
@@ -76,12 +81,12 @@ const main = async (): Promise<number> => {
   const changed = git(root, "status", "--porcelain").trim()
   if (!changed) failures.push("The agent changed no files.")
   if (git(root, "rev-parse", "HEAD").trim() !== head) failures.push("The agent committed; Optimize must not commit.")
-  if (!activity.some((line) => line.startsWith("Tool: "))) failures.push("No tool use was observed.")
+  if (toolCalls.size === 0) failures.push("No tool use was observed.")
   const css = await readFile(path.join(root, "styles.css"), "utf8")
   if (skillIds.includes("ui-css") && css.includes("outline: none") && !css.includes("focus-visible"))
     failures.push("The UI and CSS skill left the removed focus outline unchanged.")
   const result = { passed: failures.length === 0, failures, repository: root, model, skills: skillIds, skillDirectory: skillDirectory ?? null,
-    changedFiles: changed.split("\n").filter(Boolean), toolCalls: activity.filter((line) => line.startsWith("Tool: ")).length }
+    changedFiles: changed.split("\n").filter(Boolean), toolCalls: toolCalls.size }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
   return result.passed ? 0 : 1
 }

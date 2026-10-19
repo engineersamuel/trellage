@@ -4,6 +4,7 @@ import {
   RuntimeConnection,
   type CopilotClientOptions,
   type SessionConfig,
+  type SessionEvent,
 } from "@github/copilot-sdk"
 import { findExecutableOnPath, runCleanupStep } from "./copilot-guide-provider.ts"
 import type { GuideModelConfig } from "./guide-model-routing.ts"
@@ -127,7 +128,7 @@ export const buildGuideOptimizePrompt = (skills: ReadonlyArray<GuideOptimizeSkil
   ].join("\n\n")
 
 export interface GuideOptimizeSdkSession {
-  on(handler: (event: { readonly type: string; readonly data: unknown }) => void): () => void
+  on(handler: (event: SessionEvent) => void): () => void
   sendAndWait(options: { readonly prompt: string }, timeoutMs: number): Promise<unknown>
   abort(): Promise<void>
   disconnect(): Promise<void>
@@ -139,24 +140,73 @@ export interface GuideOptimizeSdkClient {
   stop(): Promise<ReadonlyArray<Error>>
 }
 
+export type GuideOptimizeActivity =
+  | { readonly kind: "assistant"; readonly id: string; readonly text: string; readonly append?: boolean }
+  | { readonly kind: "tool"; readonly id: string; readonly text: string; readonly output: string; readonly status: "running" | "done" | "failed" }
+  | { readonly kind: "status" | "error"; readonly id: string; readonly text: string }
+
 export interface GuideOptimizeSdkOptions {
   readonly cwd: string
   readonly prompt: string
   readonly skillDirectory?: string | undefined
   readonly model: GuideModelConfig
   readonly signal: AbortSignal
-  readonly onActivity: (text: string) => void
+  readonly onActivity: (activity: GuideOptimizeActivity) => void
   readonly clientFactory?: (options: CopilotClientOptions) => GuideOptimizeSdkClient
   readonly timeoutMs?: number
 }
 
-const activityText = (event: { readonly type: string; readonly data: unknown }): string | undefined => {
-  const data = event.data as Record<string, unknown> | null
-  if (event.type === "tool.execution_start" && typeof data?.toolName === "string") return `Tool: ${data.toolName}`
-  if (event.type === "assistant.message" && typeof data?.content === "string" && data.content.trim() !== "")
-    return data.content.trim()
-  if (event.type === "session.error" && typeof data?.message === "string") return `Error: ${data.message}`
-  return undefined
+const boundedOutput = (text: string): string =>
+  text.length > 16_000 ? `[Earlier output omitted]\n${text.slice(-16_000)}` : text
+
+type OptimizeToolActivity = Extract<GuideOptimizeActivity, { kind: "tool" }>
+
+const completeToolActivity = (
+  previous: OptimizeToolActivity,
+  data: Extract<SessionEvent, { type: "tool.execution_complete" }>["data"],
+): OptimizeToolActivity => ({
+  ...previous,
+  status: data.success ? "done" : "failed",
+  output: boundedOutput([
+    data.result?.detailedContent || data.result?.content || previous.output,
+    data.error?.message,
+  ].filter(Boolean).join("\n")),
+})
+
+const observeOptimizeTool = (event: SessionEvent, tools: Map<string, OptimizeToolActivity>): OptimizeToolActivity | undefined => {
+  if (event.type === "tool.execution_start") {
+    const { toolCallId, toolName, arguments: args } = event.data
+    const argumentsText = args === undefined ? "" : `\n${JSON.stringify(args, null, 2)}`
+    const activity: OptimizeToolActivity = {
+      kind: "tool", id: toolCallId, text: `${toolName}${argumentsText}`, output: "", status: "running",
+    }
+    tools.set(toolCallId, activity)
+    return activity
+  }
+  if (event.type !== "tool.execution_partial_result" && event.type !== "tool.execution_progress" && event.type !== "tool.execution_complete")
+    return undefined
+  const id = event.data.toolCallId
+  const previous = tools.get(id) ?? { kind: "tool", id, text: "Tool", output: "", status: "running" }
+  if (event.type === "tool.execution_complete") {
+    tools.delete(id)
+    return completeToolActivity(previous, event.data)
+  }
+  const output = event.type === "tool.execution_partial_result" ? event.data.partialOutput : `\n${event.data.progressMessage}\n`
+  const activity = { ...previous, output: boundedOutput(previous.output + output) }
+  tools.set(id, activity)
+  return activity
+}
+
+export const updateGuideOptimizeLog = (
+  log: ReadonlyArray<GuideOptimizeActivity>,
+  activity: GuideOptimizeActivity,
+): ReadonlyArray<GuideOptimizeActivity> => {
+  const index = log.findIndex((entry) => entry.id === activity.id)
+  const previous = log[index]
+  const next = activity.kind === "assistant" && activity.append && previous?.kind === "assistant"
+    ? { ...activity, text: previous.text + activity.text }
+    : activity
+  return index < 0 ? [...log, next].slice(-200) : log.map((entry, i) => i === index ? next : entry)
 }
 
 /**
@@ -172,6 +222,7 @@ export const runGuideOptimizeSdk = async (options: GuideOptimizeSdkOptions): Pro
     logLevel: "none",
   })
   let session: GuideOptimizeSdkSession | undefined
+  const tools = new Map<string, OptimizeToolActivity>()
   const abort = () => void session?.abort()
   options.signal.addEventListener("abort", abort, { once: true })
   try {
@@ -182,13 +233,26 @@ export const runGuideOptimizeSdk = async (options: GuideOptimizeSdkOptions): Pro
       model: options.model.model,
       reasoningEffort: options.model.effort,
       workingDirectory: options.cwd,
-      streaming: false,
+      streaming: true,
       ...(options.skillDirectory === undefined ? {} : { skillDirectories: [options.skillDirectory] }),
       onPermissionRequest: approveAll,
     })
     session.on((event) => {
-      const text = activityText(event)
-      if (text !== undefined) options.onActivity(text)
+      switch (event.type) {
+        case "assistant.message_delta":
+          options.onActivity({ kind: "assistant", id: event.data.messageId, text: event.data.deltaContent, append: true })
+          break
+        case "assistant.message":
+          if (event.data.content.trim()) options.onActivity({ kind: "assistant", id: event.data.messageId, text: event.data.content })
+          break
+        case "session.error":
+          options.onActivity({ kind: "error", id: event.id, text: `Error: ${event.data.message}` })
+          break
+        default: {
+          const activity = observeOptimizeTool(event, tools)
+          if (activity !== undefined) options.onActivity(activity)
+        }
+      }
     })
     options.signal.throwIfAborted()
     await session.sendAndWait({ prompt: options.prompt }, options.timeoutMs ?? 3_600_000)

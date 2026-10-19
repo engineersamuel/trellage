@@ -1488,6 +1488,10 @@ it("runs selected Optimize skills in the Copilot SDK without a change set or rev
   await guide.pressAndWait(enter, "Copilot SDK in this terminal (all tools allowed)", "Agent harness in this terminal")
   assert(!guide.text().includes("New Herdr tab"))
   await guide.pressAndWait(enter, "Fixture optimization finished.", "finished")
+  assert(guide.text().includes("> view [done]"))
+  assert(guide.text().includes('{"path": "src/example.ts"}'))
+  assert(guide.text().includes("  | Repository instructions loaded."))
+  assert.equal(guide.text().split("Fixture optimization finished.").length - 1, 1)
   await guide.pressAndWait(enter, "Profile recommendations", "o Optimize repository")
   const report = await guide.finish("q", 130)
   const runs = report.events.filter((event) => event.kind === "optimize-sdk")
@@ -1503,6 +1507,20 @@ it("runs selected Optimize skills in the Copilot SDK without a change set or rev
   assert.deepEqual(report.events.filter((event) => event.kind.startsWith("optimize-") && !["optimize-sdk", "optimize-skills"].includes(event.kind)), [])
   assert.equal(run.skillDirectory, undefined)
   assert.deepEqual(commandEvents(report.events), [])
+}, 30_000)
+
+it("shows live tool details and scrolls through Optimize output", async ({ guide }) => {
+  await guide.start(FixtureMode.Terminal, 80, 24)
+  await enterIntent(guide)
+  await openOptimize(guide)
+  await guide.pressAndWait(" ", "[x] First principles")
+  await guide.pressAndWait(enter, "Copilot SDK in this terminal")
+  await guide.pressAndWait(enter, "> view [running]", '{"path": "src/example.ts"}')
+  await guide.waitForText("Fixture optimization finished.", "Output line 18")
+  await guide.pressAndWait("\u001b[5~", "> view [done]", "Repository instructions loaded.")
+  await guide.pressAndWait("\u001b[F", "Fixture optimization finished.", "Output line 18")
+  await guide.pressAndWait(enter, "Profile recommendations")
+  await guide.finish("q", 130)
 }, 30_000)
 
 it("downloads the architecture skills before the SDK run and passes their directory", async ({ guide }) => {

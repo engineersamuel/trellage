@@ -264,8 +264,13 @@ const instance = render(
     }}
     runOptimizeSdk={async ({ prompt, cwd, model, skillDirectory, onActivity }) => {
       await record({ kind: "optimize-sdk", prompt, cwd, model: model.model, ...(skillDirectory === undefined ? {} : { skillDirectory }) })
-      onActivity("Tool: view")
-      onActivity("Fixture optimization finished.")
+      onActivity({ kind: "tool", id: "read", text: 'view\n{"path": "src/example.ts"}', output: "", status: "running" })
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      const output = ["Repository instructions loaded.", ...Array.from({ length: 18 }, (_, index) => `Output line ${index + 1}`)].join("\n")
+      onActivity({ kind: "tool", id: "read", text: 'view\n{"path": "src/example.ts"}', output, status: "done" })
+      onActivity({ kind: "assistant", id: "reply", text: "Fixture optimization ", append: true })
+      onActivity({ kind: "assistant", id: "reply", text: "finished.", append: true })
+      onActivity({ kind: "assistant", id: "reply", text: "Fixture optimization finished." })
     }}
   />,
   {
