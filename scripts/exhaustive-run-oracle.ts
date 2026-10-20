@@ -3,9 +3,13 @@ import { adapters } from "@trellage/runtime/native-run"
 import type { NativeCatalog } from "@trellage/runtime/native-config"
 import type { DomainValue } from "./exhaustive-cli-domains.ts"
 
-export type RunOutcome = "usage" | "unsupported" | "unknown-profile" | "isolation" | "dry-run" | "launched"
+export type RunOutcome = "usage" | "unsupported" | "unknown-profile" | "isolation" | "dry-run" | "no-session" | "launched"
 
 /** Expected validation order for the declared domains in an empty owned workspace. */
+// Copilot's bare --resume opens a session picker before launch; with no saved session it reports that and exits 0.
+const picksCopilotSession = (options: RunOptions): boolean =>
+  options.harness === "copilot" && options.resume?.kind === "pick" && options.resume.id === undefined
+
 export const expectedRunOutcome = (options: RunOptions | undefined, catalog: NativeCatalog): RunOutcome => {
   if (!options || !Object.hasOwn(adapters, options.harness)) return "usage"
   const adapter = adapters[options.harness]!
@@ -25,7 +29,7 @@ export const expectedRunOutcome = (options: RunOptions | undefined, catalog: Nat
       )
     )
       return "usage"
-    return options.dryRun ? "dry-run" : "launched"
+    return options.dryRun ? "dry-run" : picksCopilotSession(options) ? "no-session" : "launched"
   }
   const resolved = options.profiles.map((name) =>
     Object.hasOwn(catalog.profiles, name)
@@ -44,6 +48,7 @@ export const expectedRunOutcome = (options: RunOptions | undefined, catalog: Nat
   if (options.harness === "uji" && options.model !== undefined && !/^copilot-proxy-rs\/.+$/u.test(options.model))
     return "usage"
   if (options.dryRun) return "dry-run"
+  if (picksCopilotSession(options)) return "no-session"
   if (options.harness !== "pi" && !options.allowUnprovenIsolation) return "isolation"
   return "launched"
 }

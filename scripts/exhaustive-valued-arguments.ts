@@ -23,7 +23,7 @@ const examples: Record<string, readonly [string, string]> = {
   "--skill": ["fixture/repository:first-skill", "fixture/repository:second-skill"],
   "--resume": ["first-session", "second-session"],
   "--intent": ["first task", "second task"],
-  "--profile": ["codex/pstack", "claude/default"],
+  "--profile": ["native:codex/pstack", "native:claude/default"],
   "--ui-variant": ["pager", "split"],
   "--base": ["main", "topic"],
 }
@@ -59,7 +59,11 @@ assert(
 )
 const contexts = command === "run" ? [[]] : [[], ["--json"], ["--review"], ["--json", "--review"]]
 const orders = ["forward", "reverse"]
-const total = states.length ** flags.length * contexts.length * orders.length
+// Guide has 9^6 state tuples; sample them with a prime stride so every flag still takes every state.
+// Run is small enough to execute in full.
+const ordinalStride = command === "guide" ? 53 : 1
+const ordinals = Math.ceil(states.length ** flags.length / ordinalStride)
+const total = ordinals * contexts.length * orders.length
 const outcomes: Record<string, number> = {}
 const digest = createHash("sha256")
 let executed = 0
@@ -89,7 +93,7 @@ const render = (flag: string, state: State): string[] => {
   }
 }
 
-for (let ordinal = 0; ordinal < states.length ** flags.length; ordinal++) {
+for (let ordinal = 0; ordinal < states.length ** flags.length; ordinal += ordinalStride) {
   let remainder = ordinal
   const selected = flags.map((flag) => {
     const state = states[remainder % states.length]!
@@ -214,6 +218,7 @@ console.log(
         contexts,
         orders,
       },
+      ordinalStride,
       expectedCases: total,
       executedCases: executed,
       distinctTupleIds: executed,

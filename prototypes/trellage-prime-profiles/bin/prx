@@ -67,7 +67,7 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
 readonly receipt_file="$runtime_root/installed-version"
-readonly npm_prefix="$runtime_root/npm-prefix"
+readonly rust_prefix="$runtime_root/rust-prefix"
 readonly runtime_identity_file="$runtime_root/runtime-identity.json"
 readonly managed_extension_source="$runtime_root/assets/extensions/${managed_extension_name}.ts"
 readonly profile_root="$HOME/.local/share/trellage/profiles/prime/default"
@@ -130,40 +130,20 @@ readonly mutation_lock="$profile_root/.mutation.lock"
 mutation_lock_owned=''
 transaction_active=''
 transaction_committed=''
-backup_npm_prefix=''
+backup_rust_prefix=''
 backup_receipt=''
 backup_runtime_identity=''
 backup_kernel_venv=''
 backup_kernel_identity=''
 backup_daemon_stamp=''
-backup_npm_state='unprocessed'
+backup_rust_state='unprocessed'
 backup_receipt_state='unprocessed'
 backup_runtime_identity_state='unprocessed'
 backup_kernel_state='unprocessed'
 backup_kernel_identity_state='unprocessed'
 backup_daemon_stamp_state='unprocessed'
-staged_npm_prefix=''
 staged_receipt=''
 staged_runtime_identity=''
-# Default RLM extras required when PRIME_AGENT_KERNEL_PYTHON is set (prime bootstrap.js).
-# prime-agent-runtime is installed from the bundled source tree, not PyPI.
-readonly kernel_pypi_packages=(
-  ipykernel
-  dill
-  requests
-  httpx
-  pyyaml
-  tomli
-  python-dotenv
-  pandas
-  numpy
-  scipy
-  beautifulsoup4
-  lxml
-  pydantic
-  tyro
-)
-
 validate_catalog() {
   [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
     || die "invalid catalog: $catalog"
@@ -689,9 +669,12 @@ canonical_identity_from_file() {
 }
 
 compute_runtime_identity() {
-  local version="$1" prefix="${2:-$npm_prefix}" runtime_source runtime_hash
+  local version="$1" prefix="${2:-$rust_prefix}" runtime_source runtime_hash
 
-  runtime_source="$(resolve_runtime_source "$prefix")"
+  runtime_source="$prefix/share/prime-agent/prime-agent-runtime"
+  [[ -d "$runtime_source" && ! -L "$runtime_source" \
+    && -f "$runtime_source/pyproject.toml" && ! -L "$runtime_source/pyproject.toml" ]] \
+    || die "bundled prime-agent-runtime is missing; run prx repair ($runtime_source)"
   runtime_hash="$(runtime_tree_hash "$runtime_source")" \
     || die "could not hash bundled prime-agent-runtime: $runtime_source"
   [[ "$runtime_hash" =~ ^[0-9a-f]{64}$ ]] \
@@ -728,50 +711,35 @@ published_runtime_identity() {
   printf '%s\n' "$identity"
 }
 
-resolve_package_source() {
-  local version="$1" install_dir expected
+resolve_installer() {
+  local version="$1" install_dir expected installer
 
+  mise_env install "$mise_tool[asset_pattern=prime-agent-$version.tgz]@$version" \
+    || die "mise could not install prime-agent $version"
   install_dir="$(mise_env where "$mise_tool@$version")" \
     || die "prime-agent $version is not installed; run prx repair"
   expected="$runtime_root/mise/installs/$mise_install_name/$version"
   [[ "$install_dir" == "$expected" ]] \
     || die "mise returned unexpected prime-agent path: $install_dir"
-  # mise extracts the GitHub release tarball in place (package.json at root).
-  [[ -f "$install_dir/package.json" && ! -L "$install_dir/package.json" ]] \
-    || die "prime-agent package is missing: $install_dir"
+  installer="$install_dir/install-rust.sh"
+  [[ -f "$installer" && ! -L "$installer" ]] \
+    || die "prime-agent $version does not ship install-rust.sh: $installer"
   jq -e --arg version "$version" '
     .name == "prime-agent" and .version == $version
   ' "$install_dir/package.json" >/dev/null 2>&1 \
     || die "prime-agent package metadata is invalid: $install_dir/package.json"
-  printf '%s\n' "$install_dir"
-}
-
-require_node() {
-  local major
-
-  require_command node
-  major="$(node -p 'process.versions.node.split(".")[0]')" \
-    || die 'could not determine Node.js version'
-  [[ "$major" =~ ^[0-9]+$ && "$major" -ge 22 ]] \
-    || die "Node.js 22+ is required (found $(node --version 2>/dev/null || printf unknown))"
+  printf '%s\n' "$installer"
 }
 
 installed_cli() {
-  local version="$1" prefix="${2:-$npm_prefix}" cli package_root package_json
+  local version="$1" prefix="${2:-$rust_prefix}" cli package_json
 
-  package_root="$prefix/lib/node_modules/prime-agent"
-  cli="$package_root/dist/bundle/cli.js"
-  package_json="$package_root/package.json"
-  # npm install of a bare directory path creates a symlink into the mise
-  # extract without dependencies. Require a real package tree.
-  [[ -d "$package_root" && ! -L "$package_root" ]] \
-    || die "prime-agent $version is not installed; run prx repair"
-  [[ -f "$cli" && ! -L "$cli" ]] \
+  cli="$prefix/bin/prime-agent"
+  package_json="$prefix/share/prime-agent/package.json"
+  [[ -f "$cli" && -x "$cli" && ! -L "$cli" ]] \
     || die "prime-agent $version is not installed; run prx repair"
   [[ -f "$package_json" && ! -L "$package_json" ]] \
     || die "prime-agent package metadata is missing: $package_json"
-  [[ -d "$package_root/node_modules" && ! -L "$package_root/node_modules" ]] \
-    || die "prime-agent dependencies are missing; run prx repair"
   jq -e --arg version "$version" '
     .name == "prime-agent" and .version == $version
   ' "$package_json" >/dev/null 2>&1 \
@@ -780,15 +748,10 @@ installed_cli() {
 }
 
 verify_cli_version() {
-  local cli="$1" version="$2" prefix="${3:-$npm_prefix}" actual status=0
+  local cli="$1" version="$2" actual status=0
 
-  require_node
   # Prime Agent prints --version on stderr; merge it into the capture.
-  if [[ -x "$prefix/bin/prime-agent" ]]; then
-    actual="$("$prefix/bin/prime-agent" --version 2>&1)" || status=$?
-  else
-    actual="$(node "$cli" --version 2>&1)" || status=$?
-  fi
+  actual="$("$cli" --version 2>&1)" || status=$?
   ((status == 0)) || die "could not run prime-agent $version"
   # Strip CR and surrounding whitespace; keep the first non-empty line.
   actual="$(printf '%s\n' "$actual" | tr -d '\r' | sed -e '/^[[:space:]]*$/d' | head -n 1 \
@@ -797,85 +760,31 @@ verify_cli_version() {
     || die "prime-agent version differs: expected $version, got ${actual:-<empty>}"
 }
 
-pack_package_tarball() {
-  local package_dir="$1" version="$2" pack_dir packed tarball
+# Runs the release's own Rust installer into the owned prefix. The daemon stop
+# and the global npm takeover stay off: this prefix and its sockets are private.
+install_rust_runtime() {
+  local installer="$1" version="$2" log
 
-  pack_dir="$(mktemp -d "$runtime_root/.pack.XXXXXX")" \
-    || die 'could not stage prime-agent package pack directory'
-  # npm install of a directory path symlinks without deps; pack to a tarball
-  # first so the global install materializes dependencies.
-  if ! (
-    CDPATH= cd -P -- "$package_dir" || exit 1
-    npm pack --pack-destination "$pack_dir" --loglevel=error --ignore-scripts
-  ) >/dev/null 2>"$pack_dir/pack.err"; then
-    cat "$pack_dir/pack.err" >&2 || true
-    rm -rf -- "$pack_dir"
-    die "npm could not pack prime-agent $version"
+  require_command curl
+  prepare_profile
+  [[ ! -L "$kernel_venv" ]] || die "unsafe kernel venv path: $kernel_venv"
+  log="$(mktemp "$runtime_root/.rust-install.XXXXXX")" \
+    || die 'could not stage prime-agent install log'
+  printf 'prx: installing prime-agent %s and its Python kernel (one-time; needs network)…\n' "$version" >&2
+  if ! PRIME_AGENT_RUST_PREFIX="$rust_prefix" \
+    PRIME_AGENT_VERSION="$version" \
+    PRIME_AGENT_KERNEL_VENV="$kernel_venv" \
+    PRIME_AGENT_PRESERVE_NPM_BRIDGE=1 \
+    PRIME_AGENT_DEFER_DAEMON_STOP=1 \
+    NO_COLOR=1 TERM=dumb \
+    sh "$installer" </dev/null >"$log" 2>&1; then
+    cat "$log" >&2 || true
+    rm -f -- "$log"
+    die "prime-agent $version installer failed"
   fi
-  packed="$(find "$pack_dir" -maxdepth 1 -type f -name 'prime-agent-*.tgz' -print)"
-  if [[ "$(printf '%s\n' "$packed" | awk 'NF { count++ } END { print count + 0 }')" -ne 1 ]]; then
-    rm -rf -- "$pack_dir"
-    die "npm pack produced an unexpected prime-agent tarball set"
-  fi
-  tarball="$packed"
-  [[ -f "$tarball" && ! -L "$tarball" ]] || {
-    rm -rf -- "$pack_dir"
-    die "unsafe packed prime-agent tarball: $tarball"
-  }
-  printf '%s\n' "$tarball"
-}
-
-stage_exact_version() {
-  local version="$1" package_source tarball cli npm_log pack_dir
-
-  require_command mise
-  require_command npm
-  require_node
-  local package_spec="$mise_tool[asset_pattern=prime-agent-$version.tgz]@$version"
-  mise_env install "$package_spec" \
-    || die "mise could not install prime-agent $version"
-  if ! package_source="$(resolve_package_source "$version" 2>/dev/null)"; then
-    # Older mise selections may have cached the standalone archive at this version.
-    local expected="$runtime_root/mise/installs/$mise_install_name/$version"
-    [[ -d "$expected" && ! -L "$expected" && -O "$expected" ]] \
-      || die "refusing to replace an unsafe Prime install: $expected"
-    [[ "$(canonical_directory "$expected")" == "$expected" ]] \
-      || die "refusing to replace a symlinked Prime install: $expected"
-    mise_env install --force "$package_spec" \
-      || die "mise could not repair prime-agent $version"
-    package_source="$(resolve_package_source "$version")"
-  fi
-  [[ ! -L "$npm_prefix" ]] || die "unsafe npm prefix: $npm_prefix"
-  if [[ -e "$npm_prefix" ]]; then
-    [[ -d "$npm_prefix" ]] || die "unsafe npm prefix: $npm_prefix"
-  fi
-  tarball="$(pack_package_tarball "$package_source" "$version")"
-  pack_dir="$(dirname "$tarball")"
-  staged_npm_prefix="$(mktemp -d "$runtime_root/.npm-prefix-stage.XXXXXX")" \
-    || {
-      rm -rf -- "$pack_dir"
-      die 'could not stage prime-agent npm prefix'
-    }
-  npm_log="$(mktemp "$runtime_root/.npm-install.XXXXXX")" \
-    || {
-      rm -rf -- "$pack_dir" "$staged_npm_prefix"
-      die 'could not stage npm install log'
-    }
-  if ! PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 \
-    PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 \
-    PRIME_AGENT_INSTALL_UV=0 \
-    npm install --global --prefix "$staged_npm_prefix" --no-fund --no-audit \
-      --loglevel=error --progress=false "$tarball" \
-    >"$npm_log" 2>&1; then
-    cat "$npm_log" >&2 || true
-    rm -f -- "$npm_log"
-    rm -rf -- "$pack_dir" "$staged_npm_prefix"
-    die "npm could not install prime-agent $version"
-  fi
-  rm -f -- "$npm_log"
-  rm -rf -- "$pack_dir"
-  cli="$(installed_cli "$version" "$staged_npm_prefix")"
-  verify_cli_version "$cli" "$version" "$staged_npm_prefix"
+  rm -f -- "$log"
+  [[ -x "$kernel_python" ]] \
+    || die "Prime kernel python was not created (offline install?); rerun prx repair: $kernel_python"
 }
 
 stage_installed_version_receipt() {
@@ -915,8 +824,8 @@ make_file_backup_path() {
 }
 
 validate_transaction_paths() {
-  [[ ! -L "$npm_prefix" && ( ! -e "$npm_prefix" || -d "$npm_prefix" ) ]] \
-    || die "unsafe npm prefix: $npm_prefix"
+  [[ ! -L "$rust_prefix" && ( ! -e "$rust_prefix" || -d "$rust_prefix" ) ]] \
+    || die "unsafe Rust prefix: $rust_prefix"
   [[ ! -L "$receipt_file" && ( ! -e "$receipt_file" || -f "$receipt_file" ) ]] \
     || die "unsafe installed version receipt: $receipt_file"
   [[ ! -L "$runtime_identity_file" \
@@ -935,7 +844,7 @@ validate_transaction_paths() {
 begin_runtime_transaction() {
   transaction_active=1
   transaction_committed=''
-  backup_npm_state='unprocessed'
+  backup_rust_state='unprocessed'
   backup_receipt_state='unprocessed'
   backup_runtime_identity_state='unprocessed'
   backup_kernel_state='unprocessed'
@@ -943,13 +852,13 @@ begin_runtime_transaction() {
   backup_daemon_stamp_state='unprocessed'
   validate_transaction_paths
 
-  if [[ -d "$npm_prefix" ]]; then
-    backup_npm_prefix="$(make_directory_backup_path "$runtime_root/.npm-prefix-backup.XXXXXX")" \
-      || die 'could not stage npm prefix backup'
-    mv "$npm_prefix" "$backup_npm_prefix" || die 'could not preserve npm prefix'
-    backup_npm_state='present'
+  if [[ -d "$rust_prefix" ]]; then
+    backup_rust_prefix="$(make_directory_backup_path "$runtime_root/.rust-prefix-backup.XXXXXX")" \
+      || die 'could not stage Rust prefix backup'
+    mv "$rust_prefix" "$backup_rust_prefix" || die 'could not preserve Rust prefix'
+    backup_rust_state='present'
   else
-    backup_npm_state='absent'
+    backup_rust_state='absent'
   fi
   if [[ -f "$receipt_file" ]]; then
     backup_receipt="$(make_file_backup_path "$runtime_root/.installed-version-backup.XXXXXX")" \
@@ -1024,11 +933,9 @@ rollback_runtime_transaction() {
     "$backup_runtime_identity" file || rollback_failed=1
   restore_transaction_path "$backup_receipt_state" "$receipt_file" \
     "$backup_receipt" file || rollback_failed=1
-  restore_transaction_path "$backup_npm_state" "$npm_prefix" \
-    "$backup_npm_prefix" directory || rollback_failed=1
-  rm -rf -- "$staged_npm_prefix"
+  restore_transaction_path "$backup_rust_state" "$rust_prefix" \
+    "$backup_rust_prefix" directory || rollback_failed=1
   rm -f -- "$staged_receipt" "$staged_runtime_identity"
-  staged_npm_prefix=''
   staged_receipt=''
   staged_runtime_identity=''
   transaction_active=''
@@ -1041,10 +948,10 @@ rollback_runtime_transaction() {
 
 commit_runtime_transaction() {
   transaction_committed=1
-  rm -rf -- "$backup_npm_prefix" "$backup_kernel_venv"
+  rm -rf -- "$backup_rust_prefix" "$backup_kernel_venv"
   rm -f -- "$backup_receipt" "$backup_runtime_identity" \
     "$backup_kernel_identity" "$backup_daemon_stamp"
-  backup_npm_prefix=''
+  backup_rust_prefix=''
   backup_receipt=''
   backup_runtime_identity=''
   backup_kernel_venv=''
@@ -1065,14 +972,9 @@ prime_version_if_available() {
   identity="$(canonical_identity_from_file "$runtime_identity_file")" || return 0
   [[ "$(jq -r '.primeVersion' <<<"$identity")" == "$version" ]] || return 0
   runtime_identity_matches "$identity" "$kernel_identity_stamp" || return 0
-  cli="$npm_prefix/lib/node_modules/prime-agent/dist/bundle/cli.js"
-  if [[ -x "$npm_prefix/bin/prime-agent" ]]; then
-    actual="$("$npm_prefix/bin/prime-agent" --version 2>&1)" || status=$?
-  elif [[ -f "$cli" && ! -L "$cli" ]] && command -v node >/dev/null 2>&1; then
-    actual="$(node "$cli" --version 2>&1)" || status=$?
-  else
-    return 0
-  fi
+  cli="$rust_prefix/bin/prime-agent"
+  [[ -x "$cli" && ! -L "$cli" ]] || return 0
+  actual="$("$cli" --version 2>&1)" || status=$?
   ((status == 0)) || return 0
   actual_version="$(printf '%s\n' "$actual" | tr -d '\r' | sed -e '/^[[:space:]]*$/d' | head -n 1 | extract_semver)"
   [[ "$actual_version" == "$version" ]] || return 0
@@ -1138,78 +1040,6 @@ check_proxy() {
     || die "copilot-proxy-rs model is missing: $selected_model"
 }
 
-uv_with_index() {
-  local registry
-  if [[ -n "${UV_DEFAULT_INDEX-}${UV_INDEX_URL-}" ]]; then
-    uv "$@"
-  elif [[ -n "${PIP_INDEX_URL-}" ]]; then
-    UV_DEFAULT_INDEX="$PIP_INDEX_URL" uv "$@"
-  else
-    registry="$(npm config get registry --workspaces=false 2>/dev/null)" || registry=''
-    case "$registry" in
-      https://packagefeedproxy.microsoft.io/npm|https://packagefeedproxy.microsoft.io/npm/)
-        UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/ uv "$@" ;;
-      *) uv "$@" ;;
-    esac
-  fi
-}
-
-kernel_runtime_ready() {
-  local python="$1"
-
-  # venv bin/python is typically a symlink to the real interpreter; that is OK.
-  [[ -x "$python" ]] || return 1
-  "$python" -c 'import ipykernel' >/dev/null 2>&1 || return 1
-  # Validate both the legacy callable API and the current spawn API.
-  "$python" -c '
-import inspect
-import rlm
-from rlm import McpIntegration  # noqa: F401
-from rlm.harness import HarnessEntry
-methods = [
-  "create_memory","update_memory","delete_memory",
-  "create_skill","update_skill","delete_skill",
-  "create_subagent","update_subagent","delete_subagent",
-  "create_prompt_note","update_prompt_note","delete_prompt_note",
-  "record_refinement",
-]
-if hasattr(rlm, "spawn"):
-  assert all(callable(getattr(api, method, None))
-             for api in (rlm, rlm.rlm)
-             for method in ("spawn", "collect", "list_subagents"))
-else:
-  assert hasattr(rlm, "run") and callable(rlm)
-  assert hasattr(rlm, "rlm") and callable(rlm.rlm)
-assert callable(rlm.host_request)
-assert callable(rlm.find_models) and callable(rlm.rlm.find_models)
-assert hasattr(rlm, "harness") and hasattr(rlm, "get_harness_state")
-assert hasattr(rlm.rlm, "harness") and hasattr(rlm.rlm, "get_harness_state")
-assert all(
-  callable(getattr(h, m, None))
-  for h in (rlm.harness, rlm.rlm.harness)
-  for m in methods
-)
-assert "reference" in HarnessEntry.__dataclass_fields__
-assert "scope" in HarnessEntry.__dataclass_fields__
-' >/dev/null 2>&1 || return 1
-  "$python" -c '
-import bs4, dill, dotenv, httpx, lxml, numpy, pandas, pydantic, requests, scipy, tomli, tyro, yaml
-' >/dev/null 2>&1 || return 1
-  return 0
-}
-
-resolve_runtime_source() {
-  local prefix="${1:-$npm_prefix}" candidate
-
-  # Bundled with the managed npm install of prime-agent (not a PyPI package).
-  candidate="$prefix/lib/node_modules/prime-agent/dist/prime-agent-runtime"
-  [[ -d "$candidate" && ! -L "$candidate" ]] \
-    || die "bundled prime-agent-runtime is missing; run prx repair ($candidate)"
-  [[ -f "$candidate/pyproject.toml" && ! -L "$candidate/pyproject.toml" ]] \
-    || die "bundled prime-agent-runtime is incomplete: $candidate"
-  printf '%s\n' "$candidate"
-}
-
 write_identity_file() {
   local target="$1" identity="$2" directory staged
 
@@ -1223,70 +1053,6 @@ write_identity_file() {
   mv -f "$staged" "$target"
 }
 
-build_kernel_runtime() {
-  local prefix="$1" log runtime_source
-
-  require_command uv
-  require_command curl
-  prepare_profile
-  [[ ! -L "$kernel_venv" ]] || die "unsafe kernel venv path: $kernel_venv"
-  runtime_source="$(resolve_runtime_source "$prefix")"
-
-  printf 'prx: bootstrapping Prime IPython kernel (one-time; needs network)…\n' >&2
-
-  # Drop a partial/broken venv so install is deterministic.
-  if [[ -e "$kernel_venv" ]]; then
-    rm -rf -- "$kernel_venv"
-  fi
-
-  log="$(mktemp "$runtime_root/.kernel-bootstrap.XXXXXX")" \
-    || die 'could not stage kernel bootstrap log'
-
-  if ! uv_with_index python install 3.11 >"$log" 2>&1; then
-    cat "$log" >&2 || true
-    rm -f -- "$log"
-    die 'uv could not install Python 3.11 for the Prime kernel'
-  fi
-
-  # Avoid --seed: seed packages pull from files.pythonhosted.org and fail when
-  # that CDN is blocked even if a simple-index mirror works.
-  if ! uv_with_index venv "$kernel_venv" --python 3.11 >"$log" 2>&1; then
-    cat "$log" >&2 || true
-    rm -f -- "$log"
-    die 'uv could not create the Prime kernel venv'
-  fi
-
-  if ! uv_with_index pip install --python "$kernel_python" \
-    "${kernel_pypi_packages[@]}" "$runtime_source" >"$log" 2>&1; then
-    cat "$log" >&2 || true
-    rm -f -- "$log"
-    die 'uv could not install Prime kernel packages (ipykernel, prime-agent-runtime, …)'
-  fi
-  rm -f -- "$log"
-
-  kernel_runtime_ready "$kernel_python" \
-    || die "Prime kernel runtime is incomplete after install: $kernel_python"
-  printf 'prx: kernel ready (%s)\n' "$kernel_python" >&2
-}
-
-ensure_kernel_runtime() {
-  local identity="$1" prefix="${2:-$npm_prefix}"
-
-  [[ ! -L "$kernel_venv" ]] || die "unsafe kernel venv path: $kernel_venv"
-  if runtime_identity_matches "$identity" "$kernel_identity_stamp" \
-    && kernel_runtime_ready "$kernel_python"; then
-    return 0
-  fi
-  [[ ! -L "$kernel_identity_stamp" ]] \
-    || die "unsafe kernel identity stamp: $kernel_identity_stamp"
-  [[ ! -L "$daemon_env_stamp" ]] \
-    || die "unsafe daemon identity stamp: $daemon_env_stamp"
-  stop_profile_daemon_for_mutation
-  rm -f -- "$daemon_env_stamp"
-  build_kernel_runtime "$prefix"
-  write_identity_file "$kernel_identity_stamp" "$identity"
-}
-
 verify_kernel_runtime() {
   local identity="$1"
 
@@ -1294,8 +1060,6 @@ verify_kernel_runtime() {
     || die "Prime kernel python is missing; run prx setup or prx repair"
   [[ -d "$kernel_venv" && ! -L "$kernel_venv" ]] \
     || die "Prime kernel venv is missing or unsafe; run prx repair"
-  kernel_runtime_ready "$kernel_python" \
-    || die "Prime kernel runtime is incomplete; run prx repair"
   [[ ! -L "$kernel_identity_stamp" ]] \
     || die "unsafe kernel identity stamp: $kernel_identity_stamp"
   runtime_identity_matches "$identity" "$kernel_identity_stamp" \
@@ -1355,38 +1119,15 @@ daemon_socket_is_listening() {
 }
 
 stop_profile_daemon_socket() {
-  local launch_js="$npm_prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
-  local fallback_launch_js="$HOME/.local/share/trellage/prx/npm-prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
-
   if ! daemon_socket_is_listening; then
     rm -f -- "$daemon_socket"
     return 1
   fi
-  # The profile daemon is shared (keyed by $profile_root under $HOME), but
-  # npm_prefix is per-runtime_root. A daemon started by a different prx copy
-  # (another worktree, or the installed runtime) has no client module staged
-  # here yet. Fall back to the canonical installed runtime's copy before
-  # giving up: any recent daemon-launch.js build can speak the shutdown
-  # protocol to gracefully stop an already-running daemon.
-  if [[ ! -f "$launch_js" || -L "$launch_js" ]] \
-    && [[ -f "$fallback_launch_js" && ! -L "$fallback_launch_js" ]]; then
-    launch_js="$fallback_launch_js"
-  fi
-  [[ -f "$launch_js" && ! -L "$launch_js" ]] \
-    || die "prime-agent daemon-launch module missing; run prx repair ($launch_js)"
-
-  if PRX_DAEMON_SOCKET="$daemon_socket" PRX_DAEMON_LAUNCH_JS="$launch_js" \
-    node --input-type=module -e '
-import { pathToFileURL } from "node:url";
-const launchJs = process.env.PRX_DAEMON_LAUNCH_JS;
-const socket = process.env.PRX_DAEMON_SOCKET;
-const { shutdownDaemonAndWait } = await import(pathToFileURL(launchJs).href);
-const ok = await shutdownDaemonAndWait(socket, 10000);
-process.exit(ok ? 0 : 2);
-'; then
-    :
-  fi
-
+  # The profile daemon is keyed by $profile_root under $HOME and shared by every
+  # prx copy. Speak the daemon protocol directly; CLI "shutdown" discovers only
+  # default sockets and needs a TTY confirmation.
+  "$bun_runner" "${floating_skills_manager%/*}/../packages/trellage-runtime/src/native-tools.ts" \
+    daemon-shutdown "$daemon_socket" || true
   if daemon_socket_is_listening; then
     return 2
   fi
@@ -1477,12 +1218,10 @@ repair_profile() {
 }
 
 replace_runtime_state() {
-  local version="$1" identity cli
+  local version="$1" identity cli installer
 
-  stage_exact_version "$version"
-  identity="$(compute_runtime_identity "$version" "$staged_npm_prefix")"
+  installer="$(resolve_installer "$version")"
   staged_receipt="$(stage_installed_version_receipt "$version")"
-  staged_runtime_identity="$(stage_runtime_identity "$identity")"
 
   stop_profile_daemon_for_mutation
   [[ "${PRX_TEST_FAIL_AT-}" != after-daemon-stop ]] \
@@ -1491,16 +1230,17 @@ replace_runtime_state() {
   [[ "${PRX_TEST_FAIL_AT-}" != after-state-backup ]] \
     || die 'injected failure after state backup'
 
-  build_kernel_runtime "$staged_npm_prefix"
+  install_rust_runtime "$installer" "$version"
   [[ "${PRX_TEST_FAIL_AT-}" != after-kernel-build ]] \
     || die 'injected failure after kernel build'
+  cli="$(installed_cli "$version")"
+  verify_cli_version "$cli" "$version"
+  identity="$(compute_runtime_identity "$version")"
+  staged_runtime_identity="$(stage_runtime_identity "$identity")"
   [[ "${PRX_TEST_FAIL_AT-}" != before-receipt-publication ]] \
     || die 'injected failure before installed version receipt publication'
-
-  mv "$staged_npm_prefix" "$npm_prefix"
-  staged_npm_prefix=''
-  [[ "${PRX_TEST_FAIL_AT-}" != after-npm-publication ]] \
-    || die 'injected failure after npm publication'
+  [[ "${PRX_TEST_FAIL_AT-}" != after-rust-publication ]] \
+    || die 'injected failure after Rust publication'
   mv "$staged_receipt" "$receipt_file"
   staged_receipt=''
   mv "$staged_runtime_identity" "$runtime_identity_file"
@@ -1508,8 +1248,6 @@ replace_runtime_state() {
   write_identity_file "$kernel_identity_stamp" "$identity"
   rm -f -- "$daemon_env_stamp"
 
-  cli="$(installed_cli "$version")"
-  verify_cli_version "$cli" "$version"
   verify_kernel_runtime "$identity"
   [[ "$(compute_runtime_identity "$version")" == "$identity" ]] \
     || die 'published Prime runtime identity verification failed'
@@ -1528,7 +1266,7 @@ runtime_state_is_current() {
   actual="$(compute_runtime_identity "$version")" || return 1
   [[ "$actual" == "$recorded" ]] || return 1
   runtime_identity_matches "$recorded" "$kernel_identity_stamp" || return 1
-  kernel_runtime_ready "$kernel_python"
+  [[ -x "$kernel_python" ]]
 }
 
 check_for_update() {
@@ -1651,7 +1389,6 @@ inventory_profile() {
 
 cleanup_on_exit() {
   rollback_runtime_transaction || :
-  rm -rf -- "$staged_npm_prefix" 2>/dev/null || true
   rm -f -- "$staged_receipt" "$staged_runtime_identity" 2>/dev/null || true
   if [[ -n "$mutation_lock_owned" ]]; then
     release_mutation_lock >/dev/null 2>&1 || cleanup_mutation_owner
@@ -1719,8 +1456,6 @@ case "${1-}" in
     shift
     [[ "$#" -le 1 ]] || die 'shutdown accepts only default'
     require_default_profile "${1-default}"
-    require_command mise
-    require_node
     run_locked shutdown_profile_daemon
     ;;
   update)

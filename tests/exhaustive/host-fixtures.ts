@@ -79,18 +79,19 @@ else throw Error('Unexpected app-server request');state++;
   )
   environment.TRELLAGE_PRIME_LIFECYCLE_BIN = await executable("prime", "assert.deepEqual(args,['repair','default'])")
   const prime = primeRuntimePaths({ environment })
-  const packageRoot = path.join(prime.npmPrefix, "lib/node_modules/prime-agent")
-  await mkdir(path.join(packageRoot, "node_modules"), { recursive: true })
-  await put(path.join(packageRoot, "package.json"), '{"name":"prime-agent","version":"0.7.0"}\n')
+  const payloadRoot = path.join(prime.rustPrefix, "share", "prime-agent")
+  await mkdir(payloadRoot, { recursive: true })
+  await put(path.join(payloadRoot, "package.json"), '{"name":"prime-agent","version":"0.10.0"}\n')
   await put(
-    path.join(packageRoot, "dist/bundle/cli.js"),
-    "if(JSON.stringify(process.argv.slice(2))!=='[\"--version\"]')throw Error('Unexpected Prime execution');console.log('0.7.0')\n",
+    path.join(prime.rustPrefix, "bin", "prime-agent"),
+    "#!/bin/sh\n[ \"$*\" = --version ] || { echo 'Unexpected Prime execution' >&2; exit 97; }\necho 0.10.0 >&2\n",
+    0o755,
   )
-  await put(prime.receiptFile, "0.7.0\n")
+  await put(prime.receiptFile, "0.10.0\n")
   const identity =
     JSON.stringify({
       schemaVersion: 1,
-      primeVersion: "0.7.0",
+      primeVersion: "0.10.0",
       runtimeHashAlgorithm: "sha256",
       runtimeHash: "a".repeat(64),
       kernelSpecVersion: 1,

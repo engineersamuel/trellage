@@ -2,11 +2,11 @@ import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import { parseArgs } from "node:util"
-import { assertCliSourcesUnchanged, loadCliDomains, productSize, type CliDomain } from "./exhaustive-cli-domains.ts"
+import { coverageStride, assertCliSourcesUnchanged, loadCliDomains, productSize, type CliDomain } from "./exhaustive-cli-domains.ts"
 
 import { assertPreviewSourcesUnchanged, loadPreviewDomains } from "./exhaustive-preview-domains.ts"
 
-import { loadGuideDispatchDomains } from "./exhaustive-guide-dispatch.ts"
+import { guideDispatchStride, loadGuideDispatchDomains } from "./exhaustive-guide-dispatch.ts"
 
 interface ExpectedCoverage {
   readonly scope: string
@@ -41,9 +41,12 @@ export const verifyCoverage = (inputs: readonly unknown[], expected: ExpectedCov
       const executed = integer(report.executedCases, "executedCases")
       assert.equal(total, expected.totalCases, "wrong Cartesian product")
       assert(start < end && end <= total, "range is outside the Cartesian product")
-      assert.equal(executed, end - start, "executed count differs from range length")
+      const stride = report.stride === undefined ? 1n : integer(report.stride, "stride")
+      if (stride !== 1n)
+        assert.equal(stride, report.scope === "guide-root-dispatch-only" ? guideDispatchStride : coverageStride(total), "unsupported sample stride")
+      assert.equal(executed, (end - start + stride - 1n) / stride, "executed count differs from range length")
       assert.equal(integer(report.distinctTupleIds, "distinctTupleIds"), executed, "tuple IDs are not distinct")
-      assert.equal(report.complete, start === 0n && end === total, "incorrect single-range completeness claim")
+      assert.equal(report.complete, stride === 1n && start === 0n && end === total, "incorrect single-range completeness claim")
       const outcomes = record(report.outcomes)
       const keys = (
         {
@@ -91,7 +94,7 @@ export const verifyCoverage = (inputs: readonly unknown[], expected: ExpectedCov
         assert.equal(serviced, outcomes.accepted ?? 0, "accepted Guide tuples lack service classifications")
       }
       const digest = createHash("sha256")
-      for (let id = start; id < end; id++) digest.update(`${id}\n`)
+      for (let id = start; id < end; id += stride) digest.update(`${id}\n`)
       assert.equal(report.idSequenceSha256, digest.digest("hex"), "tuple sequence does not match its range")
       return { start, end, executed }
     })
@@ -107,8 +110,8 @@ export const verifyCoverage = (inputs: readonly unknown[], expected: ExpectedCov
     complete: true,
     domainHash: expected.domainHash,
     totalCases: expected.totalCases.toString(),
-    executedCases: cursor.toString(),
-    distinctTupleIds: cursor.toString(),
+    executedCases: reports.reduce((sum, range) => sum + range.executed, 0n).toString(),
+    distinctTupleIds: reports.reduce((sum, range) => sum + range.executed, 0n).toString(),
     ranges: reports.length,
     sourceHashes: expected.sourceHashes,
   }

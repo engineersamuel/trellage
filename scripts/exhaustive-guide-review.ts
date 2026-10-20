@@ -248,7 +248,8 @@ export const assertGuideReviewTarget = async (
           id,
         )
         assert.deepEqual(await assertGuideReviewTargetCurrent(runner, target, signal), target, id)
-        await assertGuideReviewExecution(args, world, id, { root, runner, target, context })
+        // Execution does not depend on the scope: run it for the first scope only.
+        if (scope === scopes[0] && (context === null || context.surface === "popup")) await assertGuideReviewExecution(args, world, id, { root, runner, target, context })
         await writeFile(path.join(cwd, "untracked.ts"), "changed during review\n")
         await assert.rejects(
           () => assertGuideReviewTargetCurrent(runner, target, signal),

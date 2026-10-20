@@ -10,11 +10,9 @@ the provider to `copilot-proxy-rs`, and defaults the model to `claude-opus-5.5`.
 ## Requirements
 
 - `mise`
-- `node` 22+
-- `npm`
 - `curl`
 - `jq`
-- `uv` (bootstraps the Prime IPython kernel venv; `mise use -g uv` if missing)
+- `bun` (runs the daemon-stop and runtime-hash helpers)
 - `copilot-proxy-rs` listening on `http://127.0.0.1:8080`
 
 No host model credentials are copied. The private backend materializes an owned
@@ -36,13 +34,14 @@ trx repair prime default
 
 The installer keeps `prx` as a private backend and owns its runtime beneath
 `~/.local/share/trellage/prx`. `setup` resolves the latest Prime Agent release
-eligible under `mise` policy on first use, installs the release package into a
-managed npm prefix, and records the exact installed version in the local
-`installed-version` receipt. Ordinary launches reuse that version without a
-network request. Only explicit `trx upgrade prime default` resolves latest again. Updates
-stage and verify a complete npm prefix before publication. The backend selects
-the `prime-agent-VERSION.tgz` npm archive explicitly. If Mise cached a standalone
-archive at that version, repair replaces that owned cache once before retrying.
+eligible under `mise` policy on first use, fetches the release package, and runs
+the release's own Rust installer (`install-rust.sh`) into the owned
+`rust-prefix`. That installer also creates the Python kernel venv and installs
+`uv` when it is missing. The backend records the exact installed version in the
+local `installed-version` receipt. Ordinary launches reuse that version without
+a network request. Only explicit `trx upgrade prime default` resolves latest
+again. The installer runs with the global npm takeover and the global daemon stop
+disabled; this prefix, its sockets and its kernel venv are private to Trellage.
 
 `trx upgrade prime default --skills-only` copies and verifies only the refreshed
 `native-common` cache after `trx skills update`. It requires an existing owned
@@ -53,13 +52,11 @@ starts Prime or the proxy, or starts or stops the daemon.
 
 `prx` records one canonical runtime identity containing the identity schema,
 the exact Prime Agent version, a deterministic SHA-256 of the bundled
-`dist/prime-agent-runtime` tree, and the managed kernel specification version.
+`share/prime-agent/prime-agent-runtime` tree, and the managed kernel specification version.
 The kernel and daemon stamps include that identity. Normal launch compares
 these cheap stamps; `doctor` also hashes the published bundled runtime to
-detect content drift. Legacy version-only state causes one managed rebuild
-during doctor, repair, or launch. Inventory reports that state as unhealthy
-without changing it, and reports `busy` while another profile mutation owns
-the lock.
+detect content drift. Inventory reports unhealthy state without changing it,
+and reports `busy` while another profile mutation owns the lock.
 
 The private backend remains `prx` under
 `~/.local/share/trellage/prx/bin/prx`. Public commands use `trx`.
@@ -72,9 +69,9 @@ Profile state lives at:
 
 `PRIME_AGENT_CODING_AGENT_DIR` points at that home so configuration, sessions,
 and other Prime state stay isolated from direct `prime-agent` use. Setup also
-bootstraps an isolated IPython kernel venv at
-`…/home/kernel-venv` (Python 3.11, `ipykernel`, `prime-agent-runtime`, and the
-default RLM packages). Launch sets `PRIME_AGENT_KERNEL_PYTHON` and
+installs an isolated Python kernel venv at
+`…/home/kernel-venv` (Python 3.11 with the release's `prime-agent-runtime` and
+its default packages). Launch sets `PRIME_AGENT_KERNEL_PYTHON` and
 `PRIME_AGENT_KERNEL_VENV` so Prime does not write a half-broken kernel under
 `~/.prime/agent/`.
 
@@ -93,21 +90,21 @@ supervisor environment at spawn — they do **not** receive client
 `PRIME_AGENT_KERNEL_*` over the wire. `prx` therefore pins
 `--daemon-socket ~/.local/share/trellage/profiles/prime/default/daemon/daemon.sock`
 and restarts that profile daemon when its runtime identity or kernel paths
-change, so workers see the matching managed venv. Use `trx shutdown prime default` to stop
-the profile daemon.
+change, so workers see the matching managed venv. The daemon is stopped over its
+own socket protocol (a graceful request, then a forced one). Use
+`trx shutdown prime default` to stop the profile daemon.
 
 Setup, repair, update, doctor, and launch readiness use a profile-local
-owner-token lock. Update verifies the staged npm runtime and identity first,
-stops the old profile daemon, backs up all published runtime, receipt, kernel,
-and stamp state, and builds the replacement venv at its final path from the
-staged npm prefix. It publishes only matching state. A failure restores the
+owner-token lock. Update resolves the release installer first, stops the old
+profile daemon, backs up all published runtime, receipt, kernel, and stamp
+state, and runs the installer into the owned prefix and kernel venv. It
+verifies the version and identity before it publishes the receipt. A failure restores the
 previous state and leaves any stopped daemon stopped; the next launch starts a
 clean daemon lazily. Launch also stops the profile daemon before it replaces a
 stale or incomplete kernel venv.
 
-Kernel bootstrap honors `UV_DEFAULT_INDEX`, `UV_INDEX_URL`, and `PIP_INDEX_URL`.
-When the host npm registry is CFS, it uses the CFS PyPI index; otherwise it
-preserves uv's host configuration. Setup and repair refuse symlinked paths or
+The kernel bootstrap runs inside the release installer, which needs network access
+once. Offline, it leaves the venv missing and `prx` reports it. Setup and repair refuse symlinked paths or
 unrelated existing profile files. Uninstall preserves this profile.
 
 Launch the profile explicitly:

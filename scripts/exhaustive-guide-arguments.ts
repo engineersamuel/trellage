@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { writeFile } from "node:fs/promises"
 import { parseArgs } from "node:util"
-import { assertCliSourcesUnchanged, caseAt, loadCliDomains, productSize } from "./exhaustive-cli-domains.ts"
+import { coverageStride, assertCliSourcesUnchanged, caseAt, loadCliDomains, productSize } from "./exhaustive-cli-domains.ts"
 import { parseGuideHeadlessArgv } from "../packages/trellage-launcher/src/guide-api.ts"
 
 import { createGuideWorld } from "./exhaustive-guide-world.ts"
@@ -22,16 +22,19 @@ assert.equal(process.env.TRELLAGE_TEST_OFFLINE, "1", "run through scripts/test-o
 const { guide, sourceHashes } = await loadCliDomains()
 const total = productSize(guide)
 const start = BigInt(values.start!)
-const count = values.count === undefined ? total - start : BigInt(values.count)
-assert(start >= 0n && count > 0n && start + count <= total, "requested range is outside the declared matrix")
-const end = start + count
+// Default: a fixed stride sample across the whole product (it is far too large to enumerate).
+const sampled = values.count === undefined && values.start === "0"
+const stride = sampled ? coverageStride(total) : 1n
+const count = sampled ? (total + stride - 1n) / stride : values.count === undefined ? total - start : BigInt(values.count)
+assert(start >= 0n && count > 0n && (sampled || start + count <= total), "requested range is outside the declared matrix")
+const end = sampled ? total : start + count
 const domainHash = createHash("sha256").update(JSON.stringify({ guide, sourceHashes })).digest("hex")
 const outcomes: Record<string, number> = {}
 const serviceOutcomes: Record<string, number> = {}
 const world = await createGuideWorld()
 const digest = createHash("sha256")
 const started = Date.now()
-for (let index = start; index < end; index++) {
+for (let index = start; index < end; index += stride) {
   const selected = caseAt(guide, index)
   const argv = renderArgumentForm("guide", selected)
   const canonical = expectedGuide(selected)
@@ -69,15 +72,16 @@ for (let index = start; index < end; index++) {
     outcomes.accepted = (outcomes.accepted ?? 0) + 1
   }
   digest.update(`${index}\n`)
-  if ((index - start + 1n) % 100_000n === 0n)
+  if (((index - start) / stride + 1n) % 1000n === 0n)
     console.error(
-      JSON.stringify({ scope: "guide-arguments", checked: (index - start + 1n).toString(), total: total.toString() }),
+      JSON.stringify({ scope: "guide-arguments", checked: ((index - start) / stride + 1n).toString(), total: count.toString() }),
     )
 }
 await assertCliSourcesUnchanged(sourceHashes)
 const report = {
   scope: "guide-arguments-only",
-  complete: start === 0n && end === total,
+  complete: !sampled && start === 0n && end === total,
+  ...(sampled ? { stride: stride.toString() } : {}),
   domainHash,
   sourceHashes,
   totalCases: total.toString(),

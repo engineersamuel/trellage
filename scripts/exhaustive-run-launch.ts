@@ -20,7 +20,7 @@ export const assertRunLaunch = async (
   assert.equal(
     launch.command,
     harness === "prime"
-      ? process.execPath
+      ? world.runtime.cli
       : harness === "omp"
         ? world.runtime.executable
         : harness === "jcode"
@@ -122,7 +122,6 @@ export const assertRunLaunch = async (
     assert.deepEqual(
       args,
       [
-        world.runtime.cli,
         "--provider",
         "copilot-proxy-rs",
         "--model",

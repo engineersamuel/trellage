@@ -89,11 +89,11 @@ test("ignores generated native profile state while retaining source link safety"
   const generated = path.join(root, "prototypes/trellage-jcode-profiles")
   write(generated, "cache/metadata.json", "cache")
   write(generated, "mise-config/config.toml", "config")
-  write(generated, "npm-prefix/lib/node_modules/tool.js", "tool")
+  write(generated, "rust-prefix/bin/tool", "tool")
   write(generated, "installed-version", "0.86.0\n")
   write(generated, "runtime-identity.json", "{}\n")
   write(generated, ".installed-version.temporary", "temporary")
-  write(generated, ".npm-prefix-stage.temporary/marker", "temporary")
+  write(generated, ".rust-prefix-backup.temporary/marker", "temporary")
   write(generated, ".runtime-identity.temporary", "temporary")
   mkdirSync(path.join(generated, "mise/installs/github-1jehuang-jcode/0.86.0"), { recursive: true })
   symlinkSync("./0.86.0", path.join(generated, "mise/installs/github-1jehuang-jcode/0"))
@@ -207,7 +207,7 @@ test("native profile state is excluded from source fingerprints and staging", as
   const fingerprint = sourceFingerprint(root)
   const prepared = run("prepare", root)
   expect(prepared.status, prepared.stderr).toBe(0)
-  for (const directory of ["cache", "mise", "mise-config", "npm-prefix"]) {
+  for (const directory of ["cache", "mise", "mise-config", "rust-prefix"]) {
     write(root, `${profile}/${directory}/generated`, "local runtime state")
     symlinkSync(fixture(), path.join(root, profile, directory, "0"))
   }

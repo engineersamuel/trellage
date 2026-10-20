@@ -59,15 +59,22 @@ const expectedDispatch = (selected: ReadonlyMap<string, DomainValue>, argv: read
   return Object.entries(conflicts).some(([mode, flags]) => present(mode) && flags.some(present)) ? "rejected" : "accepted"
 }
 
+// Default sample: every 61st ordinal. 61 is prime, so it is coprime to the radix-2 and radix-4 digits and
+// the sample visits every value of every flag.
+export const guideDispatchStride = 61n
+
 if (import.meta.main) {
   const { values } = parseArgs({ options: { start: { type: "string", default: "0" }, count: { type: "string" }, output: { type: "string" } } })
+  const sampled = values.count === undefined && values.start === "0"
   assert.equal(process.env.TRELLAGE_TEST_OFFLINE, "1", "run through scripts/test-offline.sh")
   const { domains, dispatch, sourceHashes } = await loadGuideDispatchDomains()
   const total = productSize(domains)
   const start = BigInt(values.start!)
-  const count = values.count === undefined ? total - start : BigInt(values.count)
-  assert(start >= 0n && count > 0n && start + count <= total, "requested range is outside the declared matrix")
-  const end = start + count
+  // Default: every 64th case (a prime-free power-of-two stride would alias the mixed-radix digits, so use 61).
+  const stride = sampled ? guideDispatchStride : 1n
+  const count = sampled ? (total + stride - 1n) / stride : values.count === undefined ? total - start : BigInt(values.count)
+  assert(start >= 0n && count > 0n && (sampled || start + count <= total), "requested range is outside the declared matrix")
+  const end = sampled ? total : start + count
   const domainHash = createHash("sha256").update(JSON.stringify({ guideDispatch: domains, sourceHashes })).digest("hex")
   const directory = await mkdtemp(path.join(os.tmpdir(), "trellage-guide-dispatch-"))
   const script = path.join(directory, "dispatch.sh")
@@ -85,10 +92,11 @@ if (import.meta.main) {
   const started = Date.now()
   try {
     await writeFile(script, source)
-    for (let offset = start; offset < end; offset += 256n) {
-      const batchEnd = offset + 256n < end ? offset + 256n : end
+    for (let offset = 0n; offset < count; offset += 256n) {
+      const batchEnd = offset + 256n < count ? offset + 256n : count
       const cases = []
-      for (let index = offset; index < batchEnd; index++) {
+      for (let step = offset; step < batchEnd; step++) {
+        const index = start + step * stride
         const selected = caseAt(domains, index)
         const argv = render(selected)
         cases.push({ index, selected, argv, expected: expectedDispatch(selected, argv) })
@@ -127,12 +135,13 @@ if (import.meta.main) {
         digest.update(`${item.index}\n`)
       }
       assert.equal(cursor, result.stdout.length, "unexpected output after the final case")
-      if ((batchEnd - start) % 4096n === 0n)
-        console.error(JSON.stringify({ scope: "guide-root-dispatch", checked: (batchEnd - start).toString(), total: total.toString() }))
+      if (batchEnd % 4096n === 0n)
+        console.error(JSON.stringify({ scope: "guide-root-dispatch", checked: batchEnd.toString(), total: count.toString() }))
     }
   } finally { await rm(directory, { recursive: true, force: true }) }
   await assertCliSourcesUnchanged(sourceHashes)
-  const report = { scope: "guide-root-dispatch-only", complete: start === 0n && end === total,
+  const report = { scope: "guide-root-dispatch-only", complete: !sampled && start === 0n && end === total,
+    ...(sampled ? { stride: stride.toString() } : {}),
     domainHash, sourceHashes, domains, totalCases: total.toString(), start: start.toString(), endExclusive: end.toString(),
     executedCases: count.toString(), distinctTupleIds: count.toString(), idSequenceSha256: digest.digest("hex"),
     elapsedSeconds: (Date.now() - started) / 1000, outcomes,

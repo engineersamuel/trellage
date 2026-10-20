@@ -268,7 +268,7 @@ const checkBinary = async (
       }
     }
   } else if (prepared.adapter.id === "prime" && !path.isAbsolute(command)) {
-    const candidate = path.join(primeRuntimePaths({ environment }).npmPrefix, "bin", "prime-agent")
+    const candidate = path.join(primeRuntimePaths({ environment }).rustPrefix, "bin", "prime-agent")
     if ((await resolve(candidate, environment)) !== null) probeCommand = candidate
   }
   const resolved = await resolve(probeCommand, environment)
@@ -287,7 +287,7 @@ const checkBinary = async (
       checks: [binaryCheck, { id: "binary-version", status: "skipped", detail: "no supported version probe" }],
     }
   const result = await execute(resolved, ["--version"], environment, 3_000)
-  const version = `${result.stdout}\n${result.stderr}`.match(/\b\d+\.\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9.-]+)?\b/)?.[0] ?? null
+  const version = `${result.stdout}\n${result.stderr}`.match(/(?<![\d.])\d+\.\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9.-]+)?\b/)?.[0] ?? null
   if (result.status !== 0 || version === null)
     return {
       binary: { command, path: resolved, version: null },

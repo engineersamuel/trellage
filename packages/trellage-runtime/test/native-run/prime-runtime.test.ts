@@ -21,15 +21,15 @@ const fixture = async () => {
   roots.push(root)
   const environment = { HOME: root, PATH: process.env.PATH ?? "" }
   const paths = primeRuntimePaths({ environment })
-  const packageRoot = path.join(paths.npmPrefix, "lib", "node_modules", "prime-agent")
-  await mkdir(path.join(packageRoot, "dist", "bundle"), { recursive: true })
-  await mkdir(path.join(packageRoot, "node_modules"), { recursive: true })
-  await writeFile(path.join(packageRoot, "package.json"), '{"name":"prime-agent","version":"0.7.0"}\n')
-  await writeFile(path.join(packageRoot, "dist", "bundle", "cli.js"), "console.error('0.7.0')\n")
-  await writeFile(paths.receiptFile, "0.7.0\n")
+  const payloadRoot = path.join(paths.rustPrefix, "share", "prime-agent")
+  await mkdir(payloadRoot, { recursive: true })
+  await mkdir(path.join(paths.rustPrefix, "bin"), { recursive: true })
+  await writeFile(path.join(payloadRoot, "package.json"), '{"name":"prime-agent","version":"0.10.0"}\n')
+  await writeFile(path.join(paths.rustPrefix, "bin", "prime-agent"), "#!/bin/sh\necho 0.10.0 >&2\n", { mode: 0o755 })
+  await writeFile(paths.receiptFile, "0.10.0\n")
   const identity = {
     schemaVersion: 1,
-    primeVersion: "0.7.0",
+    primeVersion: "0.10.0",
     runtimeHashAlgorithm: "sha256",
     runtimeHash: "a".repeat(64),
     kernelSpecVersion: 1,
@@ -44,7 +44,7 @@ const fixture = async () => {
   return { environment, paths }
 }
 
-test("validates lifecycle state, reconciles the daemon stamp, and builds the canonical node launch", async () => {
+test("validates lifecycle state, reconciles the daemon stamp, and builds the canonical launch", async () => {
   const { environment, paths } = await fixture()
   const state = await ensurePrimeRuntime(
     { environment },
@@ -59,9 +59,8 @@ test("validates lifecycle state, reconciles the daemon stamp, and builds the can
     codingAgentDirectory: "/tmp/prime-generation",
     forwardedArgs: ["-p", "Reply exactly OK"],
   })
-  expect(launch.command).toBe("node")
+  expect(launch.command).toBe(state.cli)
   expect(launch.args).toEqual([
-    state.cli,
     "--provider",
     "copilot-proxy-rs",
     "--model",
@@ -89,7 +88,7 @@ test("preserves an explicit model override", async () => {
   const { environment } = await fixture()
   const state = await validatePrimeRuntime({ environment }, { verifyCliVersion: false })
   const launch = primeLaunchCommand(state, { model: "vendor/custom" })
-  expect(launch.args.slice(1, 5)).toEqual(["--provider", "copilot-proxy-rs", "--model", "vendor/custom"])
+  expect(launch.args.slice(0, 4)).toEqual(["--provider", "copilot-proxy-rs", "--model", "vendor/custom"])
 })
 
 test("rejects a runtime identity mismatch before creating a launch", async () => {

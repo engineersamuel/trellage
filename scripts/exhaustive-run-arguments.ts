@@ -4,7 +4,7 @@ import { writeFile } from "node:fs/promises"
 import { parseArgs } from "node:util"
 import { adapters, adapterFor, assertEffort, assertForwardedArgs, NativeRunError, parseRunArguments,
   type RunOptions } from "@trellage/runtime/native-run"
-import { assertCliSourcesUnchanged, caseAt, loadCliDomains, productSize } from "./exhaustive-cli-domains.ts"
+import { coverageStride, assertCliSourcesUnchanged, caseAt, loadCliDomains, productSize } from "./exhaustive-cli-domains.ts"
 
 import { renderArgumentForm } from "./exhaustive-argument-syntax.ts"
 
@@ -17,15 +17,18 @@ assert.equal(process.env.TRELLAGE_TEST_OFFLINE, "1", "run through scripts/test-o
 const { run, sourceHashes } = await loadCliDomains()
 const total = productSize(run)
 const start = BigInt(values.start!)
-const count = values.count === undefined ? total - start : BigInt(values.count)
-assert(start >= 0n && count > 0n && start + count <= total, "requested range is outside the declared matrix")
-const end = start + count
+// Default: a fixed stride sample across the whole product (it is far too large to enumerate).
+const sampled = values.count === undefined && values.start === "0"
+const stride = sampled ? coverageStride(total) : 1n
+const count = sampled ? (total + stride - 1n) / stride : values.count === undefined ? total - start : BigInt(values.count)
+assert(start >= 0n && count > 0n && (sampled || start + count <= total), "requested range is outside the declared matrix")
+const end = sampled ? total : start + count
 const domainHash = createHash("sha256").update(JSON.stringify({ run, sourceHashes })).digest("hex")
 const outcomes: Record<string, number> = {}
 const digest = createHash("sha256")
 const started = Date.now()
 const record = (outcome: string): void => { outcomes[outcome] = (outcomes[outcome] ?? 0) + 1 }
-for (let index = start; index < end; index++) {
+for (let index = start; index < end; index += stride) {
   const selected = caseAt(run, index)
   const argv = renderArgumentForm("run", selected)
   const expected = expectedRun(selected)
@@ -58,12 +61,13 @@ for (let index = start; index < end; index++) {
     }
   }
   digest.update(`${index}\n`)
-  if ((index - start + 1n) % 100_000n === 0n)
-    console.error(JSON.stringify({ scope: "run-arguments", checked: (index - start + 1n).toString(), total: total.toString() }))
+  if (((index - start) / stride + 1n) % 1000n === 0n)
+    console.error(JSON.stringify({ scope: "run-arguments", checked: ((index - start) / stride + 1n).toString(), total: count.toString() }))
 }
 await assertCliSourcesUnchanged(sourceHashes)
 const report = {
-  scope: "run-arguments-and-adapter-inputs-only", complete: start === 0n && end === total,
+  scope: "run-arguments-and-adapter-inputs-only", complete: !sampled && start === 0n && end === total,
+  ...(sampled ? { stride: stride.toString() } : {}),
   domainHash, sourceHashes, totalCases: total.toString(), start: start.toString(), endExclusive: end.toString(),
   executedCases: count.toString(), distinctTupleIds: count.toString(), idSequenceSha256: digest.digest("hex"),
   elapsedSeconds: (Date.now() - started) / 1000, outcomes,

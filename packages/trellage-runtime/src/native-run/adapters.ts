@@ -1768,6 +1768,8 @@ export const copilotAdapter: NativeAdapter = {
   launch: copilotLaunch,
   resolveLaunch: async (input, planned) => {
     const profile = lifecycleProfile(input.plan, "copilot", "hve")
+    // Only lifecycle presets have a plugin to admit; `preset-copilot-clean` selected by name has none.
+    if (!nativePresetProfiles("copilot").includes(profile)) return planned
     const admitted = await privateAdmission(
       "copilot",
       "TRELLAGE_COPILOT_LIFECYCLE_BIN",

@@ -216,6 +216,9 @@ export const assertCliSourcesUnchanged = async (before: Readonly<Record<string, 
   assert.deepEqual((await loadCliDomains()).sourceHashes, before, "CLI or verifier sources changed during matrix execution")
 }
 
+/** Stride that samples about 4000 evenly spaced cases from a product too large to enumerate. */
+export const coverageStride = (total: bigint): bigint => (total / 4000n > 0n ? total / 4000n | 1n : 1n)
+
 export const productSize = (domains: readonly CliDomain[]): bigint =>
   domains.reduce((product, domain) => product * BigInt(domain.values.length), 1n)
 

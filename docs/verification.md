@@ -80,7 +80,7 @@ Both CI platforms require an empty dependency tree before frozen preparation
 and reject changes to the lockfile or workspace manifests after preparation.
 
 Source fingerprints and staging exclude generated Native profile state
-(`cache`, `mise`, `mise-config`, `npm-prefix`, `installed-version`, and
+(`cache`, `mise`, `mise-config`, `rust-prefix`, `installed-version`, and
 `runtime-identity.json`) directly inside `prototypes/trellage-*-profiles`,
 plus JCode's generated `version` file. Tool installation links in those
 directories are not source inputs. Links in source files remain invalid.

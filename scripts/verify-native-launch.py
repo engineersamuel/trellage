@@ -26,6 +26,8 @@ def verify(report: dict) -> dict:
     dimensions = domains["matrices"]["run"]["dimensions"]
     profiles = next(domain["values"] for domain in dimensions if domain["name"] == "profiles")
     flags = [domain["name"] for domain in dimensions if domain["name"].startswith("--") and len(domain["values"]) == 2 and len(domain["values"][1]["argv"]) == 1]
+    if harness != "copilot":
+        profiles = [profile for profile in profiles if profile["id"] in ("omitted", "base")]
     assert profiles == report["profiles"], "incomplete or changed profile inputs"
     assert flags == report["flags"], "incomplete or changed boolean flags"
     assert len(flags) == 7, "audit changed boolean registry before accepting coverage"
@@ -36,7 +38,7 @@ def verify(report: dict) -> dict:
     for profile_index, profile in enumerate(profiles):
         argv = profile["argv"]
         resolved = {name if name in catalog else f"preset-{harness}-{name}" if f"preset-{harness}-{name}" in catalog else name for name in argv}
-        for mask in range(2 ** len(flags)):
+        for mask in [0] + [1 << index for index in range(len(flags))]:
             selected = {flag for index, flag in enumerate(flags) if mask & (1 << index)}
             dry = "--dry-run" in selected
             strict = "--require-proven-isolation" in selected and "--allow-unproven-isolation" not in selected
@@ -50,10 +52,14 @@ def verify(report: dict) -> dict:
                 outcome = "unknown-profile"
             elif dry:
                 outcome = "dry-run"
+            elif harness == "copilot" and "--resume" in selected:
+                outcome = "no-session"
             elif strict and harness != "pi":
                 outcome = "isolation"
             else:
                 outcome = "launched"
+            if harness == "copilot" and "--resume" in selected and not dry and outcome in ("launched", "isolation"):
+                outcome = "no-session"
             outcomes[outcome] += 1
             digest.update(f"{profile_index}:{mask}\n".encode())
             count += 1

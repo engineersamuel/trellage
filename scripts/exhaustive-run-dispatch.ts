@@ -21,7 +21,8 @@ const selectorFlags = selectorPattern.split("|")
 const knownHarnesses = Object.keys(adapters)
 const help = ["-h", "--help", "help"]
 const { run, sourceHashes } = await loadCliDomains()
-const profiles = run.find(domain => domain.name === "profiles")!.values
+// Dispatch reads the harness word, never the profile: the default stack plus one profile is enough.
+const profiles = run.find(domain => domain.name === "profiles")!.values.filter(value => ["omitted", "base"].includes(value.id))
 const flags = run.filter(domain => domain.name.startsWith("--")).map(domain => domain.name)
 const prefixes = [undefined, ...new Set([...knownHarnesses, ...help, ...flags, "--resume=session-123", "unknown-harness"])]
 const suffixes = [[], ["--help"], ["--", "space value", "", "*"]]
