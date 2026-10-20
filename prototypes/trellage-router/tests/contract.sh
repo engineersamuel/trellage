@@ -491,7 +491,7 @@ assert_contains 'trx guide [INTENT]' "$fixture_root/help.out"
 assert_contains 'trx guide --review' "$fixture_root/help.out"
 assert_contains 'trx guide --preview' "$fixture_root/help.out"
 assert_contains 'trx guide --forks [tabs|inline]' "$fixture_root/help.out"
-assert_contains 'trx guide --ritual' "$fixture_root/help.out"
+assert_contains 'trx guide --prompts' "$fixture_root/help.out"
 assert_contains 'trx inventory HARNESS [PROFILE...] [--no-always] --json' "$fixture_root/help.out"
 assert_contains 'trx doctor|setup|repair HARNESS PROFILE' "$fixture_root/help.out"
 assert_contains 'trx skill jcode SKILL PROMPT' "$fixture_root/help.out"
@@ -523,7 +523,7 @@ assert_contains 'INTENT can contain line breaks and accepts up to 60,000 charact
 assert_contains 'Interactive prompt viewers: pager, split, focus, bookends, dashboard.' \
   "$fixture_root/guide-help.out"
 assert_contains 'trx guide --preview' "$fixture_root/guide-help.out"
-assert_contains 'trx guide --ritual' "$fixture_root/guide-help.out"
+assert_contains 'trx guide --prompts' "$fixture_root/guide-help.out"
 assert_contains 'Opening the list copies nothing.' "$fixture_root/guide-help.out"
 assert_contains 'trx guide --forks' "$fixture_root/guide-help.out"
 assert_contains 'trx guide --next-steps' "$fixture_root/guide-help.out"
@@ -586,18 +586,18 @@ fi
 
 # Ritual reads no composition catalog and calls no model.
 ritual_list_status=0
-"$fixture_bin/trx" guide --ritual </dev/null >"$fixture_root/ritual-list.out" 2>&1 \
+"$fixture_bin/trx" guide --prompts </dev/null >"$fixture_root/ritual-list.out" 2>&1 \
   || ritual_list_status=$?
-((ritual_list_status != 0)) || fail 'ritual list ran without a terminal'
+((ritual_list_status != 0)) || fail 'prompt library ran without a terminal'
 assert_contains 'an interactive terminal is required' "$fixture_root/ritual-list.out"
 if grep -Fq 'trellage command not found' "$fixture_root/ritual-list.out"; then
-  fail 'ritual list loaded a composition catalog'
+  fail 'prompt library loaded a composition catalog'
 fi
 if grep -Fq '.dashboard/index.html' "$fixture_root/ritual-list.out"; then
-  fail 'ritual list printed a prompt without a terminal'
+  fail 'prompt library printed a prompt without a terminal'
 fi
 
-"$fixture_bin/trx" guide --ritual progress-page --print </dev/null \
+"$fixture_bin/trx" guide --prompts progress-page --print </dev/null \
   >"$fixture_root/ritual-print.out" 2>"$fixture_root/ritual-print.err" \
   || { cat "$fixture_root/ritual-print.err" >&2; fail 'ritual print failed'; }
 assert_contains '.dashboard/index.html' "$fixture_root/ritual-print.out"
@@ -609,22 +609,22 @@ if grep -Fq 'Prompt Master' "$fixture_root/ritual-print.err"; then
 fi
 
 both_status=0
-"$fixture_bin/trx" guide --ritual progress-page --print --copy </dev/null \
+"$fixture_bin/trx" guide --prompts progress-page --print --copy </dev/null \
   >"$fixture_root/ritual-both.out" 2>"$fixture_root/ritual-both.err" || both_status=$?
 [[ "$both_status" != 0 ]] || fail 'ritual accepted --print and --copy together'
 assert_contains 'Use --print or --copy, not both' "$fixture_root/ritual-both.err"
 
 missing_status=0
-"$fixture_bin/trx" guide --ritual missing-ritual --print </dev/null \
+"$fixture_bin/trx" guide --prompts missing-ritual --print </dev/null \
   >"$fixture_root/ritual-missing.out" 2>"$fixture_root/ritual-missing.err" || missing_status=$?
 [[ "$missing_status" != 0 ]] || fail 'ritual print accepted a missing id'
-assert_contains 'No ritual named missing-ritual.' "$fixture_root/ritual-missing.err"
+assert_contains 'No prompt named missing-ritual.' "$fixture_root/ritual-missing.err"
 
 json_status=0
-"$fixture_bin/trx" guide --ritual --json </dev/null \
+"$fixture_bin/trx" guide --prompts --json </dev/null \
   >"$fixture_root/ritual-json.out" 2>"$fixture_root/ritual-json.err" || json_status=$?
 [[ "$json_status" != 0 ]] || fail 'ritual accepted --json'
-assert_contains '--ritual opens the ritual list' "$fixture_root/ritual-json.err"
+assert_contains '--prompts opens the prompt library' "$fixture_root/ritual-json.err"
 if grep -Fq 'trellage command not found' "$fixture_root/ritual-json.err"; then
   fail 'ritual JSON validation loaded a composition catalog'
 fi
@@ -838,7 +838,7 @@ jq -e '.args == ["--engagement", "--intent", "What\u0027s the next step in this 
   || fail 'guide treated a literal engagement intent as a mode flag'
 jq -e '.promptMasterExists == true' "$fixture_root/guide-engagement-literal.json" >/dev/null \
   || fail 'ordinary guide skipped Prompt Master for a literal intent value'
-for conflicting_flag in --engagement --engagement=value --review --next-steps --json --profile=native:cpx/hve --ui-variant=pager --preview --forks --ritual; do
+for conflicting_flag in --engagement --engagement=value --review --next-steps --json --profile=native:cpx/hve --ui-variant=pager --preview --forks --prompts; do
   status=0
   "$fixture_bin/trx" guide --engagement "$conflicting_flag" \
     >"$fixture_root/guide-engagement-invalid.out" 2>"$fixture_root/guide-engagement-invalid.err" \
@@ -867,7 +867,7 @@ jq -e '.args == ["--review"] and (has("catalog") | not)' "$fixture_root/guide-re
   || fail 'guide Review changed its default arguments'
 mv "$fixture_root/review-floating-skills.saved" "$review_skills_manager"
 refresh_fixture_source
-for conflicting_flag in --review --review=value --engagement --json --next-steps --preview --forks --ritual; do
+for conflicting_flag in --review --review=value --engagement --json --next-steps --preview --forks --prompts; do
   status=0
   "$fixture_bin/trx" guide --review "$conflicting_flag" \
     >"$fixture_root/guide-review-invalid.out" 2>"$fixture_root/guide-review-invalid.err" \
@@ -886,7 +886,7 @@ jq -e '.args == ["--next-steps", "--model", "fixture-model", "--effort", "high"]
 jq -e '.args == ["--intent", "--next-steps", "--json"]' \
   "$fixture_root/guide-next-steps-literal.json" >/dev/null \
   || fail 'guide changed an ordinary literal intent'
-for conflicting_flag in --next-steps --next-steps=value --json --stdin --intent=ordinary --preview --forks --ritual; do
+for conflicting_flag in --next-steps --next-steps=value --json --stdin --intent=ordinary --preview --forks --prompts; do
   status=0
   "$fixture_bin/trx" guide --next-steps "$conflicting_flag" \
     >"$fixture_root/guide-next-steps-invalid.out" 2>"$fixture_root/guide-next-steps-invalid.err" \

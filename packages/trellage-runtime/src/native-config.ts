@@ -262,12 +262,14 @@ const validateNativeReferences = (catalog: NativeCatalog): string | undefined =>
   validateProfileWildcards(catalog) ??
   validateProfileInstructions(catalog)
 
-export const parseTrellageConfig = (source: string): Effect.Effect<TrellageConfig, TrellageConfigError> =>
+const parseConfigDocument = (source: string) =>
+  Effect.try({
+    try: () => parse(source),
+    catch: () => new TrellageConfigError({ message: "invalid Trellage config: malformed TOML" }),
+  })
+
+const decodeTrellageConfig = (raw: unknown, source: string): Effect.Effect<TrellageConfig, TrellageConfigError> =>
   Effect.gen(function* () {
-    const raw = yield* Effect.try({
-      try: () => parse(source),
-      catch: () => new TrellageConfigError({ message: "invalid Trellage config: malformed TOML" }),
-    })
     const root = yield* Schema.decodeUnknown(RootConfig)(raw).pipe(
       Effect.mapError((cause) => configError("Trellage", cause)),
     )
@@ -299,15 +301,19 @@ export const parseTrellageConfig = (source: string): Effect.Effect<TrellageConfi
     return { schema_version: root.schema_version, environment, native }
   })
 
+export const parseTrellageConfig = (source: string): Effect.Effect<TrellageConfig, TrellageConfigError> =>
+  parseConfigDocument(source).pipe(Effect.flatMap((raw) => decodeTrellageConfig(raw, source)))
+
 export const expandTrellagePath = (candidate: string, home: string, base: string): string => {
   if (candidate === "~") return home
   if (candidate.startsWith("~/")) return path.join(home, candidate.slice(2))
   return path.resolve(base, candidate)
 }
 
-export const loadTrellageConfig = (
+/** Read the shared config without validating sections owned by other consumers. */
+export const loadTrellageConfigDocument = (
   location: TrellageConfigLocation = {},
-): Effect.Effect<LoadedTrellageConfig, TrellageConfigError> =>
+) =>
   Effect.gen(function* () {
     const environment = location.environment ?? process.env
     const home = location.home ?? os.homedir()
@@ -346,9 +352,29 @@ export const loadTrellageConfig = (
         return new TrellageConfigError({ message: `cannot read Trellage config: ${configPath} (${code})` })
       },
     })
-    const config = yield* parseTrellageConfig(source ?? "")
-    return { path: configPath, present: source !== undefined, nativeDeclared: source !== undefined && Object.hasOwn(parse(source), "native"), config }
+    const document = yield* parseConfigDocument(source ?? "")
+    return { path: configPath, source, document }
   })
+
+export const loadTrellageConfig = (
+  location: TrellageConfigLocation = {},
+): Effect.Effect<LoadedTrellageConfig, TrellageConfigError> =>
+  Effect.gen(function* () {
+    const loaded = yield* loadTrellageConfigDocument(location)
+    const config = yield* decodeTrellageConfig(loaded.document, loaded.source ?? "")
+    return {
+      path: loaded.path,
+      present: loaded.source !== undefined,
+      nativeDeclared: Object.hasOwn(loaded.document, "native"),
+      config,
+    }
+  })
+
+export const readTrellageConfigDocument = async (location: TrellageConfigLocation = {}) => {
+  const result = await Effect.runPromise(Effect.either(loadTrellageConfigDocument(location)))
+  if (Either.isLeft(result)) throw result.left
+  return result.right
+}
 
 export const readTrellageConfig = async (location: TrellageConfigLocation = {}): Promise<LoadedTrellageConfig> => {
   const result = await Effect.runPromise(Effect.either(loadTrellageConfig(location)))

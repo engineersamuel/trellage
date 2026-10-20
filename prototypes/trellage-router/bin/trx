@@ -51,7 +51,7 @@ Usage:
   trx guide --json [--intent INTENT] [--profile PROFILE_REF] [--model MODEL] [--effort LEVEL]
   trx guide --preview
   trx guide --forks [tabs|inline]
-  trx guide --ritual [id] [--print | --copy]
+  trx guide --prompts [id] [--print | --copy]
   trx inventory HARNESS [PROFILE...] [--no-always] --json
   trx doctor|setup|repair HARNESS PROFILE
   trx skill jcode SKILL PROMPT
@@ -127,7 +127,7 @@ Usage:
   trx guide --json [--intent INTENT] [--profile PROFILE_REF] [--model MODEL] [--effort LEVEL]
   trx guide --preview
   trx guide --forks [tabs|inline]
-  trx guide --ritual [id] [--print | --copy]
+  trx guide --prompts [id] [--print | --copy]
 
 PROFILE_REF is native:<harness>/<profile>[+<profile>...]. JSON mode
 uses schemaVersion 2, has no launch or Herdr side effects, and accepts a JSON
@@ -150,9 +150,9 @@ Interactive prompt viewers: pager, split, focus, bookends, dashboard.
 --preview renders the staged prompt basket composer overlay from fixture data.
 --forks renders two ways to fork the guide into parallel subflows.
 It loads no composition catalog, calls no model, and launches nothing.
---ritual opens saved prompts. It calls no model. Opening the list copies nothing.
+--prompts opens saved prompts. It calls no model. Opening the list copies nothing.
 --print writes one prompt to stdout. --copy copies one prompt and exits.
-Use --print or --copy with --ritual and an id.
+Use --print or --copy with --prompts and an id.
 --review accepts --base, --intent, --intent-stdin, --model and --effort.
 It needs Copilot and selected review skills, not every Native harness.
 EOF
@@ -249,17 +249,17 @@ case "${1-}" in
           review_seen=true
           ;;
         --review=*) die '--review does not accept a value' ;;
-        --ritual)
-          [[ "$ritual_seen" == false ]] || die '--ritual may be specified only once'
+        --prompts)
+          [[ "$ritual_seen" == false ]] || die '--prompts may be specified only once'
           ritual_seen=true
           ;;
-        --ritual=*) die '--ritual does not accept a value' ;;
+        --prompts=*) die '--prompts does not accept a value' ;;
       esac
     done
     if [[ "$ritual_seen" == true ]]; then
-      [[ "$review_seen" == false ]] || die '--review and --ritual cannot be combined'
-      [[ "$next_steps_seen" == false ]] || die '--next-steps and --ritual cannot be combined'
-      [[ "$engagement_seen" == false ]] || die '--engagement and --ritual cannot be combined'
+      [[ "$review_seen" == false ]] || die '--review and --prompts cannot be combined'
+      [[ "$next_steps_seen" == false ]] || die '--next-steps and --prompts cannot be combined'
+      [[ "$engagement_seen" == false ]] || die '--engagement and --prompts cannot be combined'
     fi
     if [[ "$review_seen" == true ]]; then
       [[ "$next_steps_seen" == false ]] || die '--review and --next-steps cannot be combined'

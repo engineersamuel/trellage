@@ -264,7 +264,7 @@ const nextStepsFlag = "--next-steps"
 const engagementFlag = "--engagement"
 const reviewFlag = "--review"
 const optimizeFlag = "--optimize"
-const ritualFlag = "--ritual"
+const ritualFlag = "--prompts"
 const ritualPrintFlag = "--print"
 const ritualCopyFlag = "--copy"
 const baseFlag = "--base"
@@ -368,26 +368,26 @@ const ritualModeConflicts = (state: MutableGuideArgs): boolean =>
 
 const validateRitualId = (id: string | undefined): void => {
   if (id !== undefined && (id.length > 64 || !ritualIdPattern.test(id))) {
-    throw new GuideArgsError("Ritual id must be lowercase kebab-case")
+    throw new GuideArgsError("Prompt id must be lowercase kebab-case")
   }
 }
 
 const validateRitualOutput = (state: MutableGuideArgs): void => {
   if (state.ritualPrint && state.ritualCopy) throw new GuideArgsError("Use --print or --copy, not both")
   if ((state.ritualPrint || state.ritualCopy) && state.positionals[0] === undefined) {
-    throw new GuideArgsError("--print and --copy require a ritual id")
+    throw new GuideArgsError("--print and --copy require a prompt id")
   }
 }
 
 const validateRitualMode = (state: MutableGuideArgs): void => {
   if (!state.ritual && (state.ritualPrint || state.ritualCopy)) {
-    throw new GuideArgsError("--print and --copy require --ritual")
+    throw new GuideArgsError("--print and --copy require --prompts")
   }
   if (!state.ritual) return
   if (ritualModeConflicts(state)) {
-    throw new GuideArgsError("--ritual opens the ritual list and cannot be combined with an intent or other modes")
+    throw new GuideArgsError("--prompts opens the prompt library and cannot be combined with an intent or other modes")
   }
-  if (state.positionals.length > 1) throw new GuideArgsError("Provide at most one ritual id")
+  if (state.positionals.length > 1) throw new GuideArgsError("Provide at most one prompt id")
   validateRitualOutput(state)
   validateRitualId(state.positionals[0])
 }
@@ -466,7 +466,7 @@ export const guideHeadlessHelpText = [
   "Usage: trx guide [intent] [options]",
   "       trx guide --intent-stdin [options]",
   "       trx guide --engagement [--intent <engagement question>]",
-  "       trx guide --ritual [id] [--print | --copy]",
+  "       trx guide --prompts [id] [--print | --copy]",
   "       trx guide --review [--base <branch-or-commit>] [--intent <original task>]",
   "       trx guide --json --intent <text> [options]",
   "       trx guide --json <text> [options]",
@@ -483,9 +483,9 @@ export const guideHeadlessHelpText = [
   "  --review              Review changes; choose any compatible checks.",
   "                         Approve findings before one Native agent can edit.",
   "  --optimize            Open the Optimize screen directly: run skills on the whole repository.",
-  "  --ritual [id]         Open saved prompts. No model call. Opening the list does not copy.",
-  "  --print               Write one ritual prompt to stdout. Requires --ritual and an id.",
-  "  --copy                Copy one ritual prompt and exit. Requires --ritual and an id.",
+  "  --prompts [id]         Open saved prompts. No model call. Opening the list does not copy.",
+  "  --print               Write one saved prompt to stdout. Requires --prompts and an id.",
+  "  --copy                Copy one saved prompt and exit. Requires --prompts and an id.",
   "  --base <ref>          Override the detected comparison base for the current branch.",
   "  --profile <ref>        Generate prompts for one specific catalog profile",
   "                         reference instead of matching. Requires --json.",

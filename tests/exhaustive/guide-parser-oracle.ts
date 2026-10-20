@@ -19,9 +19,9 @@ export const guideParserRejection = (selection: Readonly<Record<string, string>>
   if (present("--profile") && !present("--json")) return "profile requires JSON"
   if (present("--ui-variant") && present("--json")) return "UI variant is interactive"
   if (present("--base") && !present("--review")) return "base requires review"
-  if (present("--engagement") && any("--json", "--next-steps", "--review", "--ritual", "--profile", "--ui-variant"))
+  if (present("--engagement") && any("--json", "--next-steps", "--review", "--prompts", "--profile", "--ui-variant"))
     return "engagement mode conflict"
-  if (present("--review") && any("--json", "--next-steps", "--engagement", "--ritual", "--profile", "--ui-variant"))
+  if (present("--review") && any("--json", "--next-steps", "--engagement", "--prompts", "--profile", "--ui-variant"))
     return "review mode conflict"
   if (
     present("--optimize") &&
@@ -30,7 +30,7 @@ export const guideParserRejection = (selection: Readonly<Record<string, string>>
       "--json",
       "--next-steps",
       "--engagement",
-      "--ritual",
+      "--prompts",
       "--profile",
       "--intent",
       "positional",
@@ -40,8 +40,8 @@ export const guideParserRejection = (selection: Readonly<Record<string, string>>
     return "optimize mode conflict"
   if (present("--next-steps") && any("--json", "--intent-stdin", "--intent", "positional", "--profile", "--ui-variant"))
     return "next steps mode conflict"
-  if (any("--print", "--copy") && !present("--ritual")) return "ritual output requires ritual mode"
-  if (present("--ritual")) {
+  if (any("--print", "--copy") && !present("--prompts")) return "ritual output requires ritual mode"
+  if (present("--prompts")) {
     if (
       any(
         "--json",

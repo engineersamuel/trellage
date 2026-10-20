@@ -17,10 +17,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 export const ritualSourceChoice = () => ({
   kind: "ritual",
-  label: "Rituals",
+  label: "Prompt library",
   detail: "Open saved prompts. Copy one into the current agent.",
   preview: [
-    "Opens this checkout's ritual list in a new pane.",
+    "Opens this checkout's prompt library in a new pane.",
     "No model call. Nothing is copied until you press Enter in that list.",
   ].join("\n\n"),
 })
@@ -49,7 +49,7 @@ export const ritualGuideCommand = (root: string, runtime: string): string => [
   `TRELLAGE_TRX_SOURCE_ROOT=${path.join(root, "prototypes/trellage-router")}`,
   "TRELLAGE_TRX_NATIVE_SOURCE=1",
   path.join(root, "prototypes/trellage-router/bin/trx"),
-  "guide", "--ritual",
+  "guide", "--prompts",
 ].map(shellArgument).join(" ")
 
 export const progressPageClipboardText = (prompt: string, cwd: string): string =>
@@ -106,7 +106,7 @@ const repositoryRoot = async (cwd: string): Promise<string> => {
     timeout: 10_000, maxBuffer: 64_000, encoding: "utf8",
   })
   const root = result.stdout.trim()
-  if (!path.isAbsolute(root)) throw new Error("The ritual list requires a local Git worktree")
+  if (!path.isAbsolute(root)) throw new Error("The prompt library requires a local Git worktree")
   const relative = path.relative(root, directory)
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error("Git resolved a repository outside the focused pane. Check its Git environment.")
@@ -159,8 +159,8 @@ export const openRitualGuide = async ({
     }
     const options = { ...(env.HERDR_BIN_PATH === undefined ? {} : { binary: env.HERDR_BIN_PATH }), timeoutMs: 35_000 }
     await run(["pane", "run", created.id, ritualGuideCommand(root, runtime)], options)
-    await run(["pane", "wait-output", created.id, "--match", "Rituals", "--source", "visible", "--timeout", "30000"], options)
-    await request("pane.rename", { pane_id: created.id, label: "Rituals" })
+    await run(["pane", "wait-output", created.id, "--match", "Prompt library", "--source", "visible", "--timeout", "30000"], options)
+    await request("pane.rename", { pane_id: created.id, label: "Prompt library" })
     await request("pane.focus", { pane_id: created.id })
     return created.id
   } catch (cause) {
@@ -182,7 +182,7 @@ const guideEnv = (env: NodeJS.ProcessEnv, root: string, runtime: string): NodeJS
 }
 
 const printProgressPrompt = async (router: string, cwd: string, env: NodeJS.ProcessEnv): Promise<string> => {
-  const result = await execute(router, ["guide", "--ritual", "progress-page", "--print"], {
+  const result = await execute(router, ["guide", "--prompts", "progress-page", "--print"], {
     cwd, env, timeout: 20_000, maxBuffer: 256_000, encoding: "utf8",
   })
   const prompt = result.stdout.trim()

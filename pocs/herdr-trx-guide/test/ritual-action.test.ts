@@ -49,7 +49,7 @@ const recorder = () => {
   return { calls, commands, request, run }
 }
 
-test("opens the ritual list in a new pane and waits for the Rituals heading", async (t) => {
+test("opens the prompt library in a new pane and waits for the Prompt library heading", async (t) => {
   const { root } = await sourceFixture(t)
   const recorded = recorder()
   const created = await openRitualGuide({
@@ -59,7 +59,7 @@ test("opens the ritual list in a new pane and waits for the Rituals heading", as
   assert.equal(created, "w1:p2")
   assert.deepEqual(recorded.commands, [
     ["pane", "run", "w1:p2", ritualGuideCommand(root, bunExecutable())],
-    ["pane", "wait-output", "w1:p2", "--match", "Rituals", "--source", "visible", "--timeout", "30000"],
+    ["pane", "wait-output", "w1:p2", "--match", "Prompt library", "--source", "visible", "--timeout", "30000"],
   ])
 })
 
@@ -124,6 +124,6 @@ test("quotes the ritual command and removes stale popup intent", async (t) => {
     },
   })
   assert.deepEqual(result.stdout.trim().split("\n"), [
-    await realpath(customer), "guide", "--ritual", "unset", "unset", "unset",
+    await realpath(customer), "guide", "--prompts", "unset", "unset", "unset",
   ])
 })

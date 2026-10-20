@@ -131,6 +131,44 @@ viewer is `dashboard`; `--ui-variant` selects one of five layouts:
 All layouts use Page Up and Page Down for navigation. Press `e` to edit the
 raw prompt. Enter re-runs matching when the prompt changed.
 
+### Prompt library
+
+The prompt library stores saved prompts. It calls no model and launches no agent.
+
+```sh
+trx guide --prompts
+trx guide --prompts app-performance
+trx guide --prompts app-performance --copy
+trx guide --prompts app-performance --print
+```
+
+The list opens without copying. Use Up/Down or `j`/`k` to select, `v` to read,
+`/` to filter, Enter to copy, and `q` or Escape to quit. Paste the copied prompt
+into your current agent.
+
+Define prompts in `~/.config/trellage/config.toml`:
+
+```toml
+[prompts.app-performance]
+title = "App performance"
+when = "Slow startup, screens, content loading, or scrolling"
+prompt = '''
+Your job is to make this app faster. Improve the startup time, how fast each screen opens, how fast its content loads, and the scrolling, so everything feels lighter and older content loads faster. Find where the real performance gap is, apply the fixes, and benchmark before and after each one to see if it actually works or not.'''
+```
+
+The config is read on every invocation. `TRELLAGE_CONFIG` selects another file;
+otherwise `XDG_CONFIG_HOME` selects the config root when set.
+Each entry requires `title`, `when`, and `prompt`. IDs must use lowercase
+kebab-case and contain at most 64 characters. Use at most 64 configured prompts,
+80 characters per title, 160 per `when`, and 8,000 per prompt.
+Multiline literal strings preserve prompt whitespace.
+
+Config entries override legacy `~/.config/trellage/rituals/<id>.md` files,
+which override shipped defaults. Invalid entries produce diagnostics and do not
+hide valid prompts. Shipped defaults remain available if an override is invalid.
+The config must be a regular, non-symlink file that is not writable by group
+or other users.
+
 **Review changes** reviews the current body of work, not prompt wording
 or the repository's entire history. Run it from the worktree you want to review:
 

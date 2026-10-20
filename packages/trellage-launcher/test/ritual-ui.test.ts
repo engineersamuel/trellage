@@ -47,7 +47,7 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()))
 })
 
-describe("ritual list keys", () => {
+describe("prompt library keys", () => {
   it("copies on Enter and filters without copying", () => {
     expect(nextRitualScreen(idle, "v", {}, 1)).toMatchObject({ copy: false, screen: { reading: true } })
     expect(nextRitualScreen(idle, "\r", { return: true }, 1).copy).toBe(true)
@@ -60,7 +60,7 @@ describe("ritual list keys", () => {
   })
 })
 
-describe("ritual list screen", () => {
+describe("prompt library screen", () => {
   it("does not copy on open, copies on Enter, and filters the list", async () => {
     const copy = vi.fn()
     const stdin = new TestInput()
@@ -83,7 +83,7 @@ describe("ritual list screen", () => {
       await new Promise<void>((resolve) => setImmediate(resolve))
       await app.waitUntilRenderFlush()
     }
-    await vi.waitFor(() => expect(screen()).toContain("Rituals"))
+    await vi.waitFor(() => expect(screen()).toContain("Prompt library"))
     expect(copy).not.toHaveBeenCalled()
     expect(screen()).toContain("Progress page")
     await press("\r")
@@ -92,7 +92,7 @@ describe("ritual list screen", () => {
     expect(screen()).toContain("Copied. Paste it into the current agent.")
     await press("/")
     await press("z")
-    await vi.waitFor(() => expect(screen()).toContain("No ritual matches."))
+    await vi.waitFor(() => expect(screen()).toContain("No prompt matches."))
     await press("\u001b")
     await exited
   })

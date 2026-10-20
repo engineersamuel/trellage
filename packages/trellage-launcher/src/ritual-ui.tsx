@@ -29,7 +29,7 @@ const initialScreen = (catalog: RitualCatalog, selectedId: string | undefined): 
     filtering: false,
     index,
     reading: false,
-    status: missing ? `No ritual named ${selectedId}.` : "",
+    status: missing ? `No prompt named ${selectedId}.` : "",
   }
 }
 
@@ -72,7 +72,7 @@ const copySelection = (
   selected: Ritual | undefined,
   copy: (value: string) => void,
 ): RitualScreen => {
-  if (selected === undefined) return { ...screen, status: "No ritual matches." }
+  if (selected === undefined) return { ...screen, status: "No prompt matches." }
   try {
     copy(selected.prompt)
     return { ...screen, status: "Copied. Paste it into the current agent." }
@@ -107,7 +107,7 @@ export const RitualApp = ({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Rituals</Text>
+      <Text bold>Prompt library</Text>
       {catalog.problems.map((entry) => (
         <Text key={entry.id} color="yellow">{entry.id}: {entry.message}</Text>
       ))}
@@ -119,7 +119,7 @@ export const RitualApp = ({
           <Text>{selected.prompt}</Text>
         </Box>
       ) : visible.length === 0 ? (
-        <Text>No ritual matches.</Text>
+        <Text>No prompt matches.</Text>
       ) : (
         visible.map((ritual, index) => (
           <Text key={ritual.id} inverse={index === screen.index}>

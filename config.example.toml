@@ -3,6 +3,30 @@
 # Sources without tag or commit refresh on every profile load.
 schema_version = 1
 
+# Saved prompts for `trx guide --prompts`. Entries override shipped prompts by id.
+# Add another [prompts.lowercase-kebab-case-id] table to create a prompt.
+[prompts.progress-page]
+title = "Progress page"
+when = "A long task or several subagents"
+prompt = '''
+Write one HTML file at .dashboard/index.html for this task. Update that same file after each step.
+Do not create a second page.
+
+Show four blocks:
+- Tasks and their status
+- What is stuck
+- Questions that need me, each with the default action if I do not answer
+- The latest output
+
+Use the real clock for every time. The page opens with a double-click and reloads itself every 10 seconds.
+Keep working after you write the page. When you need a decision, add it to the questions and continue with the default.'''
+
+[prompts.app-performance]
+title = "App performance"
+when = "Slow startup, screens, content loading, or scrolling"
+prompt = '''
+Your job is to make this app faster. Improve the startup time, how fast each screen opens, how fast its content loads, and the scrolling, so everything feels lighter and older content loads faster. Find where the real performance gap is, apply the fixes, and benchmark before and after each one to see if it actually works or not.'''
+
 [skills]
 schema = 1
 

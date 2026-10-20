@@ -119,8 +119,8 @@ for its repository, data-sharing, and review boundaries.
 ### Open a saved ritual
 
 1. Focus a terminal in the repository.
-2. Press `prefix+ctrl+b`, then `r`, or select **Rituals** and press Enter.
-3. Guide opens the ritual list in a new pane. No model call runs. Opening the list does not copy.
+2. Press `prefix+ctrl+b`, then `r`, or select **Prompt library** and press Enter.
+3. Guide opens the prompt library in a new pane. No model call runs. Opening the list does not copy.
 4. Press Enter in that list to copy one prompt. Paste it into the current agent.
 
 The same checks as engagement apply: the source pane is unchanged, the new pane is an idle terminal in that repository, and a failed start names the pane to inspect.
@@ -134,7 +134,7 @@ when: Before you call the work done
 Review the current diff and report the behavior that changed.
 ```
 
-A valid file with the id `progress-page` replaces the shipped prompt. A bad file is reported in the list and does not hide the other prompts. From a shell, `trx guide --ritual <id> --copy` copies one prompt, and `--print` writes it to stdout.
+A valid file with the id `progress-page` replaces the shipped prompt. A bad file is reported in the list and does not hide the other prompts. From a shell, `trx guide --prompts <id> --copy` copies one prompt, and `--print` writes it to stdout.
 
 ### Copy the progress page
 

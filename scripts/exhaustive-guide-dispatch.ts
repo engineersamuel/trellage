@@ -19,7 +19,7 @@ export const loadGuideDispatchDomains = async () => {
   const branch = dispatch.split("  guide)\n")[1]?.split("  models|setup|")[0]
   assert(branch, "cannot locate Guide root dispatch")
   const modeFlags = [...branch.matchAll(/        (--[a-z-]+)\)\n          \[\[ "\$[a-z_]+_seen" == false/g)].map(match => match[1]!)
-  assert.deepEqual([...modeFlags].sort(), ["--engagement", "--next-steps", "--review", "--ritual"], "Guide mode registry changed; update the independent conflict oracle")
+  assert.deepEqual([...modeFlags].sort(), ["--engagement", "--next-steps", "--prompts", "--review"], "Guide mode registry changed; update the independent conflict oracle")
   const blockers = [...new Set([...branch.matchAll(/\n          (--[^\n]+)\)\n            die/g)]
     .flatMap(match => match[1]!.split("|")).map(flag => flag.replace(/=\*$/u, "")))]
     .filter(flag => !modeFlags.includes(flag)).sort()
@@ -47,7 +47,7 @@ const render = (selected: ReadonlyMap<string, DomainValue>): string[] => {
 }
 const expectedDispatch = (selected: ReadonlyMap<string, DomainValue>, argv: readonly string[]): "help" | "accepted" | "rejected" => {
   if (argv.length === 1 && ["-h", "--help", "help"].includes(argv[0]!)) return "help"
-  const modes = ["--review", "--ritual", "--next-steps", "--engagement"]
+  const modes = ["--review", "--prompts", "--next-steps", "--engagement"]
   if (modes.some(name => ["repeated", "inline-invalid"].includes(selected.get(name)!.id))) return "rejected"
   const present = (name: string): boolean => selected.get(name)!.argv.length > 0
   if (modes.filter(present).length > 1) return "rejected"
@@ -128,7 +128,7 @@ if (import.meta.main) {
           assert.equal(status, "0", `${id}: ${output}`)
           if (item.expected === "help") assert.equal(output, "guide-help\n", id)
           else assert.deepEqual(output.split("\0").slice(0, -1), ["guide",
-            ...["--review", "--ritual", "--next-steps", "--engagement"].map(name => String(item.selected.get(name)!.argv.length > 0)),
+            ...["--review", "--prompts", "--next-steps", "--engagement"].map(name => String(item.selected.get(name)!.argv.length > 0)),
             ...item.argv], id)
         }
         outcomes[item.expected] = (outcomes[item.expected] ?? 0) + 1

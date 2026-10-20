@@ -33,7 +33,7 @@ export const guideFlags = [
   "--print",
   "--profile",
   "--review",
-  "--ritual",
+  "--prompts",
   "--ui-variant",
 ] as const
 

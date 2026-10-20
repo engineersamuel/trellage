@@ -50,7 +50,7 @@ try {
         const result = await runGuideProcess({
           world,
           cwd,
-          argv: ["--ritual", ritual.id, flag],
+          argv: ["--prompts", ritual.id, flag],
           clipboard: flag === "--copy",
         })
         assert.equal(result.status, 0, result.output)
@@ -68,7 +68,7 @@ try {
       { argv: ["--intent-stdin"], stdin: "Fix the parser", ready: "↵ generate", close: "quit" as const, status: 130 },
       { argv: ["--optimize"], ready: "First principles", close: "optimize-back" as const, status: 130 },
       { argv: ["--review"], ready: "Choose review scope", close: "cancel" as const, status: 130 },
-      { argv: ["--ritual"], ready: "q quit", close: "quit" as const, status: 0 },
+      { argv: ["--prompts"], ready: "q quit", close: "quit" as const, status: 0 },
       { argv: ["--engagement"], ready: "Check engagement", close: "cancel" as const, status: 130 },
       { argv: ["--preview"], mode: "guide-preview" as const, ready: "q quit", close: "quit" as const, status: 0 },
       {

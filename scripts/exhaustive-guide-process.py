@@ -43,11 +43,11 @@ def domains() -> dict:
         *[{"id": f"fork-inline-{variant}", "argv": [f"--forks={variant}"], "route": "guide-forks", "terminal": True} for variant in variants],
         {"id": "basket-before-fork", "argv": ["--preview", "--forks"], "route": "guide-preview", "terminal": True},
         {"id": "fork-before-basket", "argv": ["--forks", "--preview"], "route": "guide-forks", "terminal": True},
-        {"id": "ritual", "argv": ["--ritual"], "route": "guide", "terminal": True},
-        {"id": "ritual-model", "argv": ["--ritual", "--model", "fixture"], "route": "guide", "terminal": True},
-        {"id": "ritual-flag-shaped-value", "argv": ["--ritual", "--model", "--print"], "route": "guide", "terminal": True},
-        *[{"id": f"ritual-{flag[2:]}", "argv": ["--ritual", flag, "fixture"], "route": "guide", "terminal": False} for flag in ("--print", "--copy")],
-        *[{"id": f"ritual-{flag[2:]}", "argv": ["--ritual", flag], "route": "guide", "terminal": False} for flag in ("--help", "--json", "--preview")],
+        {"id": "ritual", "argv": ["--prompts"], "route": "guide", "terminal": True},
+        {"id": "ritual-model", "argv": ["--prompts", "--model", "fixture"], "route": "guide", "terminal": True},
+        {"id": "ritual-flag-shaped-value", "argv": ["--prompts", "--model", "--print"], "route": "guide", "terminal": True},
+        *[{"id": f"ritual-{flag[2:]}", "argv": ["--prompts", flag, "fixture"], "route": "guide", "terminal": False} for flag in ("--print", "--copy")],
+        *[{"id": f"ritual-{flag[2:]}", "argv": ["--prompts", flag], "route": "guide", "terminal": False} for flag in ("--help", "--json", "--preview")],
     ]
     return {"modes": modes, "stdinTTY": [False, True], "stderrTTY": [False, True],
             "picker": ["regular", "missing", "symlink"], "stdin": ["", "\n", "two\nlines\n", "模型 😀\n"]}
