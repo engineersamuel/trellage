@@ -141,7 +141,7 @@ def main() -> None:
     start = router.index("mode=''\n")
     dispatch = router[start:router.index("command -v jq >/dev/null", start)]
     start = router.index('if [[ "$mode" == guide && "$ritual_seen" == true ]]; then')
-    routing = router[start:router.index('catalog_tmp="$(mktemp', start)]
+    routing = router[start:router.index('if [[ "$mode" == upgrade ]]; then', start)]
     digest = hashlib.sha256()
     outcomes: dict[str, int] = {}
     total = 1
@@ -164,7 +164,7 @@ print(json.dumps({"argv": sys.argv[1:], "stdinTTY": sys.stdin.isatty(),
             "set -euo pipefail", 'die() { printf "%s\\n" "$1" >&2; exit 1; }',
             'usage() { printf "root-help\\n"; }', 'guide_usage() { printf "guide-help\\n"; }', dispatch,
             'require_source_runtime() { export RUNTIME_CHECKED=1; }',
-            'picker_path="$FIXTURE_PICKER"', 'guide_root="$FIXTURE_GUIDE_ROOT"',
+            'picker_path="$FIXTURE_PICKER"', 'guide_root="$FIXTURE_GUIDE_ROOT"', 'router_command_path=/fixture/trx',
             'trellage_launcher=("$FIXTURE_PYTHON" "$FIXTURE_PROBE")', routing,
             "die 'fixture unexpectedly reached catalog discovery'",
         ]))

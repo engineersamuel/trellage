@@ -1941,15 +1941,11 @@ document = "shipped:native/prime/default.md"
 
 [[native.profiles.preset-prime-default.guide.prerequisites]]
 id = "mise"
-description = "mise installed on the host; setup resolves and pins the eligible Prime Agent release, and bootstraps uv if missing (mise use -g uv)."
-
-[[native.profiles.preset-prime-default.guide.prerequisites]]
-id = "node-npm"
-description = "Node.js 22+ and npm on the host for the managed npm-prefixed Prime Agent install."
+description = "mise installed on the host; setup resolves the eligible Prime Agent release and runs its Rust installer into a private prefix."
 
 [[native.profiles.preset-prime-default.guide.prerequisites]]
 id = "uv"
-description = "uv available to bootstrap the isolated Prime IPython kernel venv."
+description = "uv available to the release installer, which creates the isolated Prime kernel venv (it installs uv when missing)."
 
 [[native.profiles.preset-prime-default.guide.prerequisites]]
 id = "proxy-health"

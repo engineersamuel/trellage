@@ -17,22 +17,21 @@ export const createRuntimeAdmission = async (root: string, home: string, executa
   const credential = path.join(directory, "omp-credential")
   await writeFile(overlay, "setupVersion: 1\n", { mode: 0o600 })
   const prime = primeRuntimePaths({ environment: { HOME: home } })
-  const packageRoot = path.join(prime.npmPrefix, "lib", "node_modules", "prime-agent")
-  const cli = path.join(packageRoot, "dist", "bundle", "cli.js")
+  const payloadRoot = path.join(prime.rustPrefix, "share", "prime-agent")
+  const cli = path.join(prime.rustPrefix, "bin", "prime-agent")
   const identity = {
     schemaVersion: 1,
-    primeVersion: "0.7.0",
+    primeVersion: "0.10.0",
     runtimeHashAlgorithm: "sha256",
     runtimeHash: "a".repeat(64),
     kernelSpecVersion: 1,
   }
-  const versionProgram = `import { appendFileSync } from "node:fs"
-const args = process.argv.slice(2)
-if (process.env.TRELLAGE_TEST_OFFLINE !== "1" || process.env.HOME !== ${JSON.stringify(home)} || JSON.stringify(args) !== '["--version"]') {
-  process.stderr.write("Unexpected Prime version request\\n"); process.exit(97)
-}
-appendFileSync(${JSON.stringify(callsFile)}, JSON.stringify({ role: "prime-version", args }) + "\\n")
-console.log("0.7.0")
+  const versionProgram = `#!/bin/sh
+if [ "$TRELLAGE_TEST_OFFLINE" != 1 ] || [ "$HOME" != ${JSON.stringify(home)} ] || [ "$*" != --version ]; then
+  echo "Unexpected Prime version request" >&2; exit 97
+fi
+printf '{"role":"prime-version","args":["--version"]}\\n' >> ${JSON.stringify(callsFile)}
+echo 0.10.0 >&2
 `
   const program = path.join(directory, "admit.ts")
   const ompProfiles = nativePresetProfiles("omp")
@@ -54,10 +53,10 @@ if (role === "omp") {
   const installed = existsSync(${JSON.stringify(prime.receiptFile)})
   if (JSON.stringify(args) !== JSON.stringify([installed ? "repair" : "setup", "default"])) fail()
   appendFileSync(${JSON.stringify(callsFile)}, JSON.stringify({ role, args }) + "\\n")
-  for (const directory of ${JSON.stringify([path.dirname(cli), path.join(packageRoot, "node_modules"), path.join(prime.profileHome, "extensions"), path.dirname(prime.kernelPython)])}) mkdirSync(directory, { recursive: true })
-  writeFileSync(${JSON.stringify(path.join(packageRoot, "package.json"))}, ${JSON.stringify(JSON.stringify({ name: "prime-agent", version: "0.7.0" }) + String.fromCharCode(10))})
-  writeFileSync(${JSON.stringify(cli)}, ${JSON.stringify(versionProgram)})
-  writeFileSync(${JSON.stringify(prime.receiptFile)}, "0.7.0\\n")
+  for (const directory of ${JSON.stringify([path.dirname(cli), payloadRoot, path.join(prime.profileHome, "extensions"), path.dirname(prime.kernelPython)])}) mkdirSync(directory, { recursive: true })
+  writeFileSync(${JSON.stringify(path.join(payloadRoot, "package.json"))}, ${JSON.stringify(JSON.stringify({ name: "prime-agent", version: "0.10.0" }) + String.fromCharCode(10))})
+  writeFileSync(${JSON.stringify(cli)}, ${JSON.stringify(versionProgram)}, { mode: 0o755 })
+  writeFileSync(${JSON.stringify(prime.receiptFile)}, "0.10.0\\n")
   writeFileSync(${JSON.stringify(prime.runtimeIdentityFile)}, ${JSON.stringify(JSON.stringify(identity) + String.fromCharCode(10))})
   writeFileSync(${JSON.stringify(prime.profileMarker)}, ${JSON.stringify(PRIME_PROFILE_MARKER + String.fromCharCode(10))})
   writeFileSync(${JSON.stringify(prime.kernelPython)}, "#!/bin/sh\\nexit 97\\n", { mode: 0o700 })
@@ -86,7 +85,6 @@ if (role === "omp") {
     environment: {
       TRELLAGE_OMP_LIFECYCLE_BIN: binaries.omp!,
       TRELLAGE_PRIME_LIFECYCLE_BIN: binaries.prime!,
-      TRELLAGE_NODE_BIN: process.execPath,
     },
     calls: async (): Promise<{ role: string; args: string[] }[]> => {
       const text = await readFile(callsFile, "utf8").catch((error: NodeJS.ErrnoException) => {

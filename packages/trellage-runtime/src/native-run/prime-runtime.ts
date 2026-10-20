@@ -5,8 +5,8 @@ import { randomUUID } from "node:crypto"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
-import { pathToFileURL } from "node:url"
 import { promisify } from "node:util"
+import { shutdownDaemon } from "../native-tools.ts"
 import { NativeRunError } from "./paths.ts"
 
 export const PRIME_PROVIDER = "copilot-proxy-rs"
@@ -25,14 +25,12 @@ export interface PrimeRuntimePathOptions {
   readonly home?: string | undefined
   readonly runtimeRoot?: string | undefined
   readonly profileRoot?: string | undefined
-  readonly nodeBinary?: string | undefined
 }
 export interface PrimeRuntimePaths {
   readonly home: string
   readonly runtimeRoot: string
   readonly receiptFile: string
-  readonly legacyVersionFile: string
-  readonly npmPrefix: string
+  readonly rustPrefix: string
   readonly runtimeIdentityFile: string
   readonly profileRoot: string
   readonly profileHome: string
@@ -55,7 +53,6 @@ export interface PrimeRuntimeIdentity {
 
 export interface PrimeRuntimeState {
   readonly paths: PrimeRuntimePaths
-  readonly nodeBinary: string
   readonly version: string
   readonly cli: string
   readonly identity: PrimeRuntimeIdentity
@@ -79,7 +76,7 @@ export interface PrimeRuntimeDependencies {
   readonly run?: PrimeProcessRunner
   readonly daemonIsListening?: (socket: string) => Promise<boolean>
   /** Stop only the profile-local Prime daemon. This never invokes a Trellage launcher. */
-  readonly stopDaemon?: (socket: string, daemonLaunchModule: string) => Promise<boolean>
+  readonly stopDaemon?: (socket: string) => Promise<boolean>
 }
 
 export interface PrimeLaunchOptions {
@@ -144,8 +141,7 @@ export const primeRuntimePaths = (options: PrimeRuntimePathOptions = {}): PrimeR
     home,
     runtimeRoot,
     receiptFile: path.join(runtimeRoot, "installed-version"),
-    legacyVersionFile: path.join(runtimeRoot, "version"),
-    npmPrefix: path.join(runtimeRoot, "npm-prefix"),
+    rustPrefix: path.join(runtimeRoot, "rust-prefix"),
     runtimeIdentityFile: path.join(runtimeRoot, "runtime-identity.json"),
     profileRoot,
     profileHome,
@@ -208,20 +204,8 @@ const readInstalledVersion = async (paths: PrimeRuntimePaths): Promise<string> =
     if (error.code === "ENOENT") return undefined
     throw error
   })
-  if (receipt)
-    return parseVersion(await readOwnedFile(paths.receiptFile, "Prime installed version receipt"), paths.receiptFile)
-
-  const legacy = await lstat(paths.legacyVersionFile).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined
-    throw error
-  })
-  if (legacy)
-    return parseVersion(
-      await readOwnedFile(paths.legacyVersionFile, "legacy Prime version receipt"),
-      paths.legacyVersionFile,
-    )
-  fail("launch", "Prime Agent installed version receipt is missing; run trx setup prime default")
-  return fail("launch", "Prime Agent installed version receipt is missing; run trx setup prime default")
+  if (!receipt) return fail("launch", "Prime Agent installed version receipt is missing; run trx setup prime default")
+  return parseVersion(await readOwnedFile(paths.receiptFile, "Prime installed version receipt"), paths.receiptFile)
 }
 
 const parseIdentity = (value: string, source: string): PrimeRuntimeIdentity => {
@@ -275,13 +259,12 @@ const canonicalDirectory = async (directory: string, name: string): Promise<stri
   }
 }
 
-const packageRoot = (paths: PrimeRuntimePaths): string =>
-  path.join(paths.npmPrefix, "lib", "node_modules", PRIME_RUNTIME_PACKAGE)
+const packageRoot = (paths: PrimeRuntimePaths): string => path.join(paths.rustPrefix, "share", "prime-agent")
 
 const requirePrimeCli = async (paths: PrimeRuntimePaths, version: string): Promise<string> => {
-  await requireNoSymlinkPath(paths.npmPrefix, "Prime npm prefix", true)
+  await requireNoSymlinkPath(paths.rustPrefix, "Prime Rust prefix", true)
   const root = packageRoot(paths)
-  await requireNoSymlinkPath(root, "Prime package root", true)
+  await requireNoSymlinkPath(root, "Prime payload root", true)
   const packageJson = path.join(root, "package.json")
   const packageText = await readOwnedFile(packageJson, "Prime package metadata")
   let metadata: unknown
@@ -298,9 +281,8 @@ const requirePrimeCli = async (paths: PrimeRuntimePaths, version: string): Promi
     (metadata as Record<string, unknown>).version !== version
   )
     fail("launch", `Prime package version differs from receipt: ${packageJson}`)
-  await requireNoSymlinkPath(path.join(root, "node_modules"), "Prime dependencies", true)
-  const cli = path.join(root, "dist", "bundle", "cli.js")
-  await requireNoSymlinkPath(cli, "Prime CLI", false)
+  const cli = path.join(paths.rustPrefix, "bin", "prime-agent")
+  await requireNoSymlinkPath(cli, "Prime launcher", false)
   return cli
 }
 
@@ -319,12 +301,12 @@ const defaultRunner: PrimeProcessRunner = async (command, args, environment) => 
 }
 
 const verifyCliVersion = async (
-  state: Omit<PrimeRuntimeState, "cli"> & { readonly cli: string },
+  state: PrimeRuntimeState,
   environment: NodeJS.ProcessEnv,
   dependencies: PrimeRuntimeDependencies,
 ): Promise<void> => {
   if (dependencies.verifyCliVersion === false) return
-  const result = await (dependencies.run ?? defaultRunner)(state.nodeBinary, [state.cli, "--version"], environment)
+  const result = await (dependencies.run ?? defaultRunner)(state.cli, ["--version"], environment)
   if (result.status !== 0)
     fail("launch", `could not run Prime Agent ${state.version}: ${result.stderr.trim() || `exit ${result.status}`}`)
   const actual = `${result.stdout}\n${result.stderr}`
@@ -416,43 +398,7 @@ const socketIsListening = async (socketPath: string): Promise<boolean> =>
     socket.once("error", () => finish(false))
   })
 
-const daemonLaunchModule = async (state: PrimeRuntimeState): Promise<string> => {
-  const candidates = [
-    path.join(state.paths.npmPrefix, "lib", "node_modules", PRIME_RUNTIME_PACKAGE, "dist", "cli", "daemon-launch.js"),
-    path.join(
-      state.paths.home,
-      ".local",
-      "share",
-      "trellage",
-      "prx",
-      "npm-prefix",
-      "lib",
-      "node_modules",
-      PRIME_RUNTIME_PACKAGE,
-      "dist",
-      "cli",
-      "daemon-launch.js",
-    ),
-  ]
-  for (const candidate of candidates) {
-    const status = await lstat(candidate).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined
-      throw error
-    })
-    if (status?.isFile() && !status.isSymbolicLink()) return candidate
-  }
-  fail("launch", `Prime daemon launch module is missing; run trx repair prime default: ${candidates[0]}`)
-  return fail("launch", `Prime daemon launch module is missing; run trx repair prime default: ${candidates[0]}`)
-}
-
-const defaultStopDaemon = async (socket: string, launchModule: string): Promise<boolean> => {
-  const imported = (await import(pathToFileURL(launchModule).href)) as {
-    shutdownDaemonAndWait?: (path: string, timeout: number) => Promise<boolean>
-  }
-  const stop = imported.shutdownDaemonAndWait
-  if (typeof stop !== "function") return fail("launch", `Prime daemon shutdown API is missing: ${launchModule}`)
-  return stop(socket, PRIME_DAEMON_TIMEOUT_MS)
-}
+const defaultStopDaemon = async (socket: string): Promise<boolean> => shutdownDaemon(socket, PRIME_DAEMON_TIMEOUT_MS)
 
 export const validatePrimeRuntime = async (
   options: PrimeRuntimePathOptions = {},
@@ -477,9 +423,8 @@ export const validatePrimeRuntime = async (
   const identity = await readIdentity(paths.runtimeIdentityFile, "Prime runtime identity")
   if (identity.primeVersion !== version)
     fail("launch", "Prime runtime identity version differs from installed receipt; run trx repair prime default")
-  const nodeBinary = options.nodeBinary ?? environment.TRELLAGE_NODE_BIN ?? "node"
   const cli = await requirePrimeCli(paths, version)
-  const state: PrimeRuntimeState = { paths, nodeBinary, version, cli, identity }
+  const state: PrimeRuntimeState = { paths, version, cli, identity }
   await verifyCliVersion(state, environment, dependencies)
   await validateKernel(paths, identity)
   return state
@@ -506,8 +451,7 @@ export const ensurePrimeDaemonIdentity = async (
   const matches = actual !== undefined && sameJson(actual, expected)
   let listening = await (dependencies.daemonIsListening ?? socketIsListening)(state.paths.daemonSocket)
   if (listening && !matches) {
-    const launchModule = await daemonLaunchModule(state)
-    const stopped = await (dependencies.stopDaemon ?? defaultStopDaemon)(state.paths.daemonSocket, launchModule)
+    const stopped = await (dependencies.stopDaemon ?? defaultStopDaemon)(state.paths.daemonSocket)
     listening = await (dependencies.daemonIsListening ?? socketIsListening)(state.paths.daemonSocket)
     if (!stopped || listening)
       fail("launch", "Prime profile daemon did not stop; refusing to replace its identity stamp")
@@ -553,13 +497,13 @@ export const primeLaunchCommand = (state: PrimeRuntimeState, options: PrimeLaunc
   if (options.singleTurn === true && options.autonomous === true)
     fail("usage", "Prime launch cannot be both single-turn and autonomous")
   const autonomous = options.autonomous ?? options.singleTurn !== true
-  const args = [state.cli, "--provider", PRIME_PROVIDER, "--model", model, "--offline"]
+  const args = ["--provider", PRIME_PROVIDER, "--model", model, "--offline"]
   if (autonomous) args.push("--autonomous")
   args.push("--daemon-socket", state.paths.daemonSocket)
   if (options.appendSystemPrompt !== undefined) args.push("--append-system-prompt", options.appendSystemPrompt)
   args.push(...forwardedArgs)
   return {
-    command: state.nodeBinary,
+    command: state.cli,
     args,
     env: {
       PRIME_AGENT_CODING_AGENT_DIR: options.codingAgentDirectory ?? state.paths.profileHome,

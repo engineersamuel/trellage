@@ -129,6 +129,23 @@ test("composition inventory reports native resources and lifecycle admission", a
   expect(calls).toContainEqual(["inventory", "hve", "--json"])
 })
 
+test("composition inventory reads a v-prefixed binary version", async () => {
+  const prepared = await preparedRun(copilotAdapter)
+  const inventory = await inventoryComposition(
+    { harness: "copilot", profiles: ["hve"] },
+    {
+      environment: { HOME: prepared.workspace, PATH: "/fixture" },
+      prepare: async () => prepared,
+      resolveBinary: async () => "/fixture/copilot",
+      runProcess: async (_command, args) =>
+        args[0] === "--version"
+          ? { status: 0, stdout: "copilot v0.90.0 (a7f005e8c)\n", stderr: "", timedOut: false }
+          : { status: 0, stdout: '{"schemaVersion":1,"readiness":"healthy"}\n', stderr: "", timedOut: false },
+    },
+  )
+  expect(inventory.binary.version).toBe("0.90.0")
+})
+
 test("Agency admission is unhealthy without its launch authentication method", async () => {
   const prepared = await preparedRun(agencyAdapter)
   const inventory = await inventoryComposition(

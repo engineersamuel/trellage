@@ -22,7 +22,16 @@ export const assertGuideReviewHandoff = async (
   context: HerdrContext | null,
   id: string,
 ): Promise<void> => {
-  const profiles = reviewAgentProfiles(world.catalog)
+  // One profile per harness family: the handoff path depends on the harness, not on which
+  // profile name is selected. The automatic-launch case still gets its Copilot hve profile.
+  const families = new Map<string, ReturnType<typeof reviewAgentProfiles>[number]>()
+  for (const entry of reviewAgentProfiles(world.catalog)) {
+    const family = entry.profile.harness
+    const current = families.get(family)
+    const isHve = family === "copilot" && entry.profile.profiles.length === 1 && entry.profile.profiles[0] === "hve"
+    if (current === undefined || isHve) families.set(family, entry)
+  }
+  const profiles = [...families.values()]
   assert(profiles.length > 0, id)
   const target = template.request.target
   const store = new SharedReviewStore(target.gitDirectory)

@@ -50,7 +50,7 @@ const nativeProfileState = new Set([
   "cache",
   "mise",
   "mise-config",
-  "npm-prefix",
+  "rust-prefix",
   "installed-version",
   "version",
   "runtime-identity.json",

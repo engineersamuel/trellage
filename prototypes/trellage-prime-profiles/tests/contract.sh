@@ -6,10 +6,6 @@ set -o pipefail
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 repository_root="$(CDPATH= cd -- "$root/../.." && pwd)"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
-real_node="$(command -v node)" || {
-  printf 'prx contract failed: host node is required\n' >&2
-  exit 1
-}
 real_bun="$(command -v bun)" || {
   printf 'prx contract failed: Bun 1.4.2 is required\n' >&2
   exit 1
@@ -67,11 +63,7 @@ fixture_root="$(mktemp -d "$fixture_parent/trellage-prx-contract.XXXXXX")" \
   || fail 'could not create fixture root'
 trap 'if [[ "${PRX_TEST_KEEP_FIXTURE:-0}" != 1 ]]; then rm -rf -- "$fixture_root"; rmdir "$fixture_parent" 2>/dev/null || true; else printf "fixture kept: %s\n" "$fixture_root" >&2; fi' EXIT HUP INT TERM
 
-fixture_registry="$(npm config get registry --workspaces=false)" \
-  || fail 'could not discover the host npm registry'
-[[ -n "$fixture_registry" ]] || fail 'host npm registry is empty'
 export BUN_INSTALL_CACHE_DIR="${TRELLAGE_TEST_PACKAGE_CACHE:-$fixture_root/bun-cache}"
-export npm_config_registry="$fixture_registry"
 
 fake_bin="$fixture_root/fake-bin"
 home="$fixture_root/home"
@@ -88,25 +80,19 @@ install_name='github-prime-intellect-ai-prime-agent'
 case "${1-}" in
   latest)
     [[ "${2-}" == "$tool" ]] || exit 90
-    printf '%s\n' "${FAKE_MISE_LATEST:-0.7.0}"
+    printf '%s\n' "${FAKE_MISE_LATEST:-0.10.0}"
     ;;
   install)
     shift
-    forced=false
-    if [[ "${1-}" == --force ]]; then forced=true; shift; fi
     spec="${1-}"
     version="${spec##*@}"
     [[ "$spec" == "$tool[asset_pattern=prime-agent-$version.tgz]@$version" ]] || exit 91
     destination="$MISE_DATA_DIR/installs/$install_name/$version"
     mkdir -p "$destination"
-    if [[ "${FAKE_STANDALONE_CACHE:-0}" == 1 && "$forced" == false ]]; then
-      jq -n --arg version "$version" '{name:"@earendil-works/pi-coding-agent",version:$version}' >"$destination/package.json"
-      exit 0
-    fi
     jq -n --arg version "$version" '{name:"prime-agent",version:$version}' \
       >"$destination/package.json"
-    # Marker file so tests can assert mise install ran.
-    printf 'extracted\n' >"$destination/.mise-extracted"
+    cp "$FAKE_INSTALL_RUST" "$destination/install-rust.sh"
+    chmod 0755 "$destination/install-rust.sh"
     ;;
   where)
     spec="${2-}"
@@ -120,101 +106,34 @@ esac
 FAKE_MISE
 chmod 0755 "$fake_bin/mise"
 
-cat >"$fake_bin/npm" <<'FAKE_NPM'
-#!/usr/bin/env bash
-set -u
+# The release's own Rust installer: lays out <prefix>/bin + <prefix>/share/prime-agent
+# and the kernel venv the way install-rust.sh does.
+cat >"$fixture_root/fake-install-rust.sh" <<'FAKE_INSTALL_RUST'
+#!/bin/sh
+set -eu
 
-printf '%s\n' "$*" >>"$FAKE_NPM_LOG"
+printf '%s %s\n' "$PRIME_AGENT_VERSION" "$PRIME_AGENT_RUST_PREFIX" >>"$FAKE_INSTALL_LOG"
+[ "${FAKE_INSTALLER_FAIL-}" != 1 ] || exit 97
+[ "${PRIME_AGENT_PRESERVE_NPM_BRIDGE-}" = 1 ] || exit 90
+[ "${PRIME_AGENT_DEFER_DAEMON_STOP-}" = 1 ] || exit 91
+[ -n "${PRIME_AGENT_KERNEL_VENV-}" ] || exit 92
 
-if [[ "${1-}" == pack ]]; then
-  pack_dest=''
-  shift
-  while (($# > 0)); do
-    case "$1" in
-      --pack-destination)
-        shift
-        pack_dest="${1-}"
-        ;;
-      --pack-destination=*)
-        pack_dest="${1#--pack-destination=}"
-        ;;
-      --loglevel=error|--ignore-scripts) ;;
-      *) ;;
-    esac
-    shift || true
-  done
-  [[ -n "$pack_dest" && -d "$pack_dest" ]] || exit 88
-  [[ -f ./package.json ]] || exit 89
-  version="$(jq -r .version ./package.json)" || exit 90
-  # Minimal tarball npm install can consume in the fake installer below.
-  tar -czf "$pack_dest/prime-agent-$version.tgz" package.json
-  exit 0
-fi
-
-[[ "${FAKE_NPM_INSTALL_FAIL-}" != 1 ]] || exit 97
-
-prefix=''
-package=''
-while (($# > 0)); do
-  case "$1" in
-    --prefix)
-      shift
-      prefix="${1-}"
-      ;;
-    --prefix=*)
-      prefix="${1#--prefix=}"
-      ;;
-    --global|--no-fund|--no-audit|--progress=false|--loglevel=error) ;;
-    -*)
-      ;;
-    *)
-      package="$1"
-      ;;
-  esac
-  shift || true
-done
-
-[[ -n "$prefix" && -n "$package" ]] || exit 94
-if [[ -f "$package" && "$package" == *.tgz ]]; then
-  extract_dir="$(mktemp -d "$FAKE_FIXTURE_ROOT/fake-npm-extract.XXXXXX")" || exit 98
-  tar -xzf "$package" -C "$extract_dir" || exit 99
-  if [[ -f "$extract_dir/package.json" ]]; then
-    version="$(jq -r .version "$extract_dir/package.json")" || exit 96
-  else
-    version="$(jq -r .version "$extract_dir/package/package.json")" || exit 96
-  fi
-  rm -rf -- "$extract_dir"
-elif [[ -f "$package/package.json" ]]; then
-  # Real npm would symlink a directory path; refuse so the launcher must pack.
-  exit 95
-else
-  exit 95
-fi
-
-package_root="$prefix/lib/node_modules/prime-agent"
-rm -rf -- "$package_root"
-cli_dir="$package_root/dist/bundle"
-runtime_dir="$package_root/dist/prime-agent-runtime"
-mkdir -p "$cli_dir" "$runtime_dir" "$package_root/node_modules/zeromq"
-jq -n --arg version "$version" '{name:"prime-agent",version:$version}' \
-  >"$package_root/package.json"
-printf 'fake\n' >"$package_root/node_modules/zeromq/package.json"
-# Bundled kernel runtime source (real package ships this under dist/).
+version="$PRIME_AGENT_VERSION"
+payload="$PRIME_AGENT_RUST_PREFIX/share/prime-agent"
+mkdir -p "$PRIME_AGENT_RUST_PREFIX/bin" "$payload/prime-agent-runtime"
+jq -n --arg version "$version" '{name:"prime-agent",version:$version}' >"$payload/package.json"
 printf '[project]\nname = "prime-agent-runtime"\nversion = "0.1.0"\n' \
-  >"$runtime_dir/pyproject.toml"
-printf '%s\n' "${FAKE_RUNTIME_CONTENT:-runtime-$version}" >"$runtime_dir/content.txt"
-sed "s/@VERSION@/$version/g" "$FAKE_PRIME_TEMPLATE" >"$cli_dir/cli.js"
-chmod 0755 "$cli_dir/cli.js"
-mkdir -p "$package_root/dist/cli"
-cat >"$package_root/dist/cli/daemon-launch.js" <<'DAEMON'
-export async function shutdownDaemonAndWait(socket) {
-  const fs = await import("node:fs");
-  try { fs.unlinkSync(socket); } catch {}
-  return true;
-}
-DAEMON
-FAKE_NPM
-chmod 0755 "$fake_bin/npm"
+  >"$payload/prime-agent-runtime/pyproject.toml"
+printf '%s\n' "${FAKE_RUNTIME_CONTENT:-runtime-$version}" >"$payload/prime-agent-runtime/content.txt"
+sed "s/@VERSION@/$version/g" "$FAKE_PRIME_TEMPLATE" >"$PRIME_AGENT_RUST_PREFIX/bin/prime-agent"
+chmod 0755 "$PRIME_AGENT_RUST_PREFIX/bin/prime-agent"
+# A kernel failure leaves the freshly published prefix behind, like a real partial install.
+[ "${FAKE_INSTALLER_FAIL-}" != kernel ] || exit 85
+mkdir -p "$PRIME_AGENT_KERNEL_VENV/bin"
+printf '#!/bin/sh\nexit 0\n' >"$PRIME_AGENT_KERNEL_VENV/bin/python"
+chmod 0755 "$PRIME_AGENT_KERNEL_VENV/bin/python"
+FAKE_INSTALL_RUST
+chmod 0755 "$fixture_root/fake-install-rust.sh"
 
 cat >"$fixture_root/fake-prime-template" <<'FAKE_PRIME'
 #!/usr/bin/env bash
@@ -242,48 +161,6 @@ exit "${FAKE_PRIME_EXIT_STATUS:-0}"
 FAKE_PRIME
 chmod 0755 "$fixture_root/fake-prime-template"
 
-# Bundled runtime tree required by ensure_kernel_runtime (shipped inside prime-agent).
-mkdir -p "$fixture_root/fake-runtime-src"
-printf '[project]\nname = "prime-agent-runtime"\nversion = "0.1.0"\n' \
-  >"$fixture_root/fake-runtime-src/pyproject.toml"
-
-cat >"$fake_bin/node" <<'FAKE_NODE'
-#!/usr/bin/env bash
-set -u
-
-if [[ "${1-}" == -p ]]; then
-  # version probe used by require_node / major check
-  printf '24\n'
-  exit 0
-fi
-
-if [[ "$#" -eq 0 ]]; then
-  exec "$REAL_NODE"
-fi
-
-if [[ "${1-}" == --input-type=module && "${2-}" == -e ]]; then
-  if [[ "$*" == *shutdownDaemonAndWait* ]]; then
-    [[ "${FAKE_DAEMON_STOP_FAIL-}" != 1 ]] || exit 2
-    rm -f -- "${PRX_DAEMON_SOCKET-}"
-    [[ -z "${FAKE_DAEMON_MARKER-}" ]] || rm -f -- "$FAKE_DAEMON_MARKER"
-    [[ -z "${FAKE_DAEMON_STOP_LOG-}" ]] || printf 'stopped\n' >>"$FAKE_DAEMON_STOP_LOG"
-    exit 0
-  fi
-  if [[ -n "${PRX_DAEMON_SOCKET-}" && -S "${PRX_DAEMON_SOCKET-}" \
-    && -f "${FAKE_DAEMON_MARKER-}" ]]; then
-    exit 0
-  fi
-  exit 1
-fi
-
-cli="${1-}"
-shift || true
-[[ -n "$cli" && -f "$cli" ]] || exit 97
-# Execute the fake CLI script directly (it is a bash stub, not JS).
-exec bash "$cli" "$@"
-FAKE_NODE
-chmod 0755 "$fake_bin/node"
-
 cat >"$fake_bin/bun" <<'FAKE_BUN'
 #!/usr/bin/env bash
 set -u
@@ -296,6 +173,13 @@ shift || true
 if [[ "$script" == */native-tools.ts && "${1-}" == socket-listening ]]; then
   [[ -S "${2-}" && -f "${FAKE_DAEMON_MARKER-}" ]]
   exit
+fi
+if [[ "$script" == */native-tools.ts && "${1-}" == daemon-shutdown ]]; then
+  [[ "${FAKE_DAEMON_STOP_FAIL-}" != 1 ]] || exit 2
+  rm -f -- "${2-}"
+  [[ -z "${FAKE_DAEMON_MARKER-}" ]] || rm -f -- "$FAKE_DAEMON_MARKER"
+  [[ -z "${FAKE_DAEMON_STOP_LOG-}" ]] || printf 'stopped\n' >>"$FAKE_DAEMON_STOP_LOG"
+  exit 0
 fi
 exec "$REAL_BUN" "${original[@]}"
 FAKE_BUN
@@ -319,10 +203,6 @@ case "$url" in
       printf '{"data":[{"id":"another-model"}]}\n'
     fi
     ;;
-  https://files.pythonhosted.org|https://files.pythonhosted.org/)
-    # Default: public CDN blocked so launcher exercises the mirror path.
-    [[ "${FAKE_PYPI_CDN:-blocked}" == ok ]] || exit 7
-    ;;
   *) exit 93 ;;
 esac
 FAKE_CURL
@@ -339,46 +219,6 @@ exec /bin/sleep "$@"
 FAKE_SLEEP
 chmod 0755 "$fake_bin/sleep"
 
-cat >"$fake_bin/uv" <<'FAKE_UV'
-#!/usr/bin/env bash
-set -u
-
-printf '%s\n' "$*" >>"$FAKE_UV_LOG"
-printf '%s\n' "${UV_DEFAULT_INDEX-}" >>"$FAKE_UV_FEED_LOG"
-
-case "${1-}" in
-  python)
-    [[ "${2-}" == install && "${3-}" == 3.11 ]] || exit 80
-    exit 0
-    ;;
-  venv)
-    [[ "${FAKE_UV_FAIL-}" != venv ]] || exit 84
-    dest="${2-}"
-    [[ -n "$dest" ]] || exit 81
-    mkdir -p "$dest/bin"
-    # Fake venv python that satisfies kernel_runtime_ready import checks.
-    cat >"$dest/bin/python" <<'PY'
-#!/usr/bin/env bash
-set -u
-# Accept any -c import probe used by kernel_runtime_ready.
-if [[ "${1-}" == -c ]]; then
-  exit 0
-fi
-exit 0
-PY
-    chmod 0755 "$dest/bin/python"
-    exit 0
-    ;;
-  pip)
-    [[ "${FAKE_UV_FAIL-}" != pip ]] || exit 85
-    [[ "${2-}" == install && "${3-}" == --python ]] || exit 82
-    exit 0
-    ;;
-  *) exit 83 ;;
-esac
-FAKE_UV
-chmod 0755 "$fake_bin/uv"
-
 # Real jq from the host.
 if ! command -v jq >/dev/null 2>&1; then
   fail 'host jq is required for the contract'
@@ -390,13 +230,11 @@ ln -s "$(command -v ps)" "$fake_bin/ps"
 
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="$home"
-export REAL_NODE="$real_node"
 export REAL_BUN="$real_bun"
 export FAKE_MISE_LOG="$fixture_root/mise.log"
-export FAKE_NPM_LOG="$fixture_root/npm.log"
+export FAKE_INSTALL_LOG="$fixture_root/install.log"
+export FAKE_INSTALL_RUST="$fixture_root/fake-install-rust.sh"
 export FAKE_CURL_LOG="$fixture_root/curl.log"
-export FAKE_UV_LOG="$fixture_root/uv.log"
-export FAKE_UV_FEED_LOG="$fixture_root/uv-feed.log"
 export FAKE_PRIME_LOG="$fixture_root/prime.log"
 export FAKE_PRIME_TEMPLATE="$fixture_root/fake-prime-template"
 export FAKE_FIXTURE_ROOT="$fixture_root"
@@ -404,9 +242,8 @@ export FAKE_DAEMON_STOP_LOG="$fixture_root/daemon-stop.log"
 export FAKE_DAEMON_MARKER="$fixture_root/daemon-running"
 export PRX_TEST_DAEMON_MARKER="$FAKE_DAEMON_MARKER"
 : >"$FAKE_MISE_LOG"
-: >"$FAKE_NPM_LOG"
+: >"$FAKE_INSTALL_LOG"
 : >"$FAKE_CURL_LOG"
-: >"$FAKE_UV_LOG"
 : >"$FAKE_PRIME_LOG"
 : >"$FAKE_DAEMON_STOP_LOG"
 
@@ -497,12 +334,12 @@ rm -rf "$profile_root" "$runtime_root/installed-version"
 
 "$command_path" setup >"$fixture_root/setup.out" 2>"$fixture_root/setup.err" \
   || fail 'setup failed'
-[[ "$(<"$runtime_root/installed-version")" == 0.7.0 ]] \
+[[ "$(<"$runtime_root/installed-version")" == 0.10.0 ]] \
   || fail 'setup did not record installed version'
 [[ ! -e "$runtime_root/version" ]] || fail 'setup retained legacy version state'
 jq -e '
   .schemaVersion == 1
-  and .primeVersion == "0.7.0"
+  and .primeVersion == "0.10.0"
   and .runtimeHashAlgorithm == "sha256"
   and (.runtimeHash | test("^[0-9a-f]{64}$"))
   and .kernelSpecVersion == 1
@@ -532,8 +369,8 @@ grep -Fqx 'ask-user' "$profile_home/.trellage-managed-extensions" \
   || fail 'managed extension manifest does not list ask-user'
 [[ -x "$profile_home/kernel-venv/bin/python" ]] \
   || fail 'setup did not bootstrap kernel-venv'
-grep -Fq 'venv' "$FAKE_UV_LOG" || fail 'setup did not invoke uv venv'
-grep -Fq 'pip install' "$FAKE_UV_LOG" || fail 'setup did not install kernel packages'
+grep -Fq "0.10.0 $runtime_root/rust-prefix" "$FAKE_INSTALL_LOG" \
+  || fail 'setup did not run the release installer into the owned prefix'
 jq -e '
   .providers["copilot-proxy-rs"].baseUrl == "http://127.0.0.1:8080"
   and .providers["copilot-proxy-rs"].api == "anthropic-messages"
@@ -543,11 +380,11 @@ jq -e '
 ' "$profile_home/models.json" >/dev/null || fail 'models.json seed differs'
 [[ "$(file_mode "$profile_home/models.json")" == 600 ]] \
   || fail 'models.json mode is not 0600'
-grep -Fq 'prx setup: ready (0.7.0, claude-opus-5.5)' "$fixture_root/setup.out" \
+grep -Fq 'prx setup: ready (0.10.0, claude-opus-5.5)' "$fixture_root/setup.out" \
   || fail 'setup output differs'
-[[ -f "$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/bundle/cli.js" ]] \
-  || fail 'setup did not install prime-agent CLI'
-grep -Fq 'install github:PrimeIntellect-ai/prime-agent[asset_pattern=prime-agent-0.7.0.tgz]@0.7.0' "$FAKE_MISE_LOG" \
+[[ -x "$runtime_root/rust-prefix/bin/prime-agent" ]] \
+  || fail 'setup did not install prime-agent launcher'
+grep -Fq 'install github:PrimeIntellect-ai/prime-agent[asset_pattern=prime-agent-0.10.0.tgz]@0.10.0' "$FAKE_MISE_LOG" \
   || fail 'setup did not ask mise to install the receipt-selected release'
 
 "$command_path" list --json >"$fixture_root/list-verified.json" || fail 'verified JSON list failed'
@@ -572,7 +409,7 @@ jq -e '
 ' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON list differs'
 
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
-grep -Fq 'prx doctor: OK (0.7.0, claude-opus-5.5)' "$fixture_root/doctor.out" \
+grep -Fq 'prx doctor: OK (0.10.0, claude-opus-5.5)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
 
 # Seed poison credentials; launch must unset them.
@@ -612,7 +449,7 @@ jq -e --arg kernelPython "$profile_home/kernel-venv/bin/python" \
 jq -e --arg python "$profile_home/kernel-venv/bin/python" \
   --arg venv "$profile_home/kernel-venv" '
   .schemaVersion == 1
-  and .runtimeIdentity.primeVersion == "0.7.0"
+  and .runtimeIdentity.primeVersion == "0.10.0"
   and .runtimeIdentity.kernelSpecVersion == 1
   and .kernelPython == $python
   and .kernelVenv == $venv
@@ -624,17 +461,17 @@ unset ANTHROPIC_API_KEY OPENAI_API_KEY GH_TOKEN GITHUB_TOKEN COPILOT_GITHUB_TOKE
 
 : >"$FAKE_DAEMON_MARKER"
 kernel_rebuild_stops_before="$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')"
-kernel_rebuild_uv_before="$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')"
+kernel_rebuild_installs_before="$(wc -l <"$FAKE_INSTALL_LOG" | tr -d ' ')"
 rm -f "$profile_home/kernel-venv/bin/python"
 trx_run_prime -p kernel-rebuild-probe >/dev/null \
   || fail 'launch did not repair a stale kernel'
 [[ "$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')" -gt "$kernel_rebuild_stops_before" ]] \
   || fail 'stale kernel repair did not stop the old profile daemon'
-[[ "$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')" -gt "$kernel_rebuild_uv_before" ]] \
-  || fail 'stale kernel repair did not rebuild the kernel'
+[[ "$(wc -l <"$FAKE_INSTALL_LOG" | tr -d ' ')" -gt "$kernel_rebuild_installs_before" ]] \
+  || fail 'stale kernel repair did not rerun the release installer'
 [[ ! -e "$FAKE_DAEMON_MARKER" ]] \
   || fail 'stale kernel repair left the old profile daemon running'
-jq -e '.runtimeIdentity.primeVersion == "0.7.0"' \
+jq -e '.runtimeIdentity.primeVersion == "0.10.0"' \
   "$profile_root/daemon/kernel-env.stamp" >/dev/null \
   || fail 'stale kernel repair did not republish the daemon identity stamp'
 
@@ -687,13 +524,6 @@ jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
 ' "$FAKE_PRIME_LOG" >/dev/null || fail 'argument-free launch arguments differ'
 
 # shutdown is a managed command (no live socket in the fixture).
-# Publish a minimal daemon-launch module so stop_profile_daemon_socket can import.
-mkdir -p "$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/cli"
-cat >"$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js" <<'FAKE_LAUNCH'
-export async function shutdownDaemonAndWait() {
-  return false;
-}
-FAKE_LAUNCH
 "$command_path" shutdown >"$fixture_root/shutdown.out" || fail 'shutdown failed'
 grep -Fq 'prx shutdown: no profile daemon socket' "$fixture_root/shutdown.out" \
   || fail 'shutdown output differs'
@@ -752,7 +582,7 @@ jq -e '
 ' "$profile_home/models.json" >/dev/null || fail 'repair did not rewrite models.json'
 
 printf 'runtime-drift\n' \
-  >>"$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/prime-agent-runtime/content.txt"
+  >>"$runtime_root/rust-prefix/share/prime-agent/prime-agent-runtime/content.txt"
 status=0
 "$command_path" doctor >"$fixture_root/runtime-drift.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted bundled runtime content drift'
@@ -777,7 +607,7 @@ ln -s "$fixture_root/outside-kernel-identity.json" \
 status=0
 "$command_path" repair >"$fixture_root/kernel-stamp-symlink.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'repair accepted symlinked kernel identity stamp'
-jq -e '.primeVersion == "0.7.0"' \
+jq -e '.primeVersion == "0.10.0"' \
   "$fixture_root/outside-kernel-identity.json" >/dev/null \
   || fail 'symlinked kernel identity target was modified'
 rm -f "$profile_home/kernel-runtime-identity.json"
@@ -805,7 +635,7 @@ grep -Fq 'Prime daemon identity stamp differs; run prx shutdown' \
   || fail 'malformed daemon identity diagnostic differs'
 trx_run_prime -p daemon-stamp-repair >/dev/null \
   || fail 'launch did not repair malformed daemon identity stamp'
-jq -e '.runtimeIdentity.primeVersion == "0.7.0"' \
+jq -e '.runtimeIdentity.primeVersion == "0.10.0"' \
   "$profile_root/daemon/kernel-env.stamp" >/dev/null \
   || fail 'launch did not republish daemon identity stamp'
 
@@ -843,19 +673,18 @@ FAKE_PROXY_HAS_MODEL=0 "$command_path" doctor >"$fixture_root/model.out" 2>&1 \
 grep -Fq 'copilot-proxy-rs model is missing: claude-opus-5.5' "$fixture_root/model.out" \
   || fail 'missing model error differs'
 
-FAKE_MISE_LATEST=0.8.0 "$command_path" update --check \
+FAKE_MISE_LATEST=0.11.0 "$command_path" update --check \
   >"$fixture_root/update-check.out" || fail 'update check failed'
-grep -Fq '0.7.0 -> 0.8.0 available' "$fixture_root/update-check.out" \
+grep -Fq '0.10.0 -> 0.11.0 available' "$fixture_root/update-check.out" \
   || fail 'update check output differs'
-if FAKE_MISE_LATEST=0.8.0 FAKE_NPM_INSTALL_FAIL=1 \
+if FAKE_MISE_LATEST=0.11.0 FAKE_INSTALLER_FAIL=1 \
   "$command_path" update >"$fixture_root/update-fail.out" 2>&1; then
-  fail 'update unexpectedly succeeded when npm failed'
+  fail 'update unexpectedly succeeded when the installer failed'
 fi
-[[ "$(<"$runtime_root/installed-version")" == 0.7.0 ]] \
+[[ "$(<"$runtime_root/installed-version")" == 0.10.0 ]] \
   || fail 'failed update replaced installed version receipt'
-old_runtime_version="$(node "$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/bundle/cli.js" \
-  --version 2>&1)"
-[[ "$old_runtime_version" == 0.7.0 ]] \
+old_runtime_version="$("$runtime_root/rust-prefix/bin/prime-agent" --version 2>&1)"
+[[ "$old_runtime_version" == 0.10.0 ]] \
   || fail 'failed update replaced the last good Prime runtime'
 cp "$runtime_root/runtime-identity.json" "$fixture_root/pre-update-runtime-identity.json"
 cp "$profile_home/kernel-runtime-identity.json" \
@@ -863,30 +692,29 @@ cp "$profile_home/kernel-runtime-identity.json" \
 cp "$profile_root/daemon/kernel-env.stamp" \
   "$fixture_root/pre-update-daemon-stamp.json"
 printf 'old-kernel\n' >"$profile_home/kernel-venv/rollback-marker"
-if FAKE_MISE_LATEST=0.8.0 FAKE_UV_FAIL=pip \
+if FAKE_MISE_LATEST=0.11.0 FAKE_INSTALLER_FAIL=kernel \
   "$command_path" update >"$fixture_root/update-kernel-fail.out" 2>&1; then
   fail 'update unexpectedly succeeded when kernel installation failed'
 fi
-[[ "$(<"$runtime_root/installed-version")" == 0.7.0 \
+[[ "$(<"$runtime_root/installed-version")" == 0.10.0 \
   && "$(<"$profile_home/kernel-venv/rollback-marker")" == old-kernel ]] \
   || fail 'kernel installation failure did not restore old runtime state'
 cmp -s "$profile_root/daemon/kernel-env.stamp" \
   "$fixture_root/pre-update-daemon-stamp.json" \
   || fail 'kernel installation failure did not restore daemon stamp'
 for fail_point in after-daemon-stop after-state-backup after-kernel-build \
-  before-receipt-publication after-npm-publication after-state-publication; do
+  before-receipt-publication after-rust-publication after-state-publication; do
   if [[ "$fail_point" == after-daemon-stop ]]; then
     : >"$FAKE_DAEMON_MARKER"
   fi
-  if FAKE_MISE_LATEST=0.8.0 PRX_TEST_FAIL_AT="$fail_point" \
+  if FAKE_MISE_LATEST=0.11.0 PRX_TEST_FAIL_AT="$fail_point" \
     "$command_path" update >"$fixture_root/update-$fail_point.out" 2>&1; then
     fail "update unexpectedly succeeded at rollback boundary $fail_point"
   fi
-  [[ "$(<"$runtime_root/installed-version")" == 0.7.0 ]] \
+  [[ "$(<"$runtime_root/installed-version")" == 0.10.0 ]] \
     || fail "rollback boundary $fail_point replaced installed version receipt"
-  old_runtime_version="$(node "$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/bundle/cli.js" \
-    --version 2>&1)"
-  [[ "$old_runtime_version" == 0.7.0 ]] \
+  old_runtime_version="$("$runtime_root/rust-prefix/bin/prime-agent" --version 2>&1)"
+  [[ "$old_runtime_version" == 0.10.0 ]] \
     || fail "rollback boundary $fail_point replaced the last good runtime"
   cmp -s "$runtime_root/runtime-identity.json" \
     "$fixture_root/pre-update-runtime-identity.json" \
@@ -903,42 +731,39 @@ for fail_point in after-daemon-stop after-state-backup after-kernel-build \
     || fail "rollback boundary $fail_point left a mismatched daemon running"
 done
 [[ -z "$(find "$runtime_root" "$profile_home" -maxdepth 1 \
-  \( -name '*-backup.*' -o -name '.npm-prefix-stage.*' \
+  \( -name '*-backup.*' -o -name '.rust-install.*' \
   -o -name '.installed-version.*' -o -name '.runtime-identity.*' \) -print -quit)" ]] \
   || fail 'failed update left staged or backup runtime state'
 
 mkdir -p "$profile_root/daemon"
 rm -f "$profile_root/daemon/daemon.sock"
 : >"$FAKE_DAEMON_MARKER"
-update_uv_calls_before="$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')"
-FAKE_MISE_LATEST=0.8.0 "$command_path" update >"$fixture_root/update.out" \
+update_installs_before="$(wc -l <"$FAKE_INSTALL_LOG" | tr -d ' ')"
+FAKE_MISE_LATEST=0.11.0 "$command_path" update >"$fixture_root/update.out" \
   || fail 'update failed'
-[[ "$(<"$runtime_root/installed-version")" == 0.8.0 ]] \
+[[ "$(<"$runtime_root/installed-version")" == 0.11.0 ]] \
   || fail 'update did not change installed version receipt'
-[[ "$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')" -gt "$update_uv_calls_before" ]] \
-  || fail 'update did not rebuild the kernel from the staged runtime'
+[[ "$(wc -l <"$FAKE_INSTALL_LOG" | tr -d ' ')" -gt "$update_installs_before" ]] \
+  || fail 'update did not run the release installer'
 [[ "$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')" -ge 1 ]] \
   || fail 'update did not stop the old profile daemon'
 [[ ! -e "$FAKE_DAEMON_MARKER" && ! -e "$profile_root/daemon/daemon.sock" ]] \
   || fail 'update left the old profile daemon running'
 [[ ! -e "$profile_root/daemon/kernel-env.stamp" ]] \
   || fail 'update published a daemon stamp before lazy restart'
-jq -e '.primeVersion == "0.8.0"' "$runtime_root/runtime-identity.json" >/dev/null \
+jq -e '.primeVersion == "0.11.0"' "$runtime_root/runtime-identity.json" >/dev/null \
   || fail 'update did not publish the new runtime identity'
 cmp -s "$runtime_root/runtime-identity.json" \
   "$profile_home/kernel-runtime-identity.json" \
   || fail 'update published mismatched runtime and kernel identities'
 
-noop_npm_calls_before="$(wc -l <"$FAKE_NPM_LOG" | tr -d ' ')"
-noop_uv_calls_before="$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')"
-FAKE_MISE_LATEST=0.8.0 "$command_path" update >"$fixture_root/update-noop.out" \
+noop_install_calls_before="$(wc -l <"$FAKE_INSTALL_LOG" | tr -d ' ')"
+FAKE_MISE_LATEST=0.11.0 "$command_path" update >"$fixture_root/update-noop.out" \
   || fail 'current update no-op failed'
-grep -Fq 'prx update: 0.8.0 is current' "$fixture_root/update-noop.out" \
+grep -Fq 'prx update: 0.11.0 is current' "$fixture_root/update-noop.out" \
   || fail 'current update no-op output differs'
-[[ "$(wc -l <"$FAKE_NPM_LOG" | tr -d ' ')" == "$noop_npm_calls_before" ]] \
-  || fail 'current update no-op reinstalled npm runtime'
-[[ "$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')" == "$noop_uv_calls_before" ]] \
-  || fail 'current update no-op rebuilt kernel'
+[[ "$(wc -l <"$FAKE_INSTALL_LOG" | tr -d ' ')" == "$noop_install_calls_before" ]] \
+  || fail 'current update no-op reran the release installer'
 
 lock_marker="$fixture_root/mutation-lock-held"
 PRX_TEST_LOCK_HELD_MARKER="$lock_marker" "$command_path" doctor \
@@ -974,7 +799,7 @@ PRX_TEST_STALE_RECOVERY_FAIL_ONCE="$stale_recovery_retry" \
   || fail 'stale profile mutation lock was not removed'
 
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
-grep -Fq 'prx repair: restored (0.8.0, claude-opus-5.5)' "$fixture_root/repair.out" \
+grep -Fq 'prx repair: restored (0.11.0, claude-opus-5.5)' "$fixture_root/repair.out" \
   || fail 'repair output differs after update'
 
 mkdir -p "$fixture_root/unrelated-home/.local/share/trellage/profiles/prime/default"
@@ -1001,34 +826,19 @@ rm -f "$profile_home/models.json"
   || fail 'repair after removing symlink failed'
 
 # A daemon started by a different runtime_root (another worktree, or the
-# canonical installed copy) still listens on the shared $HOME-based socket.
-# stop_profile_daemon_socket must fall back to the canonical installed
-# runtime's daemon-launch.js when this runtime's own copy is missing, rather
-# than dying with "prime-agent daemon-launch module missing".
+# canonical installed copy) still listens on the shared $HOME-based socket; any
+# prx copy stops it through the daemon protocol client, not a per-copy module.
 other_runtime="$HOME/.local/share/trellage/other-worktree-prx"
 cp -R "$runtime_root" "$other_runtime"
-rm -f "$other_runtime/npm-prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
 : >"$FAKE_DAEMON_MARKER"
-fallback_stops_before="$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')"
-"$other_runtime/bin/prx" repair >"$fixture_root/fallback-launch-js.out" 2>&1 \
-  || fail 'repair from a runtime without its own daemon-launch module failed'
-grep -Fq 'prime-agent daemon-launch module missing' "$fixture_root/fallback-launch-js.out" \
-  && fail 'repair incorrectly reported a missing daemon-launch module'
-[[ "$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')" -gt "$fallback_stops_before" ]] \
-  || fail 'canonical installed daemon-launch module was not used to stop the shared daemon'
+shared_stops_before="$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')"
+"$other_runtime/bin/prx" repair >"$fixture_root/shared-daemon.out" 2>&1 \
+  || fail 'repair from a second runtime copy failed'
+[[ "$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')" -gt "$shared_stops_before" ]] \
+  || fail 'second runtime copy did not stop the shared profile daemon'
 [[ ! -e "$FAKE_DAEMON_MARKER" ]] \
-  || fail 'fallback daemon stop left the shared profile daemon marker in place'
+  || fail 'second runtime copy left the shared profile daemon marker in place'
 rm -rf "$other_runtime"
-
-: >"$FAKE_UV_FEED_LOG"
-UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/ FAKE_STANDALONE_CACHE=1 FAKE_MISE_LATEST=0.9.5 "$command_path" update >"$fixture_root/archive-update.out" 2>&1 \
-  || fail 'Prime update did not replace the cached standalone archive'
-grep -Fq 'install --force github:PrimeIntellect-ai/prime-agent[asset_pattern=prime-agent-0.9.5.tgz]@0.9.5' "$FAKE_MISE_LOG" \
-  || fail 'Prime did not force one reinstall of the npm archive'
-grep -Fxq 'https://packagefeedproxy.microsoft.io/pypi/simple/' "$FAKE_UV_FEED_LOG" \
-  || fail 'Prime bootstrap ignored the explicit host package feed'
-"$command_path" doctor >"$fixture_root/archive-doctor.out" 2>&1 \
-  || fail 'Prime doctor failed after archive recovery'
 
 "$uninstaller" >"$fixture_root/uninstall.out" || fail 'uninstall failed'
 [[ ! -e "$runtime_root" ]] || fail 'uninstaller left runtime'

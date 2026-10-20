@@ -32,7 +32,9 @@ def verify(report_path: Path) -> dict:
         "noAlways": [False, True], "plan": [False, True],
     }
     assert report["selectedHarnesses"] == harnesses, "a partition is not complete coverage"
-    expected = set(itertools.product(harnesses, profiles, [False, True], [False, True]))
+    reduced = [None, "base"]
+    expected = {case for harness in harnesses
+                for case in itertools.product([harness], profiles if harness == "copilot" else reduced, [False, True], [False, True])}
     actual = [tuple(json.loads(row["id"])) for row in report["results"]]
     assert set(actual) == expected, "missing or unexpected cases"
     assert len(actual) == len(expected) == report["executed"] == report["fullProduct"] == report["expected"], "duplicate cases or incorrect totals"

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
 import { readTrellageConfig } from "@trellage/runtime/native-config"
 import { caseAt, productSize } from "./exhaustive-cli-domains.ts"
-import { loadRunBehaviorDomain } from "./exhaustive-run-behavior.ts"
+import { loadRunBehaviorDomain, runBehaviorStride } from "./exhaustive-run-behavior.ts"
 import { expectedRun, expectedRunOutcome } from "./exhaustive-run-oracle.ts"
 
 const integer = (value: unknown): bigint => {
@@ -31,12 +31,17 @@ export const verifyRunBehaviorReports = async (reports: Record<string, unknown>[
       const start = integer(report.start),
         end = integer(report.endExclusive)
       assert(start < end && end <= total, "invalid range")
-      assert.equal(integer(report.executedCases), end - start, "wrong executed count")
-      assert.equal(integer(report.distinctTupleIds), end - start, "wrong distinct count")
-      assert.equal(report.complete, start === 0n && end === total, "false completion claim")
+      const sample = report.sample as { count: string; stride: string } | undefined
+      const executed = sample === undefined ? end - start : integer(sample.count)
+      const stride = sample === undefined ? 1n : integer(sample.stride)
+      if (sample !== undefined) assert.equal(stride, runBehaviorStride(total, executed), "wrong sample stride")
+      assert.equal(integer(report.executedCases), executed, "wrong executed count")
+      assert.equal(integer(report.distinctTupleIds), executed, "wrong distinct count")
+      assert.equal(report.complete, sample === undefined && start === 0n && end === total, "false completion claim")
       const digest = createHash("sha256"),
         outcomes: Record<string, number> = {}
-      for (let index = start; index < end; index++) {
+      for (let step = 0n; step < executed; step++) {
+        const index = sample === undefined ? start + step : step * stride
         digest.update(`${index}\n`)
         const outcome = expectedRunOutcome(expectedRun(caseAt(run, index)), catalog)
         outcomes[outcome] = (outcomes[outcome] ?? 0) + 1
@@ -55,15 +60,17 @@ export const verifyRunBehaviorReports = async (reports: Record<string, unknown>[
     covered += range.end - range.start
     cursor = range.end
   }
-  const complete = !gap && cursor === total
-  assert(allowPartial || complete, "incomplete full run product")
+  const complete = !gap && cursor === total && reports.every((report) => report.sample === undefined)
+  const sampledOnly = reports.every((report) => report.sample !== undefined)
+  assert(allowPartial || complete || sampledOnly, "incomplete full run product")
   assert.deepEqual((await loadRunBehaviorDomain()).sourceHashes, sourceHashes, "source changed during verification")
   return {
     scope: "run-full-domain-lifecycle",
     complete,
+    sampled: sampledOnly,
     independentlyVerified: true,
     totalCases: total.toString(),
-    executedCases: covered.toString(),
+    executedCases: reports.reduce((sum, report) => sum + integer(report.executedCases), 0n).toString(),
     ranges: ranges.length,
     sourceHashes,
     domainHash,

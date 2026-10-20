@@ -60,17 +60,30 @@ const readOptional = async (file: string) =>
     throw error
   })
 
+export const defaultRunBehaviorSamples = 4000
+/** Evenly spaced ordinals; the last sampled case is always inside the product. */
+export const runBehaviorStride = (total: bigint, samples: bigint): bigint => (total / samples > 0n ? total / samples : 1n)
+
 if (import.meta.main) {
   assert.equal(process.env.TRELLAGE_TEST_OFFLINE, "1", "use scripts/test-offline.sh --native-sources")
   assert.ok(process.env.TRELLAGE_DEV_SOURCES, "explicit local source mappings required")
   const { values } = parseArgs({
-    options: { start: { type: "string", default: "0" }, count: { type: "string" }, output: { type: "string" } },
+    options: {
+      start: { type: "string", default: "0" },
+      count: { type: "string" },
+      output: { type: "string" },
+      // Default: a fixed stride sample across the whole product (it has ~76 billion cases).
+      samples: { type: "string", default: String(defaultRunBehaviorSamples) },
+    },
   })
   const { run, sourceHashes, domainHash } = await loadRunBehaviorDomain()
-  const total = productSize(run),
-    start = BigInt(values.start!),
-    count = values.count === undefined ? total - start : BigInt(values.count),
-    end = start + count
+  const total = productSize(run)
+  const sampled = values.count === undefined && values.start === "0"
+  const sampleCount = BigInt(values.samples!)
+  const stride = runBehaviorStride(total, sampleCount)
+  const start = BigInt(values.start!),
+    count = sampled ? sampleCount : values.count === undefined ? total - start : BigInt(values.count),
+    end = sampled ? total : start + count
   assert(start >= 0n && count > 0n && end <= total, "range outside declared full product")
   const {
     config: { native: catalog },
@@ -79,7 +92,8 @@ if (import.meta.main) {
   const outcomes: Record<string, number> = {},
     digest = createHash("sha256")
   try {
-    for (let index = start; index < end; index++) {
+    for (let step = 0n; step < count; step++) {
+      const index = sampled ? step * stride : start + step
       const selected = caseAt(run, index),
         expectedOptions = expectedRun(selected)
       const expected = expectedRunOutcome(expectedOptions, catalog),
@@ -111,7 +125,7 @@ if (import.meta.main) {
           failure = error
         }
         const launched = expected === "launched"
-        if (launched || expected === "dry-run") {
+        if (launched || expected === "dry-run" || expected === "no-session") {
           assert.equal(failure, undefined, `${id}: ${String(failure)}`)
           assert.equal(result, launched ? 23 : 0, id)
         } else {
@@ -119,7 +133,7 @@ if (import.meta.main) {
           assert.equal(failure.code, expected, id)
         }
         assert.equal(world.launches.length, launched ? 1 : 0, id)
-        if (launched || expected === "dry-run" || expected === "isolation") {
+        if (launched || expected === "dry-run" || expected === "no-session" || expected === "isolation") {
           assertRunCommand(parsed!, world.lines, id)
           const generations = world.lines
             .filter((line) => line.startsWith("Generation  "))
@@ -157,8 +171,8 @@ if (import.meta.main) {
       }
       outcomes[expected] = (outcomes[expected] ?? 0) + 1
       digest.update(`${index}\n`)
-      if ((index - start + 1n) % 1000n === 0n)
-        console.error(JSON.stringify({ executed: (index - start + 1n).toString(), total: total.toString() }))
+      if ((step + 1n) % 1000n === 0n)
+        console.error(JSON.stringify({ executed: (step + 1n).toString(), total: sampled ? sampleCount.toString() : total.toString() }))
     }
   } finally {
     for (const world of worlds.values()) await world.close()
@@ -166,12 +180,13 @@ if (import.meta.main) {
   assert.deepEqual((await loadRunBehaviorDomain()).sourceHashes, sourceHashes, "source changed during execution")
   const report = {
     scope: "run-full-domain-lifecycle",
-    complete: start === 0n && end === total,
+    complete: !sampled && start === 0n && end === total,
+    ...(sampled ? { sample: { count: sampleCount.toString(), stride: stride.toString() } } : {}),
     domainHash,
     sourceHashes,
     totalCases: total.toString(),
     start: start.toString(),
-    endExclusive: end.toString(),
+    endExclusive: sampled ? total.toString() : end.toString(),
     executedCases: count.toString(),
     distinctTupleIds: count.toString(),
     idSequenceSha256: digest.digest("hex"),

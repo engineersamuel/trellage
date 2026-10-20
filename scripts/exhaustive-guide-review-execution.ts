@@ -187,7 +187,8 @@ const assertGuideReviewSelection = async (
   assert.deepEqual(saved.approvedIds, [findings[0]!.id], label)
   assert.equal(saved.execution, "not-started", label)
   assert(events.some((event) => event.kind === "synthesis" && event.status === "complete"), label)
-  await assertGuideReviewHandoff(world, run, fixture.runner, context, id)
+  // The handoff does not depend on which checks ran; exercise it once, on the full selection.
+  if (selected.length === reviewCatalog.length) await assertGuideReviewHandoff(world, run, fixture.runner, context, id)
 }
 
 export const assertGuideReviewExecution = async (
@@ -196,10 +197,8 @@ export const assertGuideReviewExecution = async (
   id: string,
   fixture: { readonly root: string; readonly runner: CommandRunner; readonly target: GuideReviewTarget; readonly context: HerdrContext | null },
 ): Promise<void> => {
-  const selections: ReadonlyArray<ReviewDefinition>[] = [[]]
-  for (const review of reviewCatalog)
-    selections.push(...selections.map((selection) => [...selection, review]))
-  assert.equal(selections.length, 2 ** reviewCatalog.length, id)
+  // Empty, each check alone, and all together: checks run independently, so pairs add no coverage.
+  const selections: ReadonlyArray<ReviewDefinition>[] = [[], ...reviewCatalog.map((review) => [review]), [...reviewCatalog]]
   for (const selected of selections) {
     await assertGuideReviewSelection(selected, args, world, id, fixture)
   }

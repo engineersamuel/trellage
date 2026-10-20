@@ -94,12 +94,12 @@ export const harnessBinaryAvailable = async (harness: string, environment: NodeJ
     return (await managedJcodeBinary(environment)) !== undefined
   if (harness === "prime") {
     const paths = primeRuntimePaths({ environment })
-    const cli = path.join(paths.npmPrefix, "lib/node_modules/prime-agent/dist/bundle/cli.js")
+    const cli = path.join(paths.rustPrefix, "bin", "prime-agent")
     const info = await lstat(cli).catch((error) => {
       if (error.code === "ENOENT") return undefined
       throw error
     })
-    return info?.isFile() === true && !!(await executableOnPath(environment.TRELLAGE_NODE_BIN ?? "node", environment))
+    return info?.isFile() === true
   }
   return !!(await executableOnPath(
     resolveNativeBinary(environment, `TRELLAGE_${harness.toUpperCase()}_BIN`, name),

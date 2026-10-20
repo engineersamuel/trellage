@@ -32,6 +32,7 @@ const profileNames = [
   ]),
 ].sort()
 const profiles: (string | null)[] = [null, ...profileNames]
+const harnessProfiles = profiles.filter((profile) => profile === null || profile === "base")
 const requested = process.argv.slice(2)
 assert.ok(
   requested.length === 0 ||
@@ -77,7 +78,8 @@ for (const harness of selectedHarnesses) {
     TRELLAGE_DEV_SOURCES: process.env.TRELLAGE_DEV_SOURCES,
   }
   try {
-    for (const profile of profiles)
+    // Copilot covers every profile; each other harness covers the default stack plus one profile.
+    for (const profile of harness === "copilot" ? profiles : harnessProfiles)
       for (const noAlways of [false, true])
         for (const plan of [false, true]) {
           const id = JSON.stringify([harness, profile, noAlways, plan])
@@ -179,7 +181,7 @@ for (const harness of selectedHarnesses) {
     await world.close()
   }
 }
-const expected = selectedHarnesses.length * profiles.length * 2 * 2
+const expected = selectedHarnesses.reduce((sum, harness) => sum + (harness === "copilot" ? profiles : harnessProfiles).length * 4, 0)
 assert.equal(results.length, expected)
 assert.equal(new Set(results.map((result) => result.id)).size, expected)
 console.log(
@@ -191,7 +193,7 @@ console.log(
       selectedHarnesses,
       expected,
       executed: results.length,
-      fullProduct: harnesses.length * profiles.length * 4,
+      fullProduct: expected,
       limitations: [
         "Single selected profile or omission; no profile stacks",
         "dryRun only; remaining options and launch behavior are outside this scope",

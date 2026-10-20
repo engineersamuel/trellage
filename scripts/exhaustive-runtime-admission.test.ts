@@ -47,18 +47,18 @@ test("runtime mocks reject model commands, missing guards, and incorrect lifecyc
     for (const action of ["setup", "repair"]) {
       expect(spawnSync(fixture.binaries.prime!, [action, "default"], { env: environment }).status).toBe(0)
     }
-    const version = spawnSync(process.execPath, [fixture.cli, "--version"], { env: environment, encoding: "utf8" })
+    const version = spawnSync(fixture.cli, ["--version"], { env: environment, encoding: "utf8" })
     expect(version.status).toBe(0)
-    expect(version.stdout.trim()).toBe("0.7.0")
+    expect(version.stderr.trim()).toBe("0.10.0")
     for (const key of ["HOME", "TRELLAGE_TEST_OFFLINE"]) {
       const missing: NodeJS.ProcessEnv = { ...environment }
       delete missing[key]
-      const result = spawnSync(process.execPath, [fixture.cli, "--version"], { env: missing, encoding: "utf8" })
+      const result = spawnSync(fixture.cli, ["--version"], { env: missing, encoding: "utf8" })
       expect(result.status).toBe(97)
       expect(result.stdout).toBe("")
     }
     for (const args of [[], ["exec", "fixture prompt"], ["--version", "extra"]]) {
-      const result = spawnSync(process.execPath, [fixture.cli, ...args], { env: environment, encoding: "utf8" })
+      const result = spawnSync(fixture.cli, args, { env: environment, encoding: "utf8" })
       expect(result.status).toBe(97)
       expect(result.stdout).toBe("")
     }
@@ -98,8 +98,8 @@ for (const harness of ["omp", "prime"]) {
           expect(launch.env.GH_TOKEN).toBeNull()
           await expect(access(fixture.credential)).rejects.toMatchObject({ code: "ENOENT" })
         } else {
-          expect(launch.command).toBe(process.execPath)
-          expect(launch.args[0]).toBe(fixture.cli)
+          expect(launch.command).toBe(fixture.cli)
+          expect(launch.args[0]).toBe("--provider")
           expect(launch.env.PRIME_AGENT_KERNEL_PYTHON).toBe(fixture.prime.kernelPython)
           expect(launch.env.COPILOT_GITHUB_TOKEN).toBeNull()
           const stamp = JSON.parse(await readFile(fixture.prime.daemonEnvStamp, "utf8"))

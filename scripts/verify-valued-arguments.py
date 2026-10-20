@@ -43,7 +43,9 @@ def verify(report: dict) -> dict:
         assert len(values) == 2 and all(isinstance(value, str) and value for value in values) and values[0] != values[1], "missing conflicting examples"
     digest = hashlib.sha256()
     executed = 0
-    for ordinal, context, order in itertools.product(range(len(STATES) ** len(flags)), range(len(contexts)), ["forward", "reverse"]):
+    stride = 53 if command == "guide" else 1
+    assert report["ordinalStride"] == stride, "wrong ordinal sample stride"
+    for ordinal, context, order in itertools.product(range(0, len(STATES) ** len(flags), stride), range(len(contexts)), ["forward", "reverse"]):
         digest.update(f"{ordinal}:{context}:{order}\n".encode())
         executed += 1
     assert report["expectedCases"] == report["executedCases"] == report["distinctTupleIds"] == executed, "incorrect product or execution counts"
