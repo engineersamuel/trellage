@@ -98,6 +98,26 @@ describe("guide match service", () => {
     expect(calls.legacy).toHaveLength(0)
   })
 
+  it("keeps config compositions out of the Jev input unless the intent names one", async () => {
+    const withConfigs = (): CompositionCatalog => compositionFixtureCatalog([
+      ...catalog().entries,
+      ...Array.from({ length: 8 }, (_, index) => compositionFixtureEntry({
+        harness: "copilot", profile: `config-${index}`, kind: "config", guide: guide(), commandPath: "/bin/trx",
+      })),
+    ])
+    const calls = { legacy: [] as unknown[], matcher: [] as unknown[] }
+    await runGuideMatch(
+      provider(calls),
+      withConfigs(),
+      { intent: "Use native:copilot/profile-0+config-3 to implement the change", model: "copilot", effort: GuideEffort.Medium },
+      undefined,
+      { matcher: matcher(calls) },
+    )
+    const refs = (calls.matcher[0] as { entries: { ref: string }[] }).entries.map(({ ref }) => ref)
+    expect(refs.filter((ref) => ref.includes("+"))).toEqual(["native:copilot/profile-0+config-3"])
+    expect(refs).toHaveLength(16 + 8 + 1)
+  })
+
   it("uses the exact legacy provider input after a matcher failure", async () => {
     const calls = { legacy: [] as unknown[], matcher: [] as unknown[], fail: true }
     const request = {

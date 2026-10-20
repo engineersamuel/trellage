@@ -6,6 +6,7 @@ import { openControllingTerminalInput } from "./controlling-terminal-input.ts"
 import React from "react"
 import { render } from "ink"
 import { createSelectionHistory, main as runMain, resolveNativeRunPaths, scopeKeysFor } from "@trellage/runtime/native-run"
+import { herdrPaneCommand } from "./guide-launch.ts"
 import { loadRunCatalog } from "./run-catalog.ts"
 import { RunSelector } from "./run-select-ui.tsx"
 import { ThemeProvider } from "./termcn/theme-provider.tsx"
@@ -79,7 +80,7 @@ const launchInHerdr = async (
     "could not create a Herdr pane",
   )
   const pane = herdrPaneId(split)
-  const child = Bun.spawn(["herdr", "pane", "run", pane, buildHerdrCommand(routerCommandPath, choice, argv, process.env)], {
+  const child = Bun.spawn(["herdr", "pane", "run", pane, herdrPaneCommand(buildHerdrCommand(routerCommandPath, choice, argv, process.env))], {
     stdout: "inherit",
     stderr: "inherit",
   })

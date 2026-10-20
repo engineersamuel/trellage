@@ -4,6 +4,7 @@ import { createConnection } from "node:net"
 import path from "node:path"
 import {
   buildGuideLaunchCommand,
+  herdrPaneCommand,
   renderCommandPreview,
   waitForHerdrAgentIdle,
   type LaunchInHerdrPaneOptions,
@@ -113,7 +114,7 @@ export const launchPrivateContinuation = async (
   if (options.promptDelivery !== "agent") throw new Error("Continuation prompts require private socket delivery.")
   const commandPreview = `env TRELLAGE_AUTOMATION=1 ${renderCommandPreview(options.command)}`
   options.onPhase?.("starting")
-  await runner.run("herdr", ["pane", "run", options.paneId, commandPreview], { cwd: options.cwd })
+  await runner.run("herdr", ["pane", "run", options.paneId, herdrPaneCommand(commandPreview)], { cwd: options.cwd })
   options.onPhase?.("waiting")
   await waitForHerdrAgentIdle(runner, options.paneId, options)
   options.onPhase?.("prompting")

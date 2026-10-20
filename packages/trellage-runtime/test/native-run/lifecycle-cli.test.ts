@@ -71,6 +71,35 @@ printf '%s\\n' "$@" > "$HOME/unexpected-mutation"
   expect(await Bun.file(path.join(home, "unexpected-mutation")).exists()).toBe(false);
 });
 
+test("workflow-check reports the schemaVersion 2 composition identity", async () => {
+  const home = await tempRoot("lifecycle-workflow-check");
+  const root = path.join(home, ".local/share/trellage/cpx");
+  await mkdir(path.join(root, "bin"), { recursive: true });
+  await writeFile(path.join(root, ".managed-by-trellage-profiles"), "trellage-profiles-v1\n");
+  await writeFile(
+    path.join(root, "bin/cpx"),
+    `#!/bin/sh
+printf '%s\\n' '{"schemaVersion":1,"launcher":"cpx","profile":"hve","mode":"interactive","agent":"hve-core:dt-coach","requiredSkills":["dt-methods"],"manifestSha256":"${"a".repeat(64)}","harnessVersion":"1.0.100"}'
+`,
+    { mode: 0o755 },
+  );
+  const { stdout } = await exec(
+    process.execPath,
+    [lifecycle, "workflow-check", "copilot", "hve", "--agent", "hve-core:dt-coach", "--require-skill", "dt-methods"],
+    { env: { HOME: home, PATH: "/usr/bin:/bin" } },
+  );
+  expect(JSON.parse(stdout)).toEqual({
+    schemaVersion: 2,
+    harness: "copilot",
+    profiles: ["hve"],
+    mode: "interactive",
+    agent: "hve-core:dt-coach",
+    requiredSkills: ["dt-methods"],
+    manifestSha256: "a".repeat(64),
+    harnessVersion: "1.0.100",
+  });
+});
+
 test("retired Pi and Codex lifecycle maintenance points to inventory", async () => {
   const env = { HOME: await tempRoot("external-lifecycle"), PATH: "/usr/bin:/bin" };
   for (const [harness, profile] of [["pi", "default"], ["codex", "pstack"]] as const) {

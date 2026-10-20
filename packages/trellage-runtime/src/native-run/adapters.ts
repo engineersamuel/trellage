@@ -1636,16 +1636,31 @@ const copilotLaunch = ({
   const oneShot = forwardedArgs.some(
     (argument) => argument === "-p" || argument === "--prompt" || argument.startsWith("--prompt="),
   )
+  // A guide customer workflow (`--interactive`) asks the human questions, so it keeps ask_user
+  // and skips autopilot. The guide already checked its `--require-skill` values with workflow-check.
+  const humanInTheLoop = forwardedArgs.includes("--interactive")
+  const harnessArgs = humanInTheLoop
+    ? forwardedArgs.filter(
+        (argument, index) =>
+          argument !== "--interactive" &&
+          argument !== "--require-skill" &&
+          forwardedArgs[index - 1] !== "--require-skill",
+      )
+    : forwardedArgs
   return {
     command: binary(environment, "TRELLAGE_COPILOT_BIN", "copilot"),
     args: [
-      ...(planning ? ["--plan"] : [...(oneShot ? [] : ["--autopilot"]), "--allow-all", "--no-ask-user"]),
+      ...(planning
+        ? ["--plan"]
+        : humanInTheLoop
+          ? ["--allow-all"]
+          : [...(oneShot ? [] : ["--autopilot"]), "--allow-all", "--no-ask-user"]),
       "--model",
       model ?? "gpt-6-astra",
       "--effort",
       effort ?? "low",
       ...resumeArgs,
-      ...forwardedArgs.filter((argument) => argument !== "--plan"),
+      ...harnessArgs.filter((argument) => argument !== "--plan"),
     ],
     env: { COPILOT_HOME: layout.generationPath },
   }
