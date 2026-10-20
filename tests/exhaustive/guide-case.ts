@@ -120,7 +120,7 @@ const verifyRitualCase = async (world: GuideWorld, entry: GuideCase, parsed: Par
       parsed.ritualCopy ? result.audit.clipboard : result.output,
       ritual.prompt + (parsed.ritualPrint ? "\n" : ""),
     )
-  else assert.ok(result.output.includes(`No ritual named ${parsed.ritualId}.`), result.output)
+  else assert.ok(result.output.includes(`No prompt named ${parsed.ritualId}.`), result.output)
   return ritual ? "ritual-output" : "unknown-ritual"
 }
 
@@ -237,7 +237,7 @@ export async function createGuideCaseVerifier(world: GuideWorld) {
   const verify = async (entry: GuideCase, ordinal: bigint): Promise<string> => {
     const preview = hasOption(entry, "--preview")
     const forks = hasOption(entry, "--forks")
-    const earlyMode = ["--ritual", "--review", "--next-steps", "--engagement"].some((key) => hasOption(entry, key))
+    const earlyMode = ["--prompts", "--review", "--next-steps", "--engagement"].some((key) => hasOption(entry, key))
     if ((preview || forks) && !earlyMode) return verifyPreviewCase(world, entry, ordinal, preview)
     const parsed = parseGuideCase(entry)
     if (parsed === "argument-rejected") return parsed

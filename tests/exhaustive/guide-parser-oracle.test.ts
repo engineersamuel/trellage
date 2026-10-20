@@ -23,7 +23,7 @@ test("guide mode truth table agrees with real parsing for all 1024 boolean combi
         "--engagement": "engagement",
         "--review": "review",
         "--optimize": "optimize",
-        "--ritual": "ritual",
+        "--prompts": "ritual",
         "--print": "ritualPrint",
         "--copy": "ritualCopy",
       })) {

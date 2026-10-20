@@ -232,7 +232,9 @@ const writeRitualPrompt = (prompt: string): void => {
 }
 
 const runRitualOutput = async (args: ReturnType<typeof parseGuideHeadlessArgv>): Promise<void> => {
-  const ritual = requireRitual(await loadRitualCatalog({ env: process.env }), args.ritualId ?? "")
+  const catalog = await loadRitualCatalog({ env: process.env })
+  for (const entry of catalog.problems) process.stderr.write(`trellage-launcher: ${entry.id}: ${entry.message}\n`)
+  const ritual = requireRitual(catalog, args.ritualId ?? "")
   if (args.ritualPrint) {
     writeRitualPrompt(ritual.prompt)
     return

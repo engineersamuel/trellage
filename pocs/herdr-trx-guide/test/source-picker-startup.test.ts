@@ -95,7 +95,7 @@ test("does not enqueue an engagement action as captured conversation text", asyn
   assert.equal(await ui.run, 0)
 })
 
-test("opens the ritual list with r while capture sources are still loading", async () => {
+test("opens the prompt library with r while capture sources are still loading", async () => {
   const opened = []
   const requests = []
   const context = { workspaceId: "w1", tabId: "w1:t1", paneId: "w1:p1", cwd: "/customer/repository" }
@@ -107,7 +107,7 @@ test("opens the ritual list with r while capture sources are still loading", asy
       return { type: "popup_closed" }
     },
   })
-  assert.match(ui.screen(), /Rituals/u)
+  assert.match(ui.screen(), /Prompt library/u)
   assert.match(ui.screen(), /r rituals/u)
   ui.input.emit("keypress", "r", { name: "r" })
   assert.equal(await ui.run, 0)
@@ -148,7 +148,7 @@ test("shows the progress-page prompt when the clipboard copy fails", async () =>
   assert.equal(await ui.run, 0)
 })
 
-test("does not enqueue the ritual list or the progress page", async () => {
+test("does not enqueue the prompt library or the progress page", async () => {
   const ui = setup()
   ui.input.emit("keypress", "k", { name: "k" })
   ui.input.emit("keypress", "a", { name: "a" })

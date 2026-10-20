@@ -1,14 +1,15 @@
 import { lstat, readdir, readFile } from "node:fs/promises"
 import path from "node:path"
+import { readTrellageConfigDocument } from "@trellage/runtime/native-config"
 
 import { userEnvironmentDirectory } from "./jev-decisions.ts"
-import { GuideValidationError, text } from "./guide-text.ts"
+import { exactKeys, GuideValidationError, record, text } from "./guide-text.ts"
 
-/** Lowercase kebab-case ritual id. The user file name is `<id>.md`. */
+/** Lowercase kebab-case prompt id. The user file name is `<id>.md`. */
 export const ritualIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
 
 export const ritualLimits = {
-  files: 64,
+  entries: 64,
   fileBytes: 65_536,
   id: 64,
   title: 80,
@@ -56,6 +57,13 @@ export const shippedRituals: ReadonlyArray<Ritual> = [
     prompt: progressPagePrompt,
     source: "shipped",
   },
+  {
+    id: "app-performance",
+    title: "App performance",
+    when: "Slow startup, screens, content loading, or scrolling",
+    prompt: "Your job is to make this app faster. Improve the startup time, how fast each screen opens, how fast its content loads, and the scrolling, so everything feels lighter and older content loads faster. Find where the real performance gap is, apply the fixes, and benchmark before and after each one to see if it actually works or not.",
+    source: "shipped",
+  },
 ]
 
 export const ritualDirectory = (env: NodeJS.ProcessEnv): string | undefined => {
@@ -68,11 +76,26 @@ const problem = (id: string, message: string): RitualProblem => ({ id, message }
 const validationMessage = (cause: unknown): string =>
   cause instanceof GuideValidationError ? cause.message : cause instanceof Error ? cause.message : String(cause)
 
-/** Parse one ritual file. The id comes from the file name, not from the text. */
-export const parseRitualFile = (id: string, source: string): Pick<Ritual, "title" | "when" | "prompt"> => {
+const validateRitualId = (id: string): void => {
   if (!ritualIdPattern.test(id) || id.length > ritualLimits.id) {
     throw new GuideValidationError("id", "must be lowercase kebab-case")
   }
+}
+
+const parseRitual = (id: string, value: unknown): Pick<Ritual, "title" | "when" | "prompt"> => {
+  validateRitualId(id)
+  const fields = record(value, id)
+  exactKeys(fields, id, ["title", "when", "prompt"])
+  return {
+    title: text(fields.title, `${id} title`, ritualLimits.title),
+    when: text(fields.when, `${id} when`, ritualLimits.when),
+    prompt: text(fields.prompt, `${id} prompt`, ritualLimits.prompt, { multiline: true, preserve: true }),
+  }
+}
+
+/** Parse one ritual file. The id comes from the file name, not from the text. */
+export const parseRitualFile = (id: string, source: string): Pick<Ritual, "title" | "when" | "prompt"> => {
+  validateRitualId(id)
   const normalized = source.replace(/^\uFEFF/u, "")
   const lines = normalized.split(/\r?\n/u)
   const titleLine = lines[0]
@@ -84,11 +107,44 @@ export const parseRitualFile = (id: string, source: string): Pick<Ritual, "title
     throw new GuideValidationError(id, "line 2 must be 'when: ...'")
   }
   if (lines[2] !== "") throw new GuideValidationError(id, "line 3 must be blank")
-  return {
-    title: text(titleLine.slice("title: ".length), `${id} title`, ritualLimits.title),
-    when: text(whenLine.slice("when: ".length), `${id} when`, ritualLimits.when),
-    prompt: text(lines.slice(3).join("\n"), `${id} prompt`, ritualLimits.prompt, { multiline: true, preserve: true }),
+  return parseRitual(id, {
+    title: titleLine.slice("title: ".length),
+    when: whenLine.slice("when: ".length),
+    prompt: lines.slice(3).join("\n"),
+  })
+}
+
+const readConfigRituals = async (env: NodeJS.ProcessEnv): Promise<RitualCatalog> => {
+  let value: unknown
+  try {
+    const loaded = await readTrellageConfigDocument({
+      environment: env,
+      ...(env.HOME === undefined ? {} : { home: env.HOME }),
+    })
+    value = loaded.document.prompts
+  } catch (cause) {
+    return { rituals: [], problems: [problem("config.toml", validationMessage(cause))] }
   }
+  if (value === undefined) return { rituals: [], problems: [] }
+  let entries: Record<string, unknown>
+  try {
+    entries = record(value, "prompts")
+    if (Object.keys(entries).length > ritualLimits.entries) {
+      throw new GuideValidationError("prompts", `Use at most ${ritualLimits.entries} configured prompts.`)
+    }
+  } catch (cause) {
+    return { rituals: [], problems: [problem("prompts", validationMessage(cause))] }
+  }
+  const rituals: Ritual[] = []
+  const problems: RitualProblem[] = []
+  for (const [id, entry] of Object.entries(entries)) {
+    try {
+      rituals.push({ id, ...parseRitual(id, entry), source: "user" })
+    } catch (cause) {
+      problems.push(problem(id, validationMessage(cause)))
+    }
+  }
+  return { rituals, problems }
 }
 
 const fileNamePattern = /^([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/u
@@ -134,8 +190,8 @@ const readUserRituals = async (
   const names = await directoryNames(directory)
   if (!Array.isArray(names)) return { rituals: [], problems: [names] }
   const markdown = names.filter((name) => name.endsWith(".md")).sort()
-  if (markdown.length > ritualLimits.files) {
-    return { rituals: [], problems: [problem("rituals", `Use at most ${ritualLimits.files} ritual files.`)] }
+  if (markdown.length > ritualLimits.entries) {
+    return { rituals: [], problems: [problem("rituals", `Use at most ${ritualLimits.entries} ritual files.`)] }
   }
   const rituals: Ritual[] = []
   const problems: RitualProblem[] = []
@@ -147,21 +203,23 @@ const readUserRituals = async (
   return { rituals, problems }
 }
 
-/** Shipped rituals stay available when a user file is missing or invalid. A valid user file replaces the same id. */
+/** Config entries override legacy Markdown files, which override shipped defaults. */
 export const loadRitualCatalog = async (
   options: { readonly directory?: string; readonly env?: NodeJS.ProcessEnv } = {},
 ): Promise<RitualCatalog> => {
-  const directory = options.directory ?? ritualDirectory(options.env ?? process.env)
-  const user = directory === undefined ? { rituals: [], problems: [] } : await readUserRituals(directory)
+  const env = options.env ?? process.env
+  const directory = options.directory ?? ritualDirectory(env)
+  const [user, configured] = await Promise.all([
+    directory === undefined ? { rituals: [], problems: [] } : readUserRituals(directory),
+    readConfigRituals(env),
+  ])
   const byId = new Map(shippedRituals.map((ritual) => [ritual.id, ritual]))
-  const extras: Ritual[] = []
-  for (const ritual of user.rituals) {
-    if (byId.has(ritual.id)) byId.set(ritual.id, ritual)
-    else extras.push(ritual)
+  for (const ritual of [...user.rituals, ...configured.rituals]) {
+    byId.set(ritual.id, ritual)
   }
   return {
-    rituals: [...byId.values(), ...extras],
-    problems: user.problems,
+    rituals: [...byId.values()],
+    problems: [...user.problems, ...configured.problems],
   }
 }
 
@@ -169,7 +227,7 @@ export const requireRitual = (catalog: RitualCatalog, id: string): Ritual => {
   const found = catalog.rituals.find((ritual) => ritual.id === id)
   if (found !== undefined) return found
   const failed = catalog.problems.find((entry) => entry.id === id)
-  throw new Error(failed === undefined ? `No ritual named ${id}.` : `No ritual named ${id}. ${failed.message}`)
+  throw new Error(failed === undefined ? `No prompt named ${id}.` : `No prompt named ${id}. ${failed.message}`)
 }
 
 export const filterRituals = (rituals: ReadonlyArray<Ritual>, query: string): ReadonlyArray<Ritual> => {

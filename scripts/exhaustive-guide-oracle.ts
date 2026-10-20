@@ -39,7 +39,7 @@ export const expectedGuide = (selected: Selection): Expected => {
   const engagement = present("--engagement")
   const review = present("--review")
   const optimize = present("--optimize")
-  const ritual = present("--ritual")
+  const ritual = present("--prompts")
   const print = present("--print")
   const copy = present("--copy")
   const positionals = selected.get("positionals")!.argv

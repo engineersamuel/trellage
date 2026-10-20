@@ -184,7 +184,7 @@ export const exhaustiveDomains = async (root: string) => {
       "--engagement",
       "--review",
       "--optimize",
-      "--ritual",
+      "--prompts",
       "--print",
       "--copy",
       "--preview",

@@ -5,7 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { Effect } from "effect"
-import { loadTrellageConfig, parseTrellageConfig } from "@trellage/runtime/native-config"
+import { loadTrellageConfig, loadTrellageConfigDocument, parseTrellageConfig } from "@trellage/runtime/native-config"
 
 const execFilePromise = promisify(execFile)
 const roots: string[] = []
@@ -196,6 +196,21 @@ test("leaves other top-level configuration sections available to their own consu
   const result = await Effect.runPromise(parseTrellageConfig('[other]\nsetting = "preserved elsewhere"\n'))
   expect(result.native).toEqual({ sources: {}, instructions: {}, profiles: {} })
   expect(result.environment.enabled).toBe(true)
+})
+
+test("reads the config document without validating sections owned by other consumers", async () => {
+  const home = await fixture()
+  const configPath = path.join(home, "config.toml")
+  const source = '[native]\nunrecognized = true\n[prompts.custom]\nprompt = "Prompt"\n'
+  await writeFile(configPath, source, { mode: 0o600 })
+  const location = { home, environment: { TRELLAGE_CONFIG: configPath } }
+  const loaded = await Effect.runPromise(loadTrellageConfigDocument(location))
+  expect(loaded).toEqual({
+    path: configPath,
+    source,
+    document: { native: { unrecognized: true }, prompts: { custom: { prompt: "Prompt" } } },
+  })
+  await expect(Effect.runPromise(loadTrellageConfig(location))).rejects.toThrow(/invalid \[native\]/)
 })
 
 test("normalizes repository and commit identities without changing tag spelling", async () => {

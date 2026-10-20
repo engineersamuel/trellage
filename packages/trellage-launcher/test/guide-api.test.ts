@@ -663,21 +663,21 @@ describe("parseGuideHeadlessArgv", () => {
     expect(parseGuideHeadlessArgv(["--intent", intent]).intent).toBe(intent)
   })
 
-  it("opens the ritual list without an intent or a clipboard write", () => {
-    expect(guideHeadlessHelpText).toContain("trx guide --ritual [id] [--print | --copy]")
-    expect(parseGuideHeadlessArgv(["--ritual"])).toMatchObject({ ritual: true, intent: undefined })
-    expect(parseGuideHeadlessArgv(["--ritual", "progress-page"])).toMatchObject({
+  it("opens the prompt library without an intent or a clipboard write", () => {
+    expect(guideHeadlessHelpText).toContain("trx guide --prompts [id] [--print | --copy]")
+    expect(parseGuideHeadlessArgv(["--prompts"])).toMatchObject({ ritual: true, intent: undefined })
+    expect(parseGuideHeadlessArgv(["--prompts", "progress-page"])).toMatchObject({
       ritual: true,
       ritualId: "progress-page",
     })
-    expect(parseGuideHeadlessArgv(["--ritual", "progress-page", "--print"])).toMatchObject({ ritualPrint: true })
-    expect(parseGuideHeadlessArgv(["--ritual", "progress-page", "--copy"])).toMatchObject({ ritualCopy: true })
-    expect(() => parseGuideHeadlessArgv(["--print"])).toThrow(/require --ritual/u)
-    expect(() => parseGuideHeadlessArgv(["--ritual", "--copy"])).toThrow(/require a ritual id/u)
-    expect(() => parseGuideHeadlessArgv(["--ritual", "progress-page", "--print", "--copy"])).toThrow(/not both/u)
-    expect(() => parseGuideHeadlessArgv(["--ritual", "Not Kebab"])).toThrow(/kebab-case/u)
+    expect(parseGuideHeadlessArgv(["--prompts", "progress-page", "--print"])).toMatchObject({ ritualPrint: true })
+    expect(parseGuideHeadlessArgv(["--prompts", "progress-page", "--copy"])).toMatchObject({ ritualCopy: true })
+    expect(() => parseGuideHeadlessArgv(["--print"])).toThrow(/require --prompts/u)
+    expect(() => parseGuideHeadlessArgv(["--prompts", "--copy"])).toThrow(/require a prompt id/u)
+    expect(() => parseGuideHeadlessArgv(["--prompts", "progress-page", "--print", "--copy"])).toThrow(/not both/u)
+    expect(() => parseGuideHeadlessArgv(["--prompts", "Not Kebab"])).toThrow(/kebab-case/u)
     for (const flag of ["--intent", "--json", "--engagement", "--optimize", "--review"]) {
-      expect(() => parseGuideHeadlessArgv(["--ritual", ...(flag === "--intent" ? [flag, "Review this"] : [flag])])).toThrow(
+      expect(() => parseGuideHeadlessArgv(["--prompts", ...(flag === "--intent" ? [flag, "Review this"] : [flag])])).toThrow(
         GuideArgsError,
       )
     }

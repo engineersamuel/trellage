@@ -30,7 +30,7 @@ describe("shared review catalog", () => {
       effort: "high",
     })
     expect(parseGuideHeadlessArgv(["--review", "--intent-stdin"])).toMatchObject({ review: true, intentStdin: true })
-    for (const flag of ["--json", "--engagement", "--next-steps", "--optimize", "--ritual"])
+    for (const flag of ["--json", "--engagement", "--next-steps", "--optimize", "--prompts"])
       expect(() => parseGuideHeadlessArgv(["--review", flag])).toThrow(/review|engagement|optimize/u)
   })
   it("offers only the three skill checks", () => {

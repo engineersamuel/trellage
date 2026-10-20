@@ -75,11 +75,11 @@ else process.stdout.write(readFileSync(process.env.FIXTURE_CLIPBOARD_FILE!))
             steps: [
               {
                 wait: [
-                  "Rituals",
+                  "Prompt library",
                   selected.title,
                   "Enter copy",
                   ...(args.ritualId !== undefined && requested === undefined
-                    ? [`No ritual named ${args.ritualId}.`]
+                    ? [`No prompt named ${args.ritualId}.`]
                     : []),
                 ],
                 keys: "v",
@@ -106,7 +106,7 @@ else process.stdout.write(readFileSync(process.env.FIXTURE_CLIPBOARD_FILE!))
     if (ritual === undefined) {
       assert.equal(result.status, 2, id)
       assert.equal(result.stdout, "", id)
-      assert.equal(result.stderr, `trellage-launcher: No ritual named ${args.ritualId}.\n`, id)
+      assert.equal(result.stderr, `trellage-launcher: No prompt named ${args.ritualId}.\n`, id)
       assert.equal(recorded, "", id)
       return "unknown-ritual" as const
     }
