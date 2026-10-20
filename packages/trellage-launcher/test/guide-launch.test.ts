@@ -16,6 +16,7 @@ import {
   GuideLaunchError,
   handoffToCurrentHerdrWorkspace,
   handoffToNewHerdrTab,
+  herdrPaneCommand,
   inspectGitWorktreeIntent,
   isHerdrAvailable,
   launchInHerdrPaneAndPrompt,
@@ -415,6 +416,24 @@ describe("guide launch command building", () => {
         agent: "--unsafe",
       }),
     ).toThrow(/simple agent identifier/)
+  })
+})
+
+describe("Herdr typed commands", () => {
+  it("types a short command as is", () => {
+    expect(herdrPaneCommand("env TRELLAGE_AUTOMATION=1 trx run claude council -- 'hi'")).toBe(
+      "env TRELLAGE_AUTOMATION=1 trx run claude council -- 'hi'",
+    )
+  })
+
+  it("runs a command with a line over the terminal input limit from a self-deleting script", () => {
+    const prompt = `Decide: ${"evidence ".repeat(150)}it's\n\nRun every hat.`
+    const preview = renderCommandPreview({ executable: "printf", args: ["%s", prompt] })
+    const typed = herdrPaneCommand(preview)
+    expect(typed).toMatch(/^sh \S+launch\.sh$/u)
+    const script = typed.slice(3)
+    expect(execFileSync("sh", [script], { encoding: "utf8" })).toBe(prompt)
+    expect(() => execFileSync("test", ["-e", path.dirname(script)])).toThrow()
   })
 })
 

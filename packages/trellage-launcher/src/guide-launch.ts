@@ -1,7 +1,8 @@
 import path from "node:path"
 import { createHash } from "node:crypto"
 import { execFileSync, spawn } from "node:child_process"
-import { closeSync, constants, openSync } from "node:fs"
+import { closeSync, constants, mkdtempSync, openSync, writeFileSync } from "node:fs"
+import os from "node:os"
 import {
   type ProfileGuideV1,
   isLaunchAgentIdentifier,
@@ -1349,6 +1350,23 @@ export const waitForHerdrAgentIdle = async (
   })
 }
 
+/** Bytes a line may have when typed into a pane whose shell still reads in canonical mode (macOS MAX_CANON is 1024). */
+const herdrTypedLineMaximum = 900
+
+/**
+ * `herdr pane run` types the command into the pane. Before the shell switches the
+ * terminal to raw mode, the kernel keeps only the first MAX_CANON bytes of a line and
+ * drops the rest, newline included, so the command never runs. A long command runs
+ * from a private one-time script instead.
+ */
+export const herdrPaneCommand = (commandPreview: string): string => {
+  if (commandPreview.split("\n").every((line) => Buffer.byteLength(line) <= herdrTypedLineMaximum)) return commandPreview
+  const directory = mkdtempSync(path.join(os.tmpdir(), "trx-launch-"))
+  const script = path.join(directory, "launch.sh")
+  writeFileSync(script, `rm -rf ${posixShellEscape(directory)}\nexec ${commandPreview}\n`, { mode: 0o600 })
+  return `sh ${posixShellEscape(script)}`
+}
+
 export const launchInHerdrPane = async (
   runner: CommandRunner,
   options: Pick<LaunchInHerdrPaneOptions, "paneId" | "cwd" | "command" | "onPhase" | "beforeLaunch">,
@@ -1357,7 +1375,7 @@ export const launchInHerdrPane = async (
   const commandPreview = `env TRELLAGE_AUTOMATION=1 ${renderCommandPreview(options.command)}`
   options.onPhase?.("starting")
   try {
-    await runner.run("herdr", ["pane", "run", options.paneId, commandPreview], {
+    await runner.run("herdr", ["pane", "run", options.paneId, herdrPaneCommand(commandPreview)], {
       cwd: options.cwd,
     })
   } catch (error) {

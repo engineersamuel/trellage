@@ -216,7 +216,8 @@ const nativePublicProfile = (harness: string, runtimeProfile: string): string =>
   return translatePresetName(harness, runtime, runtimeProfile);
 };
 
-const emitJsonOutput = (harness: string, runtime: LifecycleRuntime, output: string): void => {
+const emitJsonOutput = (context: LifecycleExecutionContext, output: string): void => {
+  const { harness, runtime } = context;
   try {
     const value = JSON.parse(output) as JsonOutput;
     if (value.launcher === runtime.runtimeName) value.launcher = harness;
@@ -226,6 +227,12 @@ const emitJsonOutput = (harness: string, runtime: LifecycleRuntime, output: stri
         profile.name = nativePublicProfile(harness, profile.name);
     if (typeof value.profile === "string")
       value.profile = nativePublicProfile(harness, value.profile);
+    // The private runtime still reports schemaVersion 1 (launcher, profile); trx JSON is schemaVersion 2.
+    if (context.operation === "workflow-check" && typeof value.profile === "string") {
+      const { launcher: _launcher, profile, ...rest } = value;
+      console.log(JSON.stringify({ ...rest, schemaVersion: 2, harness, profiles: [profile] }));
+      return;
+    }
     console.log(JSON.stringify(value));
   } catch {
     process.stdout.write(output);
@@ -246,7 +253,7 @@ const emitCapturedOutput = (context: LifecycleExecutionContext, output: string):
     process.stdout.write(translated);
     return;
   }
-  if (context.json) emitJsonOutput(context.harness, context.runtime, output);
+  if (context.json) emitJsonOutput(context, output);
 };
 
 const calculateExitStatus = (

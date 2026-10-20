@@ -2240,6 +2240,17 @@ it("opens Decide on c and closes it on Esc without selecting a lens", async ({ g
   await guide.finish("\u0003", 130)
 }, 30_000)
 
+it("keeps digit keys inside Decide when fork tabs are open", async ({ guide }) => {
+  await guide.start(FixtureMode.Terminal)
+  await enterIntent(guide)
+  await selectProfile(guide, "planner", 0)
+  await guide.pressAndWait("`", "Profile recommendations", "1-9 jump")
+  await guide.pressAndWait("c", "DECIDE", "c 🧠 Council")
+  guide.press("1")
+  await guide.pressAndWait("c", "Prompt candidates", `Profile: ${fixtureProfile("council").ref}`)
+  await guide.finish("\u0003", 130)
+}, 30_000)
+
 it("replaces the candidate on an existing fork without adding a duplicate job", async ({ guide }) => {
   await guide.start(FixtureMode.Herdr)
   await enterIntent(guide)

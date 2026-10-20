@@ -882,13 +882,22 @@ const prepareMatchInputs = (catalog: CompositionCatalog, request: GuideMatchRequ
   const preferred = request.goal === undefined
     ? scoreGuideMatchEntries(completeEntries, request.intent).filter(({ explicitIdentity }) => explicitIdentity).map(({ entry }) => entry.ref)
     : goalCatalog?.explicitProfileRefs ?? []
+  // Every single profile plus the compositions the intent names in full: Jev
+  // rejects the whole single × config cross product as too large (max_tokens_exceeded).
+  const singleRefs = new Set(guideMatchCatalogEntries(catalog).map(({ ref }) => ref))
+  const namedInIntent = ({ ref, harness, profiles }: GuideMatchCatalogEntry): boolean =>
+    request.intent.includes(ref) || request.intent.includes(`${harness}/${profiles.join("+")}`)
+  const matcherEntries = goalCatalog === undefined
+    ? completeEntries.filter((entry) => singleRefs.has(entry.ref) || namedInIntent(entry))
+    : completeEntries
+  const matcherPreferred = preferred.filter((ref) => matcherEntries.some((entry) => entry.ref === ref))
   return {
     legacy,
     matcher: assertGuideMatchInput({
       intent: request.intent,
-      entries: completeEntries,
+      entries: matcherEntries,
       ...(request.goal === undefined ? {} : { goal: request.goal }),
-      ...(preferred.length === 0 ? {} : { preferredProfileRefs: preferred }),
+      ...(matcherPreferred.length === 0 ? {} : { preferredProfileRefs: matcherPreferred }),
     }),
     ...(goalCatalog === undefined ? {} : { goalFraming: goalCatalog.framing }),
   }

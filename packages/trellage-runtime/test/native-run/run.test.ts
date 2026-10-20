@@ -1283,6 +1283,29 @@ test("Copilot one-shot prompts skip autopilot so the reply is printed", async ()
   }
 })
 
+test("Copilot customer workflows keep ask_user and drop guide-only flags", async () => {
+  const { dependencies } = await world()
+  const run = await prepareRun(
+    {
+      ...base,
+      harness: "copilot",
+      profiles: ["superpowers"],
+      forwardedArgs: [
+        "--interactive", "--agent", "hve-core:experiment-designer",
+        "--require-skill", "experiment-design", "-i", "Test the assumption",
+      ],
+    },
+    dependencies(),
+  )
+  const args = run.launch.args
+  expect(args).not.toContain("--autopilot")
+  expect(args).not.toContain("--no-ask-user")
+  expect(args).not.toContain("--interactive")
+  expect(args).not.toContain("--require-skill")
+  expect(args).not.toContain("experiment-design")
+  expect(args.slice(-4)).toEqual(["--agent", "hve-core:experiment-designer", "-i", "Test the assumption"])
+})
+
 test("Claude applies opusplan defaults and real plan-mode arguments", async () => {
   const { dependencies } = await world()
   const normal = await prepareRun({ ...base, harness: "claude", profiles: ["default"] }, dependencies())

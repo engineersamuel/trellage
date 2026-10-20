@@ -6381,6 +6381,11 @@ const handleGuideInput = (context: GuideInputContext, input: string, key: Key): 
   }
   // The mounted goal or customer panel owns ordinary keys, including answer text.
   if (hasRunningAugmentPanel(context.state)) return
+  // The Decide chooser is modal: its digit keys (6 = Six Thinking Hats) must not switch fork tabs.
+  if (context.state.stage === GuideUiStage.Recommendations && context.state.decideChooserOpen) {
+    inputHandlerByStage[context.state.stage](context, input, key)
+    return
+  }
   if (acceptsGlobalKeys(context.state)) {
     if (input === "L" && context.state.queue.entries.length > 0) {
       launchQueue(context, input, key)
