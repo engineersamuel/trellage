@@ -867,12 +867,21 @@ to the existing profile prefilter and Copilot matching, and the guide shows a
 "Jev not in use" notice with the reason. Low fit probabilities
 remain valid results; cancellation stops matching.
 
-By default, fallback matching, Prompt Master optimization, and refinement use
-`gpt-5.6-sol` with medium reasoning; candidate drafting uses `gpt-5.6-luna` with
-medium reasoning. `--model` or `TRELLAGE_GUIDE_MODEL` selects the LLM for these
-phases; Jev remains first. `--effort` applies to those LLM routes. Neither
-override changes Jev or the Goal-me interview model. Intent input accepts
-up to 60,000 characters:
+By default, guide tasks select their model through copilot-proxy-rs:
+`POST http://127.0.0.1:8080/v1/models` with `{"input":"task prompt and instructions"}`.
+The proxy uses Jev and returns `recommended.id`; guide uses that model with
+`medium` reasoning. This covers fallback matching, drafting, Prompt Master,
+refinement, enrichment, Goal me, Optimize, reviews and their workers, and
+continuation/engagement assessments. Draft and optimize progress shows the
+selected models once routing completes. Large prompts use marked routing
+excerpts within the endpoint's 16 KiB limit; execution still receives the full input.
+
+The proxy needs its own `TYPESAFE_API_KEY` configuration. An unavailable or
+invalid recommendation stops the task with an error. `--model` or
+`TRELLAGE_GUIDE_MODEL` bypasses automatic model selection; `--effort` or
+`TRELLAGE_GUIDE_EFFORT` overrides medium. These overrides also apply to Goal me
+and reviews. Jev's direct profile-matching and decision gates remain independent.
+Intent input accepts up to 60,000 characters:
 
 ```bash
 trx guide --intent "Turn a technical outline into a LinkedIn post"
@@ -928,7 +937,7 @@ profile does not block review.
 Opening setup or history makes no model calls and downloads no skills.
 
 Choose the scope and files, select checks, then confirm model use. Consent shows
-the effective models, workers, sharing scope, and bounded follow-up work.
+the model overrides or automatic routing policy, workers, sharing scope, and bounded follow-up work.
 Ponytail looks for removable complexity,
 Fleet runs six specialist passes, and Matt runs a Standards pass.
 The current Guide flow has no verified spec input, so Matt runs one Standards
@@ -936,9 +945,11 @@ worker and explicitly marks the Spec axis unavailable. It does not invent
 requirements or claim two workers ran. If a selected skill is missing from an
 existing Native cache, Review refreshes the approved shared skill bundle once
 before it starts; unsafe cache content and refresh failures stop the run.
-Fleet defaults to Claude Opus 5.5, GPT-6 Sol, and Grok 4.7 (two reviewers per
-model). Its guarded worker hook supplies each approved lens with the frozen
-diff and pins the selected model; unknown or duplicate workers are denied.
+Jev selects a model for each selected review, worker lens, and coordinator from
+the frozen evidence and task description, with medium effort by default. The
+run records those selections. Fleet’s guarded worker hook supplies each approved
+lens with the frozen diff and pins its selected model; unknown or duplicate
+workers are denied.
 Choose committed plus uncommitted changes with a detected local comparison base,
 or uncommitted changes only. Press `b` to override the base. Comparisons use the
 merge base, so commits only on the base branch stay out of scope. No fetch or
@@ -1215,9 +1226,9 @@ pending questions without sending an answer. On failure, the guide keeps the
 source, completed answers, and last goal draft in memory; `r` starts an
 explicit retry with that context. Discard or exit clears it.
 
-Goal me always uses `gpt-6-astra` with `max` effort. The guide's general
-`--model` and `--effort` overrides do not change this interview model.
-Other guide phases keep their existing model routes. The skill loads only
+Goal me selects its interview model through the proxy's Jev router, with
+`medium` effort unless overridden. The guide's general `--model` and `--effort`
+overrides apply to the interview. The skill loads only
 when selected, through the shared Native skill cache. If it is missing, run
 `trx skills update` and retry. Normal guide startup and the other augmenters
 do not require goal-me.
@@ -1419,6 +1430,8 @@ Match caches also distinguish backend, model, and matcher/question revision.
 Jev cache keys exclude unrelated LLM settings. A cached Copilot fallback never
 prevents a new Jev attempt, and each successful backend is cached separately.
 Match artifacts report the backend and model that supplied the recommendations.
+Automatic Copilot matching selects afresh instead of reusing a cached model
+choice; direct Jev matching and explicitly pinned Copilot routes retain caching.
 Deterministic fallbacks and direct manual edits are not cached because they do
 not avoid model work.
 

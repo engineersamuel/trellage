@@ -1,3 +1,5 @@
+export const automaticGuideModel = "auto"
+
 export type GuideReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max"
 
 export interface GuideModelConfig<Effort extends string = GuideReasoningEffort> {
@@ -16,14 +18,17 @@ export interface GuideModelRouting<Effort extends string = GuideReasoningEffort>
 export type GuideModelPhase = keyof GuideModelRouting
 
 export const guideGoalModelConfig = {
-  model: "gpt-6-astra",
-  effort: "max",
+  model: automaticGuideModel,
+  effort: "medium",
 } as const satisfies GuideModelConfig
 
 export const defaultGuideModelRouting = {
-  match: { model: "gpt-5.6-sol", effort: "medium" },
-  generate: { model: "gpt-5.6-luna", effort: "medium" },
-  optimize: { model: "gpt-5.6-sol", effort: "medium" },
-  refine: { model: "gpt-5.6-sol", effort: "medium" },
-  enrich: { model: "gpt-5.6-sol", effort: "medium" },
+  match: { model: automaticGuideModel, effort: "medium" },
+  generate: { model: automaticGuideModel, effort: "medium" },
+  optimize: { model: automaticGuideModel, effort: "medium" },
+  refine: { model: automaticGuideModel, effort: "medium" },
+  enrich: { model: automaticGuideModel, effort: "medium" },
 } as const satisfies GuideModelRouting
+
+export const guideModelLabel = (config: GuideModelConfig): string =>
+  `${config.model === automaticGuideModel ? "Jev selection" : config.model} (${config.effort})`

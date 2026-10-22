@@ -806,13 +806,13 @@ describe("resolveGuideModelConfig", () => {
     })
   })
 
-  it("applies an effort-only override without collapsing the phase models", () => {
+  it("applies an effort-only override while keeping automatic model selection", () => {
     expect(resolveGuideModelRouting({ effort: GuideEffort.High }, {})).toEqual({
-      match: { model: "gpt-5.6-sol", effort: GuideEffort.High },
-      generate: { model: "gpt-5.6-luna", effort: GuideEffort.High },
-      optimize: { model: "gpt-5.6-sol", effort: GuideEffort.High },
-      refine: { model: "gpt-5.6-sol", effort: GuideEffort.High },
-      enrich: { model: "gpt-5.6-sol", effort: GuideEffort.High },
+      match: { model: "auto", effort: GuideEffort.High },
+      generate: { model: "auto", effort: GuideEffort.High },
+      optimize: { model: "auto", effort: GuideEffort.High },
+      refine: { model: "auto", effort: GuideEffort.High },
+      enrich: { model: "auto", effort: GuideEffort.High },
     })
   })
 

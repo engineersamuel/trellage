@@ -943,7 +943,7 @@ const executeMatch = async (
     fallback?: GuideMatcherFallback,
   ) => {
     aborted(signal)
-    options?.onAttempt?.({ execution, profileCount: input.entries.length, ...(fallback === undefined ? {} : { fallback }) })
+    options?.onAttempt?.({ execution: { ...execution }, profileCount: input.entries.length, ...(fallback === undefined ? {} : { fallback }) })
     const validate = matchValidator(input, request.goal)
     const produce = async () => {
       aborted(signal)
@@ -970,11 +970,17 @@ const executeMatch = async (
     }
   }
   const legacy = inputs.legacy()
+  const execution: GuideMatchExecution = { backend: "copilot", model: request.model, effort: request.effort }
+  const observed = provider.withModelObserver?.((_phase, config) => {
+    Object.assign(execution, config)
+    options?.onAttempt?.({ execution: { ...execution }, profileCount: legacy.entries.length,
+      ...(fallback === undefined ? {} : { fallback }) })
+  }) ?? provider
   return attempt(
     legacy,
-    { backend: "copilot", model: request.model, effort: request.effort },
+    execution,
     "copilot-v1",
-    () => provider.match(legacy),
+    () => observed.match(legacy),
     fallback,
   )
 }

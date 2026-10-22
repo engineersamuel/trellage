@@ -1,3 +1,4 @@
+import type { GuideModelConfig, GuideModelPhase } from "./guide-model-routing.ts"
 /**
  * Provider-neutral contracts for the `trx guide` model-backed core: the
  * `match` / `generate` / `refine` / `enrich` phases, their strictly validated
@@ -150,8 +151,11 @@ export interface GuideRefineInput extends GuideGenerateInput {
   readonly feedback: string
 }
 
+export type GuideModelObserver = (phase: GuideModelPhase, config: GuideModelConfig) => void
+
 /** Implemented by model adapters (e.g. `CopilotGuideProvider`). Never exposes commands. */
 export interface GuideProvider {
+  withModelObserver?(observe: GuideModelObserver): GuideProvider
   match(input: GuideMatchInput): Promise<GuideMatchResult>
   generate(input: GuideGenerateInput): Promise<GuideGenerateResult>
   refine(input: GuideRefineInput): Promise<GuideRefineResult>

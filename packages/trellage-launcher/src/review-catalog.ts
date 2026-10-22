@@ -20,8 +20,7 @@ export const fleetLenses = [
 export const reviewModels = ["claude-opus-5.5", "gpt-6-sol", "grok-4.7"] as const
 
 export const reviewCoordinatorModel = (override: Partial<GuideModelConfig> = {}): GuideModelConfig => ({
-  model: "gpt-6-astra",
-  effort: "max",
+  ...defaultGuideModelRouting.optimize,
   ...override,
 })
 
@@ -129,8 +128,7 @@ export const assignReviewModels = (
   override: Partial<GuideModelConfig> = {},
 ): ReadonlyArray<ReviewCheckAssignment> =>
   selectReviewChecks(ids).map((check) => {
-    const skill = reviewCatalog.find((entry) => entry.id === check.id)!
-    const defaults: GuideModelConfig = { model: skill.model, effort: skill.kind === "fleet" || skill.id === "ponytail" ? "high" : "low" }
+    const defaults = routing.optimize
     const model = { ...defaults, ...override }
     return {
       id: check.id,
@@ -139,7 +137,7 @@ export const assignReviewModels = (
         check.kind === "fleet"
           ? fleetLenses.map((name) => ({
               name,
-              model: { model: override.model ?? pinnedFleetModel(name)!, effort: override.effort ?? "low" },
+              model,
             }))
           : check.kind === "two-axis"
             ? [{ name: "Standards", model }]

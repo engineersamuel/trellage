@@ -163,6 +163,7 @@ const harness = (overrides: {
   }
   const resolveSkills = vi.fn(async () => skills)
   const provider = new CopilotGoalAugmentProvider({
+    selectModel: async () => workingModel.id,
     resolveSkills,
     clientFactory: sdk.factory,
     copilotCliPath: "/fake/copilot",
@@ -305,7 +306,7 @@ describe("Copilot Goal me interview", () => {
       telemetry: { captureContent: false }, env: { OTEL_SDK_DISABLED: "true" },
     })
     expect(config).toMatchObject({
-      model: "gpt-6-astra", reasoningEffort: "max",
+      model: "gpt-6-astra", reasoningEffort: "medium",
       availableTools: ["builtin:ask_user", "builtin:skill", "custom:propose_goal"],
       enableSkills: true, skillDirectories: h.skills.skillDirectories,
       enableConfigDiscovery: false, mcpServers: {}, customAgents: [], pluginDirectories: [],
@@ -608,9 +609,9 @@ describe("Goal me failures and cleanup", () => {
     expect(h.skills.dispose).toHaveBeenCalledTimes(1)
   })
 
-  it("stops when Astra cannot support max effort instead of reducing the effort", async () => {
+  it("stops when the selected model cannot support medium effort", async () => {
     const h = harness()
-    h.sdk.models[0] = { ...workingModel, supportedReasoningEfforts: ["low", "medium", "high"] }
+    h.sdk.models[0] = { ...workingModel, supportedReasoningEfforts: ["low", "high"] }
     await expect(h.start()).rejects.toBeInstanceOf(GuideModelCapabilityError)
     expect(h.sdk.client.createSession).not.toHaveBeenCalled()
     expect(h.sdk.client.forceStop).toHaveBeenCalledTimes(1)

@@ -573,8 +573,8 @@ Goal me uses a fake interview provider with the real request controller and
 Ink question/review controls. It records exact answers, freeform flags, review
 decisions, and session IDs. Goal reviews use the same Markdown renderer as
 prompt previews, without changing the approved goal text. Separate fake-SDK
-tests cover the real `onUserInputRequest` contract, the fixed `gpt-6-astra` /
-`max` model policy, opt-in recommended answers, tool restrictions, human
+tests cover the real `onUserInputRequest` contract, prompt-based model selection /
+`medium` effort, opt-in recommended answers, tool restrictions, human
 waits, and cleanup. Controlled-time cases keep one session through automatic
 answer rounds beyond the old total deadline, renew the limit after revision,
 and retain the timeout for stalled work. Controller coverage includes

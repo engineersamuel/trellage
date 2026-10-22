@@ -1,3 +1,4 @@
+import { guideModelLabel, type GuideModelConfig as SelectedGuideModelConfig, type GuideModelPhase } from "./guide-model-routing.ts"
 /**
  * Interactive Ink state machine for `trx guide`.
  *
@@ -101,7 +102,6 @@ import {
   type GuideMatcherFallback,
   GuideMatcherFallbackReason,
   type GuideMatchOptions,
-  type GuideModelConfig,
   type GuideRecommendation,
   type GuideResolvedModelRouting,
   type PublicGuideCommand,
@@ -457,6 +457,7 @@ export interface GuideUiState {
   readonly selectedRecommendation: GuideRecommendation | undefined
   readonly selectedProfile: SelectedProfile | undefined
   readonly guideDocument: SelectedGuideDocument | undefined
+  readonly selectedModels: Partial<Record<GuideModelPhase, SelectedGuideModelConfig>>
   readonly generationPhase: GuideGenerationPhase | undefined
   readonly candidates: Triple<GuideGenerateCandidate> | undefined
   readonly candidateIndex: number
@@ -521,6 +522,7 @@ const emptyState: GuideUiState = {
   selectedRecommendation: undefined,
   selectedProfile: undefined,
   guideDocument: undefined,
+  selectedModels: {},
   generationPhase: undefined,
   candidates: undefined,
   candidateIndex: 0,
@@ -805,6 +807,7 @@ export enum GuideUiActionType {
   GoalChangeDetach = "goal-change/detach",
   GoalChangeKeep = "goal-change/keep",
   GenerateGuideLoaded = "generate/guide-loaded",
+  ModelSelected = "model-selected",
   GenerateProgress = "generate/progress",
   GenerateRetry = "generate/retry",
   GenerateSucceeded = "generate/succeeded",
@@ -946,6 +949,7 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.GoalChangeDetach }
   | { readonly type: GuideUiActionType.GoalChangeKeep }
   | { readonly type: GuideUiActionType.GenerateGuideLoaded; readonly guideDocument: SelectedGuideDocument }
+  | { readonly type: GuideUiActionType.ModelSelected; readonly phase: GuideModelPhase; readonly config: SelectedGuideModelConfig }
   | { readonly type: GuideUiActionType.GenerateProgress; readonly phase: GuideGenerationPhase }
   | { readonly type: GuideUiActionType.GenerateRetry }
   | { readonly type: GuideUiActionType.GenerateSucceeded; readonly candidates: Triple<GuideGenerateCandidate> }
@@ -1831,6 +1835,7 @@ const openRecommendedProfile = (
     selectedOriginalIntent: state.selectedOriginalIntent ?? state.originalIntent ?? state.intent,
     selectedCustomerContext: state.activeForkId === undefined ? state.customerContext : state.selectedCustomerContext,
     guideDocument: undefined,
+    selectedModels: {},
     generationPhase: GuideGenerationPhase.LoadingProfile,
     candidates: undefined,
     selectedCandidate: undefined,
@@ -1885,6 +1890,7 @@ const openOrdinaryGoalReference = (
     selectedGoal: undefined,
     selectedIntent: intent,
     profileSelection: guideProfileSelection(state),
+    selectedModels: {},
     generationPhase: GuideGenerationPhase.LoadingProfile,
     goalChange: undefined,
   })
@@ -1949,6 +1955,10 @@ const profileSelectionState = (state: GuideUiState): GuideUiState => ({
 
 const reduceGenerateProgress = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
+    case GuideUiActionType.ModelSelected:
+      return state.stage === GuideUiStage.Generating || state.stage === GuideUiStage.Refining
+        ? { ...state, selectedModels: { ...state.selectedModels, [action.phase]: action.config } }
+        : state
     case GuideUiActionType.GenerateProgress:
       return state.stage === GuideUiStage.Generating ? { ...state, generationPhase: action.phase } : state
 
@@ -1970,6 +1980,7 @@ const reduceGenerateActive = (state: GuideUiState, action: GuideUiAction): Guide
         ? {
             ...state,
             stage: GuideUiStage.Generating,
+            selectedModels: {},
             generationPhase: GuideGenerationPhase.LoadingProfile,
             errorMessage: undefined,
           }
@@ -2199,7 +2210,7 @@ const reduceRefine = (state: GuideUiState, action: GuideUiAction): GuideUiState 
   switch (action.type) {
     case GuideUiActionType.RefineSubmit:
       return state.stage === GuideUiStage.RefineEditor && state.textDraft.trim().length > 0
-        ? { ...state, stage: GuideUiStage.Refining, errorMessage: undefined }
+        ? { ...state, stage: GuideUiStage.Refining, selectedModels: {}, errorMessage: undefined }
         : state
 
     case GuideUiActionType.RefineSucceeded:
@@ -2212,7 +2223,7 @@ const reduceRefine = (state: GuideUiState, action: GuideUiAction): GuideUiState 
 
     case GuideUiActionType.RefineRetry:
       return state.stage === GuideUiStage.RefineFailed
-        ? { ...state, stage: GuideUiStage.Refining, errorMessage: undefined }
+        ? { ...state, stage: GuideUiStage.Refining, selectedModels: {}, errorMessage: undefined }
         : state
 
     case GuideUiActionType.RefineBack:
@@ -2743,6 +2754,7 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.GoalChangeDetach]: reduceGoalChange,
   [GuideUiActionType.GoalChangeKeep]: reduceGoalChange,
   [GuideUiActionType.GenerateGuideLoaded]: reduceGenerate,
+  [GuideUiActionType.ModelSelected]: reduceGenerateProgress,
   [GuideUiActionType.GenerateProgress]: reduceGenerateProgress,
   [GuideUiActionType.GenerateRetry]: reduceGenerate,
   [GuideUiActionType.GenerateSucceeded]: reduceGenerate,
@@ -3967,15 +3979,15 @@ const GenerationProgress = ({
   readonly recommendation: GuideRecommendation
   readonly phase: GuideGenerationPhase
   readonly intent: string
-  readonly generateConfig: GuideModelConfig
-  readonly optimizeConfig: GuideModelConfig
+  readonly generateConfig: SelectedGuideModelConfig
+  readonly optimizeConfig: SelectedGuideModelConfig
 }) => (
   <ProgressPipeline
     title="Preparing prompt candidates"
     intent={intent}
     items={generationProgressItems(recommendation)}
     activePhase={phase}
-    detail={`Draft: ${generateConfig.model} (${generateConfig.effort}) · Optimize: ${optimizeConfig.model} (${optimizeConfig.effort}) · Selected profile: ${recommendation.ref}`}
+    detail={`Draft: ${guideModelLabel(generateConfig)} · Optimize: ${guideModelLabel(optimizeConfig)} · Selected profile: ${recommendation.ref}`}
   />
 )
 
@@ -5423,7 +5435,9 @@ const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, disp
         const { candidates, templateFallback } = await runGuideGenerationStep(
           props.catalog,
           props.guideRoot,
-          props.provider,
+          props.provider.withModelObserver?.((phase, config) => {
+            if (!cancelled) dispatch({ type: GuideUiActionType.ModelSelected, phase, config })
+          }) ?? props.provider,
           intent,
           recommendation,
           (guideDocument) => {
@@ -5477,7 +5491,9 @@ const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, disp
       try {
         const refinedCandidate = await runGuideRefinementStep(
           props.catalog,
-          props.provider,
+          props.provider.withModelObserver?.((phase, config) => {
+            if (!cancelled) dispatch({ type: GuideUiActionType.ModelSelected, phase, config })
+          }) ?? props.provider,
           intent,
           recommendation,
           guideDocument,
@@ -6561,7 +6577,7 @@ const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
       <Spinner
         label="Refining prompt"
         messages={["Applying your feedback", "Preserving profile-specific requirements"]}
-        detail={`Refine: ${props.routing.refine.model} (${props.routing.refine.effort}) · Optimize: ${props.routing.optimize.model} (${props.routing.optimize.effort})`}
+        detail={`Refine: ${guideModelLabel(state.selectedModels.refine ?? props.routing.refine)} · Optimize: ${guideModelLabel(state.selectedModels.optimize ?? props.routing.optimize)}`}
       />
     )
   if (state.stage === GuideUiStage.RefineFailed)
@@ -6725,8 +6741,8 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
         recommendation={state.selectedRecommendation}
         phase={state.generationPhase ?? GuideGenerationPhase.LoadingProfile}
         intent={state.selectedIntent ?? state.intent ?? ""}
-        generateConfig={props.routing.generate}
-        optimizeConfig={props.routing.optimize}
+        generateConfig={state.selectedModels.generate ?? props.routing.generate}
+        optimizeConfig={state.selectedModels.optimize ?? props.routing.optimize}
       />
     ),
   [GuideUiStage.GenerateFailed]: ({ state }) => (

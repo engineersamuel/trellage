@@ -336,6 +336,7 @@ const runInteractiveGuideMode = async (
         throw new GuideGoalError("Goal me runtime paths are missing. Reinstall trx, then reopen trx guide.")
       }
       return new CopilotGoalAugmentProvider({
+        ...routing.enrich,
         resolveSkills: createGuideGoalSkillResolver({ managerPath, catalogPath, cachePath, runner }),
       }).augment(input, context)
     },
