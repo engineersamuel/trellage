@@ -55,9 +55,12 @@ add a prefix, suffix, command, or other frame later.
 Do not ask clarifying questions. The earlier guide stages already chose the
 target tool, profile, workflow, and candidate content. Do not add capabilities,
 commands, permissions, file paths, dependencies, or constraints that are not
-supported by the candidate. When `fixedFrame` is present, do not emit workflow
-commands or copy any part of that frame into a candidate `prompt`. When it is
-absent, preserve supported authored commands and workflow requirements already
+supported by the candidate. Preserve existing supporting skill invocations in
+the same order, including Poteto correct, architect, and recall invocations.
+Keep their investigation-only limits, evidence requirements, prototype scope,
+and any approval and playbook-choice checkpoints. When `fixedFrame` is present,
+do not add workflow commands or copy any part of that frame into a candidate
+`prompt`. When it is absent, preserve supported authored commands and workflow requirements already
 present in the complete prompt, but do not invent new ones. Preserve and
 improve useful Markdown structure so each optimized prompt is easy to scan. Do
 not wrap the complete prompt in a code fence, and do not emit MDX, JSX, HTML,

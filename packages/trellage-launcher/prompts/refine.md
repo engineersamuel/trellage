@@ -61,10 +61,19 @@ the ordinary complete-prompt behavior below.
 For a workflow with `skill` or `frame: "fixed"`, `candidate.prompt` is body text from the
 `{{intent}}` slot. Return body text only. The caller reapplies the exact
 authored workflow frame after all model stages. Do not emit workflow commands
-or copy the fixed frame. For a workflow with neither, continue to return the
-complete prompt. Preserve its substantive authored workflow requirements and
+or copy the fixed frame, except for the Poteto supporting skills below.
+For a workflow with neither, continue to return the complete prompt. Preserve its substantive authored workflow requirements and
 supported authored commands. The caller will not add or restore a frame. Never
 add a new workflow command.
+
+For `native:codex/pstack` with `poteto-mode-entry-point`, outside goal mode,
+follow the guide body's "Writing Poteto Candidates" guidance. Preserve existing
+supporting skill invocations in order. You may add each of
+`$pstack-for-codex:correct`, `$pstack-for-codex:architect`, and
+`$pstack-for-codex:recall` once when relevant to the request or feedback; add no
+other skill commands. Keep the evidence requirements, prototype scope, planning
+checkpoint, and execution-playbook choice when requested. Do not let a supporting
+skill's implementation default override a planning-only or read-only request.
 
 The final specification has an 8000 UTF-16 code-unit limit, including fixed template
 text. Keep the revised `prompt` within `bodyBudget` when supplied; do not

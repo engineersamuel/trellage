@@ -35,6 +35,7 @@ type GuideWorkflowModelStage = "generation" | "refinement" | "optimization"
 
 export interface GuideWorkflowBodyOptions {
   readonly bodyOnly?: boolean
+  readonly allowSupportingSkills?: boolean
 }
 
 export class GuideWorkflowBodyError extends Error {
@@ -987,13 +988,32 @@ const commandOccurrences = (
   ].sort((left, right) => left.index - right.index)
 }
 
-const hasSameCommandSequence = (guide: ProfileGuideV1, authorizedBody: string, proposedBody: string): boolean => {
+const potetoSupportingSkills = new Set([
+  "$pstack-for-codex:correct",
+  "$pstack-for-codex:architect",
+  "$pstack-for-codex:recall",
+])
+
+const hasAuthorizedCommandSequence = (
+  guide: ProfileGuideV1,
+  authorizedBody: string,
+  proposedBody: string,
+  allowPotetoSkills: boolean,
+): boolean => {
   const authorized = commandOccurrences(guide, authorizedBody)
   const proposed = commandOccurrences(guide, proposedBody)
-  return (
-    authorized.length === proposed.length &&
-    authorized.every((occurrence, index) => occurrence.token === proposed[index]?.token)
-  )
+  const seen = new Set(authorized.map(({ token }) => token))
+  let index = 0
+  for (const { token } of proposed) {
+    if (token === authorized[index]?.token) {
+      index += 1
+    } else if (allowPotetoSkills && potetoSupportingSkills.has(token) && !seen.has(token)) {
+      seen.add(token)
+    } else {
+      return false
+    }
+  }
+  return index === authorized.length
 }
 
 /** Normalizes untrusted optimizer output and retains the coherent authorized fallback. */
@@ -1038,7 +1058,9 @@ function resolveModelWorkflowBodyCandidate(
   if (bodyOnly && proposedPromptCandidate.prompt.trim().length === 0) {
     throw new GuideWorkflowBodyError(stage, workflow.id, "returned no body text after frame normalization")
   }
-  if (!hasSameCommandSequence(guide, authorizedComparisonPrompt, proposedPromptCandidate.prompt)) {
+  const allowPotetoSkills = options.allowSupportingSkills !== false &&
+    stage !== "optimization" && workflow.skill === "pstack-for-codex:poteto-mode"
+  if (!hasAuthorizedCommandSequence(guide, authorizedComparisonPrompt, proposedPromptCandidate.prompt, allowPotetoSkills)) {
     throw new GuideWorkflowBodyError(
       stage,
       workflow.id,
