@@ -11,7 +11,7 @@ import type { FixtureEvent, RecordFixtureEvent } from "./guide-integration-data.
 type GoalModelPhase = Extract<FixtureEvent, { readonly kind: "goal-model-input" }>["phase"]
 
 const models: ReadonlyArray<ModelInfo> = Object.values(defaultGuideModelRouting).map(({ model, effort }) => ({
-  id: model,
+  id: "gpt-5.6-sol",
   name: model,
   capabilities: {
     supports: { vision: false, reasoningEffort: true },
@@ -35,6 +35,7 @@ export const createFixtureGoalModelProvider = async (root: string, record: Recor
 
   return (phase: GoalModelPhase, response: GuideMatchResult | GuideGenerateResult): CopilotGuideProvider =>
     new CopilotGuideProvider({
+      model: "gpt-5.6-sol",
       routing: defaultGuideModelRouting,
       prompts,
       baseDirectory: path.join(root, "goal-model", "state"),

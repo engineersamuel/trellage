@@ -1,3 +1,4 @@
+import { resolveGuideTaskModel } from "./guide-model-selector.ts"
 import { randomUUID } from "node:crypto"
 import {
   RuntimeConnection,
@@ -46,7 +47,7 @@ export interface GuideGoalModelClient extends Omit<GuideModelClient, "createSess
 }
 
 export interface CopilotGoalAugmentProviderOptions
-  extends Pick<CopilotGuideProviderOptions, "copilotCliPath" | "clientName"> {
+  extends Pick<CopilotGuideProviderOptions, "copilotCliPath" | "clientName" | "model" | "effort" | "selectModel"> {
   readonly resolveSkills: GuideGoalSkillResolver
   /** The embedded adapter, not a replacement for the installed skill. Loaded lazily when omitted. */
   readonly systemPrompt?: string
@@ -438,7 +439,11 @@ export class CopilotGoalAugmentProvider implements GuideGoalAugmentProvider {
     resources.client = client
     context.onActivity("Goal me: preparing the interview.")
     await run.wait(() => client.start())
-    const model = guideGoalModelConfig
+    const model = await run.wait(() => resolveGuideTaskModel({
+      model: this.options.model ?? guideGoalModelConfig.model,
+      effort: this.options.effort ?? guideGoalModelConfig.effort,
+    }, { systemPrompt, prompt, signal: run.signal }, this.options.selectModel))
+    context.onActivity(`Goal me: ${model.model} (${model.effort}).`)
     assertGuideModelCapability(await run.wait(() => client.listModels()), model)
     run.assertActive()
     const sessionId = randomUUID()

@@ -1,3 +1,4 @@
+import { resolveGuideTaskModel, type GuideModelSelector } from "./guide-model-selector.ts"
 import { adapters } from "@trellage/runtime/native-run"
 import {
   approveAll,
@@ -7,7 +8,7 @@ import {
   type SessionEvent,
 } from "@github/copilot-sdk"
 import { findExecutableOnPath, runCleanupStep } from "./copilot-guide-provider.ts"
-import type { GuideModelConfig } from "./guide-model-routing.ts"
+import { automaticGuideModel, type GuideModelConfig } from "./guide-model-routing.ts"
 import { createLiveCopilotClient } from "./provider-clients.ts"
 
 /** One Optimize skill: a standing instruction an agent applies to the whole repository. */
@@ -146,6 +147,7 @@ export type GuideOptimizeActivity =
   | { readonly kind: "status" | "error"; readonly id: string; readonly text: string }
 
 export interface GuideOptimizeSdkOptions {
+  readonly selectModel?: GuideModelSelector
   readonly cwd: string
   readonly prompt: string
   readonly skillDirectory?: string | undefined
@@ -214,6 +216,9 @@ export const updateGuideOptimizeLog = (
  * permission request is approved: the user chose this runner for that reason.
  */
 export const runGuideOptimizeSdk = async (options: GuideOptimizeSdkOptions): Promise<void> => {
+  const model = await resolveGuideTaskModel(options.model, options, options.selectModel)
+  if (options.model.model === automaticGuideModel)
+    options.onActivity({ kind: "status", id: "model", text: `${model.model} (${model.effort})` })
   const copilotCliPath = findExecutableOnPath("copilot")
   const client = (options.clientFactory ?? createLiveCopilotClient)({
     mode: "copilot-cli",
@@ -230,8 +235,8 @@ export const runGuideOptimizeSdk = async (options: GuideOptimizeSdkOptions): Pro
     options.signal.throwIfAborted()
     session = await client.createSession({
       clientName: "trellage-trx-optimize",
-      model: options.model.model,
-      reasoningEffort: options.model.effort,
+      model: model.model,
+      reasoningEffort: model.effort,
       workingDirectory: options.cwd,
       streaming: true,
       ...(options.skillDirectory === undefined ? {} : { skillDirectories: [options.skillDirectory] }),

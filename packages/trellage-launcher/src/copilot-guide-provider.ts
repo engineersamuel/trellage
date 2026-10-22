@@ -1,12 +1,12 @@
+import { resolveGuideTaskModel, type GuideModelSelector } from "./guide-model-selector.ts"
 import { createLiveCopilotClient } from "./provider-clients.ts"
 
 /**
  * Copilot SDK-backed implementation of `GuideProvider` for `trx guide`.
  *
- * Model session policy (per the approved `trx guide` design):
- * - Match, optimize, and refine default to `gpt-5.6-sol` at `medium`;
- *   generate defaults to `gpt-5.6-luna` at `medium`. Callers can supply a
- *   phase routing table or force one model/effort across every phase.
+ * Model session policy:
+ * - Each task selects a model through copilot-proxy-rs POST /v1/models.
+ *   Explicit model/effort overrides take precedence; default effort is medium.
  * - `client.listModels()` is checked before every phase call: the model must
  *   exist, support reasoning effort, and support the configured effort
  *   level. Otherwise the call is rejected before any session is created,
@@ -97,6 +97,7 @@ import {
   type GuideOptimizeInput,
   type GuideOptimizeResult,
   type GuideProvider,
+  type GuideModelObserver,
   type GuideRefineInput,
   type GuideRefineResult,
 } from "./guide-provider.ts"
@@ -171,6 +172,8 @@ export class GuideModelCleanupError extends Error {
 }
 
 export interface CopilotGuideProviderOptions {
+  readonly selectModel?: GuideModelSelector
+  readonly onModelSelected?: GuideModelObserver
   /** Forces one model across every phase when set. */
   readonly model?: string
   /** Forces one reasoning effort across every phase when set. */
@@ -417,6 +420,7 @@ export interface RestrictedGuideModelClient {
 }
 
 export interface RestrictedGuideModelRequest {
+  readonly selectModel?: GuideModelSelector
   readonly model: string
   readonly effort: GuideReasoningEffort
   readonly systemPrompt: string
@@ -787,7 +791,8 @@ export const runRestrictedGuideModelRequest = async (options: RestrictedGuideMod
   for (const value of [options.timeoutMs, options.cleanupTimeoutMs, options.maximumResponseBytes]) {
     if (!Number.isSafeInteger(value) || value <= 0) throw new RestrictedGuideModelError("invalid-limits")
   }
-  return new RestrictedGuideRequest(options).run()
+  const model = await resolveGuideTaskModel(options, options, options.selectModel)
+  return new RestrictedGuideRequest({ ...options, ...model }).run()
 }
 
 const cancellableClient = (client: GuideModelClient): RestrictedGuideModelClient => {
@@ -844,7 +849,7 @@ export class CopilotGuideProvider implements GuideProvider {
   private readonly clientFactory: (options: CopilotClientOptions) => GuideModelClient
   private readonly signal: AbortSignal | undefined
 
-  constructor(options: CopilotGuideProviderOptions) {
+  constructor(private readonly options: CopilotGuideProviderOptions) {
     this.routing = resolveProviderRouting(options)
     this.prompts = options.prompts
     this.baseDirectory = options.baseDirectory ?? path.join(os.homedir(), ".copilot", "trx-guide")
@@ -860,6 +865,10 @@ export class CopilotGuideProvider implements GuideProvider {
     this.enrichTimeoutMs = options.enrichTimeoutMs ?? 180_000
     this.clientFactory = options.clientFactory ?? defaultClientFactory
     this.signal = options.signal
+  }
+
+  withModelObserver(observe: GuideModelObserver): CopilotGuideProvider {
+    return new CopilotGuideProvider({ ...this.options, onModelSelected: observe })
   }
 
   async match(input: GuideMatchInput): Promise<GuideMatchResult> {
@@ -971,10 +980,10 @@ export class CopilotGuideProvider implements GuideProvider {
 
   private sessionConfig<Input>(
     phase: GuideModelPhase,
+    config: GuideModelRouting[GuideModelPhase],
     systemPrompt: string,
     options: GuideRunOptions<Input>,
   ): SessionConfig {
-    const config = this.routing[phase]
     return restrictedGuideSessionConfig({
       clientName: this.clientName,
       model: config.model,
@@ -999,11 +1008,15 @@ export class CopilotGuideProvider implements GuideProvider {
     validate: (value: unknown) => Output,
     options: GuideRunOptions<Input>,
   ): Promise<Output> {
-    const config = this.routing[phase]
     const original = requestMessage(input, options.message)
+    const config = await resolveGuideTaskModel(this.routing[phase], {
+      systemPrompt, prompt: original, ...(this.signal === undefined ? {} : { signal: this.signal }),
+    }, this.options.selectModel)
+    this.options.onModelSelected?.(phase, config)
     const execute = (prompt: string): Promise<string> =>
       runRestrictedGuideModelRequest({
         ...config,
+        ...(this.options.selectModel === undefined ? {} : { selectModel: this.options.selectModel }),
         systemPrompt,
         prompt,
         timeoutMs,
@@ -1056,7 +1069,10 @@ export class CopilotGuideProvider implements GuideProvider {
     options: GuideRunOptions<Input> = {},
   ): Promise<Output> {
     if (this.signal !== undefined) return this.runCancellable(phase, systemPrompt, input, timeoutMs, validate, options)
-    const config = this.routing[phase]
+    const config = await resolveGuideTaskModel(this.routing[phase], {
+      systemPrompt, prompt: requestMessage(input, options.message),
+    }, this.options.selectModel)
+    this.options.onModelSelected?.(phase, config)
     const client = this.clientFactory({
       mode: "empty",
       ...(this.copilotCliPath === undefined
@@ -1072,7 +1088,7 @@ export class CopilotGuideProvider implements GuideProvider {
       const models = await client.listModels()
       assertGuideModelCapability(models, config)
 
-      const sessionConfig = this.sessionConfig(phase, systemPrompt, options)
+      const sessionConfig = this.sessionConfig(phase, config, systemPrompt, options)
       session = await client.createSession(sessionConfig)
       const first = await session.sendAndWait({ prompt: requestMessage(input, options.message) }, timeoutMs)
       if (first === undefined) {

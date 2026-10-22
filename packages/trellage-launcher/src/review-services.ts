@@ -1,3 +1,4 @@
+import type { GuideModelSelector } from "./guide-model-selector.ts"
 import { lstat, realpath } from "node:fs/promises"
 import path from "node:path"
 import { isDeepStrictEqual } from "node:util"
@@ -90,6 +91,7 @@ export interface GuideReviewTerminalResult {
 }
 
 export interface GuideReviewDependencies {
+  readonly selectModel?: GuideModelSelector
   readonly listAgents?: typeof listAgents
   readonly processReader?: typeof getProcessInfo
   readonly readiness?: typeof checkSelectedProfileReadiness
@@ -440,6 +442,7 @@ export const createGuideReviewServices = (initialOptions: OptimizeRuntime): Guid
           ...(input.intent === undefined ? {} : { intent: input.intent }) },
         confirmed: true, runner: options.runner, signal,
         ...(options.env ? { env: options.env } : {}),
+        ...(options.dependencies?.selectModel ? { selectModel: options.dependencies.selectModel } : {}),
         ...(options.dependencies?.modelCall ? { modelCall: options.dependencies.modelCall } : {}),
         ...(options.dependencies?.clientFactory ? { clientFactory: options.dependencies.clientFactory } : {}),
         onEvent: (event) => {

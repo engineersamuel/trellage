@@ -10,7 +10,7 @@ import {
   type GuideGoalExecution,
   type PreparedGuideGoal,
 } from "./guide-goal-execution.ts"
-import type { GuideModelRouting } from "./guide-model-routing.ts"
+import { automaticGuideModel, type GuideModelRouting } from "./guide-model-routing.ts"
 import type { GuideModelPrompts } from "./guide-prompts.ts"
 import type {
   GuideGenerateCandidate,
@@ -408,8 +408,8 @@ export class GuideArtifactCache {
     }
   }
 
-  private async cached<Result>(spec: ArtifactSpec<Result>, produce: () => Promise<Result>): Promise<Result> {
-    const existing = await this.newest(spec)
+  private async cached<Result>(spec: ArtifactSpec<Result>, produce: () => Promise<Result>, reuse = true): Promise<Result> {
+    const existing = reuse ? await this.newest(spec) : undefined
     if (existing !== undefined) return existing
     const result = await produce()
     await this.writeArtifact(spec, result)
@@ -462,6 +462,7 @@ export class GuideArtifactCache {
         validate: (value) => validateGuideMatchResult(value, workflows, input.goal, input.preferredProfileRefs),
       },
       produce,
+      input.execution?.model !== automaticGuideModel,
     )
   }
 

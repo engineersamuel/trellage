@@ -323,7 +323,9 @@ describe("shared review coordinator", () => {
       }),
     })
     const events: ReviewEvent[] = []
+    const selectModel = vi.fn(async () => "claude-opus-5.5")
     const run = await runSharedReview({
+      selectModel,
       request: f.request(["ponytail"]),
       confirmed: true,
       runner: f.runner,
@@ -339,6 +341,8 @@ describe("shared review coordinator", () => {
         stagingRoot: path.join(f.root, "staging"),
       },
     })
+    expect(selectModel).toHaveBeenCalledOnce()
+    expect(run.request.checks[0]!.model).toEqual({ model: "claude-opus-5.5", effort: "medium" })
     expect(skillManifests).toEqual([expect.stringContaining('"id":"@diff/unstaged"')])
     expect(skillManifests.join("")).not.toContain('"id":"code.ts"')
     if (extraction === "cleanup-failed") {

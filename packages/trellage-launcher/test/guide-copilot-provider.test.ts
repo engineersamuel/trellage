@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest"
+import type { GuideModelSelector } from "../src/guide-model-selector.ts"
+import { describe, expect, it, vi } from "vitest"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -50,6 +51,9 @@ const lunaModel: ModelInfo = {
   id: "gpt-5.6-luna",
   name: "GPT-5.6 Luna",
 }
+
+const selectFixtureModel: GuideModelSelector = async ({ systemPrompt }) =>
+  systemPrompt === prompts.generate ? lunaModel.id : workingModel.id
 
 const message = (content: string): GuideModelMessage => ({ data: { content } })
 
@@ -293,10 +297,41 @@ const sentPayload = (client: FakeClient): Record<string, unknown> => {
 }
 
 describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
+  it("selects afresh for each prompt and reports the actual session model", async () => {
+    const first = new FakeClient([workingModel, lunaModel], [message(validGenerateResponse)])
+    const second = new FakeClient([workingModel, lunaModel], [message(validGenerateResponse)])
+    const selectModel = vi.fn<GuideModelSelector>()
+      .mockResolvedValueOnce(workingModel.id).mockResolvedValueOnce(lunaModel.id)
+    const observe = vi.fn()
+    const provider = new CopilotGuideProvider({
+      prompts, selectModel, clientFactory: vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second),
+    }).withModelObserver(observe)
+    await provider.generate(generateInput)
+    await provider.generate({ ...generateInput, intent: "Explain the concurrency tradeoffs." })
+    expect(selectModel).toHaveBeenCalledTimes(2)
+    expect(selectModel.mock.calls[0]![0].systemPrompt).toBe(prompts.generate)
+    expect(selectModel.mock.calls[1]![0].prompt).toContain("Explain the concurrency tradeoffs.")
+    expect(first.createSessionCalls[0]).toMatchObject({ model: workingModel.id, reasoningEffort: "medium" })
+    expect(second.createSessionCalls[0]).toMatchObject({ model: lunaModel.id, reasoningEffort: "medium" })
+    expect(observe.mock.calls).toEqual([
+      ["generate", { model: workingModel.id, effort: "medium" }],
+      ["generate", { model: lunaModel.id, effort: "medium" }],
+    ])
+  })
+
+  it("does not start an execution client when automatic model selection fails", async () => {
+    const clientFactory = vi.fn()
+    const provider = new CopilotGuideProvider({
+      prompts, clientFactory, selectModel: async () => { throw new Error("Router unavailable") },
+    })
+    await expect(provider.generate(generateInput)).rejects.toThrow("Router unavailable")
+    expect(clientFactory).not.toHaveBeenCalled()
+  })
+
   it("matches, validates against the entries' workflow index, and cleans up", async () => {
     let capturedClientOptions: CopilotClientOptions | undefined
     const client = new FakeClient([workingModel], [message(validMatchResponse)])
-    const provider = new CopilotGuideProvider({
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel,
       prompts,
       copilotCliPath: "/opt/bin/copilot",
       clientFactory: (options) => {
@@ -365,7 +400,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
   it("generates exactly three candidates using the generate prompt", async () => {
     const client = new FakeClient([workingModel, lunaModel], [message(validGenerateResponse)])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     const result = await provider.generate(generateInput)
 
@@ -382,7 +417,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
   it("refines to exactly one candidate using the refine prompt", async () => {
     const client = new FakeClient([workingModel], [message(validRefineResponse)])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     const result = await provider.refine(refineInput)
 
@@ -399,7 +434,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
   it.each([0, 1.5, 8001, NaN, Infinity])("rejects an invalid body budget before model activity: %s", async (bodyBudget) => {
     const client = new FakeClient([workingModel, lunaModel], [])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
     await expect(provider.generate({ ...generateInput, bodyBudget })).rejects.toThrow("bodyBudget")
     await expect(provider.refine({ ...refineInput, bodyBudget })).rejects.toThrow("bodyBudget")
     await expect(provider.optimize({ ...optimizeInput, bodyBudget })).rejects.toThrow("bodyBudget")
@@ -409,7 +444,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
   it("enriches a thin intent with the packed repository as untrusted reference", async () => {
     const client = new FakeClient([workingModel], [message('{"intent":"Fix the flaky retry test in src/retry.ts"}')])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     const result = await provider.enrich({ intent: "fix the flaky test", pack: "# Repository\n\nsrc/retry.ts" })
 
@@ -429,7 +464,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
   it("reports session activity to the caller without leaking event content", async () => {
     const client = new FakeClient([workingModel], [message('{"intent":"Fix it"}')])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
     const activity: string[] = []
 
     await provider.enrich({ intent: "fix the flaky test", pack: "pack" }, (line) => activity.push(line))
@@ -442,7 +477,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
   it("does not subscribe to session events when no activity callback is given", async () => {
     const client = new FakeClient([workingModel], [message('{"intent":"Fix it"}')])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await provider.enrich({ intent: "fix the flaky test", pack: "pack" })
 
@@ -451,7 +486,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
   it("reports session activity to the caller without leaking event content", async () => {
     const client = new FakeClient([workingModel], [message('{"intent":"Fix it"}')])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
     const activity: string[] = []
 
     await provider.enrich({ intent: "fix the flaky test", pack: "pack" }, (line) => activity.push(line))
@@ -464,7 +499,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
   it("does not subscribe to session events when no activity callback is given", async () => {
     const client = new FakeClient([workingModel], [message('{"intent":"Fix it"}')])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await provider.enrich({ intent: "fix the flaky test", pack: "pack" })
 
@@ -473,7 +508,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
   it("rejects an enrich response that carries any key but intent", async () => {
     const client = new FakeClient([workingModel], [message('{"intent":"Fix it","notes":"extra"}')])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.enrich({ intent: "fix the flaky test", pack: "pack" })).rejects.toThrow(
       GuideModelResponseError,
@@ -488,7 +523,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
       await mkdir(skillDirectory)
       await writeFile(path.join(skillDirectory, "SKILL.md"), "---\nname: prompt-master\n---\n")
       const client = new FakeClient([workingModel], [message(validGenerateResponse)])
-      const provider = new CopilotGuideProvider({
+      const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel,
         prompts,
         promptMasterSkillDirectory: skillDirectory,
         clientFactory: () => client,
@@ -524,7 +559,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
       await mkdir(skillDirectory)
       await writeFile(path.join(skillDirectory, "SKILL.md"), "---\nname: prompt-master\n---\n")
       const client = new FakeClient([workingModel], [message(validGenerateResponse)])
-      const provider = new CopilotGuideProvider({
+      const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel,
         prompts,
         promptMasterSkillDirectory: skillDirectory,
         clientFactory: () => client,
@@ -547,7 +582,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
   it("honors a configured replace system message mode", async () => {
     const client = new FakeClient([workingModel], [message(validMatchResponse)])
-    const provider = new CopilotGuideProvider({ prompts, systemMessageMode: "replace", clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, systemMessageMode: "replace", clientFactory: () => client })
 
     await provider.match(matchInput)
 
@@ -559,7 +594,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
   it("honors global model and effort options for a non-Match phase", async () => {
     const customModel: ModelInfo = { ...workingModel, id: "custom-model", supportedReasoningEfforts: ["high"] }
     const client = new FakeClient([customModel], [message(validGenerateResponse)])
-    const provider = new CopilotGuideProvider({
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel,
       prompts,
       model: "custom-model",
       effort: "high",
@@ -583,7 +618,7 @@ describe("CopilotGuideProvider goal boundaries", () => {
       message(JSON.stringify({ candidates: [{ ...candidate, workflowId: "unknown" }] })),
       message(JSON.stringify({ candidates: [candidate] })),
     ])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
     const result = await provider.match({
       intent: input.goal.prompt,
       goal: input.goal,
@@ -605,7 +640,7 @@ describe("CopilotGuideProvider goal boundaries", () => {
       message(JSON.stringify({ candidates: bodies.candidates.map((candidate) => ({ ...candidate, goalExecution: { controller: "invented" } })) })),
       message(validGenerateResponse),
     ])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
     const result = await provider.generate(input)
     expect(result).toEqual(bodies)
     expect(client.session?.prompts).toHaveLength(2)
@@ -624,7 +659,7 @@ describe("CopilotGuideProvider goal boundaries", () => {
     const candidate = composeGuideGoalCandidate(resolveGuideGoalExecution(input.goal, input.guide, input.workflowId), body)
     expect([...candidate.prompt].length).toBeGreaterThan(8000)
     const client = new FakeClient([workingModel], [message(validRefineResponse)])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
     await provider.refine({ ...input, candidate, feedback: "Use direct evidence." })
     expect(sentPayload(client).candidate).toEqual(body)
     expect(sentPayload(client).goal).toEqual({ ...input.goal.draft, minimumScore: 8 })
@@ -638,7 +673,7 @@ describe("CopilotGuideProvider goal boundaries", () => {
     const bodies = validateGuideGenerateResult(JSON.parse(validGenerateResponse))
     const oversized = { candidates: bodies.candidates.map((candidate, index) => ({ ...candidate, prompt: `${index}${"x".repeat(budget)}` })) }
     const client = new FakeClient([lunaModel], [message(JSON.stringify(oversized)), message(validGenerateResponse)])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
     expect(await provider.generate(input)).toEqual(bodies)
     expect(sentPayload(client).approachMaximumLength).toBe(budget)
     expect(client.session?.prompts[1]).toContain(`at most ${budget} characters`)
@@ -652,7 +687,7 @@ describe("CopilotGuideProvider goal boundaries", () => {
       const execution = resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
       const bodies = validateGuideGenerateResult(JSON.parse(validGenerateResponse))
       const client = new FakeClient([workingModel], [message(validGenerateResponse)])
-      const provider = new CopilotGuideProvider({ prompts, promptMasterSkillDirectory: root, clientFactory: () => client })
+      const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, promptMasterSkillDirectory: root, clientFactory: () => client })
       await provider.optimize({
         targetTool: "codex", profileRef: input.profileRef,
         candidates: bodies.candidates, goal: input.goal, goalExecution: execution,
@@ -672,7 +707,7 @@ describe("CopilotGuideProvider — repair semantics", () => {
   it("sends exactly one repair request when the completed response is schema-invalid, then succeeds", async () => {
     const invalidResponse = message(JSON.stringify({ candidates: [] }))
     const client = new FakeClient([workingModel], [invalidResponse, message(validMatchResponse)])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     const result = await provider.match(matchInput)
 
@@ -685,7 +720,7 @@ describe("CopilotGuideProvider — repair semantics", () => {
   it("sends exactly one repair request when the completed response is not valid JSON, then succeeds", async () => {
     const invalidResponse = message("not json at all")
     const client = new FakeClient([workingModel], [invalidResponse, message(validMatchResponse)])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     const result = await provider.match(matchInput)
 
@@ -696,7 +731,7 @@ describe("CopilotGuideProvider — repair semantics", () => {
   it("fails without a second repair when the repair response is again invalid", async () => {
     const invalidResponse = message(JSON.stringify({ candidates: [] }))
     const client = new FakeClient([workingModel], [invalidResponse, invalidResponse])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toThrow(/match result\.candidates/u)
     expect(client.session?.prompts).toHaveLength(2)
@@ -707,7 +742,7 @@ describe("CopilotGuideProvider — repair semantics", () => {
   it("does not attempt a repair when sendAndWait throws (transport failure)", async () => {
     const transportError = new Error("network unreachable")
     const client = new FakeClient([workingModel], [transportError])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toThrow("network unreachable")
     expect(client.session?.prompts).toHaveLength(1)
@@ -717,7 +752,7 @@ describe("CopilotGuideProvider — repair semantics", () => {
 
   it("does not attempt a repair when sendAndWait resolves undefined (timeout/no message)", async () => {
     const client = new FakeClient([workingModel], [undefined])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toThrow(GuideModelResponseError)
     expect(client.session?.prompts).toHaveLength(1)
@@ -729,7 +764,7 @@ describe("CopilotGuideProvider — repair semantics", () => {
 describe("CopilotGuideProvider — model capability rejection", () => {
   it("rejects before creating a session when the configured model is not listed", async () => {
     const client = new FakeClient([], [message(validMatchResponse)])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toThrow(GuideModelCapabilityError)
     expect(client.createSessionCalls).toHaveLength(0)
@@ -742,7 +777,7 @@ describe("CopilotGuideProvider — model capability rejection", () => {
       capabilities: { ...workingModel.capabilities, supports: { vision: false, reasoningEffort: false } },
     }
     const client = new FakeClient([noEffortModel], [message(validMatchResponse)])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toThrow(GuideModelCapabilityError)
     expect(client.createSessionCalls).toHaveLength(0)
@@ -752,7 +787,7 @@ describe("CopilotGuideProvider — model capability rejection", () => {
   it("rejects before creating a session when the configured effort is unsupported, naming the supported efforts", async () => {
     const lowOnlyModel: ModelInfo = { ...workingModel, supportedReasoningEfforts: ["low"] }
     const client = new FakeClient([lowOnlyModel], [message(validMatchResponse)])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toThrow(GuideModelCapabilityError)
     await expect(provider.match(matchInput)).rejects.toThrow(/supports: low/u)
@@ -764,7 +799,7 @@ describe("CopilotGuideProvider — session/client boundary hardening", () => {
   it("defaults both client and session working directories to a path under os.tmpdir()", async () => {
     let capturedClientOptions: CopilotClientOptions | undefined
     const client = new FakeClient([workingModel], [message(validMatchResponse)])
-    const provider = new CopilotGuideProvider({
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel,
       prompts,
       clientFactory: (options) => {
         capturedClientOptions = options
@@ -782,7 +817,7 @@ describe("CopilotGuideProvider — session/client boundary hardening", () => {
     let capturedClientOptions: CopilotClientOptions | undefined
     const client = new FakeClient([workingModel], [message(validMatchResponse)])
     const customDirectory = path.join(os.tmpdir(), "custom-trx-guide-dir")
-    const provider = new CopilotGuideProvider({
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel,
       prompts,
       workingDirectory: customDirectory,
       clientFactory: (options) => {
@@ -803,7 +838,7 @@ describe("CopilotGuideProvider — cleanup failure handling", () => {
     const client = new FakeClient([workingModel], [message(validMatchResponse)], {
       disconnect: new Error("disconnect failed"),
     })
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toThrow(GuideModelCleanupError)
     expect(client.session?.disconnectCalls).toBe(1)
@@ -815,7 +850,7 @@ describe("CopilotGuideProvider — cleanup failure handling", () => {
     const client = new FakeClient([workingModel], [message(validMatchResponse)], {
       deleteSession: new Error("deleteSession failed"),
     })
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toThrow(GuideModelCleanupError)
     expect(client.session?.disconnectCalls).toBe(1)
@@ -828,7 +863,7 @@ describe("CopilotGuideProvider — cleanup failure handling", () => {
     const client = new FakeClient([workingModel], [message(validMatchResponse)], {
       stopResults: [stopError],
     })
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toMatchObject({
       name: "GuideModelCleanupError",
@@ -845,7 +880,7 @@ describe("CopilotGuideProvider — cleanup failure handling", () => {
       deleteSession: new Error("deleteSession failed"),
       stop: new Error("stop failed"),
     })
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toThrow(GuideModelCleanupError)
     expect(client.session?.disconnectCalls).toBe(1)
@@ -859,7 +894,7 @@ describe("CopilotGuideProvider — cleanup failure handling", () => {
       disconnect: new Error("disconnect failed"),
       stop: new Error("stop failed"),
     })
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     // The primary schema-validation error must win over any cleanup error.
     await expect(provider.match(matchInput)).rejects.toThrow(/match result\.candidates/u)
@@ -875,7 +910,7 @@ describe("CopilotGuideProvider — cleanup failure handling", () => {
       deleteSession: new Error("deleteSession failed"),
       stop: new Error("stop failed"),
     })
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toThrow("network unreachable")
     expect(client.session?.disconnectCalls).toBe(1)
@@ -885,7 +920,7 @@ describe("CopilotGuideProvider — cleanup failure handling", () => {
 
   it("succeeds without a cleanup error when every cleanup step succeeds", async () => {
     const client = new FakeClient([workingModel], [message(validMatchResponse)])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).resolves.toMatchObject({ candidates: expect.any(Array) as unknown })
   })
@@ -895,7 +930,7 @@ describe("CopilotGuideProvider — bounded response parsing", () => {
   it("rejects a completed response exceeding the response size bound without hanging, and still repairs once", async () => {
     const oversized = message("x".repeat(64 * 1024 + 1))
     const client = new FakeClient([workingModel], [oversized, message(validMatchResponse)])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     const result = await provider.match(matchInput)
 
@@ -906,7 +941,7 @@ describe("CopilotGuideProvider — bounded response parsing", () => {
   it("fails with GuideModelResponseError when both the first response and the repair are oversized", async () => {
     const oversized = message("x".repeat(64 * 1024 + 1))
     const client = new FakeClient([workingModel], [oversized, oversized])
-    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const provider = new CopilotGuideProvider({ selectModel: selectFixtureModel, prompts, clientFactory: () => client })
 
     await expect(provider.match(matchInput)).rejects.toThrow(GuideModelResponseError)
     expect(client.session?.prompts).toHaveLength(2)

@@ -113,6 +113,26 @@ describe("guidePromptSlug", () => {
 })
 
 describe("GuideArtifactCache", () => {
+  it("selects automatic matching afresh and retains the actual model in each artifact", async () => {
+    const cwd = await temporaryRoot()
+    let calls = 0
+    for (const model of ["first-choice", "second-choice"]) {
+      const execution = { backend: "copilot" as const, model: "auto", effort: "medium" }
+      await cacheFor(cwd).match({ ...matchInput, execution }, async () => {
+        calls++
+        execution.model = model
+        return matchResult
+      })
+    }
+    expect(calls).toBe(2)
+    const root = path.join(cwd, ".trx-guide")
+    const sessions = await readdir(root)
+    const artifacts = await Promise.all(sessions.map((session) => readFile(path.join(root, session, "1-profile-recommendations.md"), "utf8")))
+    expect(artifacts).toHaveLength(2)
+    expect(artifacts.some((source) => source.includes("first-choice (medium)"))).toBe(true)
+    expect(artifacts.some((source) => source.includes("second-choice (medium)"))).toBe(true)
+  })
+
   it("round-trips readable match Markdown and reuses its UUID directory", async () => {
     const cwd = await temporaryRoot()
     let calls = 0

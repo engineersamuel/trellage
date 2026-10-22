@@ -1,3 +1,4 @@
+import { selectGuideModel } from "../packages/trellage-launcher/src/guide-model-selector.ts"
 import { afterEach, expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -19,7 +20,7 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
-test("unexpected provider construction fails and leaves evidence even if caught", () => {
+test("unexpected provider construction fails and leaves evidence even if caught", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "provider-isolation-"))
   directories.push(directory)
   const receipt = path.join(directory, "violations")
@@ -29,6 +30,8 @@ test("unexpected provider construction fails and leaves evidence even if caught"
   expect(readFileSync(receipt, "utf8")).toContain("Copilot")
   expect(() => createLiveCopilotClient({})).toThrow("Unmocked Copilot provider")
   expect(() => createLiveTypeSafeClient({ apiKey: "canary-never-sent" })).toThrow("Unmocked TypeSafe provider")
+  await expect(selectGuideModel({ prompt: "canary-never-sent" })).rejects.toThrow("Unmocked guide model selection provider")
+  expect(readFileSync(receipt, "utf8")).toContain("guide model selection")
   delete process.env.TRELLAGE_TEST_VIOLATIONS
   expect(() => assertLiveProviderAllowed("TypeSafe")).toThrow("Unmocked TypeSafe provider in offline tests")
 })

@@ -1,3 +1,5 @@
+import { resolveGuideTaskModel, type GuideModelSelector } from "./guide-model-selector.ts"
+import { reviewCheckCatalog } from "./review-catalog.ts"
 import { randomUUID } from "node:crypto"
 import { runRestrictedGuideModelRequest } from "./copilot-guide-provider.ts"
 import {
@@ -23,6 +25,7 @@ import { SkillReviewOperation, type ReviewSkillOptions } from "./review-skills.t
 import { SharedReviewStore } from "./review-store.ts"
 
 export interface SharedReviewOptions {
+  readonly selectModel?: GuideModelSelector
   readonly request: ReviewRequest
   readonly confirmed: true
   readonly runner: CommandRunner
@@ -241,6 +244,25 @@ export const runSharedReview = async (options: SharedReviewOptions): Promise<Rev
   options.signal.throwIfAborted()
   const evidence = await captureSharedReviewEvidence(options.runner, options.request, options.signal)
   await assertGuideReviewTargetCurrent(options.runner, options.request.target, options.signal)
+  const routingContext = JSON.stringify({ intent: options.request.intent, evidence })
+  const checks = await Promise.all(options.request.checks.map(async (check) => {
+    const purpose = reviewCheckCatalog.find((entry) => entry.id === check.id)!.purpose
+    const select = (config: typeof check.model, task: string) => resolveGuideTaskModel(config, {
+      systemPrompt: task, prompt: routingContext, signal: options.signal,
+    }, options.selectModel)
+    const [model, workers] = await Promise.all([
+      select(check.model, `Run ${check.id}: ${purpose}. Review the supplied code evidence.`),
+      Promise.all(check.workers.map(async (worker) => ({
+        ...worker, model: await select(worker.model, `Review the supplied code evidence for ${worker.name}: ${purpose}.`),
+      }))),
+    ])
+    return { ...check, model, workers }
+  }))
+  const coordinator = await resolveGuideTaskModel(options.request.coordinator, {
+    systemPrompt: "Synthesize code review reports, reconcile findings and disagreements, and assess supporting evidence.",
+    prompt: routingContext, signal: options.signal,
+  }, options.selectModel)
+  options = { ...options, request: { ...options.request, checks, coordinator } }
   const initial: ReviewRun = {
     schemaVersion: 2,
     id: randomUUID(),
