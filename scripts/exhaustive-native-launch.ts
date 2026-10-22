@@ -57,7 +57,8 @@ const sourceHashes = { ...cliSourceHashes }
 const allProfiles = run.find((domain) => domain.name === "profiles")!.values
 // Copilot runs every profile; every other harness runs the omitted stack plus one real profile.
 // Profiles are shared across harnesses, so this still exercises each profile once and each harness once.
-const profiles = harness === "copilot" ? allProfiles : allProfiles.filter((profile) => ["omitted", "base"].includes(profile.id))
+const profiles =
+  harness === "copilot" ? allProfiles : allProfiles.filter((profile) => ["omitted", "base"].includes(profile.id))
 const flags = run
   .filter((domain) => domain.name.startsWith("--") && domain.values.length === 2 && domain.values[1]!.argv.length === 1)
   .map((domain) => domain.name)
@@ -76,6 +77,48 @@ assert.deepEqual(
   ],
   "Native launch oracle must cover every run boolean",
 )
+const pathExists = (target: string) =>
+  access(target).then(
+    () => true,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return false
+      throw error
+    },
+  )
+const activeLeaseGenerations = async (state: string) => {
+  const active: string[] = []
+  for (const generation of await readdir(path.join(state, "leases")))
+    if ((await readdir(path.join(state, "leases", generation))).length) active.push(generation)
+  return active
+}
+const matchingGenerations = async (
+  data: string,
+  generation: string,
+  harness: string,
+  profiles: string[],
+): Promise<string[]> => {
+  const candidates: string[] = []
+  for (const owner of await readdir(path.join(data, "compositions"))) {
+    const candidate = path.join(data, "compositions", owner, "generations", generation)
+    if (!(await pathExists(candidate))) continue
+    const manifest = JSON.parse(await readFile(path.join(candidate, "manifest.json"), "utf8"))
+    if (manifest.harness === harness && JSON.stringify(manifest.profiles) === JSON.stringify(profiles))
+      candidates.push(candidate)
+  }
+  return candidates
+}
+const findLaunchedGeneration = async (
+  paths: { state: string; data: string },
+  harness: string,
+  profiles: string[],
+  id: string,
+) => {
+  const active = await activeLeaseGenerations(paths.state)
+  assert.equal(active.length, 1, id)
+  const candidates = await matchingGenerations(paths.data, active[0]!, harness, profiles)
+  assert.equal(candidates.length, 1, id)
+  return candidates[0]!
+}
 const hash = async (relative: string) => {
   sourceHashes[relative] = createHash("sha256")
     .update(await readFile(path.join(root, relative)))
@@ -167,7 +210,9 @@ try {
       // Copilot's bare --resume opens a session picker before isolation checks; the fixture has no
       // sessions, so it reports that and exits 0 without launching.
       const pickerEmpty: boolean =
-        harness === "copilot" && selected.includes("--resume") && !dry &&
+        harness === "copilot" &&
+        selected.includes("--resume") &&
+        !dry &&
         (expectedError === undefined || expectedError === "isolation")
       if (pickerEmpty) expectedError = undefined
       const presetPrefix: string = `preset-${harness}-`
@@ -200,31 +245,8 @@ try {
             refreshes++
           },
           spawner: async (launch, env, cwd, onSpawn) => {
-            launchedGeneration = launch.env[homeVariable] ?? undefined
-            if (!launchedGeneration) {
-              const active = []
-              for (const generation of await readdir(path.join(world.paths.state, "leases")))
-                if ((await readdir(path.join(world.paths.state, "leases", generation))).length) active.push(generation)
-              assert.equal(active.length, 1, id)
-              const candidates = []
-              for (const owner of await readdir(path.join(world.paths.data, "compositions"))) {
-                const candidate = path.join(world.paths.data, "compositions", owner, "generations", active[0]!)
-                const exists = await access(candidate).then(
-                  () => true,
-                  (error: NodeJS.ErrnoException) => {
-                    if (error.code === "ENOENT") return false
-                    throw error
-                  },
-                )
-                if (exists) {
-                  const manifest = JSON.parse(await readFile(path.join(candidate, "manifest.json"), "utf8"))
-                  if (manifest.harness === harness && JSON.stringify(manifest.profiles) === JSON.stringify(resolved))
-                    candidates.push(candidate)
-                }
-              }
-              assert.equal(candidates.length, 1, id)
-              launchedGeneration = candidates[0]!
-            }
+            launchedGeneration =
+              launch.env[homeVariable] || (await findLaunchedGeneration(world.paths, harness, resolved, id))
             const generation = path.basename(launchedGeneration)
             assert.equal((await readdir(path.join(world.paths.state, "leases", generation))).length, 1, id)
             return world.dependencies.spawner!(launch, env, cwd, onSpawn)
@@ -282,7 +304,7 @@ try {
               "--model",
               "gpt-6-astra",
               "--effort",
-              "low",
+              "medium",
               ...forwarded,
             ],
             id,
@@ -404,7 +426,7 @@ try {
             id,
           )
           assert.equal(launch.env.TRX_UJI_MODEL, "copilot-proxy-rs/gpt-6-astra", id)
-          assert.equal(launch.env.TRX_UJI_EFFORT, null, id)
+          assert.equal(launch.env.TRX_UJI_EFFORT, "medium", id)
           assert.equal(launch.env.TRX_UJI_PLAN, selected.includes("--plan") ? "1" : null, id)
           assert.equal(
             await readFile(path.join(launchedGeneration!, "plugin", "trellage-tools.lua"), "utf8"),
@@ -439,7 +461,7 @@ try {
                 "--model",
                 "gpt-6-astra",
                 "--effort",
-                "low",
+                "medium",
                 ...resume,
                 ...forwarded,
               ],
@@ -449,9 +471,10 @@ try {
             assert(config.trustedFolders.includes(cwd), id)
             // A preset that is not a lifecycle profile (`preset-copilot-clean` by name) admits no plugin.
             const admitted = nativePresetProfiles("copilot").includes(lifecycle)
-            const settings = clean || admitted
-              ? JSON.parse(await readFile(path.join(launchedGeneration!, "settings.json"), "utf8"))
-              : {}
+            const settings =
+              clean || admitted
+                ? JSON.parse(await readFile(path.join(launchedGeneration!, "settings.json"), "utf8"))
+                : {}
             if (!clean && !admitted) assert.equal(config.installedPlugins, undefined, id)
             else if (clean) {
               assert.deepEqual(settings.disabledSkills, ["unselected-fixture"], id)
@@ -495,7 +518,7 @@ try {
                   : ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions"]),
                 ...(interactive ? [] : ["--disallowedTools", "AskUserQuestion"]),
                 "--model",
-                "opusplan",
+                "claude-opus-5.5",
                 ...(plan ? ["--permission-mode", "plan"] : ["--effort", "medium"]),
                 ...resume,
                 ...forwarded,
@@ -623,7 +646,8 @@ try {
           ? [{ role: harness, args: ["inventory", "trellage-azure", "--json"] }]
           : harness === "jcode"
             ? [{ role: harness, args: ["_trx-executable"] }]
-            : claudeAdmission || (harness === "copilot" && !clean && nativePresetProfiles("copilot").includes(lifecycle))
+            : claudeAdmission ||
+                (harness === "copilot" && !clean && nativePresetProfiles("copilot").includes(lifecycle))
               ? [{ role: harness, args: ["_trx-admit", lifecycle] }]
               : []
       assert.deepEqual((await fixture.calls()).slice(metadataCount), metadataCalls, id)

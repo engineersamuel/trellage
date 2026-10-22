@@ -28,7 +28,12 @@ const world = async () => {
   await writeFile(lifecycle, `#!/bin/sh\nprintf '{"pluginDir":null}'\n`, { mode: 0o755 })
   const paths = await fixturePaths(root)
   const dependencies: RunDependencies = {
-    environment: { PATH: process.env.PATH ?? "", TRELLAGE_CONFIG: configPath, HOME: root, TRELLAGE_CLAUDE_LIFECYCLE_BIN: lifecycle },
+    environment: {
+      PATH: process.env.PATH ?? "",
+      TRELLAGE_CONFIG: configPath,
+      HOME: root,
+      TRELLAGE_CLAUDE_LIFECYCLE_BIN: lifecycle,
+    },
     paths,
     cwd: root,
     transport: gitSourceTransport(() => {
@@ -54,7 +59,7 @@ test("a Claude supervisor's workers find the proxy setup in the shared config di
     ANTHROPIC_BASE_URL: "http://127.0.0.1:8080",
     ANTHROPIC_AUTH_TOKEN: "trellage-local-proxy",
   })
-  expect(settings.model).toBe("opusplan")
+  expect(settings.model).toBe("claude-opus-5.5")
   expect(settings.env.PATH.split(path.delimiter)[0]).toBe(shims)
   expect(settings.env.PATH).toContain(process.env.PATH?.split(path.delimiter)[0] ?? "")
   expect(existsSync(path.join(prepared.layout.generationPath, WORKER_GENERATION_MARKER))).toBe(true)
@@ -65,7 +70,10 @@ test("a Pi supervisor pins Firstmate's Pi workers, and a Claude run clears only 
   expect(await runNative({ ...base, harness: "pi", profiles: ["fleet"] }, dependencies)).toBe(0)
   const piSettings = JSON.parse(
     await readFile(
-      path.join((await prepareRun({ ...base, harness: "pi", profiles: ["fleet"] }, dependencies)).layout.generationPath, "settings.json"),
+      path.join(
+        (await prepareRun({ ...base, harness: "pi", profiles: ["fleet"] }, dependencies)).layout.generationPath,
+        "settings.json",
+      ),
       "utf8",
     ),
   )
@@ -87,7 +95,9 @@ test("worker config files the user wrote are never replaced or removed", async (
   const { home, dependencies } = await world()
   await mkdir(path.join(home, "config"))
   await writeFile(path.join(home, "config", "crew-dispatch.json"), '{"rules":[]}\n')
-  await expect(runNative({ ...base, harness: "pi", profiles: ["fleet"] }, dependencies)).rejects.toThrow(/was not written by trx/)
+  await expect(runNative({ ...base, harness: "pi", profiles: ["fleet"] }, dependencies)).rejects.toThrow(
+    /was not written by trx/,
+  )
   expect(await runNative({ ...base, harness: "claude", profiles: ["fleet"] }, dependencies)).toBe(0)
   expect(await readFile(path.join(home, "config", "crew-dispatch.json"), "utf8")).toBe('{"rules":[]}\n')
 })

@@ -44,7 +44,8 @@ const world = async (config?: string) => {
   const office = await createSourceRepo(root, "office")
   await office.write({
     "skills/powerpoint/SKILL.md": skillMarkdown("powerpoint"),
-    "skills/i-have-adhd/SKILL.md": "---\nname: i-have-adhd\ndisable-model-invocation: true\n---\nManual output fixture.\n",
+    "skills/i-have-adhd/SKILL.md":
+      "---\nname: i-have-adhd\ndisable-model-invocation: true\n---\nManual output fixture.\n",
     "plugins/sample/.claude-plugin/plugin.json": JSON.stringify({ name: "sample", description: "fixture" }),
     "plugins/sample/commands/check.md": "# Check\n",
     "plugins/sample/.mcp.json": JSON.stringify({ mcpServers: { fixture: { command: "fixture" } } }),
@@ -127,8 +128,10 @@ test.each([
   { profiles: ["empty"], noAlways: true, always: true, harnesses: ["codex"], fails: false },
   { profiles: ["rules"], noAlways: true, always: true, harnesses: ["codex"], fails: true },
   { profiles: ["empty"], noAlways: false, always: true, harnesses: ["pi"], fails: false },
-])("instruction files are required only by effective profiles: %j", async ({ profiles, noAlways, always, harnesses, fails }) => {
-  const fixture = await world(`schema_version = 1
+])(
+  "instruction files are required only by effective profiles: %j",
+  async ({ profiles, noAlways, always, harnesses, fails }) => {
+    const fixture = await world(`schema_version = 1
 [native.instructions.rules]
 file = "missing.md"
 [native.profiles.empty]
@@ -137,13 +140,14 @@ always = ${always}
 harnesses = ${JSON.stringify(harnesses)}
 instructions = ["rules"]
 `)
-  const preparing = prepareRun(
-    { ...base, harness: "codex", profiles, dryRun: true, noAlways },
-    fixture.dependencies(),
-  )
-  if (fails) await expect(preparing).rejects.toThrow("instruction rules: cannot read")
-  else expect((await preparing).plan.instructions).toEqual([])
-})
+    const preparing = prepareRun(
+      { ...base, harness: "codex", profiles, dryRun: true, noAlways },
+      fixture.dependencies(),
+    )
+    if (fails) await expect(preparing).rejects.toThrow("instruction rules: cannot read")
+    else expect((await preparing).plan.instructions).toEqual([])
+  },
+)
 
 test("explicitly selecting an always profile preserves each generation's selection metadata", async () => {
   const fixture = await world(`schema_version = 1
@@ -205,7 +209,9 @@ test("Prime launch uses its managed lifecycle binary and preserves spawn diagnos
     TRELLAGE_TEST_MARKER: marker,
   }
   const input = primeLaunchInput(root, environment)
-  await expect(primeAdapter.resolveLaunch!(input, primeAdapter.launch(input))).rejects.toThrow(/unsafe Prime profile root/)
+  await expect(primeAdapter.resolveLaunch!(input, primeAdapter.launch(input))).rejects.toThrow(
+    /unsafe Prime profile root/,
+  )
   expect(await readFile(marker, "utf8")).toBe("setup\ndefault\n")
 
   const missingLifecycleInput = primeLaunchInput(root, {
@@ -253,11 +259,7 @@ test("Headlong uses host proxy settings and keeps manual skills outside identity
   const appHome = path.join(headlongHome, "app")
   const initBinary = path.join(root, "bin", "headlong-init")
   await mkdir(path.dirname(initBinary), { recursive: true })
-  await writeFile(
-    initBinary,
-    "#!/bin/sh\nset -eu\nmkdir -p \"$HEADLONG_APP_DIR/.identities/ada\"\n",
-    { mode: 0o755 },
-  )
+  await writeFile(initBinary, '#!/bin/sh\nset -eu\nmkdir -p "$HEADLONG_APP_DIR/.identities/ada"\n', { mode: 0o755 })
   const configured = dependencies()
   const environment = {
     ...configured.environment,
@@ -316,7 +318,7 @@ test("Uji scopes its config, selected skills, and session database to the profil
   await writeFile(path.join(root, "policy.md"), instruction)
   const defaultPrepared = await prepareRun({ ...base, harness: "uji", profiles: ["default"] }, dependencies())
   expect(defaultPrepared.launch.env.TRX_UJI_MODEL).toBe("copilot-proxy-rs/gpt-6-astra")
-  expect(defaultPrepared.launch.env.TRX_UJI_EFFORT).toBeNull()
+  expect(defaultPrepared.launch.env.TRX_UJI_EFFORT).toBe("medium")
   const prepared = await prepareRun(
     {
       ...base,
@@ -347,7 +349,9 @@ test("Uji scopes its config, selected skills, and session database to the profil
   const ujiTools = await readFile(path.join(prepared.layout.generationPath, "plugin", "trellage-tools.lua"), "utf8")
   const ujiToolsSource = await readFile(new URL("../../src/native-run/uji-tools.lua", import.meta.url))
   expect(ujiTools).toBe(ujiToolsSource.toString("utf8"))
-  expect(ujiAdapter.policyVersion).toBe(`uji-allow-all-${createHash("sha256").update(ujiToolsSource).digest("hex")}`)
+  expect(ujiAdapter.policyVersion).toBe(
+    `uji-allow-all-medium-${createHash("sha256").update(ujiToolsSource).digest("hex")}`,
+  )
   expect(config).toContain('require("uji.builtin.defaults")')
   expect(config).toContain('uji.tool.policy({ default = "allow" })')
   expect(config).toContain('uji.pack.add({ "uji-labs/uji-plugins" })')
@@ -471,10 +475,17 @@ test("OMP keeps profile defaults and passes explicit local model overrides", asy
   const defaultRun = await prepareRun({ ...base, harness: "omp", profiles: [] }, dependencies())
   expect(defaultRun.launch.args).toEqual(["--model", "github-copilot/gpt-5.6-sol", "--thinking", "medium"])
   const local = await prepareRun({ ...base, harness: "omp", profiles: ["local"] }, dependencies())
-  expect(local.launch.args).toEqual([])
-  const overridden = await prepareRun({
-    ...base, harness: "omp", profiles: ["local"], model: "copilot-proxy-rs/custom-model", effort: "off",
-  }, dependencies())
+  expect(local.launch.args).toEqual(["--thinking", "medium"])
+  const overridden = await prepareRun(
+    {
+      ...base,
+      harness: "omp",
+      profiles: ["local"],
+      model: "copilot-proxy-rs/custom-model",
+      effort: "off",
+    },
+    dependencies(),
+  )
   expect(overridden.launch.args).toEqual(["--model", "copilot-proxy-rs/custom-model", "--thinking", "off"])
 })
 
@@ -804,7 +815,9 @@ while :; do :; done
   const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
   const profileGuard = acquireProfileGuard("omp", ["default"], "run", root)
   const db = new Database(path.join(root, ".local/share/trellage/profile-guards/profiles.sqlite"))
-  db.exec("CREATE TRIGGER reject_owner_updates BEFORE UPDATE ON owners BEGIN SELECT RAISE(FAIL, 'guard attachment failed'); END")
+  db.exec(
+    "CREATE TRIGGER reject_owner_updates BEFORE UPDATE ON owners BEGIN SELECT RAISE(FAIL, 'guard attachment failed'); END",
+  )
   let treeSettledAt = 0
   let attachedPid: number | undefined
   let released = false
@@ -876,48 +889,59 @@ test("OMP admission bounds failed tree cleanup while owned work remains alive", 
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-cleanup-timeout")
   const ready = path.join(root, "omp-cleanup-ready")
-  await writeFile(lifecycle, `#!/bin/sh
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
 trap '' TERM
 printf ready > "$OMP_TEST_READY"
 while :; do :; done
-`, { mode: 0o755 })
+`,
+    { mode: 0o755 },
+  )
   const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
   const profileGuard = acquireProfileGuard("omp", ["default"], "run", root)
   let childPid: number | undefined
-  const admission = ompAdapter.resolveLaunch!({
-    resumeArgs: [],
-    layout: prepared.layout,
-    plan: prepared.plan,
-    planMode: false,
-    model: "gpt-5.6-sol",
-    effort: "medium",
-    forwardedArgs: [],
-    workspace: work,
-    environment: {
-      HOME: root,
-      PATH: process.env.PATH ?? "",
-      OMP_TEST_READY: ready,
-      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
-    },
-    guard: {
-      attachChild: (pid, grouped) => {
-        childPid = pid
-        profileGuard.attachChild(pid, grouped)
+  const admission = ompAdapter.resolveLaunch!(
+    {
+      resumeArgs: [],
+      layout: prepared.layout,
+      plan: prepared.plan,
+      planMode: false,
+      model: "gpt-5.6-sol",
+      effort: "medium",
+      forwardedArgs: [],
+      workspace: work,
+      environment: {
+        HOME: root,
+        PATH: process.env.PATH ?? "",
+        OMP_TEST_READY: ready,
+        TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
       },
-      signalTree: (pid, signal) => {
-        if (signal === "SIGKILL") throw new Error("cannot signal admission tree")
-        profileGuard.signalTree(pid, signal)
+      guard: {
+        attachChild: (pid, grouped) => {
+          childPid = pid
+          profileGuard.attachChild(pid, grouped)
+        },
+        signalTree: (pid, signal) => {
+          if (signal === "SIGKILL") throw new Error("cannot signal admission tree")
+          profileGuard.signalTree(pid, signal)
+        },
+        waitForTree: profileGuard.waitForTree,
       },
-      waitForTree: profileGuard.waitForTree,
     },
-  }, prepared.launch)
-  const outcome = admission.then(() => "unexpected launch", (error) => String(error))
+    prepared.launch,
+  )
+  const outcome = admission.then(
+    () => "unexpected launch",
+    (error) => String(error),
+  )
   try {
     for (let attempt = 0; attempt < 200 && !existsSync(ready); attempt += 1) await Bun.sleep(10)
     expect(existsSync(ready)).toBe(true)
     process.emit("SIGTERM")
-    expect(await Promise.race([outcome, Bun.sleep(3_500).then(() => "cleanup timed out")]))
-      .toMatch(/admission cleanup did not settle/)
+    expect(await Promise.race([outcome, Bun.sleep(3_500).then(() => "cleanup timed out")])).toMatch(
+      /admission cleanup did not settle/,
+    )
     expect(await profileGuard.waitForTree(childPid!, 0)).toBe(false)
   } finally {
     if (childPid !== undefined) {
@@ -1062,44 +1086,48 @@ test("a failed OMP guard admission releases its generation lease", async () => {
   }
 })
 
-test.each(["override", "managed"] as const)("JCode resolves its private mise executable through %s lifecycle", async (mode) => {
-  const { dependencies, root, work } = await world()
-  const lifecycle = mode === "override" ? path.join(root, "jcx") : path.join(root, ".local/share/trellage/jcx/bin/jcx")
-  await mkdir(path.dirname(lifecycle), { recursive: true })
-  const managed = path.join(root, "managed-jcode")
-  await writeFile(managed, "#!/bin/sh\n", { mode: 0o755 })
-  await writeFile(
-    lifecycle,
-    `#!/bin/sh
+test.each(["override", "managed"] as const)(
+  "JCode resolves its private mise executable through %s lifecycle",
+  async (mode) => {
+    const { dependencies, root, work } = await world()
+    const lifecycle =
+      mode === "override" ? path.join(root, "jcx") : path.join(root, ".local/share/trellage/jcx/bin/jcx")
+    await mkdir(path.dirname(lifecycle), { recursive: true })
+    const managed = path.join(root, "managed-jcode")
+    await writeFile(managed, "#!/bin/sh\n", { mode: 0o755 })
+    await writeFile(
+      lifecycle,
+      `#!/bin/sh
 test "$TRELLAGE_TRX_JCODE_ADAPTER" = 1
 test "$1" = _trx-executable
 printf '%s\\n' ${JSON.stringify(managed)}
 `,
-    { mode: 0o755 },
-  )
-  const prepared = await prepareRun({ ...base, harness: "fx", profiles: ["default"] }, dependencies())
-  const input: LaunchInput = {
-    resumeArgs: [],
-    layout: prepared.layout,
-    plan: prepared.plan,
-    planMode: false,
-    model: "gpt-5.6-sol",
-    effort: "medium",
-    forwardedArgs: [],
-    environment: {
-      HOME: root,
-      PATH: "/usr/bin:/bin",
-      TRELLAGE_TRX_NATIVE_SOURCE: "1",
-      ...(mode === "override" ? { TRELLAGE_JCODE_LIFECYCLE_BIN: lifecycle } : {}),
-    },
-    workspace: work,
-  }
-  expect((await jcodeAdapter.resolveLaunch!(input, prepared.launch)).command).toBe(managed)
-  await writeFile(lifecycle, "#!/bin/sh\nprintf 'missing fixture receipt\\n' >&2\nexit 1\n", { mode: 0o755 })
-  await expect(jcodeAdapter.resolveLaunch!(input, prepared.launch)).rejects.toThrow(
-    "JCode admission failed: missing fixture receipt",
-  )
-})
+      { mode: 0o755 },
+    )
+    const prepared = await prepareRun({ ...base, harness: "fx", profiles: ["default"] }, dependencies())
+    const input: LaunchInput = {
+      resumeArgs: [],
+      layout: prepared.layout,
+      plan: prepared.plan,
+      planMode: false,
+      model: "gpt-5.6-sol",
+      effort: "medium",
+      forwardedArgs: [],
+      environment: {
+        HOME: root,
+        PATH: "/usr/bin:/bin",
+        TRELLAGE_TRX_NATIVE_SOURCE: "1",
+        ...(mode === "override" ? { TRELLAGE_JCODE_LIFECYCLE_BIN: lifecycle } : {}),
+      },
+      workspace: work,
+    }
+    expect((await jcodeAdapter.resolveLaunch!(input, prepared.launch)).command).toBe(managed)
+    await writeFile(lifecycle, "#!/bin/sh\nprintf 'missing fixture receipt\\n' >&2\nexit 1\n", { mode: 0o755 })
+    await expect(jcodeAdapter.resolveLaunch!(input, prepared.launch)).rejects.toThrow(
+      "JCode admission failed: missing fixture receipt",
+    )
+  },
+)
 
 test("Claude admission loads the validated lifecycle plugin directory", async () => {
   const { dependencies, root, work } = await world()
@@ -1291,8 +1319,13 @@ test("Copilot customer workflows keep ask_user and drop guide-only flags", async
       harness: "copilot",
       profiles: ["superpowers"],
       forwardedArgs: [
-        "--interactive", "--agent", "hve-core:experiment-designer",
-        "--require-skill", "experiment-design", "-i", "Test the assumption",
+        "--interactive",
+        "--agent",
+        "hve-core:experiment-designer",
+        "--require-skill",
+        "experiment-design",
+        "-i",
+        "Test the assumption",
       ],
     },
     dependencies(),
@@ -1306,7 +1339,7 @@ test("Copilot customer workflows keep ask_user and drop guide-only flags", async
   expect(args.slice(-4)).toEqual(["--agent", "hve-core:experiment-designer", "-i", "Test the assumption"])
 })
 
-test("Claude applies opusplan defaults and real plan-mode arguments", async () => {
+test("Claude defaults to Opus 5.5 and keeps real plan-mode arguments", async () => {
   const { dependencies } = await world()
   const normal = await prepareRun({ ...base, harness: "claude", profiles: ["default"] }, dependencies())
   expect(normal.launch.args).toEqual([
@@ -1316,10 +1349,13 @@ test("Claude applies opusplan defaults and real plan-mode arguments", async () =
     "--disallowedTools",
     "AskUserQuestion",
     "--model",
-    "opusplan",
+    "claude-opus-5.5",
     "--effort",
     "medium",
   ])
+  expect(JSON.parse(await readFile(path.join(normal.layout.generationPath, "settings.json"), "utf8")).model).toBe(
+    "claude-opus-5.5",
+  )
   const planned = await prepareRun({ ...base, harness: "claude", profiles: ["default"], plan: true }, dependencies())
   expect(planned.launch.args).toEqual([
     "--allow-dangerously-skip-permissions",
@@ -1328,10 +1364,34 @@ test("Claude applies opusplan defaults and real plan-mode arguments", async () =
     "--disallowedTools",
     "AskUserQuestion",
     "--model",
-    "opusplan",
+    "claude-opus-5.5",
     "--permission-mode",
     "plan",
   ])
+})
+
+test("supported harnesses default to medium effort instead of host-configured effort", async () => {
+  const { dependencies, root } = await world()
+  await mkdir(path.join(root, ".copilot"))
+  await writeFile(path.join(root, ".copilot", "settings.json"), '{"model":"host-copilot","effortLevel":"high"}\n')
+  await mkdir(path.join(root, ".codex"))
+  await writeFile(path.join(root, ".codex", "config.toml"), 'model = "host-codex"\nmodel_reasoning_effort = "high"\n')
+  await mkdir(path.join(root, ".grok"))
+  await writeFile(path.join(root, ".grok", "config.toml"), 'model = "host-grok"\nreasoning_effort = "high"\n')
+
+  const cases = [
+    { harness: "copilot", expected: ["--model", "host-copilot", "--effort", "medium"] },
+    { harness: "codex", expected: ["-m", "host-codex", "-c", 'model_reasoning_effort="medium"'] },
+    { harness: "grok", expected: ["--model", "host-grok", "--reasoning-effort", "medium"] },
+  ] as const
+  for (const { harness, expected } of cases) {
+    const prepared = await prepareRun({ ...base, harness, profiles: [] }, dependencies())
+    for (let index = 0; index < expected.length; index += 2) {
+      const position = prepared.launch.args.indexOf(expected[index + 1]!)
+      expect(position).toBeGreaterThan(0)
+      expect(prepared.launch.args[position - 1]).toBe(expected[index])
+    }
+  }
 })
 
 test("parses resume requests and prints the matching resume command", () => {
@@ -1351,8 +1411,9 @@ for (const harness of ["fx", "headlong", "agency", "jcode", "omp", "prime"]) {
   for (const flag of ["--continue", "--resume", "--resume=fixture-session"]) {
     test(`${harness} rejects unsupported ${flag} before publishing a new session generation`, async () => {
       const fixture = await world()
-      await expect(prepareRun(parseRunArguments([harness, "office", flag, "--dry-run"]), fixture.dependencies()))
-        .rejects.toMatchObject({ code: "unsupported" })
+      await expect(
+        prepareRun(parseRunArguments([harness, "office", flag, "--dry-run"]), fixture.dependencies()),
+      ).rejects.toMatchObject({ code: "unsupported" })
       expect(existsSync(fixture.paths.data)).toBe(false)
     })
   }
@@ -1392,8 +1453,7 @@ test("Codex saves folder trust before spawning in each new worktree and preserve
             [workspace]: { trust_level: "trusted" },
             [await realpath(workspace)]: { trust_level: "trusted" },
           })
-          if (workspace === work)
-            await writeFile(file, `model = "saved-model"\n${await readFile(file, "utf8")}`)
+          if (workspace === work) await writeFile(file, `model = "saved-model"\n${await readFile(file, "utf8")}`)
           else {
             expect(config.model).toBe("saved-model")
             expect(config.projects).toMatchObject({ [work]: { trust_level: "trusted" } })
@@ -1525,10 +1585,7 @@ test("a stacked Pi composition publishes only the selected skills and launches P
   for (const name of PI_EXTENSION_PACKAGES) {
     const extensionRoot = path.join(extensionHome, name)
     await mkdir(extensionRoot, { recursive: true })
-    await writeFile(
-      path.join(extensionRoot, "package.json"),
-      JSON.stringify({ pi: { extensions: ["dist/index.ts"] } }),
-    )
+    await writeFile(path.join(extensionRoot, "package.json"), JSON.stringify({ pi: { extensions: ["dist/index.ts"] } }))
   }
   let launched: Parameters<Spawner>[0] | undefined
   const spawner: Spawner = async (launch, _environment, _cwd, onSpawn) => {
@@ -1538,12 +1595,7 @@ test("a stacked Pi composition publishes only the selected skills and launches P
   }
   const status = await runNative({ ...base, harness: "pi", profiles: ["superpowers", "office"] }, dependencies(spawner))
   expect(status).toBe(0)
-  expect(launched!.args.slice(0, 4)).toEqual([
-    "--no-skills",
-    "--no-extensions",
-    "--extension",
-    "builtin:codemode",
-  ])
+  expect(launched!.args.slice(0, 4)).toEqual(["--no-skills", "--no-extensions", "--extension", "builtin:codemode"])
   expect(launched!.args).toContain("--no-prompt-templates")
   expect(launched!.args).toContain("--no-approve")
   for (const name of PI_EXTENSION_PACKAGES) {
@@ -1574,7 +1626,13 @@ test("zero profiles launches a clean base harness", async () => {
 
 test("--skill composes only the named skills, reusing a configured source", async () => {
   const { dependencies } = await world()
-  const options = parseRunArguments(["pi", "--no-always", "--skill", "example/superpowers:writing-plans", "--skill=example/office:powerpoint"])
+  const options = parseRunArguments([
+    "pi",
+    "--no-always",
+    "--skill",
+    "example/superpowers:writing-plans",
+    "--skill=example/office:powerpoint",
+  ])
   expect(options.skills).toEqual(["example/superpowers:writing-plans", "example/office:powerpoint"])
   const prepared = await prepareRun({ ...base, ...options }, dependencies())
   expect(prepared.plan.skills.map((skill) => skill.name)).toEqual(["powerpoint", "writing-plans"])
@@ -1883,7 +1941,10 @@ skills = [{source = "superpowers", names = ["brainstorming", "writing-plans"]}]
 
 test("Copilot generations drop disable-model-invocation; other harnesses keep it", async () => {
   const { dependencies, office } = await world()
-  await office.write({ "skills/powerpoint/SKILL.md": "---\nname: powerpoint\ndescription: Slides.\ndisable-model-invocation: true\n---\n\nBody\n" })
+  await office.write({
+    "skills/powerpoint/SKILL.md":
+      "---\nname: powerpoint\ndescription: Slides.\ndisable-model-invocation: true\n---\n\nBody\n",
+  })
   const copilot = await prepareRun({ ...base, harness: "copilot", profiles: ["office"] }, dependencies())
   const copied = await readFile(path.join(copilot.layout.generationPath, "skills", "powerpoint", "SKILL.md"), "utf8")
   expect(copied).not.toContain("disable-model-invocation")
@@ -1950,6 +2011,7 @@ test("Codex clean ignores host Codex defaults and disables repository docs and s
   const args = codex.launch.args
   expect(args).not.toContain("-m")
   expect(args).not.toContain("host-model")
+  expect(args).toContain('model_reasoning_effort="medium"')
   const at = (value: string) => args.findIndex((argument, index) => argument === "-c" && args[index + 1] === value)
   expect(at("project_doc_max_bytes=0")).toBeGreaterThanOrEqual(0)
   expect(at("skills.include_instructions=false")).toBeGreaterThanOrEqual(0)
@@ -1987,9 +2049,9 @@ test("clean rejects unsupported harnesses and mixed selections", async () => {
   await expect(prepareRun({ ...base, harness: "grok", profiles: ["clean"] }, dependencies())).rejects.toThrow(
     /Grok cannot run clean: .*Clean runs support: claude, codex, copilot, pi/,
   )
-  await expect(prepareRun({ ...base, harness: "claude", profiles: ["clean", "office"] }, dependencies())).rejects.toThrow(
-    /cannot be combined/,
-  )
+  await expect(
+    prepareRun({ ...base, harness: "claude", profiles: ["clean", "office"] }, dependencies()),
+  ).rejects.toThrow(/cannot be combined/)
   await expect(
     prepareRun({ ...base, harness: "claude", profiles: ["clean"], skills: ["a/b:c"] }, dependencies()),
   ).rejects.toThrow(/cannot be combined/)
@@ -2017,12 +2079,13 @@ test("Codex clean refuses a repository .codex layer up to the git root but not a
   expect(codex.plan.skills).toEqual([])
 })
 
-test("Claude pins default model ids only for concrete models, never for aliases", async () => {
+test("Claude pins the default model ids and applies explicit concrete model overrides", async () => {
   const { dependencies } = await cleanWorld()
   const normal = await prepareRun({ ...base, harness: "claude", profiles: ["default"] }, dependencies())
-  expect(normal.launch.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined()
+  expect(normal.launch.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-5.5")
+  expect(normal.launch.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-opus-5.5")
   const clean = await prepareRun({ ...base, harness: "claude", profiles: ["clean"] }, dependencies())
-  expect(clean.launch.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined()
+  expect(clean.launch.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-5.5")
   const concrete = await prepareRun(
     { ...base, harness: "claude", profiles: ["default"], model: "claude-opus-5" },
     dependencies(),
@@ -2092,10 +2155,7 @@ esac
   const { launches, spawner } = capture()
   const shared = dependencies(spawner)
   const environment = { ...shared.environment, TRELLAGE_COPILOT_BIN: fake }
-  const status = await runNative(
-    { ...base, harness: "copilot", profiles: ["clean"] },
-    { ...shared, environment },
-  )
+  const status = await runNative({ ...base, harness: "copilot", profiles: ["clean"] }, { ...shared, environment })
   expect(status).toBe(0)
   const launch = launches[0]!
   expect(launch.args.slice(0, 8)).toEqual([
