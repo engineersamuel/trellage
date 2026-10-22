@@ -61,7 +61,7 @@ run = "./scripts/rebuild-profile-images.sh"
 [tasks.pull]
 description = "git pull --rebase origin main, then always refresh Native backends and upgrade managed harnesses, skills, and plugins"
 # Hooks are off for the pull itself so the upgrade runs exactly once, even when already up to date.
-run = "git -c core.hooksPath=/dev/null pull --rebase origin main && ./scripts/refresh-native-if-stale.sh && ./scripts/upgrade-after-pull.sh"
+run = "git -c core.hooksPath=/dev/null pull --rebase origin main && ./scripts/upgrade-after-pull.sh"
 
 [tasks.azure-copilot-spike]
 description = "Eval prototype: up|run|down|status a Copilot profile on an ephemeral Azure ARM64 VM"

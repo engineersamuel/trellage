@@ -52,6 +52,8 @@ done
 [[ -x scripts/install-lefthook-hook.sh ]] || fail "Lefthook installer is not executable"
 [[ -x scripts/refresh-native-if-stale.sh ]] || fail "native freshness script is not executable"
 [[ -x scripts/upgrade-after-pull.sh ]] || fail "pull upgrade script is not executable"
+grep -Fxq 'run = "git -c core.hooksPath=/dev/null pull --rebase origin main && ./scripts/upgrade-after-pull.sh"' mise.toml \
+  || fail "mise pull must use the shared refresh and upgrade sequence after a successful pull"
 
 jq -e '
   .devDependencies.oxlint and
@@ -258,14 +260,22 @@ mkdir -p "${lefthook_primary}/scripts"
 cat >"${lefthook_primary}/scripts/refresh-native-if-stale.sh" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$PWD" "$@" >"${REFRESH_CONTRACT_ARGS:?}"
+exit "${REFRESH_CONTRACT_STATUS:-0}"
 EOF
 chmod +x "${lefthook_primary}/scripts/refresh-native-if-stale.sh"
 pull_upgrade_log="${lefthook_regression_root}/pull-upgrade-log"
-cat >"${lefthook_primary}/scripts/upgrade-after-pull.sh" <<'EOF'
+cp "${ROOT}/scripts/upgrade-after-pull.sh" "${lefthook_primary}/scripts/upgrade-after-pull.sh"
+mkdir -p "${lefthook_primary}/prototypes/trellage-router/bin"
+cat >"${lefthook_primary}/prototypes/trellage-router/bin/trx" <<'EOF'
 #!/bin/sh
-printf 'upgrade %s\n' "$PWD" >>"${PULL_UPGRADE_LOG:?}"
+printf '%s\n' "$*" >>"${PULL_UPGRADE_LOG:?}"
+case "$*" in
+  'upgrade all --yes') exit "${HARNESS_CONTRACT_STATUS:-0}" ;;
+  'upgrade copilot --all') exit "${PLUGIN_CONTRACT_STATUS:-0}" ;;
+  *) exit 99 ;;
+esac
 EOF
-chmod +x "${lefthook_primary}/scripts/upgrade-after-pull.sh"
+chmod +x "${lefthook_primary}/prototypes/trellage-router/bin/trx"
 for rebuild_hook in "${post_commit_hook}" "${post_merge_hook}" "${post_rewrite_hook}"; do
   (
     cd "${lefthook_primary}"
@@ -288,10 +298,43 @@ for pull_hook in "${post_commit_hook}" "${post_merge_hook}" "${post_rewrite_hook
   )
   [[ -e "${refresh_args}" ]] || fail "pull hook skipped the Native refresh before upgrading"
 done
-printf 'upgrade %s\nupgrade %s\n' "${lefthook_primary}" "${lefthook_primary}" \
+printf 'upgrade all --yes\nupgrade copilot --all\nupgrade all --yes\nupgrade copilot --all\n' \
   >"${lefthook_regression_root}/expected-pull-upgrades"
 cmp -s "${lefthook_regression_root}/expected-pull-upgrades" "${pull_upgrade_log}" \
   || fail "git pull did not upgrade exactly once from post-merge and once from post-rewrite"
+
+# All independent stages run, but any failed stage must leave a failing result.
+for pull_hook in "${post_merge_hook}" "${post_rewrite_hook}" \
+  "${lefthook_primary}/scripts/upgrade-after-pull.sh"; do
+  for failure_stage in refresh harness plugin all missing-refresh; do
+    refresh_status=0 harness_status=0 plugin_status=0
+    case "$failure_stage" in
+      refresh) refresh_status=17 ;;
+      harness) harness_status=18 ;;
+      plugin) plugin_status=19 ;;
+      all) refresh_status=17 harness_status=18 plugin_status=19 ;;
+      missing-refresh) chmod -x "${lefthook_primary}/scripts/refresh-native-if-stale.sh" ;;
+    esac
+    rm -f -- "${refresh_args}" "${pull_upgrade_log}"
+    if (
+      cd "${lefthook_primary}"
+      GIT_REFLOG_ACTION='pull --rebase origin main' REFRESH_CONTRACT_ARGS="${refresh_args}" \
+        PULL_UPGRADE_LOG="${pull_upgrade_log}" REFRESH_CONTRACT_STATUS="$refresh_status" \
+        HARNESS_CONTRACT_STATUS="$harness_status" PLUGIN_CONTRACT_STATUS="$plugin_status" \
+        "$pull_hook"
+    ); then
+      fail "pull maintenance hid the ${failure_stage} failure: ${pull_hook}"
+    fi
+    chmod +x "${lefthook_primary}/scripts/refresh-native-if-stale.sh"
+    if [[ "$failure_stage" != missing-refresh ]]; then
+      [[ -e "${refresh_args}" ]] || fail "pull maintenance skipped runtime refresh"
+    fi
+    printf 'upgrade all --yes\nupgrade copilot --all\n' \
+      >"${lefthook_regression_root}/expected-pull-upgrades"
+    cmp -s "${lefthook_regression_root}/expected-pull-upgrades" "${pull_upgrade_log}" \
+      || fail "pull maintenance stopped after the ${failure_stage} failure: ${pull_hook}"
+  done
+done
 
 refresh_fixture="${lefthook_regression_root}/refresh-fixture"
 refresh_home="${lefthook_regression_root}/refresh-home"
