@@ -497,7 +497,7 @@ try {
                   "--strict-mcp-config",
                   "--disable-slash-commands",
                   "--settings",
-                  '{"skipDangerousModePermissionPrompt":true}',
+                  '{"skipDangerousModePermissionPrompt":true,"modelOverrides":{"claude-opus-5-5":"claude-opus-5.5"}}',
                 ]
               : []
             const interactive = resolved.some((name) =>

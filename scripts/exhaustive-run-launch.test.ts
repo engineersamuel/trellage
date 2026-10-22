@@ -5,6 +5,24 @@ import { adapters, parseRunArguments, runNative } from "@trellage/runtime/native
 import { createRunWorld } from "./exhaustive-run-world.ts"
 import { assertRunLaunch } from "./exhaustive-run-launch.ts"
 
+test.each([undefined, "claude-opus-5.5", "gpt-6-astra"])(
+  "Claude clean launch oracle accepts model %s",
+  async (model) => {
+    const world = await createRunWorld("claude")
+    try {
+      const options = parseRunArguments(["claude", "clean", ...(model ? ["--model", model] : [])])
+      expect(await runNative(options, world.dependencies)).toBe(23)
+      const generation = world.lines.find((line) => line.startsWith("Generation  "))!.slice("Generation  ".length)
+      const manifest = JSON.parse(await readFile(path.join(generation, "manifest.json"), "utf8"))
+      await assertRunLaunch(options, world, generation, manifest, "Claude clean model mapping")
+      expect(world.unexpected).toEqual([])
+    } finally {
+      await world.close()
+    }
+  },
+  120000,
+)
+
 for (const harness of Object.keys(adapters).sort())
   test(`${harness}: launch oracle rejects substituted model and lost forwarded value`, async () => {
     const world = await createRunWorld(harness)

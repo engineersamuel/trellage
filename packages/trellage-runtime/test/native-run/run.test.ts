@@ -1353,9 +1353,10 @@ test("Claude defaults to Opus 5.5 and keeps real plan-mode arguments", async () 
     "--effort",
     "medium",
   ])
-  expect(JSON.parse(await readFile(path.join(normal.layout.generationPath, "settings.json"), "utf8")).model).toBe(
-    "claude-opus-5.5",
-  )
+  expect(JSON.parse(await readFile(path.join(normal.layout.generationPath, "settings.json"), "utf8"))).toMatchObject({
+    model: "claude-opus-5.5",
+    modelOverrides: { "claude-opus-5-5": "claude-opus-5.5" },
+  })
   const planned = await prepareRun({ ...base, harness: "claude", profiles: ["default"], plan: true }, dependencies())
   expect(planned.launch.args).toEqual([
     "--allow-dangerously-skip-permissions",
@@ -1960,7 +1961,7 @@ const CLAUDE_CLEAN_ARGS = [
   "--strict-mcp-config",
   "--disable-slash-commands",
   "--settings",
-  '{"skipDangerousModePermissionPrompt":true}',
+  '{"skipDangerousModePermissionPrompt":true,"modelOverrides":{"claude-opus-5-5":"claude-opus-5.5"}}',
 ]
 
 const cleanWorld = async () => {
@@ -2092,6 +2093,28 @@ test("Claude pins the default model ids and applies explicit concrete model over
   )
   expect(concrete.launch.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-5")
   expect(concrete.launch.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-opus-5")
+})
+
+test.each([
+  ["claude-opus-5.5", { "claude-opus-5-5": "claude-opus-5.5" }],
+  ["claude-sonnet-5.5", { "claude-sonnet-5-5": "claude-sonnet-5.5" }],
+  ["claude-haiku-4.5", { "claude-haiku-4-5": "claude-haiku-4.5" }],
+  ["claude-opus-5.5[1m]", { "claude-opus-5-5": "claude-opus-5.5" }],
+  ["claude-opus-5", undefined],
+  ["claude-opus-5-5", undefined],
+  ["opusplan", undefined],
+  ["vendor/custom", undefined],
+])("Claude recognizes proxy model %s without changing the requested API id", async (model, modelOverrides) => {
+  const { dependencies } = await cleanWorld()
+  for (const profile of ["default", "clean"]) {
+    const prepared = await prepareRun({ ...base, harness: "claude", profiles: [profile], model }, dependencies())
+    const settings =
+      profile === "clean"
+        ? JSON.parse(prepared.launch.args[prepared.launch.args.indexOf("--settings") + 1]!)
+        : JSON.parse(await readFile(path.join(prepared.layout.generationPath, "settings.json"), "utf8"))
+    expect(settings.modelOverrides).toEqual(modelOverrides)
+    expect(prepared.launch.args[prepared.launch.args.indexOf("--model") + 1]).toBe(model)
+  }
 })
 
 const capture = () => {

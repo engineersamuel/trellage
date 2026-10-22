@@ -2137,6 +2137,13 @@ const CLAUDE_MODEL_ALIASES: ReadonlySet<string> = new Set(["opusplan", "opus", "
 // Claude Code resolves its aliases itself; pinning an alias as the default model id sends it to the proxy verbatim.
 const isClaudeAlias = (model: string): boolean => CLAUDE_MODEL_ALIASES.has(model.replace(/\[1m\]$/, ""))
 
+const claudeModelSettings = (model: string | undefined): Record<string, unknown> => {
+  const proxyId = model?.replace(/\[1m\]$/, "")
+  const version = proxyId?.match(/^(claude-(?:opus|sonnet|haiku)-\d+)\.(\d+)$/)
+  // Claude uses hyphenated minor versions; the proxy uses dotted versions.
+  return version ? { modelOverrides: { [`${version[1]}-${version[2]}`]: proxyId } } : {}
+}
+
 const claudeLaunch = ({
   layout,
   plan,
@@ -2186,8 +2193,6 @@ const CLAUDE_CLEAN_ARGS: ReadonlyArray<string> = [
   "",
   "--strict-mcp-config",
   "--disable-slash-commands",
-  "--settings",
-  JSON.stringify({ skipDangerousModePermissionPrompt: true }),
 ]
 
 export const claudeAdapter: NativeAdapter = {
@@ -2199,7 +2204,7 @@ export const claudeAdapter: NativeAdapter = {
   instructionsFile: "CLAUDE.md",
   efforts: ["low", "medium", "high", "xhigh", "max"],
   planDefaults: { model: "claude-opus-5.5", effort: "max" },
-  policyVersion: "claude-9",
+  policyVersion: "claude-10",
   providerPolicy: () => "claude-native",
   effectivePolicy: (model, effort) => ({
     normal: `${model ?? "claude-opus-5.5"} · effort ${effort ?? DEFAULT_EFFORT}`,
@@ -2217,7 +2222,7 @@ export const claudeAdapter: NativeAdapter = {
     "--settings",
     "--mcp-config",
   ],
-  writeAdapterFiles: async (stage, _model, _layout, plan) => {
+  writeAdapterFiles: async (stage, model, _layout, plan) => {
     await writeClaudeState(stage)
     const statusline = path.join(stage, "statusline.sh")
     await copyFile(STATUSLINE_SOURCE, statusline)
@@ -2229,6 +2234,7 @@ export const claudeAdapter: NativeAdapter = {
           theme: "dark",
           outputStyle: "Rundown",
           model: "claude-opus-5.5",
+          ...claudeModelSettings(model ?? "claude-opus-5.5"),
           effortLevel: DEFAULT_EFFORT,
           skipDangerousModePermissionPrompt: true,
           ...claudePluginSettings(plan),
@@ -2277,7 +2283,12 @@ export const claudeAdapter: NativeAdapter = {
       const base = claudeLaunch(input)
       return {
         ...base,
-        args: [...CLAUDE_CLEAN_ARGS, ...base.args],
+        args: [
+          ...CLAUDE_CLEAN_ARGS,
+          "--settings",
+          JSON.stringify({ skipDangerousModePermissionPrompt: true, ...claudeModelSettings(input.model) }),
+          ...base.args,
+        ],
         env: { ...base.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" },
       }
     },

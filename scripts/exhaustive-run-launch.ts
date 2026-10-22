@@ -198,13 +198,18 @@ const checkCopilot = (c: Check) => {
   )
 }
 
-const claudeCleanPrefix = [
+const claudeCleanPrefix = (model: string | undefined) => [
   "--setting-sources",
   "",
   "--strict-mcp-config",
   "--disable-slash-commands",
   "--settings",
-  '{"skipDangerousModePermissionPrompt":true}',
+  JSON.stringify({
+    skipDangerousModePermissionPrompt: true,
+    ...(model?.startsWith("claude-") && model.includes(".")
+      ? { modelOverrides: { [model.replace(/\[1m\]$/, "").replace(".", "-")]: model.replace(/\[1m\]$/, "") } }
+      : {}),
+  }),
 ]
 
 const claudeInteractivePresets = ["blog", "council", "ecc", "frontend-design", "research", "social-media"]
@@ -223,7 +228,7 @@ const checkClaude = (c: Check) => {
   assert.deepEqual(
     c.args,
     [
-      ...(c.clean ? claudeCleanPrefix : []),
+      ...(c.clean ? claudeCleanPrefix(c.model) : []),
       ...pluginArgs,
       ...permissions,
       ...(interactive ? [] : ["--disallowedTools", "AskUserQuestion"]),
