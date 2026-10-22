@@ -85,7 +85,7 @@ const generationBodies = (
 ): GuideCandidatePromptTriple<GuideGenerateCandidate> => {
   const validated = validateGuideGenerateResult(result)
   const normalized = validated.candidates.map((candidate) =>
-    resolveGeneratedWorkflowBodyCandidate(input.guide, execution.workflow, "", candidate, { bodyOnly: true }),
+    resolveGeneratedWorkflowBodyCandidate(input.guide, execution.workflow, "", candidate, { bodyOnly: true, allowSupportingSkills: false }),
   )
   return requireDistinctGuideCandidatePrompts(
     candidateTriple(validateGuideGenerateResult({ candidates: normalized }, execution).candidates),
@@ -131,7 +131,7 @@ export const runGuideGoalGeneration = async (
     const candidates = bodies.map((body, index) => {
       const candidate = proposed[index]
       if (candidate === undefined) throw new GuideGoalError("Prompt Master omitted a goal approach.")
-      return resolveWorkflowBodyCandidate(input.guide, execution.workflow, body, candidate, { bodyOnly: true })
+      return resolveWorkflowBodyCandidate(input.guide, execution.workflow, body, candidate, { bodyOnly: true, allowSupportingSkills: false })
     })
     const result = { candidates: generationBodies(input, execution, { candidates }) }
     composeCandidates(execution, result.candidates)
@@ -205,7 +205,7 @@ export const runGuideGoalRefinement = async (
       execution.workflow,
       body,
       validated.candidate,
-      { bodyOnly: true },
+      { bodyOnly: true, allowSupportingSkills: false },
     )
     return validateGuideRefineResult({ candidate: normalized }, execution).candidate
   }
@@ -236,7 +236,7 @@ export const runGuideGoalRefinement = async (
     )
     const proposed = optimized.candidates[0]
     if (proposed === undefined) throw new GuideGoalError("Prompt Master omitted the refined goal approach.")
-    const safe = resolveWorkflowBodyCandidate(input.guide, execution.workflow, refined, proposed, { bodyOnly: true })
+    const safe = resolveWorkflowBodyCandidate(input.guide, execution.workflow, refined, proposed, { bodyOnly: true, allowSupportingSkills: false })
     const result = { candidate: refineBody({ candidate: safe }) }
     compose(result.candidate)
     return result
@@ -289,7 +289,7 @@ export const templateGuideGoalCandidates = (
         prompt: approaches[index],
         notes: "Uses the approved goal and the exact authored workflow without a model call.",
       },
-      { bodyOnly: true },
+      { bodyOnly: true, allowSupportingSkills: false },
     )),
   ).candidates
 }

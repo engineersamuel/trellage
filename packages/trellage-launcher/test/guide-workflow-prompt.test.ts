@@ -293,6 +293,51 @@ describe("workflow prompt frames", () => {
 })
 
 describe("closed guide command tokens", () => {
+  it("allows relevant Poteto supporting skills through drafting and exact rendering", () => {
+    const selected = workflow("poteto")
+    const body = candidate("Investigate with $pstack-for-codex:correct and $pstack-for-codex:architect. Stop for plan approval.")
+    const generated = resolveGeneratedWorkflowBodyCandidate(guide, selected, "Investigate recurring mistakes.", body)
+    const refined = resolveRefinedWorkflowBodyCandidate(guide, selected, generated,
+      candidate(`${body.prompt} Use $pstack-for-codex:recall if history would help.`))
+    const optimized = resolveWorkflowBodyCandidate(guide, selected, refined,
+      candidate(`${refined.prompt} Cite the evidence.`))
+    expect(restoreWorkflowCandidateFrame(selected, optimized).prompt).toBe(
+      `$poteto-mode\n$pstack-for-codex:poteto-mode ${refined.prompt} Cite the evidence.`,
+    )
+  })
+
+  it.each([
+    ["unlisted skill", "$pstack-for-codex:swarm"],
+    ["duplicate skill", "$pstack-for-codex:correct $pstack-for-codex:correct"],
+    ["slash alias with arguments", "/correct investigate"],
+  ])("rejects a Poteto %s addition", (_name, command) => {
+    expect(() => resolveGeneratedWorkflowBodyCandidate(guide, workflow("poteto"), "Investigate.",
+      candidate(`Investigate.\n${command}`))).toThrow(GuideWorkflowBodyError)
+  })
+
+  it("does not authorize supporting additions for other workflows, goal approaches, or optimization", () => {
+    const body = candidate("Investigate with $pstack-for-codex:correct.")
+    expect(() => resolveGeneratedWorkflowBodyCandidate(guide, workflow("compound"), "Investigate.", body))
+      .toThrow(GuideWorkflowBodyError)
+    expect(() => resolveGeneratedWorkflowBodyCandidate(guide, workflow("poteto"), "", body,
+      { bodyOnly: true, allowSupportingSkills: false })).toThrow(GuideWorkflowBodyError)
+    const original = candidate("Investigate.")
+    expect(resolveWorkflowBodyCandidate(guide, workflow("poteto"), original, body)).toEqual(original)
+  })
+
+  it("preserves authorized commands and their order during Poteto refinement", () => {
+    const selected = workflow("poteto")
+    const original = candidate("Use $pstack-for-codex:correct then $pstack-for-codex:architect.")
+    for (const prompt of [
+      "Use $pstack-for-codex:architect.",
+      "Use $pstack-for-codex:architect then $pstack-for-codex:correct.",
+    ]) {
+      expect(() => resolveRefinedWorkflowBodyCandidate(guide, selected, original, candidate(prompt)))
+        .toThrow(GuideWorkflowBodyError)
+      expect(resolveWorkflowBodyCandidate(guide, selected, original, candidate(prompt))).toEqual(original)
+    }
+  })
+
   it("derives only exact command-led tokens from authored templates", () => {
     expect(guideWorkflowCommandTokens(guide)).toEqual([
       "/ce-compound",

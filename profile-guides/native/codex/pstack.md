@@ -82,6 +82,74 @@ the real result before declaring completion.
 - Codex CLI 0.146.0 has no offline runtime skill-index command; verify the
   installed catalog with `codex plugin list --json` rather than a live index.
 
+## Writing Poteto Candidates
+
+Write a direct request that gives Poteto a concrete outcome, an investigation
+approach, evidence to return, and the next decision. Keep it conversational;
+use short paragraphs or lists when they help. Do not expand every request into
+a generic project brief or a repository-wide audit.
+
+For architecture and recurring-agent-mistake investigations:
+
+- Use `$pstack-for-codex:correct` to identify recurring mistake classes from
+  commits, reverts, and available review evidence. State the history examined,
+  cite examples, and count occurrences before calling a pattern common. The
+  skill counts a recurring class only after two occurrences. Distinguish
+  demonstrated agent mistakes from failures whose authorship is unknown.
+- Use `$pstack-for-codex:architect` to compare ownership, module boundaries,
+  types, and public interfaces that could prevent those mistakes. Connect each
+  recommendation to observed failures; do not assume a rewrite is necessary.
+- Use `$pstack-for-codex:recall` only when earlier decisions or conversations
+  would help. Use supported project-scoped history access; report unavailable
+  history and continue with available evidence.
+- Resolve testable technical questions with small, reversible prototypes,
+  reproductions, or measurements within the authorized scope. Report what was
+  tried, the result, and what it changes about the recommendation. A read-only
+  request permits proposing prototypes, not making prototype edits. Ask the
+  user only for preferences or decisions evidence cannot settle.
+- Return a high-level plan with evidence, alternatives tested, recommended
+  changes, expected benefits, verification criteria, and remaining uncertainty.
+  For plan-review requests, explicitly constrain correct and architect to
+  investigation, design, and permitted prototypes. Their normal workflows
+  proceed to fixes and implementation; require approval before those stages.
+
+For a requested autopilot handoff, ask after plan approval whether the user
+wants **autopilot-stack** (a reviewed linear Graphite stack the user lands) or
+**autopilot-full** (independent PRs carried through merge). Preserve existing
+authorization and explain the delivery difference when asking. Do not insert
+this choice into tasks that do not request that delivery workflow.
+
+"Project agent" is a user-requested coordinator role, not a guaranteed installed
+Codex agent type. Preserve that request when given, but do not invent it for
+ordinary tasks. The plugin uses `pstack-poteto-agent` when installed, otherwise
+its documented generic-delegate fallback; do not silently install optional agents.
+
+Keep all three candidates faithful to the same scope and checkpoints. For this
+kind of investigation, vary history-first, architecture-first, and prototype-first
+approaches. An ordinary bug fix should instead focus on reproduction, root cause,
+and verification, without inheriting this example's project or approval stages.
+
+Example for a user requesting an agent-friendly architecture plan and a later
+autopilot handoff (the renderer supplies the two activation lines):
+
+> Create a project coordinator to investigate how to make this repo easier for
+> agents to change correctly. Use $pstack-for-codex:correct to examine past commits
+> and identify recurring code-quality, performance, and bug patterns. State the
+> history examined and support each recurring class with at least two occurrences.
+> Use $pstack-for-codex:architect to compare structural changes that prevent those
+> failures. If prior conversations could explain the current design, use
+> $pstack-for-codex:recall through supported history access and identify any gaps.
+>
+> Keep these skills in investigation and design until I approve the plan. Resolve
+> testable open questions with small, reversible prototypes; report the evidence
+> rather than deferring technical questions to me. Return a high-level plan with
+> cited findings, alternatives tested, recommended changes, expected benefits,
+> verification criteria, and remaining uncertainty. Do not implement the refactor yet.
+>
+> Once I approve the plan, ask whether I want autopilot-stack, which prepares a
+> reviewed stack for me to land, or autopilot-full, which carries independent PRs
+> through merge. Execute only after I choose.
+
 ## Gotchas
 
 - The profile includes the shared `native-common` floating skills in addition

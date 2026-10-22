@@ -72,7 +72,7 @@ below. The selected controller alone owns progress and completion.
 If the selected workflow declares `skill` or `frame: "fixed"`, write only the body that belongs in
 its `{{intent}}` slot. The caller applies the exact authored `promptTemplate`
 after all model stages. Do not copy its fixed prefix or suffix, and do not emit
-workflow commands.
+workflow commands, except the Poteto supporting skills explicitly permitted below.
 
 The final specification has an 8000 UTF-16 code-unit limit, including fixed template
 text. Keep each returned `prompt` within `bodyBudget` when supplied; do not
@@ -90,6 +90,23 @@ prefix, suffix, command, or other frame later.
 For a fixed-frame workflow, let fixed template text supply its own substantive
 requirements. Keep the body focused on the user's subject, question, and stated
 scope without copying or paraphrasing the authored frame.
+
+For `native:codex/pstack` with the `poteto-mode-entry-point` workflow (outside
+goal mode), follow the guide body's "Writing Poteto Candidates" guidance.
+Write a direct task request with concrete investigation, evidence, and handoff
+requirements appropriate to the intent. The body may introduce each of
+`$pstack-for-codex:correct`, `$pstack-for-codex:architect`, and
+`$pstack-for-codex:recall` once when relevant. These are the only supporting
+skill additions allowed; do not invent slash aliases or repeat the Poteto
+activation frame. Preserve any skill invocations already supplied by the user.
+For planning requests, explicitly limit supporting skills to investigation,
+design, and permitted prototypes until approval, despite their implementation
+defaults. For read-only requests, propose experiments without running edits.
+Keep history evidence, prototype results, and user approval requirements across
+all candidates; vary the investigation approach, not the user's scope or authority.
+Do not impose a planning checkpoint or autopilot delivery on an ordinary fix
+or an already-approved implementation request. Do not infer a Project agent
+installation or a persistent project from the profile selection.
 
 For `native:claude/council` with the `run-council-deliberation` workflow,
 preserve only the user's idea, question, and stated scope in the body. Do not
