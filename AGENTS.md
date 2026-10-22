@@ -41,9 +41,10 @@ host through `trx run HARNESS [PROFILE...] [-- AGENT_ARGS]`.
   backends and `trx` from this worktree. Application code runs from source;
   comparison-image rebuilding is a separate comparison-harness operation.
 - Installed `post-merge` and `post-rewrite` hooks run
-  `scripts/upgrade-after-pull.sh` after a source refresh. It runs
+  `scripts/upgrade-after-pull.sh`. It refreshes the Native runtime, runs
   `trx upgrade all --yes`, then `trx upgrade copilot --all` for Copilot
-  plugins. Codex and Pi are installed and updated outside Trellage.
+  plugins. Each step runs even if an earlier step fails; any failure leaves
+  a nonzero result. Codex and Pi are installed and updated outside Trellage.
 - `mise run pull` runs `git pull --rebase origin main` with hooks disabled,
   refreshes the Native runtime, and runs `scripts/upgrade-after-pull.sh` once.
 

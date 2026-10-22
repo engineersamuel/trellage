@@ -33,13 +33,6 @@ case "$hook_name" in
     exec "$lefthook" run "$hook_name" --no-auto-install "$@"
     ;;
   post-commit|post-merge|post-rewrite)
-    native_refresh="${active_root}/scripts/refresh-native-if-stale.sh"
-    if [ ! -x "$native_refresh" ]; then
-      printf 'trellage %s: native freshness script is missing or not executable: %s\n' \
-        "$hook_name" "$native_refresh" >&2
-      exit 1
-    fi
-    "$native_refresh"
     # git pull sets GIT_REFLOG_ACTION=pull...; a fast-forward fires post-merge, a rebase post-rewrite.
     case "$hook_name:${GIT_REFLOG_ACTION-}" in
       post-merge:pull*|post-rewrite:pull*)
@@ -52,6 +45,13 @@ case "$hook_name" in
         exec "$pull_upgrade"
         ;;
     esac
+    native_refresh="${active_root}/scripts/refresh-native-if-stale.sh"
+    if [ ! -x "$native_refresh" ]; then
+      printf 'trellage %s: native freshness script is missing or not executable: %s\n' \
+        "$hook_name" "$native_refresh" >&2
+      exit 1
+    fi
+    "$native_refresh"
     ;;
   *)
     printf 'trellage hook: unsupported hook name: %s\n' "$hook_name" >&2
