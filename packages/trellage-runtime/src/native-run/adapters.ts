@@ -23,7 +23,13 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml"
 import { NativeRunCancelledError, NativeRunError } from "./paths.ts"
-import { PRIME_DEFAULT_MODEL, PRIME_MANAGED_FLAGS, ensurePrimeRuntime, primeLaunchCommand, primeRuntimePaths } from "./prime-runtime.ts"
+import {
+  PRIME_DEFAULT_MODEL,
+  PRIME_MANAGED_FLAGS,
+  ensurePrimeRuntime,
+  primeLaunchCommand,
+  primeRuntimePaths,
+} from "./prime-runtime.ts"
 import type { GenerationLayout, CompositionPlan } from "./compose.ts"
 import { lifecycleRuntime, lifecycleRuntimeCommand } from "./lifecycle-runtime.ts"
 import { nativePresetProfiles } from "./presets.ts"
@@ -158,9 +164,10 @@ const mergeJson = async (
   await writeFile(file, `${JSON.stringify(update(current), null, 2)}\n`, { mode: 0o600 })
 }
 
+const DEFAULT_EFFORT = "medium"
 const FX_PROVIDER = "trellage-copilot-proxy"
 const FX_DEFAULT_MODEL = "gpt-6.1-sol"
-const FX_DEFAULT_EFFORT = "medium"
+const FX_DEFAULT_EFFORT = DEFAULT_EFFORT
 const FX_PLAN_MODEL = "gpt-6-astra"
 const FX_PLAN_EFFORT = "max"
 const FX_PROVIDER_DEFINITION = {
@@ -388,7 +395,7 @@ const UJI_PROXY_API_KEY = "trellage-local-proxy"
 const UJI_PROXY_DEFAULT_MODEL = "gpt-6-astra"
 const UJI_TOOLS_SOURCE = new URL("./uji-tools.lua", import.meta.url)
 const UJI_TOOLS_CONTENT = readFileSync(UJI_TOOLS_SOURCE)
-const UJI_TOOLS_POLICY = `uji-allow-all-${createHash("sha256").update(UJI_TOOLS_CONTENT).digest("hex")}`
+const UJI_TOOLS_POLICY = `uji-allow-all-${DEFAULT_EFFORT}-${createHash("sha256").update(UJI_TOOLS_CONTENT).digest("hex")}`
 
 const ujiModelSelection = (model: string | undefined): string => {
   const selection = model ?? `${UJI_PROXY_PROVIDER}/${UJI_PROXY_DEFAULT_MODEL}`
@@ -489,13 +496,17 @@ const validOmpAdmissionShape = (value: Record<string, unknown>): boolean =>
 const validateOmpAdmission = (value: Record<string, unknown>, expectedProfile: string): OmpAdmission => {
   const admission = value as unknown as OmpAdmission
   assertAbsolutePath("executable", admission.executable)
-  if (admission.piConfigFiles.length === 0 || admission.piConfigFiles.split(":").some((entry) => !path.isAbsolute(entry)))
+  if (
+    admission.piConfigFiles.length === 0 ||
+    admission.piConfigFiles.split(":").some((entry) => !path.isAbsolute(entry))
+  )
     throw new NativeRunError("launch", "OMP admission returned invalid PI_CONFIG_FILES")
   if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(admission.version))
     throw new NativeRunError("launch", "OMP admission returned an invalid host version")
   if (admission.ompProfile !== expectedProfile)
     throw new NativeRunError("launch", "OMP admission returned the wrong managed profile")
-  if (admission.copilotCredentialFile !== null) assertAbsolutePath("Copilot credential file", admission.copilotCredentialFile)
+  if (admission.copilotCredentialFile !== null)
+    assertAbsolutePath("Copilot credential file", admission.copilotCredentialFile)
   return admission
 }
 
@@ -518,7 +529,9 @@ const admissionCredentialPath = (output: string): string | undefined => {
     const value: unknown = JSON.parse(output)
     if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
     const candidate = (value as Record<string, unknown>).copilotCredentialFile
-    return typeof candidate === "string" && path.isAbsolute(candidate) && !candidate.includes("\0") ? candidate : undefined
+    return typeof candidate === "string" && path.isAbsolute(candidate) && !candidate.includes("\0")
+      ? candidate
+      : undefined
   } catch {
     return undefined
   }
@@ -537,19 +550,19 @@ const runOmpAdmission = async (
   guard?: LaunchGuard,
 ): Promise<OmpAdmission> => {
   const runtime = lifecycleRuntime("omp")!
-  const command = binary(
-    environment,
-    "TRELLAGE_OMP_LIFECYCLE_BIN",
-    lifecycleRuntimeCommand(runtime, environment.HOME),
-  )
+  const command = binary(environment, "TRELLAGE_OMP_LIFECYCLE_BIN", lifecycleRuntimeCommand(runtime, environment.HOME))
   return new Promise((resolve, reject) => {
     let child: ChildProcess
     try {
-      child = spawn(guard ? process.execPath : command, guard ? [ompAdmissionWorker, command, "_trx-admit", profile] : ["_trx-admit", profile], {
-        env: { ...environment, TRELLAGE_TRX_OMP_ADAPTER: "1" },
-        stdio: guard ? ["ignore", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe"],
-        detached: guard !== undefined,
-      })
+      child = spawn(
+        guard ? process.execPath : command,
+        guard ? [ompAdmissionWorker, command, "_trx-admit", profile] : ["_trx-admit", profile],
+        {
+          env: { ...environment, TRELLAGE_TRX_OMP_ADAPTER: "1" },
+          stdio: guard ? ["ignore", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe"],
+          detached: guard !== undefined,
+        },
+      )
     } catch (error) {
       reject(new NativeRunError("launch", "OMP admission failed: " + String(error)))
       return
@@ -566,11 +579,19 @@ const runOmpAdmission = async (
       removeHandlers()
       const terminated = await settlement.terminate()
       await removeAdmissionCredential(stdout.join(""))
-      reject(terminated ? error : new NativeRunError("launch", "OMP admission cleanup did not settle after SIGKILL: " + String(error)))
+      reject(
+        terminated
+          ? error
+          : new NativeRunError("launch", "OMP admission cleanup did not settle after SIGKILL: " + String(error)),
+      )
     }
     const handlers = signals.map((signal) => () => {
       if (signal !== "SIGTERM") {
-        try { settlement.signal(signal) } catch { /* The bounded cleanup still runs. */ }
+        try {
+          settlement.signal(signal)
+        } catch {
+          /* The bounded cleanup still runs. */
+        }
       }
       void fail(new NativeRunCancelledError("OMP admission failed: cancelled by " + signal, signal))
     })
@@ -611,7 +632,9 @@ const runOmpAdmission = async (
         reject(error)
       }
     }
-    child.once("close", (status, signal) => { void finish(status, signal) })
+    child.once("close", (status, signal) => {
+      void finish(status, signal)
+    })
     child.once("message", (message: { status?: number | null; signal?: string | null; error?: string }) => {
       if (message.error !== undefined) void fail(new NativeRunError("launch", "OMP admission failed: " + message.error))
       else void finish(message.status ?? null, message.signal ?? null)
@@ -697,8 +720,7 @@ const prepareOmpHeadlessOverlay = async (
   if (admission.version !== "18.8.5")
     throw new NativeRunError(
       "launch",
-      "--headless-policy no-user-input is verified only for OMP 18.8.5; installed version is " +
-        admission.version,
+      "--headless-policy no-user-input is verified only for OMP 18.8.5; installed version is " + admission.version,
     )
   return createOmpHeadlessOverlay(layout)
 }
@@ -844,10 +866,7 @@ const readHeadlongManagedSkillNames = async (metadata: string, store: string): P
   return parseHeadlongManagedSkillNames(await readFile(manifest, "utf8"))
 }
 
-const stageHeadlongSkill = async (
-  skill: CompositionPlan["skills"][number],
-  store: string,
-): Promise<string> => {
+const stageHeadlongSkill = async (skill: CompositionPlan["skills"][number], store: string): Promise<string> => {
   const temporary = path.join(store, `.skill-${randomUUID()}`)
   await cp(skill.directory, temporary, { recursive: true, errorOnExist: true })
   try {
@@ -974,7 +993,10 @@ const writeHeadlongManagedSkillManifest = async (
   skills: CompositionPlan["skills"],
 ): Promise<void> => {
   const lines = skills
-    .map((skill) => `${skill.name}\t${skill.alwaysOn === true && !skill.manualOnly && skill.name !== "i-have-adhd" ? 1 : 0}\t`)
+    .map(
+      (skill) =>
+        `${skill.name}\t${skill.alwaysOn === true && !skill.manualOnly && skill.name !== "i-have-adhd" ? 1 : 0}\t`,
+    )
     .sort()
   const manifest = path.join(metadata, "managed-skills.tsv")
   const temporary = path.join(metadata, `.managed-skills-${randomUUID()}`)
@@ -1089,10 +1111,10 @@ export const agencyAdapter: NativeAdapter = {
   skillsSubdirectory: "skills",
   instructionsFile: "always-on.md",
   efforts: ["low", "medium", "high", "xhigh", "max"],
-  policyVersion: "agency-direct-1",
+  policyVersion: "agency-direct-2",
   providerPolicy: (model) => `agency:${model ?? "gpt-6-astra"}`,
   effectivePolicy: (model, effort) => ({
-    normal: `${model ?? "gpt-6-astra"} · effort ${effort ?? "low"}`,
+    normal: `${model ?? "gpt-6-astra"} · effort ${effort ?? DEFAULT_EFFORT}`,
     plan: "Agency profile policy",
   }),
   managedFlags: ["--profile-only", "--model", "--effort"],
@@ -1104,7 +1126,7 @@ export const agencyAdapter: NativeAdapter = {
     await mkdir(stage, { recursive: true })
     await writeFile(
       path.join(stage, "settings.json"),
-      `${JSON.stringify({ model: "gpt-6-astra", effortLevel: "low", planModel: "gpt-6-astra", planEffortLevel: "max" }, null, 2)}\n`,
+      `${JSON.stringify({ model: "gpt-6-astra", effortLevel: DEFAULT_EFFORT, planModel: "gpt-6-astra", planEffortLevel: "max" }, null, 2)}\n`,
     )
   },
   persistentState: ["session-state"],
@@ -1119,7 +1141,7 @@ export const agencyAdapter: NativeAdapter = {
       "--model",
       model ?? "gpt-6-astra",
       "--effort",
-      effort ?? "low",
+      effort ?? DEFAULT_EFFORT,
       ...forwardedArgs,
     ],
     env: { COPILOT_HOME: layout.generationPath },
@@ -1218,7 +1240,7 @@ export const ompAdapter: NativeAdapter = {
   skillsSubdirectory: "skills",
   instructionsFile: "always-on.md",
   efforts: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-  policyVersion: "omp-admission-2",
+  policyVersion: "omp-admission-3",
   providerPolicy: (model) => `github-copilot:${model ?? "gpt-5.6-sol"}`,
   effectivePolicy: (model, effort) => ({
     normal: `${model ?? "gpt-5.6-sol"} · effort ${effort ?? "medium"}`,
@@ -1658,7 +1680,7 @@ const copilotLaunch = ({
       "--model",
       model ?? "gpt-6-astra",
       "--effort",
-      effort ?? "low",
+      effort ?? DEFAULT_EFFORT,
       ...resumeArgs,
       ...harnessArgs.filter((argument) => argument !== "--plan"),
     ],
@@ -1683,10 +1705,10 @@ export const copilotAdapter: NativeAdapter = {
   skillsSubdirectory: "skills",
   instructionsFile: "copilot-instructions.md",
   efforts: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
-  policyVersion: "copilot-6",
+  policyVersion: "copilot-7",
   providerPolicy: () => "copilot-native",
   effectivePolicy: (model, effort) => ({
-    normal: `${model ?? "gpt-6-astra"} · effort ${effort ?? "low"}`,
+    normal: `${model ?? "gpt-6-astra"} · effort ${effort ?? DEFAULT_EFFORT}`,
     plan: "harness default planModel",
   }),
   managedFlags: ["--config-dir", "--no-custom-instructions"],
@@ -1694,7 +1716,7 @@ export const copilotAdapter: NativeAdapter = {
     supported: true,
     evidence:
       "Copilot 1.0.98: no custom instructions, every discovered skill and MCP server disabled by name, built-in MCP servers and agent tools off; refuses when the repository defines hooks or agents because a trusted folder always runs them",
-    defaults: { model: "gpt-6-astra", effort: "low" },
+    defaults: { model: "gpt-6-astra", effort: DEFAULT_EFFORT },
     managedFlags: [
       "--enable-mcp-server",
       "--additional-mcp-config",
@@ -1943,10 +1965,10 @@ export const codexAdapter: NativeAdapter = {
   skillsSubdirectory: "skills",
   instructionsFile: "AGENTS.md",
   efforts: ["minimal", "low", "medium", "high", "xhigh"],
-  policyVersion: "codex-7",
+  policyVersion: "codex-8",
   providerPolicy: () => "codex-native",
   effectivePolicy: (model, effort) => ({
-    normal: `${model ?? "harness default"} · effort ${effort ?? "harness default"}`,
+    normal: `${model ?? "harness default"} · effort ${effort ?? DEFAULT_EFFORT}`,
     plan: "harness default",
   }),
   managedFlags: [
@@ -1990,7 +2012,7 @@ export const codexAdapter: NativeAdapter = {
     supported: true,
     evidence:
       "Codex 0.160.0: zero project-doc bytes and disabled skill instructions, bundled skills, host skill discovery, apps, plugins, hooks and memories load no repository or host instructions or skills; refuses when a repository .codex directory is present because Codex loads it in every writable sandbox",
-    defaults: { model: undefined, effort: undefined },
+    defaults: { model: undefined, effort: DEFAULT_EFFORT },
     writeAdapterFiles: async () => {},
     launch: (input) => {
       const base = codexLaunch(input)
@@ -2176,12 +2198,12 @@ export const claudeAdapter: NativeAdapter = {
   skillsSubdirectory: "skills",
   instructionsFile: "CLAUDE.md",
   efforts: ["low", "medium", "high", "xhigh", "max"],
-  planDefaults: { model: "opusplan", effort: "max" },
-  policyVersion: "claude-8",
+  planDefaults: { model: "claude-opus-5.5", effort: "max" },
+  policyVersion: "claude-9",
   providerPolicy: () => "claude-native",
   effectivePolicy: (model, effort) => ({
-    normal: `${model ?? "opusplan"} · effort ${effort ?? "medium"}`,
-    plan: "opusplan · effort max · permission mode plan",
+    normal: `${model ?? "claude-opus-5.5"} · effort ${effort ?? DEFAULT_EFFORT}`,
+    plan: "claude-opus-5.5 · effort max · permission mode plan",
   }),
   managedFlags: [
     "--setting-sources",
@@ -2206,8 +2228,8 @@ export const claudeAdapter: NativeAdapter = {
         {
           theme: "dark",
           outputStyle: "Rundown",
-          model: "opusplan",
-          effortLevel: "medium",
+          model: "claude-opus-5.5",
+          effortLevel: DEFAULT_EFFORT,
           skipDangerousModePermissionPrompt: true,
           ...claudePluginSettings(plan),
           statusLine: {
@@ -2249,7 +2271,7 @@ export const claudeAdapter: NativeAdapter = {
     supported: true,
     evidence:
       "Claude Code 2.1.300: no setting sources, strict empty MCP config and disabled slash commands load no repository or host instructions, skills, agents, MCP servers or hooks",
-    defaults: { model: "opusplan", effort: "medium" },
+    defaults: { model: "claude-opus-5.5", effort: DEFAULT_EFFORT },
     writeAdapterFiles: (stage) => writeClaudeState(stage),
     launch: (input) => {
       const base = claudeLaunch(input)
@@ -2302,7 +2324,7 @@ sessions = false
 ignore = ["~/.agents/skills", "~/.agents/commands"]
 `
 const GROK_DEFAULT_MODEL = "grok-4.7"
-const GROK_DEFAULT_EFFORT = "medium"
+const GROK_DEFAULT_EFFORT = DEFAULT_EFFORT
 const GROK_PLAN_EFFORT = "xhigh"
 const GROK_REASONING_EFFORTS = `[
   { id = "xhigh", value = "xhigh", label = "Extra High", description = "Maximum reasoning for the hardest tasks.", default = false },
@@ -2345,7 +2367,7 @@ export const grokAdapter: NativeAdapter = {
   instructionsFile: "Agents.md",
   efforts: ["low", "medium", "high", "xhigh"],
   extensions: ["terminal-browser"],
-  policyVersion: "grok-7",
+  policyVersion: "grok-8",
   providerPolicy: (model) => `copilot-proxy-rs:${model ?? GROK_DEFAULT_MODEL}`,
   effectivePolicy: (model, effort) => ({
     normal: `${model ?? `${GROK_DEFAULT_MODEL} (default)`} · effort ${effort ?? `${GROK_DEFAULT_EFFORT} (default)`}`,
@@ -2354,7 +2376,8 @@ export const grokAdapter: NativeAdapter = {
   managedFlags: ["--sandbox", "--permission-mode", "--always-approve", "--trust"],
   clean: {
     supported: false,
-    reason: "Grok 1.0.46 loads repository AGENTS.md, skills, agents and MCP servers in a trusted folder, and an untrusted folder blocks on a trust prompt",
+    reason:
+      "Grok 1.0.46 loads repository AGENTS.md, skills, agents and MCP servers in a trusted folder, and an untrusted folder blocks on a trust prompt",
   },
   writeAdapterFiles: async (stage, selectedModel, layout) => {
     const model = selectedModel ?? GROK_DEFAULT_MODEL
@@ -2447,35 +2470,31 @@ const text = (value: unknown): string | undefined => (typeof value === "string" 
 
 const ompDefaults = (plan: CompositionPlan | undefined): HostDefaults =>
   plan && selectedPreset(plan, "omp", "default") !== "default"
-    ? { model: undefined, effort: undefined }
-    : { model: "gpt-5.6-sol", effort: "medium" }
+    ? { model: undefined, effort: DEFAULT_EFFORT }
+    : { model: "gpt-5.6-sol", effort: DEFAULT_EFFORT }
 
-/** The model and effort a launch uses when the caller names none; read from the host's own harness settings. */
+/** The model a launch uses when the caller names none; effort defaults to medium when supported. */
 export const hostDefaults = (harness: string, home: string = os.homedir(), plan?: CompositionPlan): HostDefaults => {
   const adapter = adapterFor(harness)
-  const valid = (effort: string | undefined) =>
-    effort !== undefined && adapter.efforts.includes(effort) ? effort : undefined
-  if (harness === "pi") return { model: PI_DEFAULT_MODEL, effort: "medium" }
-  if (harness === "fx") return { model: FX_DEFAULT_MODEL, effort: FX_DEFAULT_EFFORT }
-  if (harness === "agency") return { model: "gpt-6-astra", effort: "low" }
-  if (harness === "jcode") return { model: "gpt-5.6-sol", effort: "medium" }
+  const effort = adapter.efforts.includes(DEFAULT_EFFORT) ? DEFAULT_EFFORT : undefined
+  if (harness === "pi") return { model: PI_DEFAULT_MODEL, effort }
+  if (harness === "fx") return { model: FX_DEFAULT_MODEL, effort }
+  if (harness === "agency") return { model: "gpt-6-astra", effort }
+  if (harness === "jcode") return { model: "gpt-5.6-sol", effort }
   if (harness === "omp") return ompDefaults(plan)
   if (harness === "prime") return { model: PRIME_DEFAULT_MODEL, effort: undefined }
-  if (harness === "uji") return { model: `${UJI_PROXY_PROVIDER}/${UJI_PROXY_DEFAULT_MODEL}`, effort: undefined }
+  if (harness === "uji") return { model: `${UJI_PROXY_PROVIDER}/${UJI_PROXY_DEFAULT_MODEL}`, effort }
   if (harness === "copilot") {
     const settings = readStructured(path.join(home, ".copilot", "settings.json"), "json")
-    return { model: text(settings.model), effort: valid(text(settings.effortLevel)) }
+    return { model: text(settings.model), effort }
   }
-  if (harness === "claude") return { model: "opusplan", effort: "medium" }
+  if (harness === "claude") return { model: "claude-opus-5.5", effort }
   if (harness === "grok") {
     const settings = readStructured(path.join(home, ".grok", "config.toml"), "toml")
-    return {
-      model: text(settings.model) ?? GROK_DEFAULT_MODEL,
-      effort: valid(text(settings.reasoning_effort)) ?? GROK_DEFAULT_EFFORT,
-    }
+    return { model: text(settings.model) ?? GROK_DEFAULT_MODEL, effort }
   }
   const settings = readStructured(path.join(home, ".codex", "config.toml"), "toml")
-  return { model: text(settings.model), effort: valid(text(settings.model_reasoning_effort)) }
+  return { model: text(settings.model), effort }
 }
 
 export const ujiAdapter: NativeAdapter = {
