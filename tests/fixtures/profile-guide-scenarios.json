@@ -283,6 +283,9 @@
       "excludedProfiles": []
     },
     {"id": "claude-firstmate-fleet", "intent": "Use trx run claude firstmate to split a goal on my GitHub project into parallel scout and ship tasks that come back as pull requests.", "expectedProfiles": ["native:claude/firstmate"], "expectedWorkflows": {"native:claude/firstmate": "fleet-delivery"}, "maxRank": 1, "excludedProfiles": []},
-    {"id": "pi-firstmate-fleet", "intent": "Use trx run pi firstmate so Pi supervises a fleet of read-only scouts that report why the test suite is slow.", "expectedProfiles": ["native:pi/firstmate"], "expectedWorkflows": {"native:pi/firstmate": "fleet-investigation"}, "maxRank": 1, "excludedProfiles": []}
+    {"id": "pi-firstmate-fleet", "intent": "Use trx run pi firstmate so Pi supervises a fleet of read-only scouts that report why the test suite is slow.", "expectedProfiles": ["native:pi/firstmate"], "expectedWorkflows": {"native:pi/firstmate": "fleet-investigation"}, "maxRank": 1, "excludedProfiles": []},
+    {"id": "autonomous-fuzzy-feature-handoff", "intent": "Hand off this big, fuzzy feature: brainstorm the design, plan bite-sized tasks, give each task a fresh subagent with spec and code-quality review, and come back to a reviewed branch.", "expectedProfiles": ["native:codex/superpowers"], "maxRank": 3, "excludedProfiles": ["native:codex/pstack"]},
+    {"id": "phase-gated-lifecycle-delivery", "intent": "Take this feature from spec through planning, implementation, security and accessibility review, and a pull request, with a gate between each phase.", "expectedProfiles": ["native:copilot/hve"], "maxRank": 3, "excludedProfiles": ["native:codex/superpowers", "native:copilot/superpowers"]},
+    {"id": "small-clear-fix-without-framework", "intent": "Fix one well-understood off-by-one bug in a single function quickly, without planning, subagents, or process overhead.", "expectedProfiles": ["native:claude/default"], "maxRank": 3, "excludedProfiles": ["native:codex/superpowers", "native:copilot/superpowers"]}
   ]
 }
