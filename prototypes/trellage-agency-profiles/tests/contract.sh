@@ -258,7 +258,7 @@ jq -e \
   and .cwd == $cwd
   and .auth == "AzureCliCredential"
   and .settings.model == "gpt-6-astra"
-  and .settings.effortLevel == "low"
+  and .settings.effortLevel == "medium"
   and .settings.planModel == "gpt-6-astra"
   and .settings.planEffortLevel == "max"
   and .args == [

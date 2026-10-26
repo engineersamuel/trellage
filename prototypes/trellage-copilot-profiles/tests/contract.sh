@@ -220,7 +220,7 @@ materialize_plannotator_plugin() {
 }
 
 if [[ "${1-} ${2-} ${3-}" == '--autopilot --allow-all --no-ask-user' \
-  && "${4-} ${5-} ${6-} ${7-} ${8-}" == '--model gpt-6-astra --effort low --fixture-capability-inventory' ]]; then
+  && "${4-} ${5-} ${6-} ${7-} ${8-}" == '--model gpt-6-astra --effort medium --fixture-capability-inventory' ]]; then
   if [[ -f "$installed" ]]; then
     while IFS=$'\t' read -r plugin _version; do
       printf 'plugin:%s\n' "$plugin"
@@ -887,7 +887,7 @@ assert_not_contains "$HOME/.copilot" "$fake_copilot_log"
 expected_hve_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "hello world", "--allow-tool", "git status"]}')"
+  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "medium", "--prompt", "hello world", "--allow-tool", "git status"]}')"
 actual_hve_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '1p')"
 [[ "$actual_hve_launch" == "$expected_hve_launch" ]] \
   || fail 'hve launch did not preserve the exact ordered argument vector'
@@ -899,7 +899,7 @@ actual_hve_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_lo
 expected_plan_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--plan", "--model", "gpt-6-astra", "--effort", "low", "-i", "Plan fixes before editing."]}')"
+  '{home: $home, cwd: $cwd, args: ["--plan", "--model", "gpt-6-astra", "--effort", "medium", "-i", "Plan fixes before editing."]}')"
 actual_plan_launch="$(jq -c 'select(.args[0] == "--plan")' "$fake_copilot_argv_log" | tail -n 1)"
 [[ "$actual_plan_launch" == "$expected_plan_launch" ]] \
   || fail 'plan launch included Autopilot or automatic approval flags'
@@ -911,7 +911,7 @@ actual_plan_launch="$(jq -c 'select(.args[0] == "--plan")' "$fake_copilot_argv_l
 expected_autopilot_plan_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--plan", "--model", "gpt-6-astra", "--effort", "low", "--mode", "autopilot", "--allow-all", "--no-ask-user", "-i", "Plan and implement verified fixes."]}')"
+  '{home: $home, cwd: $cwd, args: ["--plan", "--model", "gpt-6-astra", "--effort", "medium", "--mode", "autopilot", "--allow-all", "--no-ask-user", "-i", "Plan and implement verified fixes."]}')"
 [[ "$(tail -n 1 "$fake_copilot_argv_log")" == "$expected_autopilot_plan_launch" ]] \
   || fail 'autopilot plan launch did not preserve the plan and permission arguments'
 
@@ -951,7 +951,7 @@ expected_compound_engineering_home="$(jq -r '.home' <<<"$actual_compound_enginee
 expected_compound_engineering_launch="$(jq -cn \
   --arg home "$expected_compound_engineering_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "ship and compound this feature"]}')"
+  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "medium", "--prompt", "ship and compound this feature"]}')"
 [[ "$actual_compound_engineering_launch" == "$expected_compound_engineering_launch" ]] \
   || fail 'compound-engineering launch did not preserve the exact ordered argument vector'
 
@@ -964,7 +964,7 @@ expected_tufte_home="$(jq -r '.home' <<<"$actual_tufte_launch")"
 expected_tufte_launch="$(jq -cn \
   --arg home "$expected_tufte_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "critique this chart"]}')"
+  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "medium", "--prompt", "critique this chart"]}')"
 actual_tufte_launch="$(jq -c \
   --arg home "$expected_tufte_home" \
   --arg prompt 'critique this chart' \
@@ -980,7 +980,7 @@ actual_tufte_launch="$(jq -c \
 expected_bare_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "medium"]}')"
 actual_bare_launch="$(tail -n 1 "$fake_copilot_argv_log")"
 [[ "$actual_bare_launch" == "$expected_bare_launch" ]] \
   || fail 'bare launch did not add the default permission argument'
@@ -1021,7 +1021,7 @@ jq -se 'length == 2 and all(.[]; type == "object")' \
 expected_json_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "machine output", "--output-format", "json", "--stream", "off"]}')"
+  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "medium", "--prompt", "machine output", "--output-format", "json", "--stream", "off"]}')"
 [[ "$(tail -n 1 "$fake_copilot_argv_log")" == "$expected_json_launch" ]] \
   || fail 'JSON headless launch argument vector differs'
 
@@ -1072,7 +1072,7 @@ for permission_argument_vector in "${permission_argument_vectors[@]}"; do
     --arg home "$expected_hve_home" \
     --arg cwd "$worktree" \
     --args '{home: $home, cwd: $cwd, args: $ARGS.positional}' \
-    -- "--allow-all" "--no-ask-user" --model gpt-6-astra --effort low "${permission_args[@]}" --prompt 'permission contract')"
+    -- "--allow-all" "--no-ask-user" --model gpt-6-astra --effort medium "${permission_args[@]}" --prompt 'permission contract')"
   [[ "$actual_permission_launch" == "$expected_permission_launch" ]] \
     || fail "explicit permission arguments changed: $permission_argument_vector"
 done
