@@ -38,7 +38,7 @@ test("explicit configuration is not overwritten or silently seeded", async () =>
 test("builtin dependency merge preserves pins and policy without adding starter defaults", async () => {
   const { withBuiltinPreset } = await import("../../src/native-run/config-init.ts")
   const source = {
-    repository: "aqua-123/pstack-for-codex",
+    repository: "ericlitman/open-pstack",
     commit: "a".repeat(40),
     allowExecutables: false,
     exclude: ["excluded"],

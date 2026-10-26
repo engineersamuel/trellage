@@ -761,8 +761,9 @@ variables before setting only the local proxy environment. See the
 [native Claude guide](prototypes/trellage-claude-profiles/README.md).
 
 The native `trx run codex pstack` profile runs Codex with
-[pstack for Codex](https://github.com/Aqua-123/pstack-for-codex), created and
-maintained by Aqua-123. It installs only the upstream marketplace plugin in
+[open-pstack](https://github.com/ericlitman/open-pstack), the Claude Code
+and Codex port of Cursor pstack maintained by Eric Litman. It installs only
+the upstream marketplace plugin in
 `~/.local/share/trellage/profiles/codex/pstack/home/`. Codex exposes its skills
 with the plugin namespace, such as `$pstack-for-codex:poteto-mode`; the shorter
 `$poteto-mode` name is only the upstream hook's activation marker, not the
@@ -771,6 +772,14 @@ profiles, Poteto Mode cross-turn activation, and Benny automations are not
 enabled automatically.
 Its Trellage identity is harness `codex` and profile
 `pstack`.
+
+Configs created before the switch to open-pstack still set
+`[native.sources.pstack] repository = "aqua-123/pstack-for-codex"`. A local
+`pstack` profile keeps using that repository with no warning. Without a local
+`pstack` profile, `trx run codex pstack` fails with `source pstack conflicts
+with shipped preset`. To move to open-pstack, edit `~/.config/trellage/config.toml`:
+set `repository = "ericlitman/open-pstack"` and remove any `commit` pin under
+that source, because Aqua-123 commits do not exist in open-pstack.
 
 ```bash
 trx setup codex pstack
