@@ -216,7 +216,8 @@ repository = "charlie947/social-media-skills"
 repository = "blader/humanizer"
 
 [native.sources.pstack]
-repository = "aqua-123/pstack-for-codex"
+# pstack source repo: https://github.com/ericlitman/open-pstack (used by the pstack profiles in claude + codex)
+repository = "ericlitman/open-pstack"
 
 [native.sources.ponytail]
 repository = "dietrichgebert/ponytail"
@@ -1692,7 +1693,7 @@ controller = "codex-goal"
 workflow_ids = [ "test-driven-development", "plan-then-execute-branch", "parallel-review-and-dispatch" ]
 
 [native.profiles.preset-codex-pstack.selection]
-description = "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for structured, verified multi-step engineering through the explicit Aqua-123 pstack $pstack-for-codex:poteto-mode workflow."
+description = "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for structured, verified multi-step engineering through the explicit open-pstack $pstack-for-codex:poteto-mode workflow."
 strengths = [ "pstack poteto mode orchestration", "explicit skill invocation workflows", "codex full access", "keyless proxy model routing", "isolated codex profile home" ]
 weaknesses = [ "Casual prompts that do not name a skill; all 45 pstack-for-codex skills require explicit $name invocation and are not auto-triggered", "Tasks needing native OpenAI authentication; the profile routes through copilot-proxy-rs", "Multi-writer parallel edits on one shared checkout without isolation; pstack falls back to serial execution when safe isolation is unavailable", "Work requiring an OS-level sandbox; use a Trellage Sandbox profile instead" ]
 best_for = [ "User-directed engineering where you choose each skill explicitly by $name, instead of a self-running pipeline such as Superpowers", "Substantial engineering tasks that benefit from Poteto Mode's playbook selection, verification checkpoints, controlled delegation, and an optional decision trail for long or multi-phase work ($poteto-mode activation marker plus $pstack-for-codex:poteto-mode skill)", "Targeted single-operation work such as tracing a subsystem ($pstack-for-codex:how), reconstructing why code looks the way it does ($pstack-for-codex:why), or a skeptical multi-lens diff review ($pstack-for-codex:interrogate)", "Reproduce-first bug fixing with $pstack-for-codex:tdd, or removing low-value comments/prose with $pstack-for-codex:no-comments and $pstack-for-codex:unslop" ]

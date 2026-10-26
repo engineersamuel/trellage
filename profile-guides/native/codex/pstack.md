@@ -13,10 +13,10 @@ templates:
 
 # Native Codex (`codex`) — `pstack` profile
 
-`trx run codex pstack` runs the host Codex CLI with Aqua-123's `pstack-for-codex` plugin,
-a Codex-native derivative of `cursor/plugins`'s `pstack`. See
+`trx run codex pstack` runs the host Codex CLI with skills from `ericlitman/open-pstack`,
+a Claude Code and Codex port of `cursor/plugins`'s `pstack`. See
 `prototypes/trellage-codex-profiles/README.md` and the upstream
-`Aqua-123/pstack-for-codex` README for the skill catalog and invocation rules.
+`ericlitman/open-pstack` README for the skill catalog and invocation rules.
 
 Poteto Mode is the profile's structured-work entry point. It turns a
 substantial software-engineering request into an explicit workflow: understand

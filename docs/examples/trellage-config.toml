@@ -74,7 +74,7 @@ repository = "plannotator/effective-html"
 repository = "gnurio/tufte-vdqi-plugin"
 
 [native.sources.pstack]
-repository = "aqua-123/pstack-for-codex"
+repository = "ericlitman/open-pstack"
 
 [native.sources.youtube-skills]
 repository = "zeropointrepo/youtube-skills"
