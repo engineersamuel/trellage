@@ -51,8 +51,8 @@ assert_community_skills() {
   [[ -d "$target" && ! -L "$target" ]] \
     || fail "$label community skill directory is missing"
   skill_count="$(find "$target" -mindepth 1 -maxdepth 1 -type d ! -name '.trellage-*' | wc -l | tr -d ' ')"
-  [[ "$skill_count" == 34 ]] \
-    || fail "$label community skill count was $skill_count, expected 34"
+  [[ "$skill_count" == 33 ]] \
+    || fail "$label community skill count was $skill_count, expected 33"
   for skill_name in "${community_skill_names[@]}"; do
     grep -Fqx "# Fixture $skill_name" "$target/$skill_name/SKILL.md" \
       || fail "$label community skill differs: $skill_name"
@@ -139,15 +139,15 @@ for stale_phrase in \
   'installs it into the managed runtime'; do
   assert_documentation_absent "$stale_phrase"
 done
-[[ "${#community_skill_names[@]}" -eq 34 ]] \
-  || fail "OMP community skill count was ${#community_skill_names[@]}, expected 34"
-[[ "$(printf '%s\n' "${community_skill_names[@]}" | LC_ALL=C sort -u | wc -l | tr -d ' ')" == 34 ]] \
+[[ "${#community_skill_names[@]}" -eq 33 ]] \
+  || fail "OMP community skill count was ${#community_skill_names[@]}, expected 33"
+[[ "$(printf '%s\n' "${community_skill_names[@]}" | LC_ALL=C sort -u | wc -l | tr -d ' ')" == 33 ]] \
   || fail 'OMP community skill catalog contains duplicate names'
 bun --no-env-file -e 'console.log(JSON.stringify(Bun.TOML.parse(await Bun.file(process.argv[1]).text()).skills))' "$skills_catalog" | jq -e '
   .sources["dsebban-omp"].repository == "https://github.com/dsebban/skills.git"
   and .sources["dsebban-omp"].select == ["orchestrate-omp", "poteto-mode", "pstack-omp"]
-  and .sources["pstack-portable"].repository == "https://github.com/Aqua-123/pstack-for-codex.git"
-  and (.sources["pstack-portable"].select | length) == 31
+  and .sources["pstack-portable"].repository == "https://github.com/ericlitman/open-pstack.git"
+  and (.sources["pstack-portable"].select | length) == 30
   and (.sources["pstack-portable"].select | index("poteto-mode")) == null
   and (.sources["pstack-portable"].select | index("setup-pstack")) == null
   and (.sources["pstack-portable"].select | index("setup-benny")) == null
