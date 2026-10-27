@@ -804,7 +804,7 @@ jq -e '
     "testedHarnessVersion": "1.0.81"
   }
   and (.profiles.superpowers | del(.headless)) == {
-    "description": "GitHub Copilot CLI for design-first TDD, root-cause fixes, review, verification, and clean branches through Superpowers.",
+    "description": "GitHub Copilot CLI for handing off large, loosely specified features to the Superpowers pipeline: design, small-task plan, fresh subagent per task with spec and code review, TDD, and a verified branch.",
     "marketplace": "obra/superpowers-marketplace",
     "marketplaceName": "superpowers-marketplace",
     "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
