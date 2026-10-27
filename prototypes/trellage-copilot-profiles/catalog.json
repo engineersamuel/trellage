@@ -164,7 +164,7 @@
       "standaloneMcps": []
     },
     "superpowers": {
-      "description": "GitHub Copilot CLI for design-first TDD, root-cause fixes, review, verification, and clean branches through Superpowers.",
+      "description": "GitHub Copilot CLI for handing off large, loosely specified features to the Superpowers pipeline: design, small-task plan, fresh subagent per task with spec and code review, TDD, and a verified branch.",
       "headless": {
         "schemaVersion": 1,
         "prompt": true,
