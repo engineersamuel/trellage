@@ -70,7 +70,7 @@ Update a manually maintained host binary with the mechanism that installed it.
 - Trellage does not rewrite `config.yml`, Copilot `models.yml`, authentication,
   sessions, caches, history, or other profile state. The local profile's
   provider file is the only managed `models.yml` exception.
-- `dsebban/skills` and `Aqua-123/pstack-for-codex` provide the approved 34
+- `dsebban/skills` and `ericlitman/open-pstack` provide the approved 33
   community skills. OMP 17.3.5 or newer discovers the community directory.
   `trx skills update` refreshes caches, and `trx upgrade omp default
   --skills-only` synchronizes the existing profile.

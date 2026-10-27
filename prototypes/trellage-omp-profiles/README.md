@@ -138,12 +138,12 @@ overlay supplies that policy. OMP remains free to update its own native
 
 ## Skills and profile routing
 
-The approved OMP community bundle contains 34 skills from:
+The approved OMP community bundle contains 33 skills from:
 
 - [`dsebban/skills`](https://github.com/dsebban/skills): `orchestrate-omp`,
   `poteto-mode`, and `pstack-omp`.
-- [`Aqua-123/pstack-for-codex`](https://github.com/Aqua-123/pstack-for-codex):
-  31 harness-neutral workflow, principle, automation, and support skills.
+- [`ericlitman/open-pstack`](https://github.com/ericlitman/open-pstack):
+  30 harness-neutral workflow, principle, automation, and support skills.
 
 The source policy is in `config.example.toml`, and user overrides are in
 `~/.config/trellage/config.toml`. OMP 17.3.5 or newer discovers the
