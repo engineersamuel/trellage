@@ -546,6 +546,36 @@ for invalid_upgrade in \
   [[ "$status" == 1 ]] || fail "invalid upgrade arguments exited $status instead of 1"
   assert_contains 'upgrade requires all [--yes | --dry-run]' "$fixture_root/upgrade-invalid.err"
 done
+cat >"$fixture_bin/nodecode-updater" <<'EOF'
+#!/bin/sh
+if [ "$#" -eq 1 ] && [ "$1" = --version ]; then
+  printf 'nodecode 0.1.0\n'
+  exit 0
+fi
+[ "$#" -eq 1 ] && [ "$1" = update ] || exit 64
+if [ -n "${NODECODE_TEST_ARGS:-}" ]; then
+  printf '%s\n' "$@" > "$NODECODE_TEST_ARGS"
+else
+  printf 'nodecode:update\n' >> "${TRX_UPGRADE_LOG:?}"
+fi
+exit "${NODECODE_TEST_STATUS:-0}"
+EOF
+chmod +x "$fixture_bin/nodecode-updater"
+# Keep aggregate upgrades and inventory away from the real installed binary.
+export TRELLAGE_NODECODE_BIN="$fixture_bin/nodecode-updater"
+TRELLAGE_NODECODE_BIN="$fixture_bin/nodecode-updater" NODECODE_TEST_ARGS="$fixture_root/nodecode-update.args" \
+  "$fixture_bin/trx" upgrade nodecode --all --yes
+[[ "$(cat "$fixture_root/nodecode-update.args")" == update ]] || fail 'Nodecode upgrade must invoke native update only'
+rm "$fixture_root/nodecode-update.args"
+TRELLAGE_NODECODE_BIN="$fixture_bin/nodecode-updater" NODECODE_TEST_ARGS="$fixture_root/nodecode-update.args" \
+  "$fixture_bin/trx" upgrade nodecode --dry-run >"$fixture_root/nodecode-update-dry.out"
+[[ ! -e "$fixture_root/nodecode-update.args" ]] || fail 'Nodecode dry-run executed updater'
+assert_contains '"update"' "$fixture_root/nodecode-update-dry.out"
+status=0
+TRELLAGE_NODECODE_BIN="$fixture_bin/nodecode-updater" NODECODE_TEST_ARGS="$fixture_root/nodecode-update.args" NODECODE_TEST_STATUS=23 \
+  "$fixture_bin/trx" upgrade nodecode || status=$?
+[[ "$status" == 23 ]] || fail "Nodecode update failure exited $status instead of 23"
+
 for unmanaged in codex grok headlong pi uji; do
   status=0
   "$fixture_bin/trx" upgrade "$unmanaged" >"$fixture_root/upgrade-unmanaged.out" 2>&1 || status=$?
@@ -1051,8 +1081,8 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_DISCOVERY_LOG="$discovery_log" \
 [[ "$status" == 0 ]] || fail "upgrade dry-run failed (got $status): $(<"$fixture_root/upgrade-dry-run.out")"
 assert_no_upgrade_mutation 'upgrade dry-run'
 [[ ! -s "$discovery_log" ]] || fail 'upgrade dry-run executed a lifecycle backend during catalog loading'
-assert_contains '34 catalog compositions' "$fixture_root/upgrade-dry-run.out"
-assert_contains 'Scope: 5 Native runtime updates.' "$fixture_root/upgrade-dry-run.out"
+assert_contains '35 catalog compositions' "$fixture_root/upgrade-dry-run.out"
+assert_contains 'Scope: 6 Native runtime updates.' "$fixture_root/upgrade-dry-run.out"
 assert_contains 'Externally managed codex: installed and updated outside Trellage.' "$fixture_root/upgrade-dry-run.out"
 assert_contains 'Externally managed pi: installed and updated outside Trellage.' "$fixture_root/upgrade-dry-run.out"
 assert_contains 'Externally managed agency: installed and updated outside Trellage.' "$fixture_root/upgrade-dry-run.out"
@@ -1084,12 +1114,13 @@ assert_contains 'No approval: an interactive terminal is required' "$fixture_roo
 status=0
 TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" upgrade all --yes \
   >"$fixture_root/upgrade-yes.out" 2>&1 || status=$?
-[[ "$status" == 0 ]] || fail "authorized upgrade returned unexpected status $status"
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 5 ]] \
+[[ "$status" == 0 ]] || fail "authorized upgrade returned unexpected status $status: $(<"$fixture_root/upgrade-yes.out")"
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 6 ]] \
   || { cat "$fixture_root/upgrade-yes.out" "$upgrade_log" >&2; fail 'authorized upgrade did not run each planned update exactly once'; }
 assert_native_skills_refreshed
 assert_contains 'cldx:harness-update' "$upgrade_log"
 assert_contains 'omp:update copilot' "$upgrade_log"
+assert_contains 'nodecode:update' "$upgrade_log"
 assert_contains 'Harness summary:' "$fixture_root/upgrade-yes.out"
 assert_contains 'shared cache: updated.' "$fixture_root/upgrade-yes.out"
 assert_contains 'Updated Native skills native:agency/azure' "$fixture_root/upgrade-yes.out"
@@ -1099,7 +1130,7 @@ status=0
 TRX_UPGRADE_LOG="$upgrade_log" TRX_UPGRADE_FAIL=cldx \
   "$fixture_bin/trx" upgrade all --yes >"$fixture_root/upgrade-mixed.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'upgrade accepted mixed command and installed-version failures'
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 5 ]] || fail 'an independent failure stopped later upgrade groups'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 6 ]] || fail 'an independent failure stopped later upgrade groups'
 assert_native_skills_refreshed
 assert_contains 'fixture harness update failed: cldx' "$fixture_root/upgrade-mixed.out"
 assert_contains 'Updated harness native:prime/default' "$fixture_root/upgrade-mixed.out"
@@ -1122,7 +1153,7 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_SKILLS_CACHE_FAIL=1 \
 [[ "$status" == 1 ]] || fail 'unified update accepted a failed shared skills cache'
 [[ "$(wc -l <"$skills_cache_log" | tr -d ' ')" == 1 ]] || fail 'failed shared cache refresh was restarted'
 [[ ! -s "$skills_update_log" ]] || fail 'unified update copied stale skills after a cache refresh failure'
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 5 ]] || fail 'skills cache failure prevented independent harness updates'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 6 ]] || fail 'skills cache failure prevented independent harness updates'
 assert_contains 'Native skills cache failed: fixture shared skills cache failed' "$fixture_root/upgrade-skills-cache-failed.out"
 assert_contains 'Native skills not run native:agency/azure: shared cache refresh failed; no stale cache is used.' \
   "$fixture_root/upgrade-skills-cache-failed.out"
@@ -1136,7 +1167,7 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_SKILLS_UPDATE_FAIL=cpx/hve \
   "$fixture_bin/trx" upgrade all --yes >"$fixture_root/upgrade-profile-skills-failed.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'unified update accepted a failed profile skills verification'
 assert_native_skills_refreshed
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 5 ]] || fail 'profile skill failure prevented independent harness updates'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 6 ]] || fail 'profile skill failure prevented independent harness updates'
 assert_contains 'Failed Native skills native:copilot/hve: fixture skill verification failed: cpx/hve' \
   "$fixture_root/upgrade-profile-skills-failed.out"
 assert_contains 'Updated Native skills native:claude/default' "$fixture_root/upgrade-profile-skills-failed.out"
@@ -1171,7 +1202,7 @@ TRX_UPGRADE_LOG="$upgrade_log" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/upgrade-confirm.out" \
     'yes\r' '' "$fixture_bin/trx" upgrade all || status=$?
 [[ "$status" == 0 ]] || fail "confirmed upgrade returned $status instead of 0"
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 5 ]] || fail 'terminal confirmation did not start the planned updates'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 6 ]] || fail 'terminal confirmation did not start the planned updates'
 assert_native_skills_refreshed
 assert_contains 'Type yes to update' "$fixture_root/upgrade-confirm.out"
 assert_contains 'Harness summary:' "$fixture_root/upgrade-confirm.out"
@@ -1208,7 +1239,7 @@ assert_contains 'unknown command: frobnicate; run trx --help' "$fixture_root/unk
 status=0
 "$fixture_bin/trx" run bogus >"$fixture_root/unknown-harness.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail "unknown harness exited $status instead of 1"
-assert_contains 'unknown harness: bogus; harnesses: agency, claude, codex, copilot, grok, jcode, omp, pi, prime, uji (also fx, headlong)' \
+assert_contains 'unknown harness: bogus; harnesses: agency, claude, codex, copilot, grok, jcode, omp, pi, prime, uji, nodecode (also fx, headlong)' \
   "$fixture_root/unknown-harness.out"
 assert_contains 'usage: trx run HARNESS [PROFILE...]' "$fixture_root/unknown-harness.out"
 

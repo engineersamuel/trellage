@@ -1941,3 +1941,38 @@ Every profile load attempts this check; there is no freshness TTL. Each ref
 check has a two-second limit so a slow remote falls back to validated last-good
 content with a warning. Pinned sources reuse their validated resolved content
 until explicitly upgraded.
+
+### Installing and updating Nodecode
+
+Install Nodecode using its [official installer](https://nodecode.ai/install.sh):
+
+```sh
+curl -fsSL https://nodecode.ai/install.sh | sh
+```
+
+`trx run nodecode default` launches that installed binary. Installed Nodecode
+already checks for stable-channel updates in the background (initially after
+about 30 seconds, then via its release feed and periodic polling). Trellage
+leaves that native updater enabled by default and preserves the profile's
+`update.mode` (`auto`, `ask`, or `off`) and release hold. It does not force an
+update before every launch or rerun the installer inside `NODECODE_HOME`, which
+Trellage uses for profile state. Short runs may finish before the first check.
+
+For an immediate, explicit upgrade:
+
+```sh
+trx upgrade nodecode
+trx upgrade nodecode --dry-run  # preview only; no download or execution
+trx upgrade all --yes          # includes Nodecode
+```
+
+The upgrade command calls `nodecode update`, using Nodecode's own staged,
+checksum-verified updater. This updates the shared installation, not just one
+profile; `--all` and profile arguments do not create separate binary installs.
+An explicit native update can lift a release hold. Failures remain nonzero;
+no extra `--yes` flag is passed to Nodecode. `TRELLAGE_NODECODE_BIN` overrides
+the executable used for both launch and explicit upgrade.
+
+See the [Nodecode update policy](https://nodecode.ai/docs/updates) and
+[release pages](https://github.com/nodecode-ai/nodecode/releases). Updates use
+Nodecode's channel feed rather than treating GitHub release tags as build IDs.

@@ -69,7 +69,7 @@ export const RUN_USAGE = `Usage:
           [--no-always] [--skill OWNER/REPO:NAME]... [--require-proven-isolation]
           [--continue | --resume[=ID]] [-- <harness-args>]
 
-Harnesses: agency, claude, codex, copilot, fx, grok, headlong, jcode, omp, pi, prime, uji.
+Harnesses: agency, claude, codex, copilot, fx, grok, headlong, jcode, omp, pi, prime, uji, nodecode.
 Profiles come from ~/.config/trellage/config.toml and built-in per-harness presets; a config profile with the same
 name wins. Run trx list to see them. With no profile, only always-on profiles are used. --no-always skips them.
 --dry-run prepares the composition and prints the launch plan without starting the harness. --skill adds one skill

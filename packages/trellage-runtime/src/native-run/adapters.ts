@@ -2495,6 +2495,7 @@ export const hostDefaults = (harness: string, home: string = os.homedir(), plan?
   if (harness === "omp") return ompDefaults(plan)
   if (harness === "prime") return { model: PRIME_DEFAULT_MODEL, effort: undefined }
   if (harness === "uji") return { model: `${UJI_PROXY_PROVIDER}/${UJI_PROXY_DEFAULT_MODEL}`, effort }
+  if (harness === "nodecode") return { model: NODECODE_DEFAULT_MODEL, effort }
   if (harness === "copilot") {
     const settings = readStructured(path.join(home, ".copilot", "settings.json"), "json")
     return { model: text(settings.model), effort }
@@ -2593,6 +2594,54 @@ export const ujiAdapter: NativeAdapter = {
   }),
 }
 
+const NODECODE_PROXY_ENDPOINT = "http://127.0.0.1:8080/v1/responses"
+const NODECODE_PROXY_API_KEY = "trellage-local-proxy"
+const NODECODE_DEFAULT_MODEL = "gpt-6-astra"
+
+/** Nodecode keeps its store, layer, and sessions in NODECODE_HOME; Trellage adds no skills or cells. */
+export const nodecodeAdapter: NativeAdapter = {
+  id: "nodecode",
+  sandbox: false,
+  label: "Nodecode",
+  isolation: unprovenEvidence(
+    "Nodecode receives a profile-scoped NODECODE_HOME; its eval tool runs Lisp with full host access",
+  ),
+  skillsSubdirectory: "skills",
+  instructionsFile: "TRELLAGE_INSTRUCTIONS.md",
+  efforts: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+  // Installed Nodecode owns background updates. Keep config/update mode and
+  // release-pin in persistent home; never force `update` (which lifts holds)
+  // or run install.sh with this profile-scoped NODECODE_HOME during launch.
+  policyVersion: "nodecode-proxy-1",
+  providerPolicy: (model) => `copilot-proxy-rs:${model ?? NODECODE_DEFAULT_MODEL}`,
+  effectivePolicy: (model, effort) => ({
+    normal: `${model ?? NODECODE_DEFAULT_MODEL}${effort ? ` · effort ${effort}` : ""}`,
+    plan: "same model and effort",
+  }),
+  managedFlags: ["-p", "--profile", "--store", "--ephemeral"],
+  clean: {
+    supported: false,
+    reason: "Nodecode loads its own home layer and cells; no clean mode has been verified",
+  },
+  writeAdapterFiles: async (stage) => {
+    await mkdir(stage, { recursive: true })
+  },
+  persistentState: ["home"],
+  resumeArgs: () => [],
+  launch: ({ layout, model, effort, forwardedArgs, environment }) => ({
+    command: binary(environment, "TRELLAGE_NODECODE_BIN", "nodecode"),
+    args: [...forwardedArgs],
+    env: {
+      NODECODE_HOME: path.join(layout.generationPath, "home"),
+      NODECODE_PROVIDER: "openai-responses",
+      NODECODE_ENDPOINT: NODECODE_PROXY_ENDPOINT,
+      NODECODE_API_KEY: NODECODE_PROXY_API_KEY,
+      NODECODE_MODEL: model ?? NODECODE_DEFAULT_MODEL,
+      NODECODE_REASONING_EFFORT: effort ?? null,
+    },
+  }),
+}
+
 export const adapters: Readonly<Record<string, NativeAdapter>> = {
   agency: agencyAdapter,
   pi: piAdapter,
@@ -2606,6 +2655,7 @@ export const adapters: Readonly<Record<string, NativeAdapter>> = {
   fx: fxAdapter,
   headlong: headlongAdapter,
   uji: ujiAdapter,
+  nodecode: nodecodeAdapter,
 }
 
 export const adapterFor = (harness: string): NativeAdapter => {

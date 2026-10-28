@@ -37,7 +37,7 @@ const native = (launcher: string, harness: string, name = "default", commandPath
   launcher,
   harness: launcher,
   profiles: [name],
-  lifecycle: ["codex", "pi"].includes(launcher) ? null : { runtime: launcher, profile: name },
+  lifecycle: ["codex", "pi", "nodecode"].includes(launcher) ? null : { runtime: launcher, profile: name },
 })
 
 const success: CommandRunResult = { stdout: "updated", stderr: "", exitCode: 0 }
@@ -77,6 +77,33 @@ describe("all-harness update planning", () => {
     expect(plan.groups.filter((group) => group.key === "native:omp").map((group) => group.key)).toEqual([
       "native:omp",
     ])
+  })
+
+  it("updates Nodecode once per executable without inventing private lifecycle or skills commands", async () => {
+    const entries = [
+      native("nodecode", "nodecode", "default"),
+      native("nodecode", "nodecode", "office"),
+      native("nodecode", "nodecode", "other", "/other/trx"),
+    ]
+    const plan = harnessUpdateAllPlanFor(entries)
+    expect(plan.groups).toHaveLength(2)
+    expect(plan.nativeUpdateCount).toBe(2)
+    expect(plan.externallyManaged).toEqual([])
+    expect(plan.unsupported).toEqual([])
+    expect(plan.skills).toBeUndefined()
+    expect(plan.groups.map((group) => group.targets.map((entry) => entry.name))).toEqual([
+      ["default", "office"],
+      ["other"],
+    ])
+    const run = successfulRun()
+    const outcome = await runAllHarnessUpdates(plan, new HarnessUpdateManager({ run }, "/worktree"), {
+      refresh: async () => {},
+    })
+    expect(run.mock.calls.filter(([, args]) => args[0] !== "--help").map(([executable, args]) => [executable, args])).toEqual([
+      ["/fixture/trx", ["upgrade", "nodecode", "default"]],
+      ["/other/trx", ["upgrade", "nodecode", "other"]],
+    ])
+    expect(harnessUpdateAllSummary(outcome)).toMatchObject({ updated: 3, failed: 0, success: true })
   })
 
   it("retains separate executable paths when their harness update keys match", async () => {

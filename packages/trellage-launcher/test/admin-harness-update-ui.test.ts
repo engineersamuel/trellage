@@ -23,7 +23,7 @@ const renderEntry = (_surface: "native", harness: string, launcher: string, name
     launcher,
     name,
     profiles: [name],
-    lifecycle: ["codex", "pi"].includes(launcher) ? null : { runtime: launcher, profile: name },
+    lifecycle: ["codex", "pi", "nodecode"].includes(launcher) ? null : { runtime: launcher, profile: name },
     description: `${harness} profile`,
     commandPath: `/fixture/${launcher}`,
     doctorSupported: true,
@@ -63,6 +63,7 @@ describe("Admin harness update control", () => {
     ["native", "omp", "omp"],
     ["native", "jcode", "jcode"],
     ["native", "prime", "prime"],
+    ["native", "nodecode", "nodecode"],
   ] as const)("shows U for %s %s before version data is available, without starting an update", (surface, harness, launcher) => {
     expect(renderEntry(surface, harness, launcher)).toContain("[U] update harness")
   })

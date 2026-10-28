@@ -663,6 +663,10 @@ harnesses = [ "prime" ]
 label = "uji / default"
 harnesses = [ "uji" ]
 
+[native.profiles.preset-nodecode-default]
+label = "nodecode / default"
+harnesses = [ "nodecode" ]
+
 # Firstmate (https://github.com/kunchenguid/firstmate) runs from its own clone, kept on the latest main.
 [native.profiles.firstmate]
 label = "Firstmate fleet"
@@ -788,6 +792,13 @@ strengths = [ "Coding workflows using Uji's Lua tools and managed profile state"
 weaknesses = [ "Runs requiring per-tool approvals or an OS sandbox; managed tools are allowed by default" ]
 best_for = [ "Coding workflows using Uji's Lua tools and managed profile state" ]
 avoid_for = [ "Runs requiring per-tool approvals or an OS sandbox; managed tools are allowed by default" ]
+
+[native.harnesses.nodecode.selection]
+description = "Nodecode, a self-extending Common Lisp agent, with a profile-scoped home and keyless routing through copilot-proxy-rs."
+strengths = [ "Agent work that benefits from tools Nodecode writes and keeps in its own home" ]
+weaknesses = [ "Runs needing an OS sandbox, Trellage skills, or session resume; its eval tool has full host access" ]
+best_for = [ "Trying Nodecode's self-extending Lisp agent on a coding task" ]
+avoid_for = [ "Runs needing an OS sandbox, Trellage skills, or session resume; its eval tool has full host access" ]
 
 [native.profiles.preset-jcode-default.selection]
 description = "jcode for memory-backed, browser-driven, and coordinated-swarm work, with persistent sessions and keyless gpt-5.6-sol routing."
@@ -2047,6 +2058,10 @@ best_for = [ "Improve quantitative charts and data displays" ]
 [native.profiles.preset-uji-default.selection]
 description = "Uji with selected skills, managed Lua tools, and profile-scoped session storage."
 best_for = [ "Coding tasks using Uji's Lua tools and selected skill bundle" ]
+
+[native.profiles.preset-nodecode-default.selection]
+description = "Nodecode with a profile-scoped home and keyless routing through copilot-proxy-rs; no added skills."
+best_for = [ "Trying Nodecode's self-extending Lisp agent on a coding task" ]
 
 [native.profiles.preset-claude-clean]
 harnesses = [ "claude" ]

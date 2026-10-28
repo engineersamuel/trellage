@@ -54,7 +54,7 @@ const nativeEntry = (launcher: string, harness: string, name = "default"): Admin
   name,
   commandPath: `/opt/trellage/${launcher}/bin/${launcher}`,
   profiles: [name],
-  lifecycle: ["codex", "pi"].includes(launcher) ? null : { runtime: launcher, profile: name },
+  lifecycle: ["codex", "pi", "nodecode"].includes(launcher) ? null : { runtime: launcher, profile: name },
 })
 
 const requirePlan = (
@@ -78,6 +78,7 @@ describe("harnessUpdatePlanFor", () => {
     ["omp", "oh-my-pi", "copilot", ["upgrade", "omp", "copilot"]],
     ["jcode", "jcode", "default", ["upgrade", "jcode", "default"]],
     ["prime", "prime", "default", ["upgrade", "prime", "default"]],
+    ["nodecode", "nodecode", "default", ["upgrade", "nodecode", "default"]],
   ] as const)("uses %s's harness command, not a plugin update", (launcher, harness, name, args) => {
     const selected = nativeEntry(launcher, harness, name)
     const plan = requirePlan(selected, [selected])
@@ -129,6 +130,7 @@ describe("runHarnessUpdate", () => {
     ["copilot", "copilot", ["awesome", "hve"]],
     ["claude", "claude", ["default"]],
     ["omp", "oh-my-pi", ["local", "copilot"]],
+    ["nodecode", "nodecode", ["default", "office"]],
   ] as const)("updates %s's shared harness once for all of its profiles", async (launcher, harness, names) => {
     const entries = names.map((name) => nativeEntry(launcher, harness, name))
     const selected = entries[0]!
@@ -210,6 +212,31 @@ describe("harness update version refresh", () => {
     for (const entry of entries) {
       expect(refreshed.get(entry.ref)?.installed).toEqual({ kind: "known", version: "3.0.0" })
     }
+  })
+
+  it("refreshes Nodecode through inventory without enabling private lifecycle operations", async () => {
+    const entries = ["default", "office"].map((name) => nativeEntry("nodecode", "nodecode", name))
+    const plan = requirePlan(entries[0]!, entries)
+    const run = vi.fn<CommandRunner["run"]>(async () => ({
+      stdout: JSON.stringify({ schemaVersion: 2, binary: { version: "0.1.1" } }),
+      stderr: "",
+      exitCode: 0,
+    }))
+    const results: AdminHarnessVersionCacheEntry[] = []
+    await refreshHarnessUpdateVersions(
+      plan,
+      new AdminRunManager({ runner: { run } }),
+      { schemaVersion: 2, entries: {} },
+      (_key, result) => results.push(result),
+    )
+    expect(entries.every((entry) => entry.lifecycle === null)).toBe(true)
+    expect(run.mock.calls.map(([executable, args]) => [executable, args])).toEqual([
+      [entries[0]!.commandPath, ["inventory", "nodecode", "default", "--json"]],
+    ])
+    expect(results.at(-1)?.result).toEqual({
+      installed: { kind: "known", version: "0.1.1" },
+      latest: { kind: "unsupported" },
+    })
   })
 
   it("waits for a pre-update version check, then reads the newly installed version", async () => {
