@@ -504,7 +504,7 @@ settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"
 
 trx_run_claude default || fail 'bare canonical launch failed'
 jq -s -e '
-  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--effort", "medium"]
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5.5", "--effort", "medium"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'bare launch arguments differ'
 
 workspace="$(pwd -P)"
@@ -524,14 +524,14 @@ jq -s -e --arg home "$canonical_home" '
   .[-1].configDir == $home
   and .[-1].authToken == "trellage-local-proxy"
   and .[-1].baseUrl == "http://127.0.0.1:8080"
-  and .[-1].opus == ""
-  and .[-1].sonnet == ""
+  and .[-1].opus == "claude-opus-5.5"
+  and .[-1].sonnet == "claude-opus-5.5"
   and .[-1].haiku == "claude-haiku-4.5"
   and .[-1].apiKey == "unset"
   and .[-1].oauth == "unset"
   and .[-1].openai == "unset"
   and .[-1].gh == "unset"
-  and .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--effort", "medium", "-p", "two words", "", "--literal=*"]
+  and .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5.5", "--effort", "medium", "-p", "two words", "", "--literal=*"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'default launch environment or arguments differ'
 
 # --- provider/token scrub must cover the supported provider/token override
@@ -600,7 +600,7 @@ jq -s -e '
 trx_run_claude default --plan -p planning \
   || fail 'canonical plan launch failed'
 jq -s -e '
-  .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "max", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--permission-mode", "plan", "-p", "planning"]
+  .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "max", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5.5", "--permission-mode", "plan", "-p", "planning"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'canonical plan launch did not apply the plan policy'
 
 trx_run_claude default --model opusplan --plan -p planning \
@@ -612,7 +612,7 @@ jq -s -e '
 trx_run_claude default --plan --effort=high -p planning \
   || fail 'explicit plan effort override failed'
 jq -s -e '
-  .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "high", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--permission-mode", "plan", "-p", "planning"]
+  .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "high", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5.5", "--permission-mode", "plan", "-p", "planning"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit plan effort was changed'
 
 headless_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
@@ -645,7 +645,7 @@ jq -se --arg session "$headless_session_id" '
 ' "$fixture_root/headless-initial.out" >/dev/null \
   || fail 'Claude JSONL evidence differs'
 jq -s -e '
-  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--effort", "medium", "--output-format", "stream-json", "--verbose", "-p", "machine output"]
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5.5", "--effort", "medium", "--output-format", "stream-json", "--verbose", "-p", "machine output"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'Claude JSONL argument vector differs'
 
 headless_resume_stream="$fixture_root/headless-resume.jsonl"
@@ -665,7 +665,7 @@ jq -se --arg session "$headless_session_id" '
 ' "$fixture_root/headless-resume.out" >/dev/null \
   || fail 'Claude resume-with-prompt session evidence differs'
 jq -s -e --arg session "$headless_session_id" '
-  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--effort", "medium", "--resume", $session, "--output-format", "stream-json", "--verbose", "-p", "resume output"]
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5.5", "--effort", "medium", "--resume", $session, "--output-format", "stream-json", "--verbose", "-p", "resume output"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'Claude resume-with-prompt argument vector differs'
 
 headless_malformed_stream="$fixture_root/headless-malformed.jsonl"

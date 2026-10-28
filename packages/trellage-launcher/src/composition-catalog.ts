@@ -87,6 +87,7 @@ const builtInDescriptions: Readonly<Record<string, string>> = {
   "headlong/default": "Persistent Headlong agent with durable identity, memory, and background thinking on the host.",
   "uji/default":
     "Uji with generated configuration, selected skills, and keyless model routing through copilot-proxy-rs.",
+  "nodecode/default": "Nodecode with a profile-scoped home and keyless model routing through copilot-proxy-rs; no added skills.",
 }
 
 const adapterHeadlessCapabilities: Readonly<Record<string, HeadlessCapabilitiesV1>> = {

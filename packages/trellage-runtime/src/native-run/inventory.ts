@@ -243,7 +243,7 @@ const checkLegacyAdmission = async (
   }
 }
 
-const knownVersionHarnesses = new Set(["agency", "claude", "codex", "copilot", "fx", "grok", "jcode", "omp", "pi", "prime", "uji"])
+const knownVersionHarnesses = new Set(["agency", "claude", "codex", "copilot", "fx", "grok", "jcode", "omp", "pi", "prime", "uji", "nodecode"])
 
 const checkBinary = async (
   prepared: PreparedRun,

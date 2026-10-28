@@ -7,7 +7,7 @@ import {
   type LifecycleRuntime,
 } from "./lifecycle-runtime.ts";
 import { ensureFxProvider } from "./adapters.ts";
-import { main as runNative } from "./run.ts";
+import { main as runNative, spawnInherited } from "./run.ts";
 import { inventoryCodexGoalFeatures, inventoryComposition } from "./inventory.ts";
 
 type CancellationSignal = "SIGTERM" | "SIGINT" | "SIGHUP";
@@ -364,10 +364,29 @@ const runCodexGoalFeatures = async (args: ReadonlyArray<string>): Promise<number
   return result.status ?? 1;
 };
 
-const externallyManagedHarnesses = new Set(["codex", "grok", "headlong", "pi", "uji"]);
+// Installed Nodecode already auto-updates during normal runs. An explicit update
+// is deliberately separate: upstream's bare `update` also lifts a release hold.
+const runNodecodeUpgrade = async (args: ReadonlyArray<string>): Promise<number> => {
+  const supported = new Set(["--all", "--yes", "--harness-only", "--dry-run"]);
+  const unsupported = args.find((argument) => argument.startsWith("-") && !supported.has(argument));
+  if (unsupported) throw new Error(`unsupported Nodecode upgrade option: ${unsupported}`);
+  const command = process.env.TRELLAGE_NODECODE_BIN ?? "nodecode";
+  const argv = ["update"];
+  if (args.includes("--dry-run")) {
+    console.log(JSON.stringify({ harness: "nodecode", command, args: argv }, null, 2));
+    return 0;
+  }
+  // Use the caller's environment, not a generated composition or install.sh:
+  // the native updater resolves its binary installation root itself.
+  return spawnInherited({ command, args: argv, env: {} }, process.env, process.cwd(), () => {});
+};
+
+const externallyManagedHarnesses = new Set(["codex", "grok", "headlong", "pi", "uji", "nodecode"]);
 
 const externalManagementError = (harness: string, args: ReadonlyArray<string>): Error => {
   const profile = args.find((argument) => !argument.startsWith("-")) ?? "PROFILE";
+  if (harness === "nodecode")
+    return new Error(`Nodecode supports trx upgrade nodecode and trx inventory nodecode ${profile} --json, not this lifecycle operation`);
   return new Error(
     `${harness} is installed and updated outside Trellage; use trx inventory ${harness} ${profile} --json`,
   );
@@ -384,6 +403,7 @@ export const runProfileOperation = async (
   }
   if (operation === "run") throw new Error("profile lifecycle cannot launch agents; use trx run");
   if (harness === "fx") return runFxOperation(operation, args);
+  if (harness === "nodecode" && operation === "upgrade") return runNodecodeUpgrade(args);
   const runtime = lifecycleRuntime(harness);
   if (!runtime && externallyManagedHarnesses.has(harness)) throw externalManagementError(harness, args);
   if (!runtime) throw new Error(`unknown managed profile harness: ${harness}`);

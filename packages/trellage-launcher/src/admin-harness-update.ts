@@ -23,6 +23,7 @@ const nativeHarnessUpdates: ReadonlyMap<string, "update" | "harness-update"> = n
   ["jcode", "update"],
   ["omp", "update"],
   ["prime", "update"],
+  ["nodecode", "update"],
 ])
 
 export type HarnessUpdateStep = ProfileUpdateStep

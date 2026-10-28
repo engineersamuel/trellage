@@ -16,6 +16,7 @@ export const nativeBinaryNames: Readonly<Record<string, string>> = {
   prime: "prime-agent",
   grok: "grok",
   uji: "uji",
+  nodecode: "nodecode",
 }
 
 export const resolveNativeBinary = (environment: NodeJS.ProcessEnv, variable: string, fallback: string): string =>

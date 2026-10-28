@@ -21,9 +21,10 @@ export type NativeHarnessId =
   | "pi"
   | "prime"
   | "uji"
+  | "nodecode"
 
 const allNativeHarnesses: ReadonlyArray<NativeHarnessId> = [
-  "agency", "claude", "codex", "copilot", "fx", "grok", "headlong", "jcode", "omp", "pi", "prime", "uji",
+  "agency", "claude", "codex", "copilot", "fx", "grok", "headlong", "jcode", "omp", "pi", "prime", "uji", "nodecode",
 ]
 
 const updateCheckHarnesses: ReadonlySet<NativeHarnessId> = new Set(["copilot", "fx", "jcode", "omp", "prime"])
@@ -38,7 +39,7 @@ export interface NativeLauncherCapabilities {
 
 export const nativeLauncherCapabilities = (
   harness: string,
-  lifecycle: CompositionCatalogEntry["lifecycle"] = isKnownNativeLauncher(harness) && !["codex", "fx", "grok", "headlong", "pi", "uji"].includes(harness)
+  lifecycle: CompositionCatalogEntry["lifecycle"] = isKnownNativeLauncher(harness) && !["codex", "fx", "grok", "headlong", "pi", "uji", "nodecode"].includes(harness)
     ? { runtime: harness, profile: "default" }
     : null,
 ): NativeLauncherCapabilities => {

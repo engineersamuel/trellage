@@ -1525,7 +1525,7 @@ worktree="$(CDPATH= cd -P -- "$worktree" && pwd -P)"
 expected_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$worktree" \
-  '{version:"18.8.5",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["-p","Reply exactly OMP_LOCAL_OK","--","--literal value"]}')"
+  '{version:"18.8.5",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--thinking","medium","-p","Reply exactly OMP_LOCAL_OK","--","--literal value"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_launch" ]] \
   || fail 'launch did not preserve profile, cwd, HOME, or exact arguments'
 
@@ -1536,7 +1536,7 @@ expected_launch="$(jq -cn \
 expected_local_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$worktree" \
-  '{version:"18.8.5",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["-p","Reply exactly OMP_LOCAL_EXPLICIT"]}')"
+  '{version:"18.8.5",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--thinking","medium","-p","Reply exactly OMP_LOCAL_EXPLICIT"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_local_launch" ]] \
   || fail 'explicit local launch did not select the local profile'
 
@@ -1576,7 +1576,7 @@ expected_headless_local_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$worktree" \
   --arg path "$local_overlay_path" \
-  '{version:"18.8.5",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--config",$path,"-p","Reply exactly OMP_HEADLESS_LOCAL"]}')"
+  '{version:"18.8.5",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--thinking","medium","--config",$path,"-p","Reply exactly OMP_HEADLESS_LOCAL"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_headless_local_launch" ]] \
   || fail 'local headless-policy launch arguments differ'
 printf '%s\n' "$local_overlay_record" | jq -e --arg managed "$local_overlay" '

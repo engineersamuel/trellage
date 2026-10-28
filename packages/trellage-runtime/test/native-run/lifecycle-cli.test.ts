@@ -108,3 +108,33 @@ test("retired Pi and Codex lifecycle maintenance points to inventory", async () 
     );
   }
 });
+
+test("Nodecode upgrades use the native updater and propagate failures", async () => {
+  const home = await tempRoot("nodecode-upgrade");
+  const command = path.join(home, "custom-nodecode");
+  await writeFile(command, `#!/bin/sh
+printf '%s\\n' "$@" > "$HOME/update-args"
+printf '%s' "$NODECODE_HOME" > "$HOME/update-home"
+exit 0
+`, { mode: 0o755 });
+  const env = { HOME: home, PATH: "/usr/bin:/bin", TRELLAGE_NODECODE_BIN: command, NODECODE_HOME: path.join(home, "state") };
+  for (const args of [[], ["default", "--yes"], ["--all", "--harness-only"]]) {
+    await exec(process.execPath, [lifecycle, "upgrade", "nodecode", ...args], { env });
+    expect(await Bun.file(path.join(home, "update-args")).text()).toBe("update\n");
+    expect(await Bun.file(path.join(home, "update-home")).text()).toBe(env.NODECODE_HOME);
+  }
+  await writeFile(command, "#!/bin/sh\necho update-failed >&2\nexit 23\n", { mode: 0o755 });
+  await expect(exec(process.execPath, [lifecycle, "upgrade", "nodecode"], { env })).rejects.toMatchObject({ code: 23, stderr: "update-failed\n" });
+});
+
+test("Nodecode upgrade dry-run does not execute and unsupported flags fail closed", async () => {
+  const home = await tempRoot("nodecode-upgrade-dry");
+  const command = path.join(home, "missing-nodecode");
+  const env = { HOME: home, PATH: "/usr/bin:/bin", TRELLAGE_NODECODE_BIN: command };
+  const { stdout } = await exec(process.execPath, [lifecycle, "upgrade", "nodecode", "--dry-run"], { env });
+  expect(JSON.parse(stdout)).toEqual({ harness: "nodecode", command, args: ["update"] });
+  for (const flag of ["--skills-only", "--check", "--unknown"]) {
+    await expect(exec(process.execPath, [lifecycle, "upgrade", "nodecode", flag], { env })).rejects.toThrow(`unsupported Nodecode upgrade option: ${flag}`);
+  }
+  await expect(exec(process.execPath, [lifecycle, "upgrade", "nodecode"], { env })).rejects.toThrow();
+});

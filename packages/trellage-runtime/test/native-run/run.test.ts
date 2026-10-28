@@ -394,6 +394,47 @@ test("Uji requires provider/model syntax and reserves adapter-controlled flags",
   ).rejects.toThrow(/managed by the Uji adapter/)
 })
 
+test("Nodecode default routes through copilot-proxy-rs with a persistent profile home and no skills", async () => {
+  const { dependencies } = await world()
+  const prepared = await prepareRun({ ...base, harness: "nodecode", profiles: ["default"] }, dependencies())
+  expect(prepared.launch.command).toBe("nodecode")
+  expect(prepared.launch.args).toEqual([])
+  expect(prepared.launch.env).toMatchObject({
+    NODECODE_HOME: path.join(prepared.layout.generationPath, "home"),
+    NODECODE_PROVIDER: "openai-responses",
+    NODECODE_ENDPOINT: "http://127.0.0.1:8080/v1/responses",
+    NODECODE_API_KEY: "trellage-local-proxy",
+    NODECODE_MODEL: "gpt-6-astra",
+    NODECODE_REASONING_EFFORT: "medium",
+  })
+  expect(await readlink(path.join(prepared.layout.generationPath, "home"))).toBe(
+    path.join(prepared.layout.ownerHome, "state", "home"),
+  )
+  await expect(
+    prepareRun({ ...base, harness: "nodecode", profiles: ["default"], forwardedArgs: ["--store", "/tmp"] }, dependencies()),
+  ).rejects.toThrow(/managed by the Nodecode adapter/)
+})
+
+test("Nodecode runs preserve native update settings and release holds without a forced update", async () => {
+  const { dependencies } = await world()
+  const options = { ...base, harness: "nodecode", profiles: ["default"], allowUnprovenIsolation: true }
+  const prepared = await prepareRun(options, dependencies())
+  const home = path.join(prepared.layout.generationPath, "home")
+  const config = '{"update": {"mode": "off"}}\n'
+  const pin = "held-release\n"
+  await writeFile(path.join(home, "config.jsonc"), config)
+  await writeFile(path.join(home, "release-pin"), pin)
+  const launches: LaunchCommand[] = []
+  // Exercise the default refresh dispatcher, not the fixture's no-op override.
+  const { refreshHarness: _refreshHarness, ...deps } = dependencies(async (launch) => { launches.push(launch); return 0 })
+  expect(await runNative(options, deps)).toBe(0)
+  expect(launches.map(({ command, args }) => ({ command, args }))).toEqual([{ command: "nodecode", args: [] }])
+  expect(await readFile(path.join(home, "config.jsonc"), "utf8")).toBe(config)
+  expect(await readFile(path.join(home, "release-pin"), "utf8")).toBe(pin)
+  expect(await runNative({ ...options, dryRun: true }, deps)).toBe(0)
+  expect(launches).toHaveLength(1)
+})
+
 test("canonical adapters launch agent executables instead of retired profile wrappers", async () => {
   const { dependencies } = await world()
   const expected: Readonly<Record<string, string>> = {
