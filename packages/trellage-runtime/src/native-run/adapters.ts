@@ -36,7 +36,7 @@ import { nativePresetProfiles } from "./presets.ts"
 import { childSettlement } from "./child-settlement.ts"
 import { digestDirectory } from "./source.ts"
 import { pickCopilotSession } from "./session-picker.ts"
-import { resolveNativeBinary } from "./requirements.ts"
+import { empryoBinary, resolveNativeBinary } from "./requirements.ts"
 
 const execFileAsync = promisify(execFile)
 
@@ -194,13 +194,14 @@ const FX_PROVIDER_DEFINITION = {
 
 const sameJson = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right)
 
-const readFxSettings = async (file: string): Promise<Record<string, unknown>> => {
+/** Reads a host-owned JSON settings object; `label` names the file in errors. */
+const readHostSettings = async (file: string, label: string): Promise<Record<string, unknown>> => {
   const fileStatus = await lstat(file).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return undefined
     throw error
   })
   if (fileStatus && (!fileStatus.isFile() || fileStatus.isSymbolicLink() || fileStatus.size > 64 * 1024))
-    throw new NativeRunError("launch", `unsafe Fx settings file: ${file}`)
+    throw new NativeRunError("launch", `unsafe ${label} file: ${file}`)
   let settings: Record<string, unknown> = {}
   if (fileStatus) {
     try {
@@ -210,7 +211,7 @@ const readFxSettings = async (file: string): Promise<Record<string, unknown>> =>
     } catch (error) {
       throw new NativeRunError(
         "launch",
-        `invalid Fx settings: ${error instanceof Error ? error.message : String(error)}`,
+        `invalid ${label}: ${error instanceof Error ? error.message : String(error)}`,
       )
     }
   }
@@ -228,7 +229,7 @@ export const ensureFxProvider = async (environment: NodeJS.ProcessEnv): Promise<
   if (directoryStatus && (!directoryStatus.isDirectory() || directoryStatus.isSymbolicLink()))
     throw new NativeRunError("launch", `unsafe Fx settings directory: ${directory}`)
   await mkdir(directory, { recursive: true, mode: 0o700 })
-  const settings = await readFxSettings(file)
+  const settings = await readHostSettings(file, "Fx settings")
   const providers = settings.providers
   if (providers !== undefined && (!providers || typeof providers !== "object" || Array.isArray(providers)))
     throw new NativeRunError("launch", "invalid Fx providers configuration")
@@ -2495,6 +2496,7 @@ export const hostDefaults = (harness: string, home: string = os.homedir(), plan?
   if (harness === "omp") return ompDefaults(plan)
   if (harness === "prime") return { model: PRIME_DEFAULT_MODEL, effort: undefined }
   if (harness === "uji") return { model: `${UJI_PROXY_PROVIDER}/${UJI_PROXY_DEFAULT_MODEL}`, effort }
+  if (harness === "empryo") return { model: EMPRYO_DEFAULT_MODEL, effort }
   if (harness === "nodecode") return { model: NODECODE_DEFAULT_MODEL, effort }
   if (harness === "copilot") {
     const settings = readStructured(path.join(home, ".copilot", "settings.json"), "json")
@@ -2642,6 +2644,99 @@ export const nodecodeAdapter: NativeAdapter = {
   }),
 }
 
+const EMPRYO_PROVIDER = "copilot-proxy-rs"
+const EMPRYO_DEFAULT_MODEL = "gpt-6.1-sol"
+// Without envVar, Empryo sends a placeholder key that copilot-proxy-rs accepts,
+// so a plain `empryo` launch outside trx uses the same provider.
+const EMPRYO_PROVIDER_DEFINITION = { id: EMPRYO_PROVIDER, name: EMPRYO_PROVIDER, baseURL: "http://127.0.0.1:8080/v1" }
+
+/** A bare model id routes through copilot-proxy-rs; `provider/model` selects any other Empryo provider. */
+const empryoModel = (model: string | undefined): string => {
+  const selection = model ?? EMPRYO_DEFAULT_MODEL
+  return selection.includes("/") ? selection : `${EMPRYO_PROVIDER}/${selection}`
+}
+
+/**
+ * Empryo reads only ~/.empryo/config.json and its TUI ignores --model, so trx
+ * registers the proxy provider there and sets defaultModel and effort per launch.
+ */
+export const ensureEmpryoConfig = async (
+  environment: NodeJS.ProcessEnv,
+  model: string | undefined,
+  effort: string | undefined,
+): Promise<void> => {
+  const directory = path.join(environment.HOME ?? os.homedir(), ".empryo")
+  const file = path.join(directory, "config.json")
+  const directoryStatus = await lstat(directory).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined
+    throw error
+  })
+  if (directoryStatus && (!directoryStatus.isDirectory() || directoryStatus.isSymbolicLink()))
+    throw new NativeRunError("launch", `unsafe Empryo config directory: ${directory}`)
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  const settings = await readHostSettings(file, "Empryo config")
+  const providers = settings.providers ?? []
+  if (!Array.isArray(providers)) throw new NativeRunError("launch", "invalid Empryo providers configuration")
+  const current: unknown = providers.find(
+    (provider: unknown) =>
+      typeof provider === "object" && provider !== null && "id" in provider && provider.id === EMPRYO_PROVIDER,
+  )
+  const currentBaseUrl =
+    typeof current === "object" && current !== null && "baseURL" in current ? current.baseURL : undefined
+  if (current !== undefined && currentBaseUrl !== EMPRYO_PROVIDER_DEFINITION.baseURL)
+    throw new NativeRunError("launch", `Empryo provider ${EMPRYO_PROVIDER} already exists with a different baseURL`)
+  const performance = settings.performance ?? {}
+  if (!performance || typeof performance !== "object" || Array.isArray(performance))
+    throw new NativeRunError("launch", "invalid Empryo performance configuration")
+  const next = {
+    ...settings,
+    providers: current === undefined ? [...providers, EMPRYO_PROVIDER_DEFINITION] : providers,
+    defaultModel: empryoModel(model),
+    ...(effort === undefined ? {} : { performance: { ...performance, effort } }),
+  }
+  if (sameJson(next, settings)) return
+  const temporary = path.join(directory, `.config-${randomUUID()}.json`)
+  await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { flag: "wx", mode: 0o600 })
+  await rename(temporary, file)
+}
+
+export const empryoAdapter: NativeAdapter = {
+  id: "empryo",
+  sandbox: false,
+  label: "Empryo",
+  isolation: unprovenEvidence(
+    "Empryo uses the host HOME and ~/.empryo; trx sets its provider, defaultModel, and effort in ~/.empryo/config.json",
+  ),
+  skillsSubdirectory: "skills",
+  instructionsFile: "TRELLAGE_INSTRUCTIONS.md",
+  efforts: ["off", "low", "medium", "high", "xhigh", "max"],
+  policyVersion: "empryo-proxy-1",
+  providerPolicy: (model) => empryoModel(model),
+  effectivePolicy: (model, effort) => ({
+    normal: `${empryoModel(model)}${effort ? ` · effort ${effort}` : ""}`,
+    plan: "same model and effort",
+  }),
+  managedFlags: ["--model", "--effort"],
+  clean: {
+    supported: false,
+    reason: "Empryo uses the host HOME and ~/.empryo; no clean mode has been verified",
+  },
+  writeAdapterFiles: async (stage) => {
+    await mkdir(stage, { recursive: true })
+  },
+  persistentState: [],
+  resumeArgs: () => [],
+  launch: ({ forwardedArgs, environment }) => ({
+    command: empryoBinary(environment),
+    args: [...forwardedArgs],
+    env: {},
+  }),
+  beforeLaunch: async ({ environment, model, effort }) => {
+    await ensureEmpryoConfig(environment, model, effort)
+    return {}
+  },
+}
+
 export const adapters: Readonly<Record<string, NativeAdapter>> = {
   agency: agencyAdapter,
   pi: piAdapter,
@@ -2656,6 +2751,7 @@ export const adapters: Readonly<Record<string, NativeAdapter>> = {
   headlong: headlongAdapter,
   uji: ujiAdapter,
   nodecode: nodecodeAdapter,
+  empryo: empryoAdapter,
 }
 
 export const adapterFor = (harness: string): NativeAdapter => {

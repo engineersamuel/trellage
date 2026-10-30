@@ -11,6 +11,7 @@ export const nativeHarnessPresets = {
   prime: ["default"],
   uji: ["default"],
   nodecode: ["default"],
+  empryo: ["default"],
 } as const satisfies Readonly<Record<string, ReadonlyArray<string>>>
 
 /** Shipped profiles selected by their own name on every harness they list; a user profile of the same name wins. */

@@ -1976,3 +1976,17 @@ the executable used for both launch and explicit upgrade.
 See the [Nodecode update policy](https://nodecode.ai/docs/updates) and
 [release pages](https://github.com/nodecode-ai/nodecode/releases). Updates use
 Nodecode's channel feed rather than treating GitHub release tags as build IDs.
+
+### Installing Empryo
+
+Install Empryo using its [official installer](https://empryo.com/install.sh):
+
+```sh
+curl -fsSL empryo.com/install.sh | EMPRYO_THEME=crimson bash
+```
+
+`trx run empryo default` launches `~/.empryo/bin/empryo` (override with
+`TRELLAGE_EMPRYO_BIN`). Each launch registers the `copilot-proxy-rs` provider
+in `~/.empryo/config.json` and sets `defaultModel` to
+`copilot-proxy-rs/gpt-6.1-sol` (or the `--model` you pass) at medium effort.
+Empryo updates itself; `trx upgrade empryo` reports it as externally managed.

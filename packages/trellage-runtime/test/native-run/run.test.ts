@@ -10,6 +10,7 @@ import {
   claudeAdapter,
   codexAdapter,
   copilotAdapter,
+  empryoAdapter,
   fxAdapter,
   grokAdapter,
   headlongAdapter,
@@ -433,6 +434,40 @@ test("Nodecode runs preserve native update settings and release holds without a 
   expect(await readFile(path.join(home, "release-pin"), "utf8")).toBe(pin)
   expect(await runNative({ ...options, dryRun: true }, deps)).toBe(0)
   expect(launches).toHaveLength(1)
+})
+
+test("Empryo routes its host config through copilot-proxy-rs with gpt-6.1-sol and keeps user settings", async () => {
+  const { dependencies, root } = await world()
+  const prepared = await prepareRun({ ...base, harness: "empryo", profiles: ["default"] }, dependencies())
+  expect(prepared.launch.args).toEqual([])
+  const input = (model: string | undefined, effort: string | undefined): LaunchInput => ({
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    model,
+    effort,
+    forwardedArgs: [],
+    environment: { HOME: root },
+    workspace: root,
+  })
+  const file = path.join(root, ".empryo", "config.json")
+  await mkdir(path.dirname(file), { recursive: true })
+  const userProvider = { id: "local", baseURL: "http://127.0.0.1:1234/v1" }
+  await writeFile(file, JSON.stringify({ nerdFont: true, providers: [userProvider], performance: { speed: "fast" } }))
+  await empryoAdapter.beforeLaunch!(input("gpt-6.1-sol", "medium"))
+  expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+    nerdFont: true,
+    providers: [userProvider, { id: "copilot-proxy-rs", name: "copilot-proxy-rs", baseURL: "http://127.0.0.1:8080/v1" }],
+    performance: { speed: "fast", effort: "medium" },
+    defaultModel: "copilot-proxy-rs/gpt-6.1-sol",
+  })
+  await empryoAdapter.beforeLaunch!(input("local/qwen", "high"))
+  const switched = JSON.parse(await readFile(file, "utf8"))
+  expect(switched.defaultModel).toBe("local/qwen")
+  expect(switched.providers).toHaveLength(2)
+  expect(switched.performance.effort).toBe("high")
+  await writeFile(file, JSON.stringify({ providers: [{ id: "copilot-proxy-rs", baseURL: "http://elsewhere/v1" }] }))
+  await expect(empryoAdapter.beforeLaunch!(input(undefined, undefined))).rejects.toThrow(/different baseURL/)
 })
 
 test("canonical adapters launch agent executables instead of retired profile wrappers", async () => {

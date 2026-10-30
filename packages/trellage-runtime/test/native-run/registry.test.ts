@@ -5,7 +5,7 @@ import { adapters } from "../../src/native-run/adapters.ts"
 describe("native harness presets", () => {
   test("every public preset has a canonical built-in profile", () => {
     expect(Object.keys(nativeHarnessPresets).sort()).toEqual([
-      "agency", "claude", "codex", "copilot", "fx", "headlong", "jcode", "nodecode", "omp", "pi", "prime", "uji",
+      "agency", "claude", "codex", "copilot", "empryo", "fx", "headlong", "jcode", "nodecode", "omp", "pi", "prime", "uji",
     ])
     expect(nativePresetProfile("agency", "azure")).toBe("preset-agency-azure")
     expect(nativePresetProfile("headlong", "default")).toBe("preset-headlong-default")
@@ -20,7 +20,7 @@ describe("native harness presets", () => {
   })
   test("every canonical harness launches through an adapter", () => {
     expect(Object.keys(adapters).sort()).toEqual([
-      "agency", "claude", "codex", "copilot", "fx", "grok", "headlong", "jcode", "nodecode", "omp", "pi", "prime", "uji",
+      "agency", "claude", "codex", "copilot", "empryo", "fx", "grok", "headlong", "jcode", "nodecode", "omp", "pi", "prime", "uji",
     ])
   })
 })

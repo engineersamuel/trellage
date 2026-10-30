@@ -69,7 +69,7 @@ const unsupportedReason = (entry: AdminProfileEntry): string => {
   return `No harness update command is supported for ${identity}.`
 }
 
-const externallyManagedHarnesses = new Set(["agency", "codex", "fx", "grok", "headlong", "pi", "uji"])
+const externallyManagedHarnesses = new Set(["agency", "codex", "empryo", "fx", "grok", "headlong", "pi", "uji"])
 
 const externalManagementReason = (): string =>
   "installed and updated outside Trellage."

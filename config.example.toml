@@ -667,6 +667,10 @@ harnesses = [ "uji" ]
 label = "nodecode / default"
 harnesses = [ "nodecode" ]
 
+[native.profiles.preset-empryo-default]
+label = "empryo / default"
+harnesses = [ "empryo" ]
+
 # Firstmate (https://github.com/kunchenguid/firstmate) runs from its own clone, kept on the latest main.
 [native.profiles.firstmate]
 label = "Firstmate fleet"
@@ -799,6 +803,13 @@ strengths = [ "Agent work that benefits from tools Nodecode writes and keeps in 
 weaknesses = [ "Runs needing an OS sandbox, Trellage skills, or session resume; its eval tool has full host access" ]
 best_for = [ "Trying Nodecode's self-extending Lisp agent on a coding task" ]
 avoid_for = [ "Runs needing an OS sandbox, Trellage skills, or session resume; its eval tool has full host access" ]
+
+[native.harnesses.empryo.selection]
+description = "Empryo, a code-graph agent for repo-wide engineering where finding the right change matters as much as writing it; keyless routing through copilot-proxy-rs."
+strengths = [ "Connected code navigation: symbol references, callers, dependency graphs, and files that usually change together, not just text search", "End-to-end execution: investigates, edits, runs checks, and fixes failures instead of stopping at a proposed patch", "Focused structural edits: AST and LSP tools target functions and classes without rewriting unrelated code", "Parallel investigation: independent research and checks run concurrently, and larger tasks can use delegated agents", "Visual explanations: diagrams and comparisons alongside code work" ]
+weaknesses = [ "Heavier than a lightweight CLI for quick one-line edits", "No OS sandbox; tools run with full host access", "No Trellage skills, no trx session resume, and no per-profile isolation; state and config live in the host ~/.empryo" ]
+best_for = [ "Multi-file changes, refactors, and bug hunts that depend on tracing callers, references, and dependencies across a repository", "Investigate-edit-verify loops that should end with passing checks", "Understanding an unfamiliar codebase's structure before changing it" ]
+avoid_for = [ "Quick single-file edits where a lightweight CLI is faster", "Runs needing an OS sandbox, Trellage skills, session resume, or isolated profile state", "Workflows that depend on tight IDE editor integration" ]
 
 [native.profiles.preset-jcode-default.selection]
 description = "jcode for memory-backed, browser-driven, and coordinated-swarm work, with persistent sessions and keyless gpt-5.6-sol routing."
@@ -2062,6 +2073,13 @@ best_for = [ "Coding tasks using Uji's Lua tools and selected skill bundle" ]
 [native.profiles.preset-nodecode-default.selection]
 description = "Nodecode with a profile-scoped home and keyless routing through copilot-proxy-rs; no added skills."
 best_for = [ "Trying Nodecode's self-extending Lisp agent on a coding task" ]
+
+[native.profiles.preset-empryo-default.selection]
+description = "Empryo for repo-wide engineering with code-graph navigation, structural edits, and end-to-end verification; keyless gpt-6.1-sol through copilot-proxy-rs; no added skills."
+strengths = [ "Code-graph navigation across symbols, callers, dependencies, and co-changing files", "Investigates, edits, runs checks, and fixes failures end to end", "Structural AST/LSP edits that leave unrelated code untouched", "Parallel investigation and delegated agents for larger tasks" ]
+weaknesses = [ "Heavier than needed for quick one-line edits", "No OS sandbox, Trellage skills, or trx session resume; shares the host ~/.empryo state" ]
+best_for = [ "Repo-wide refactors, multi-file features, and bug hunts where locating the right change is the hard part", "Tasks that should finish with checks passing, not just a proposed patch" ]
+avoid_for = [ "Trivial single-file edits", "Runs requiring sandboxing or isolated profile state" ]
 
 [native.profiles.preset-claude-clean]
 harnesses = [ "claude" ]
