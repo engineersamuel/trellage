@@ -470,6 +470,276 @@ test("Empryo routes its host config through copilot-proxy-rs with gpt-6.1-sol an
   await expect(empryoAdapter.beforeLaunch!(input(undefined, undefined))).rejects.toThrow(/different baseURL/)
 })
 
+const nodecodeSkillsWorld = async () => {
+  const fixture = await world(`schema_version = 1
+[native.sources.office-content]
+repository = "example/office"
+[skills.sources.superpowers]
+repository = "https://github.com/example/superpowers.git"
+select = ["brainstorming", "writing-plans"]
+alwaysOn = true
+[skills.bundles]
+native-common = ["superpowers"]
+[native.instructions.nodecode-rules]
+file = "nodecode-rules.md"
+[native.profiles.nodecode-core]
+always = true
+harnesses = ["nodecode"]
+skills = [{ source = "superpowers", names = ["writing-plans"] }]
+instructions = ["nodecode-rules"]
+[native.profiles.chosen]
+skills = [{ source = "office-content", names = ["powerpoint", "i-have-adhd"] }]
+[native.profiles.unselected]
+skills = [{ source = "superpowers", names = ["brainstorming"] }]
+`)
+  await writeFile(path.join(fixture.root, "nodecode-rules.md"), "CANONICAL CONFIG INSTRUCTION\n")
+  await fixture.office.write({ "skills/powerpoint/references/template.txt": "DURABLE ASSET\n" })
+  await fixture.superpowers.write({
+    "skills/writing-plans/SKILL.md": skillMarkdown("writing-plans", "ALWAYS-ON WRITING GUIDANCE"),
+  })
+  return fixture
+}
+
+const nodecodeRunOptions = {
+  ...base, harness: "nodecode", profiles: ["chosen"], allowUnprovenIsolation: true,
+}
+
+const activeNodecodeSnapshot = async (ownerHome: string): Promise<string> =>
+  (JSON.parse(await readFile(path.join(ownerHome, "managed", "nodecode-skills", "activation.json"), "utf8")) as { snapshot: string }).snapshot
+
+test("Nodecode activates canonical selected skills, always instructions, and provenance before spawning", async () => {
+  const { dependencies } = await nodecodeSkillsWorld()
+  const prepared = await prepareRun(nodecodeRunOptions, dependencies())
+  const home = path.join(prepared.layout.ownerHome, "state", "home")
+  const userRules = "User-owned instructions remain intact.\n"
+  await writeFile(path.join(home, "AGENTS.md"), userRules)
+  await writeFile(path.join(home, "learning.lisp"), ";; user learning\n")
+  await mkdir(path.join(home, "cells", "user-cell"), { recursive: true })
+  await writeFile(path.join(home, "cells", "user-cell", "notes.txt"), "user cell\n")
+  let launches = 0
+  expect(await runNative(nodecodeRunOptions, dependencies(async (launch, _environment, _cwd, onSpawn) => {
+    launches++
+    expect(await realpath(launch.env.NODECODE_HOME!)).toBe(await realpath(home))
+    const snapshot = await activeNodecodeSnapshot(prepared.layout.ownerHome)
+    const manifest = JSON.parse(await readFile(path.join(snapshot, "manifest.json"), "utf8"))
+    expect(manifest.profiles).toEqual(prepared.plan.profiles)
+    expect(manifest.alwaysProfiles).toEqual(["nodecode-core"])
+    expect(manifest.instructions).toEqual(prepared.plan.instructions)
+    expect(manifest.skills).toEqual(prepared.plan.skills.map((skill) => ({
+      name: skill.name, sourceId: skill.sourceId, commit: skill.commit, digest: skill.digest,
+      manualOnly: skill.manualOnly === true, alwaysOn: skill.alwaysOn === true,
+      directory: `${skill.manualOnly ? "private" : "ordinary"}/${skill.name}`,
+    })))
+    expect(manifest.sources).toEqual(prepared.plan.sources.map(({ sourceId, repository, selector, commit, digest }) => ({
+      sourceId, repository, selector, commit, digest,
+    })))
+    expect(await readlink(path.join(home, "cells", "trellage-knowledge"))).toBe(path.join(snapshot, "trellage-knowledge"))
+    expect(await readlink(path.join(home, "cells", "nodecode-trellage-manual"))).toBe(path.join(snapshot, "nodecode-trellage-manual"))
+    expect((await readdir(path.join(home, "cells"))).sort()).toEqual(["nodecode-trellage-manual", "trellage-knowledge", "user-cell"])
+    expect((await readdir(path.join(snapshot, "trellage-knowledge"))).sort()).toEqual([
+      "powerpoint.lisp", "trellage-knowledge.asd", "writing-plans.lisp",
+    ])
+    expect(await readFile(path.join(snapshot, "ordinary", "powerpoint", "references", "template.txt"), "utf8")).toBe("DURABLE ASSET\n")
+    expect(await readFile(path.join(snapshot, "private", "i-have-adhd", "SKILL.md"), "utf8")).toContain("disable-model-invocation: true")
+    expect(existsSync(path.join(snapshot, "plugins"))).toBe(false)
+    const instructions = await readFile(path.join(home, "AGENTS.md"), "utf8")
+    expect(instructions.startsWith(userRules)).toBe(true)
+    expect(instructions).toContain("CANONICAL CONFIG INSTRUCTION")
+    expect(instructions.split("ALWAYS-ON WRITING GUIDANCE")).toHaveLength(2)
+    expect(instructions).toContain(path.join(snapshot, "ordinary", "writing-plans"))
+    expect(instructions).not.toContain("Manual output fixture")
+    expect(instructions).not.toContain("brainstorming")
+    onSpawn()
+    return 0
+  }))).toBe(0)
+  expect(launches).toBe(1)
+  expect(await readFile(path.join(home, "learning.lisp"), "utf8")).toBe(";; user learning\n")
+  expect(await readFile(path.join(home, "cells", "user-cell", "notes.txt"), "utf8")).toBe("user cell\n")
+})
+
+test("Nodecode no-always reconciles the same home without retaining removed managed instructions or discovery", async () => {
+  const { dependencies } = await nodecodeSkillsWorld()
+  const prepared = await prepareRun(nodecodeRunOptions, dependencies())
+  const deps = dependencies(async () => 0)
+  await runNative(nodecodeRunOptions, deps)
+  const previous = await activeNodecodeSnapshot(prepared.layout.ownerHome)
+  const options = { ...nodecodeRunOptions, noAlways: true }
+  const withoutAlways = await prepareRun(options, dependencies())
+  expect(withoutAlways.layout.ownerHome).toBe(prepared.layout.ownerHome)
+  await runNative(options, deps)
+  const snapshot = await activeNodecodeSnapshot(prepared.layout.ownerHome)
+  expect(snapshot).not.toBe(previous)
+  const manifest = JSON.parse(await readFile(path.join(snapshot, "manifest.json"), "utf8"))
+  expect(manifest.alwaysProfiles).toEqual([])
+  expect(manifest.instructions).toEqual([])
+  expect(manifest.skills.map((skill: { name: string }) => skill.name)).toEqual(["i-have-adhd", "powerpoint"])
+  const home = path.join(prepared.layout.ownerHome, "state", "home")
+  const instructions = await readFile(path.join(home, "AGENTS.md"), "utf8")
+  expect(instructions).not.toContain("CANONICAL CONFIG INSTRUCTION")
+  expect(instructions).not.toContain("ALWAYS-ON WRITING GUIDANCE")
+  expect(await readdir(path.join(home, "cells", "trellage-knowledge"))).not.toContain("writing-plans.lisp")
+  // Old conversations retain their durable paths; selection changes do not erase them.
+  expect(await readFile(path.join(previous, "ordinary", "writing-plans", "SKILL.md"), "utf8")).toContain("ALWAYS-ON WRITING GUIDANCE")
+})
+
+test("Nodecode reuses an unchanged snapshot but refreshes floating sources before its next launch", async () => {
+  const { dependencies, office } = await world()
+  const options = { ...base, harness: "nodecode", profiles: ["office"], allowUnprovenIsolation: true }
+  const prepared = await prepareRun(options, dependencies())
+  const snapshots: string[] = []
+  const deps = dependencies(async () => {
+    snapshots.push(await activeNodecodeSnapshot(prepared.layout.ownerHome))
+    return 0
+  })
+  await runNative(options, deps)
+  await runNative(options, deps)
+  expect(snapshots[1]).toBe(snapshots[0])
+  const updatedCommit = await office.write({ "skills/powerpoint/SKILL.md": skillMarkdown("powerpoint", "REFRESHED CONTENT") })
+  await runNative(options, deps)
+  expect(snapshots[2]).not.toBe(snapshots[0])
+  const manifest = JSON.parse(await readFile(path.join(snapshots[2]!, "manifest.json"), "utf8"))
+  expect(manifest.skills[0].commit).toBe(updatedCommit)
+  expect(await readFile(path.join(snapshots[2]!, "ordinary", "powerpoint", "SKILL.md"), "utf8")).toContain("REFRESHED CONTENT")
+  expect(await readFile(path.join(snapshots[0]!, "ordinary", "powerpoint", "SKILL.md"), "utf8")).not.toContain("REFRESHED CONTENT")
+  expect((await readdir(path.join(prepared.layout.ownerHome, "managed", "nodecode-skills", "snapshots"))).sort()).toEqual(
+    [path.basename(snapshots[0]!), path.basename(snapshots[2]!)].sort(),
+  )
+})
+
+test("Nodecode dry-run prepares a plan but does not activate skills or serialize preparation", async () => {
+  const { dependencies } = await nodecodeSkillsWorld()
+  const options = { ...nodecodeRunOptions, dryRun: true }
+  const prepared = await prepareRun(options, dependencies())
+  let launches = 0
+  expect(await runNative(options, dependencies(async () => { launches++; return 0 }))).toBe(0)
+  expect(launches).toBe(0)
+  expect(existsSync(path.join(prepared.layout.ownerHome, "managed", "nodecode-skills"))).toBe(false)
+  expect(existsSync(path.join(prepared.layout.ownerHome, ".launch-guard"))).toBe(false)
+  expect(existsSync(path.join(prepared.layout.ownerHome, ".prepare-guard"))).toBe(false)
+  expect(existsSync(path.join(prepared.layout.ownerHome, "state", "home", "AGENTS.md"))).toBe(false)
+  expect(existsSync(path.join(prepared.layout.ownerHome, "state", "home", "cells"))).toBe(false)
+})
+
+test("Nodecode leaves native store ownership and obsolete launch guards alone", async () => {
+  const { dependencies } = await nodecodeSkillsWorld()
+  const prepared = await prepareRun(nodecodeRunOptions, dependencies())
+  const home = path.join(prepared.layout.ownerHome, "state", "home")
+  await writeFile(path.join(home, "history.db.owner"), "unverifiable gateway")
+  const oldGuard = path.join(prepared.layout.ownerHome, ".launch-guard")
+  await mkdir(oldGuard)
+  await writeFile(path.join(oldGuard, "owners.sqlite"), "old launch admission is not consulted")
+  let launches = 0
+  expect(await runNative(nodecodeRunOptions, dependencies(async (_launch, _environment, _cwd, _onSpawn, guard) => {
+    expect(guard).toBeUndefined()
+    launches++
+    return 0
+  }))).toBe(0)
+  expect(launches).toBe(1)
+  expect(existsSync(path.join(prepared.layout.ownerHome, "managed", "nodecode-skills"))).toBe(true)
+  expect(await readFile(path.join(home, "history.db.owner"), "utf8")).toBe("unverifiable gateway")
+  expect(existsSync(path.join(home, "history.db.lock"))).toBe(false)
+  expect(await readFile(path.join(oldGuard, "owners.sqlite"), "utf8")).toBe("old launch admission is not consulted")
+})
+
+test.skipIf(!["darwin", "linux"].includes(process.platform))("Nodecode launches while its native gateway holds the store lease", async () => {
+  const { dependencies } = await nodecodeSkillsWorld()
+  const prepared = await prepareRun(nodecodeRunOptions, dependencies())
+  const home = path.join(prepared.layout.ownerHome, "state", "home")
+  const lock = path.join(home, "history.db.lock")
+  await writeFile(lock, "native lock bytes")
+  await writeFile(path.join(home, "history.db.owner"), "native owner bytes")
+  const holder = Bun.spawn([process.execPath, "-e", `
+    const { openSync } = require("node:fs");
+    const { dlopen } = require("bun:ffi");
+    const library = dlopen(process.platform === "darwin" ? "/usr/lib/libSystem.B.dylib" : "libc.so.6", {
+      lockf: { args: ["i32", "i32", "i64"], returns: "i32" }
+    });
+    if (library.symbols.lockf(openSync(process.argv[1], "r+"), 2, 0) !== 0) process.exit(1);
+    console.log("LOCKED");
+    setInterval(() => {}, 1000);
+  `, lock], { stdout: "pipe", stderr: "pipe" })
+  try {
+    const reader = holder.stdout.getReader()
+    const ready = await reader.read()
+    reader.releaseLock()
+    expect(new TextDecoder().decode(ready.value)).toContain("LOCKED")
+    let launches = 0
+    expect(await runNative(nodecodeRunOptions, dependencies(async () => { launches++; return 0 }))).toBe(0)
+    expect(launches).toBe(1)
+    expect(holder.exitCode).toBeNull()
+    expect(await readFile(lock, "utf8")).toBe("native lock bytes")
+    expect(await readFile(path.join(home, "history.db.owner"), "utf8")).toBe("native owner bytes")
+  } finally {
+    holder.kill("SIGKILL")
+    await holder.exited
+  }
+})
+
+test("a Nodecode spawn failure releases preparation ownership and generation lease for a retry", async () => {
+  const { dependencies, paths } = await world()
+  const options = { ...base, harness: "nodecode", profiles: ["office"], allowUnprovenIsolation: true }
+  const prepared = await prepareRun(options, dependencies())
+  await expect(runNative(options, dependencies(async () => { throw new Error("Nodecode spawn fixture failed") }))).rejects.toThrow("Nodecode spawn fixture failed")
+  expect(await readdir(path.join(paths.state, "leases", prepared.plan.generationId))).toEqual([])
+  const failedSnapshot = await activeNodecodeSnapshot(prepared.layout.ownerHome)
+  expect(await runNative(options, dependencies(async () => 0))).toBe(0)
+  expect(await activeNodecodeSnapshot(prepared.layout.ownerHome)).toBe(failedSnapshot)
+  expect(existsSync(path.join(prepared.layout.ownerHome, ".launch-guard"))).toBe(false)
+})
+
+test("Nodecode admits overlapping same-profile sessions and selection changes without stopping either session", async () => {
+  const { dependencies } = await nodecodeSkillsWorld()
+  const prepared = await prepareRun(nodecodeRunOptions, dependencies())
+  let enterFirst!: () => void
+  const firstEntered = new Promise<void>((resolve) => { enterFirst = resolve })
+  let finishFirst!: (status: number) => void
+  const firstHeld = new Promise<number>((resolve) => { finishFirst = resolve })
+  let enterSecond!: () => void
+  const secondEntered = new Promise<void>((resolve) => { enterSecond = resolve })
+  let finishSecond!: (status: number) => void
+  const secondHeld = new Promise<number>((resolve) => { finishSecond = resolve })
+  let firstExited = false
+  let secondExited = false
+  const first = runNative(nodecodeRunOptions, dependencies(async (_launch, _environment, _cwd, onSpawn, guard) => {
+    expect(guard).toBeUndefined()
+    onSpawn()
+    enterFirst()
+    const status = await firstHeld
+    firstExited = true
+    return status
+  }))
+  let second: Promise<number> | undefined
+  try {
+    await Promise.race([firstEntered, first.then(() => { throw new Error("First Nodecode fixture exited before spawning") })])
+    const snapshot = await activeNodecodeSnapshot(prepared.layout.ownerHome)
+    second = runNative(nodecodeRunOptions, dependencies(async (_launch, _environment, _cwd, onSpawn, guard) => {
+      expect(guard).toBeUndefined()
+      onSpawn()
+      enterSecond()
+      const status = await secondHeld
+      secondExited = true
+      return status
+    }))
+    await Promise.race([secondEntered, second.then(() => { throw new Error("Second Nodecode fixture exited before spawning") })])
+    expect(firstExited).toBe(false)
+    expect(secondExited).toBe(false)
+    expect(await activeNodecodeSnapshot(prepared.layout.ownerHome)).toBe(snapshot)
+    expect(await runNative({ ...nodecodeRunOptions, noAlways: true }, dependencies(async () => 0))).toBe(0)
+    expect(await activeNodecodeSnapshot(prepared.layout.ownerHome)).not.toBe(snapshot)
+    expect(await runNative({ ...nodecodeRunOptions, profiles: ["unselected"] }, dependencies(async () => 0))).toBe(0)
+    expect(firstExited).toBe(false)
+    expect(secondExited).toBe(false)
+    finishFirst(0)
+    expect(await first).toBe(0)
+    expect(secondExited).toBe(false)
+  } finally {
+    finishFirst(0)
+    finishSecond(0)
+    await Promise.all([first, second])
+  }
+  expect(secondExited).toBe(true)
+})
+
 test("canonical adapters launch agent executables instead of retired profile wrappers", async () => {
   const { dependencies } = await world()
   const expected: Readonly<Record<string, string>> = {

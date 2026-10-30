@@ -328,6 +328,64 @@ Trellage rejects symlinked sources, non-regular `.env` entries, group/world-writ
 
 Use `TRELLAGE_CONFIG` to select another config file. Use `TRELLAGE_ENVIRONMENT=off` for a per-process bypass or `TRELLAGE_ENVIRONMENT=on` to override `enabled = false`. Compiler and lifecycle commands do not load secrets.
 
+### Common MCP servers (`trx run`)
+
+Declare common MCPs once in `~/.config/trellage/config.toml` (or the file selected
+by `TRELLAGE_CONFIG`). They apply independently of selected skills and profiles,
+including `--no-always`. The special `clean` profile still loads **no MCPs**.
+
+```toml
+[mcp.servers.context7]
+type = "http"
+url = "https://mcp.context7.com/mcp"
+headers = { CONTEXT7_API_KEY = "${CONTEXT7_API_KEY}" }
+
+[mcp.servers.perplexity]
+type = "stdio"
+command = "npx"
+args = ["-y", "@perplexity-ai/mcp-server"]
+env = { PERPLEXITY_API_KEY = "${PERPLEXITY_API_KEY}" }
+```
+
+Supply `CONTEXT7_API_KEY` and `PERPLEXITY_API_KEY` through the environment of the
+launching `trx` process, for example with your existing secret manager. This path
+does not automatically load Varlock or copy credentials from host harness files.
+`${NAME}` references are resolved at launch, without shell evaluation; resolved
+credentials are not stored in generation manifests, config files, or displayed
+commands. Avoid literal secrets in definitions. Stdio commands must be installed
+on `PATH`; the example's `npx` may download the Perplexity server at first use.
+Pin the package version in `args` if you require reproducible server code.
+
+Server names are lower-kebab-case. Supported definition types are `stdio`
+(`command`, optional `args` and `env`), `http`, and `sse` (`url`, optional
+`headers`); transport support depends on the harness. Set `enabled = false` to
+disable an entry globally. Per-harness inclusion/exclusion is not implemented yet.
+
+`trx` translates definitions into isolated native configuration instead of
+editing host Copilot, Claude, Codex, or other harness configuration. Unsupported
+integrations and missing environment variables produce a warning on stderr,
+even for noninteractive launches; only the affected common server is omitted,
+and the harness still launches. Invalid shared configuration is a configuration
+error, not an unsupported-integration warning. `--dry-run` reports the effective
+common MCP names without starting servers or calling a model.
+
+This milestone supports stdio and HTTP MCPs in **Claude, Copilot, Codex, JCode,
+Grok, Pi, and Nodecode**. Agency, OMP, Prime, Uji, Fx, and Headlong currently warn
+and omit common MCPs because an isolated native injection route has not been
+verified. Legacy SSE is supported only by Claude, Copilot, JCode, and Grok.
+Pi selectively enables its built-in MCP extension; other automatic extensions
+remain disabled. Environment references in remote URLs are not supported;
+prefer authentication headers where the harness supports them.
+
+Nodecode uses ordinary MCP for Perplexity, not a special web-search provider.
+Its persistent MCP configuration is reconciled under the composition guard.
+Nodecode currently supports stdio and header-free HTTP endpoints only. HTTP
+headers are warned about and omitted: Nodecode lacks native environment-backed
+headers, and a terminal-scoped authentication bridge cannot safely serve its
+long-lived shared gateway. Use a stdio server for authenticated services such as
+Perplexity. No resolved API key is written to Nodecode's config, and host Nodecode
+configuration is not modified.
+
 ### Native runtime composition (`trx run`)
 
 ```fish
@@ -1941,6 +1999,53 @@ Every profile load attempts this check; there is no freshness TTL. Each ref
 check has a two-second limit so a slow remote falls back to validated last-good
 content with a warning. Pinned sources reuse their validated resolved content
 until explicitly upgraded.
+
+### Nodecode skills and persistent state
+
+`trx run nodecode PROFILE...` uses the selected profiles from
+`~/.config/trellage/config.toml`, including their configured always-profile
+selection (`--no-always` omits it). There is no separate Nodecode skill allowlist.
+The normal source-refresh, pinned-selector, and validated-cache rules apply.
+
+- Ordinary selected skills become **data-only native knowledge**. Their Lisp
+  wrappers contain escaped text, not executable upstream forms. Complete skill
+  directories are retained, and the knowledge names their durable asset paths.
+- `alwaysOn` skills also contribute the canonical composed instructions to the
+  home `AGENTS.md`. Trellage preserves rules outside its marked block.
+- Manual-only skills, including `i-have-adhd`, stay outside native knowledge
+  discovery. Invoke a selected manual skill explicitly in Nodecode with
+  `/trx-skill SKILL PROMPT`, for example
+  `/trx-skill i-have-adhd Help me break this task into small steps`.
+  The Trellage-owned command validates the snapshot manifest and submits the
+  skill text, asset location, and prompt as a new turn. It does not install
+  upstream plugins, hooks, or extensions.
+
+This controls managed discovery and activation, **not host-access authorization**:
+Nodecode is not sandboxed by Trellage, and a slash command is not proof of human
+consent. Existing conversation text and learned content are not erased when a
+skill is deselected. After changing selections, use `/index reload` in an
+existing conversation, or start a new one.
+
+Each composition has a persistent Nodecode home. Before launch, Trellage builds
+and validates a content-addressed snapshot, then reconciles only its
+`trellage-knowledge` and `nodecode-trellage-manual` cell links and its instruction
+block. Activation has a rollback journal; ownership conflicts or edits inside
+the managed block fail rather than overwrite user work. Snapshots are retained
+without automatic garbage collection because old conversations can reference
+their assets. User cells, settings, learning, sessions, and native update policy
+are preserved. Dry runs do not activate cells or change home instructions.
+
+Multiple terminals can launch the same composition in the same or different
+worktrees. Trellage does not reserve the composition for a session or reject a
+launch because Nodecode's store is busy. Nodecode owns its gateway election:
+each normal launch creates a fresh session and attaches to the existing gateway,
+or starts one if needed. Trellage serializes only the brief managed-file
+preparation transaction, which ends before the harness is spawned.
+
+An attached session uses the running gateway's configuration and environment;
+launching another terminal does not restart its cells or inject new API keys.
+Gateway-level changes may still require a native reload or restart. This is not
+a Trellage launch restriction.
 
 ### Installing and updating Nodecode
 

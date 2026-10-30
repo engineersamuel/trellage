@@ -2,9 +2,9 @@ import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { acquireProfileGuard, profileGuardProfiles } from "../../src/native-run/lifecycle-guard.ts";
+import { withCompositionPreparation, acquireProfileGuard, profileGuardProfiles } from "../../src/native-run/lifecycle-guard.ts";
 import { cleanupFixtures, tempRoot } from "./fixtures.ts";
 
 afterEach(cleanupFixtures);
@@ -568,4 +568,135 @@ test("failed persistent attachment keeps mutation excluded until captured work s
     guard.release();
     db.close();
   }
+});
+
+const compositionDatabase = (ownerHome: string) =>
+  new Database(path.join(ownerHome, ".prepare-guard", "owners.sqlite"));
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => { resolve = settle; });
+  return { promise, resolve };
+};
+
+test("composition preparation waits for the same canonical home but not independent homes", async () => {
+  const root = await tempRoot("composition-prepare");
+  const owner = path.join(root, "nodecode-arbitrary-profile-stack");
+  const otherOwner = path.join(root, "nodecode-other-stack");
+  mkdirSync(owner, { mode: 0o700 });
+  mkdirSync(otherOwner, { mode: 0o700 });
+  const alias = path.join(root, "same-home");
+  symlinkSync(owner, alias);
+  const entered = deferred<void>();
+  const release = deferred<void>();
+  const first = withCompositionPreparation(owner, async () => {
+    entered.resolve();
+    await release.promise;
+    return "first";
+  });
+  await entered.promise;
+  const db = compositionDatabase(owner);
+  let secondEntered = false;
+  const second = withCompositionPreparation(alias, async () => { secondEntered = true; return "second"; });
+  try {
+    expect(await withCompositionPreparation(otherOwner, async () => "independent")).toBe("independent");
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(secondEntered).toBe(false);
+    expect(db.query("SELECT scope, operation FROM owners").all()).toEqual([
+      { scope: realpathSync(owner), operation: "prepare" },
+    ]);
+    expect(existsSync(path.join(root, ".local"))).toBe(false);
+    release.resolve();
+    expect(await first).toBe("first");
+    expect(await second).toBe("second");
+    expect(db.query("SELECT * FROM owners").all()).toEqual([]);
+  } finally {
+    release.resolve();
+    await Promise.all([first, second]);
+    db.close();
+  }
+});
+
+test("failed preparation releases ownership for a retry", async () => {
+  const owner = await tempRoot("composition-prepare-failed");
+  await expect(withCompositionPreparation(owner, async () => { throw new Error("prepare failed"); }))
+    .rejects.toThrow("prepare failed");
+  expect(await withCompositionPreparation(owner, async () => 42)).toBe(42);
+  const db = compositionDatabase(owner);
+  try { expect(db.query("SELECT * FROM owners").all()).toEqual([]); }
+  finally { db.close(); }
+});
+
+test("composition preparation recovers stale PID identities and ignores old session guards", async () => {
+  const owner = await tempRoot("composition-prepare-stale");
+  await withCompositionPreparation(owner, async () => {});
+  const db = compositionDatabase(owner);
+  mkdirSync(path.join(owner, ".launch-guard"), { mode: 0o700 });
+  // An old process-lifetime database is not even opened by the new preparer.
+  writeFileSync(path.join(owner, ".launch-guard", "owners.sqlite"), "old live session guard");
+  try {
+    db.query("INSERT INTO owners (scope, operation, pid, started, token) VALUES (?, ?, ?, ?, ?)")
+      .run(realpathSync(owner), "prepare", process.pid, "previous process with this PID", "stale");
+    await withCompositionPreparation(owner, async () => {
+      const rows = db.query<{ token: string }, []>("SELECT token FROM owners").all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.token).not.toBe("stale");
+    });
+    expect(db.query("SELECT * FROM owners").all()).toEqual([]);
+    expect(readFileSync(path.join(owner, ".launch-guard", "owners.sqlite"), "utf8")).toBe("old live session guard");
+  } finally { db.close(); }
+});
+
+test("composition preparation waits across processes and recovers a killed preparer", async () => {
+  const owner = await tempRoot("composition-prepare-process");
+  const module = new URL("../../src/native-run/lifecycle-guard.ts", import.meta.url).href;
+  const child = spawn(process.execPath, ["--eval", `
+    import { withCompositionPreparation } from ${JSON.stringify(module)};
+    await withCompositionPreparation(${JSON.stringify(owner)}, async () => {
+      console.log("entered");
+      await new Promise(() => { setInterval(() => {}, 1000); });
+    });
+  `], { stdio: ["ignore", "pipe", "pipe"] });
+  const exited = once(child, "exit");
+  let waiting: Promise<string> | undefined;
+  try {
+    await Promise.race([
+      once(child.stdout!, "data"),
+      exited.then(() => { throw new Error("preparer exited before acquiring ownership"); }),
+    ]);
+    let entered = false;
+    waiting = withCompositionPreparation(owner, async () => { entered = true; return "recovered"; });
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    expect(entered).toBe(false);
+    child.kill("SIGKILL");
+    await exited;
+    expect(await waiting).toBe("recovered");
+    const db = compositionDatabase(owner);
+    try { expect(db.query("SELECT * FROM owners").all()).toEqual([]); }
+    finally { db.close(); }
+  } finally {
+    child.kill("SIGKILL");
+    await exited;
+    await waiting;
+  }
+});
+
+test("composition preparation rejects redirected or writable ownership surfaces", async () => {
+  const root = await tempRoot("composition-prepare-unsafe");
+  const unsafeOwner = path.join(root, "unsafe-owner");
+  mkdirSync(unsafeOwner, { mode: 0o700 });
+  chmodSync(unsafeOwner, 0o777);
+  await expect(withCompositionPreparation(unsafeOwner, async () => {})).rejects.toThrow("unsafe profile guard directory");
+  const redirectedOwner = path.join(root, "redirected-owner");
+  const outside = path.join(root, "outside");
+  mkdirSync(redirectedOwner, { mode: 0o700 });
+  mkdirSync(outside, { mode: 0o700 });
+  symlinkSync(outside, path.join(redirectedOwner, ".prepare-guard"));
+  await expect(withCompositionPreparation(redirectedOwner, async () => {})).rejects.toThrow("unsafe profile guard directory");
+  const writableOwner = path.join(root, "writable-owner");
+  mkdirSync(path.join(writableOwner, ".prepare-guard"), { recursive: true, mode: 0o700 });
+  const file = path.join(writableOwner, ".prepare-guard", "owners.sqlite");
+  writeFileSync(file, "", { mode: 0o666 });
+  chmodSync(file, 0o666);
+  await expect(withCompositionPreparation(writableOwner, async () => {})).rejects.toThrow("unsafe profile guard database");
 });
