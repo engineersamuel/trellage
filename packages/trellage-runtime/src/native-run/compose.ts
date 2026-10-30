@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises"
 import path from "node:path"
+import type { McpConfig } from "../mcp-config.ts"
 import type { NativeCatalog, NativePluginSelection } from "../native-config.ts"
 import { NativeRunError, type NativeRunPaths } from "./paths.ts"
 import { digestDirectory, type ResolvedSource, type SourceResolver } from "./source.ts"
@@ -30,6 +31,8 @@ export interface SelectedPlugin extends NativePluginSelection {
 
 export interface CompositionRequest {
   readonly harness: string
+  /** Common MCP definitions; credentials remain environment references. */
+  readonly mcp?: McpConfig
   readonly profiles: ReadonlyArray<string>
   readonly catalog: NativeCatalog
   /** Adapter-scoped policy identity: changes here invalidate generations. */
@@ -44,6 +47,8 @@ export interface CompositionRequest {
 export interface CompositionPlan {
   readonly compositionId: string
   readonly harness: string
+  /** Common MCP definitions; credentials remain environment references. */
+  readonly mcp?: McpConfig
   /** Profiles the user selected; always-on profiles are listed separately. */
   readonly profiles: ReadonlyArray<string>
   readonly alwaysProfiles: ReadonlyArray<string>
@@ -51,6 +56,7 @@ export interface CompositionPlan {
   readonly skills: ReadonlyArray<SelectedSkill>
   readonly plugins: ReadonlyArray<SelectedPlugin>
   readonly sources: ReadonlyArray<ResolvedSource>
+  readonly mcpWarnings?: ReadonlyArray<string>
   readonly warnings: ReadonlyArray<string>
   readonly generationId: string
   /** Profile working directory as written in config (may start with `~/`); omitted means the invocation directory. */
@@ -498,6 +504,8 @@ const generationIdOf = (
         ]),
         request.adapterPolicy,
         request.providerPolicy,
+        // Bump this policy when native MCP rendering changes: published generations are immutable.
+        ...(request.mcp === undefined ? [] : [["common-mcp-v2", request.mcp]]),
         skills.map((skill) => [skill.name, skill.digest, skill.alwaysOn ?? false, skill.manualOnly ?? false]),
         plugins.map((plugin) => [
           plugin.name,
@@ -532,6 +540,7 @@ export const planComposition = async (request: CompositionRequest, options: Plan
   return {
     compositionId: compositionIdOf(request.harness, profiles),
     harness: request.harness,
+    ...(request.mcp === undefined ? {} : { mcp: request.mcp }),
     profiles,
     alwaysProfiles,
     instructions,

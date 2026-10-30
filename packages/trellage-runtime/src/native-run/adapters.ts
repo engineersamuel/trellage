@@ -37,6 +37,7 @@ import { childSettlement } from "./child-settlement.ts"
 import { digestDirectory } from "./source.ts"
 import { pickCopilotSession } from "./session-picker.ts"
 import { empryoBinary, resolveNativeBinary } from "./requirements.ts"
+import { reconcileNodecodeSkills } from "./nodecode-skills.ts"
 
 const execFileAsync = promisify(execFile)
 
@@ -2600,7 +2601,7 @@ const NODECODE_PROXY_ENDPOINT = "http://127.0.0.1:8080/v1/responses"
 const NODECODE_PROXY_API_KEY = "trellage-local-proxy"
 const NODECODE_DEFAULT_MODEL = "gpt-6-astra"
 
-/** Nodecode keeps its store, layer, and sessions in NODECODE_HOME; Trellage adds no skills or cells. */
+/** Nodecode owns its store, learning and updates; Trellage reconciles only its named cells and instruction block. */
 export const nodecodeAdapter: NativeAdapter = {
   id: "nodecode",
   sandbox: false,
@@ -2614,7 +2615,7 @@ export const nodecodeAdapter: NativeAdapter = {
   // Installed Nodecode owns background updates. Keep config/update mode and
   // release-pin in persistent home; never force `update` (which lifts holds)
   // or run install.sh with this profile-scoped NODECODE_HOME during launch.
-  policyVersion: "nodecode-proxy-1",
+  policyVersion: "nodecode-skills-2",
   providerPolicy: (model) => `copilot-proxy-rs:${model ?? NODECODE_DEFAULT_MODEL}`,
   effectivePolicy: (model, effort) => ({
     normal: `${model ?? NODECODE_DEFAULT_MODEL}${effort ? ` · effort ${effort}` : ""}`,
@@ -2629,6 +2630,10 @@ export const nodecodeAdapter: NativeAdapter = {
     await mkdir(stage, { recursive: true })
   },
   persistentState: ["home"],
+  beforeLaunch: async ({ layout, plan }) => {
+    await reconcileNodecodeSkills(layout.ownerHome, plan)
+    return {}
+  },
   resumeArgs: () => [],
   launch: ({ layout, model, effort, forwardedArgs, environment }) => ({
     command: binary(environment, "TRELLAGE_NODECODE_BIN", "nodecode"),

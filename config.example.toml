@@ -3,6 +3,20 @@
 # Sources without tag or commit refresh on every profile load.
 schema_version = 1
 
+# Common MCPs for every non-clean `trx run HARNESS PROFILE`.
+# Uncomment to enable. Supply keys in the launching environment; do not paste them here.
+# Unsupported harness/transport combinations and missing variables warn, then launch without that server.
+# [mcp.servers.context7]
+# type = "http"
+# url = "https://mcp.context7.com/mcp"
+# headers = { CONTEXT7_API_KEY = "${CONTEXT7_API_KEY}" }
+#
+# [mcp.servers.perplexity]
+# type = "stdio"
+# command = "npx"
+# args = ["-y", "@perplexity-ai/mcp-server"]
+# env = { PERPLEXITY_API_KEY = "${PERPLEXITY_API_KEY}" }
+
 # Saved prompts for `trx guide --prompts`. Entries override shipped prompts by id.
 # Add another [prompts.lowercase-kebab-case-id] table to create a prompt.
 [prompts.progress-page]
@@ -2090,7 +2104,7 @@ description = "Uji with selected skills, managed Lua tools, and profile-scoped s
 best_for = [ "Coding tasks using Uji's Lua tools and selected skill bundle" ]
 
 [native.profiles.preset-nodecode-default.selection]
-description = "Nodecode with a profile-scoped home and keyless routing through copilot-proxy-rs; no added skills."
+description = "Nodecode with a profile-scoped home, selected skills as native knowledge, and keyless routing through copilot-proxy-rs."
 best_for = [ "Trying Nodecode's self-extending Lisp agent on a coding task" ]
 
 [native.profiles.preset-empryo-default.selection]

@@ -5,6 +5,7 @@ import path from "node:path"
 import { Data, Effect, Either, ParseResult, Schema } from "effect"
 import { parse } from "smol-toml"
 import { parseCatalog } from "./skill-config.ts"
+import { McpConfig } from "./mcp-config.ts"
 import { parseSelectionMetadata } from "@trellage/guide-core"
 import { resolveShippedResource } from "./native-run/resources.ts"
 
@@ -177,6 +178,7 @@ const RootConfig = Schema.Struct({
   environment: Schema.optional(Schema.Unknown),
   native: Schema.optional(Schema.Unknown),
   skills: Schema.optional(Schema.Unknown),
+  mcp: Schema.optional(Schema.Unknown),
 })
 
 export type EnvironmentConfig = Schema.Schema.Type<typeof EnvironmentConfig>
@@ -189,6 +191,7 @@ export interface TrellageConfig {
   readonly schema_version: 1
   readonly environment: EnvironmentConfig
   readonly native: NativeCatalog
+  readonly mcp?: McpConfig
 }
 
 export interface TrellageConfigLocation {
@@ -277,6 +280,9 @@ const decodeTrellageConfig = (raw: unknown, source: string): Effect.Effect<Trell
     const environment = yield* Schema.decodeUnknown(EnvironmentConfig)(root.environment ?? {}, {
       onExcessProperty: "error",
     }).pipe(Effect.mapError((cause) => configError("[environment]", cause)))
+    const mcp = root.mcp === undefined ? undefined : yield* Schema.decodeUnknown(McpConfig)(root.mcp, {
+      onExcessProperty: "error",
+    }).pipe(Effect.mapError((cause) => configError("[mcp]", cause)))
     const shared = root.skills === undefined ? undefined : yield* Effect.try({
       try: () => parseCatalog(source),
       catch: (cause) => new TrellageConfigError({ message: String(cause) }),
@@ -299,7 +305,7 @@ const decodeTrellageConfig = (raw: unknown, source: string): Effect.Effect<Trell
     const referenceError = validateNativeReferences(native)
     if (referenceError)
       return yield* new TrellageConfigError({ message: `invalid [native] configuration: ${referenceError}` })
-    return { schema_version: root.schema_version, environment, native }
+    return { schema_version: root.schema_version, environment, native, ...(mcp === undefined ? {} : { mcp }) }
   })
 
 export const parseTrellageConfig = (source: string): Effect.Effect<TrellageConfig, TrellageConfigError> =>

@@ -234,6 +234,14 @@ const ensureSafeProfileGuardDatabase = (file: string): void => {
     throw new Error(`unsafe profile guard database: ${file}`);
 };
 
+const openGuardDatabase = (file: string): Database => {
+  ensureSafeProfileGuardDatabase(file);
+  const db = new Database(file, { create: true });
+  db.exec("PRAGMA busy_timeout = 5000");
+  chmodSync(file, 0o600);
+  return db;
+};
+
 const openProfileGuardDatabase = (home: string): Database => {
   let directory = realpathSync(home);
   for (const component of [".local", "share", "trellage", "profile-guards"]) {
@@ -241,12 +249,7 @@ const openProfileGuardDatabase = (home: string): Database => {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     ensureSafeProfileGuardDirectory(directory);
   }
-  const file = path.join(directory, "profiles.sqlite");
-  ensureSafeProfileGuardDatabase(file);
-  const db = new Database(file, { create: true });
-  db.exec("PRAGMA busy_timeout = 5000");
-  chmodSync(file, 0o600);
-  return db;
+  return openGuardDatabase(path.join(directory, "profiles.sqlite"));
 };
 
 const ownsRoot = (owner: AttachedWork | null, pid: number, started: string): boolean =>
@@ -396,5 +399,64 @@ export const acquireProfileGuard = (
   } catch (error) {
     db.close();
     throw error;
+  }
+};
+
+/** Claim only the managed-file preparation transaction, never a native session. */
+const tryCompositionPreparation = (
+  db: Database,
+  scope: string,
+  token: string,
+  started: string,
+): boolean => {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    ensureOwnersTable(db);
+    const owners = db.query<Owner, [string]>("SELECT * FROM owners WHERE scope = ?").all(scope);
+    const busy = owners.some(ownerLive);
+    for (const owner of owners)
+      if (!ownerLive(owner))
+        db.query("DELETE FROM owners WHERE scope = ? AND token = ?").run(scope, owner.token);
+    if (!busy)
+      db.query("INSERT INTO owners (scope, operation, pid, started, token) VALUES (?, ?, ?, ?, ?)").run(
+        scope, "prepare", process.pid, started, token,
+      );
+    db.exec("COMMIT");
+    return !busy;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+};
+
+/**
+ * Serialize only publication of shared managed files. A simultaneous preparer
+ * waits rather than refusing a launch; no ownership survives this callback.
+ * Native Nodecode elects its own gateway and admits concurrent client sessions.
+ * The new namespace deliberately ignores old process-lifetime launch guards.
+ */
+export const withCompositionPreparation = async <T>(
+  ownerHome: string,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  const owner = realpathSync(ownerHome);
+  ensureSafeProfileGuardDirectory(owner);
+  const directory = path.join(owner, ".prepare-guard");
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  ensureSafeProfileGuardDirectory(directory);
+  const db = openGuardDatabase(path.join(directory, "owners.sqlite"));
+  const token = randomUUID();
+  const started = processStart(process.pid);
+  try {
+    if (started === null) throw new Error("cannot determine composition preparation process identity");
+    while (!tryCompositionPreparation(db, owner, token, started))
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    try {
+      return await operation();
+    } finally {
+      db.query("DELETE FROM owners WHERE scope = ? AND token = ?").run(owner, token);
+    }
+  } finally {
+    db.close();
   }
 };

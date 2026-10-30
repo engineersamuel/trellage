@@ -211,3 +211,25 @@ test("Codex goal features use the composed launch command, home, and workspace",
     cwd: "/worktree",
   }])
 })
+
+test("inventory includes common MCPs and reports skipped integrations", async () => {
+  const prepared = await preparedRun(copilotAdapter)
+  const withMcp = {
+    ...prepared,
+    plan: {
+      ...prepared.plan,
+      mcp: { servers: { context7: { type: "http" as const, enabled: true, url: "https://mcp.context7.com/mcp", headers: {} } } },
+      mcpWarnings: ["MCP perplexity unavailable: set PERPLEXITY_API_KEY; launching without it"],
+    },
+  }
+  const inventory = await inventoryComposition({ harness: "copilot", profiles: ["hve"] }, {
+    environment: { HOME: prepared.workspace, PATH: "/fixture" },
+    prepare: async () => withMcp,
+    resolveBinary: async () => "/fixture/copilot",
+    runProcess: async (_command, args) => args[0] === "--version"
+      ? { status: 0, stdout: "copilot 1.0.98\n", stderr: "", timedOut: false }
+      : { status: 0, stdout: '{"schemaVersion":1,"readiness":"healthy"}\n', stderr: "", timedOut: false },
+  })
+  expect(inventory.mcps).toEqual(["context7", "documents"])
+  expect(inventory.checks).toContainEqual({ id: "mcp-0", status: "skipped", detail: withMcp.plan.mcpWarnings[0]! })
+})

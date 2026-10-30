@@ -1,3 +1,6 @@
+import type { McpConfig } from "../mcp-config.ts"
+import { selectCommonMcp, prepareMcpLaunch } from "./mcp.ts"
+import { nativeMcpArgs, writeNativeMcpFiles } from "./mcp-render.ts"
 import { execFile, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { fileURLToPath } from "node:url"
@@ -34,7 +37,7 @@ import { builtinProfile, ensureNativeConfig, withBuiltinPreset } from "./config-
 import { nativePresetProfiles, nativeSharedPresets } from "./presets.ts"
 import { resolveProfileKey } from "./selection.ts"
 import { resolveInstructionFile } from "./resources.ts"
-import { acquireProfileGuard } from "./lifecycle-guard.ts"
+import { acquireProfileGuard, withCompositionPreparation } from "./lifecycle-guard.ts"
 import { childSettlement } from "./child-settlement.ts"
 import { syncProfileRepository, type ProfileRepository } from "./repository-sync.ts"
 import {
@@ -487,8 +490,8 @@ const buildLaunch = (
   defaults: HostDefaults,
   environment: NodeJS.ProcessEnv,
   workspace: string,
-): LaunchCommand =>
-  launch({
+): LaunchCommand => {
+  const command = launch({
     layout,
     plan,
     planMode: options.plan === true,
@@ -499,6 +502,8 @@ const buildLaunch = (
     environment,
     workspace,
   })
+  return { ...command, args: [...nativeMcpArgs(adapter.id, layout.generationPath, plan.mcp?.servers ?? {}), ...command.args] }
+}
 
 export const describePreparedRun = (prepared: PreparedRun): string[] => {
   const { adapter, plan, layout, launch, isolation } = prepared
@@ -507,6 +512,7 @@ export const describePreparedRun = (prepared: PreparedRun): string[] => {
     `Harness     ${adapter.label}${plan.profiles.length ? ` + ${plan.profiles.join(" + ")}` : " (no selected profiles)"}`,
     ...(adapter.extensions?.length && !prepared.clean ? [`Extensions  ${adapter.extensions.join(", ")}`] : []),
     `Always-on   ${plan.alwaysProfiles.join(", ") || "none"}`,
+    ...(plan.mcp ? [`MCPs        ${Object.keys(plan.mcp.servers).join(", ") || "none"}`] : []),
     `Instructions ${plan.instructions.map((instruction) => instruction.id).join(", ") || "none"}`,
     `Normal      ${policy.normal}`,
     `Plan        ${policy.plan}`,
@@ -632,16 +638,19 @@ const composeRun = async (
   configDirectory: string,
   catalog: NativeCatalog,
   profiles: ReadonlyArray<string>,
+  mcp: McpConfig | undefined,
 ): Promise<{ plan: CompositionPlan; layout: GenerationLayout }> => {
+  const commonMcp = selectCommonMcp(adapter.id, mcp, environment)
   const instructionTexts = await loadInstructions(configDirectory, catalog, profiles, options)
   const transport = devSourceTransport(
     dependencies.transport ?? gitSourceTransport(),
     devSourceRoots(environment.TRELLAGE_DEV_SOURCES),
   )
   const resolver = createSourceResolver({ paths, transport })
-  const plan = await planComposition(
+  const composed = await planComposition(
     {
       harness: adapter.id,
+      ...(commonMcp.mcp === undefined ? {} : { mcp: commonMcp.mcp }),
       profiles,
       catalog,
       adapterPolicy: adapter.policyVersion,
@@ -652,14 +661,17 @@ const composeRun = async (
     { resolver },
   )
 
+  const plan: CompositionPlan = { ...composed, mcpWarnings: commonMcp.warnings }
   const layout = await publishGeneration({
     paths,
     plan,
     skillsSubdirectory: adapter.skillsSubdirectory,
     instructionsFile: adapter.instructionsFile,
     persistentState: adapter.persistentState,
-    writeAdapterFiles: (stage, generationLayout) =>
-      adapter.writeAdapterFiles(stage, options.model, generationLayout, plan),
+    writeAdapterFiles: async (stage, generationLayout) => {
+      await adapter.writeAdapterFiles(stage, options.model, generationLayout, plan)
+      await writeNativeMcpFiles(stage, generationLayout.generationPath, adapter.id, plan.mcp?.servers ?? {})
+    },
   })
   for (const source of plan.sources) await resolver.markGood(source)
   await pruneGenerations(paths, layout.ownerHome, 3, plan.generationId)
@@ -824,6 +836,7 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
     path.dirname(loaded.path),
     resolved.catalog,
     resolved.profiles,
+    loaded.config.mcp,
   )
   const workspace = resolveRunWorkspace(plan, dependencies, environment)
   await prepareRunPrerequisites(plan, options, dependencies, environment, workspace)
@@ -888,7 +901,7 @@ const createRunWriter = (options: RunOptions, dependencies: RunDependencies): ((
   return (line: string) => process.stdout.write(`${line}\n`)
 }
 
-const resolvePreparedLaunch = async (prepared: PreparedRun, launchInput: LaunchInput): Promise<LaunchCommand> => {
+const resolvePreparedLaunch = async (prepared: PreparedRun, launchInput: LaunchInput, warn: (line: string) => void): Promise<LaunchCommand> => {
   const resolve = prepared.clean
     ? prepared.adapter.clean.supported
       ? prepared.adapter.clean.resolveLaunch
@@ -896,9 +909,16 @@ const resolvePreparedLaunch = async (prepared: PreparedRun, launchInput: LaunchI
     : prepared.adapter.resolveLaunch
   const resolvedLaunch = (await resolve?.(launchInput, prepared.launch)) ?? prepared.launch
   const finalEnvironment = prepared.clean ? undefined : await prepared.adapter.beforeLaunch?.(launchInput)
-  return finalEnvironment === undefined
+  const launch = finalEnvironment === undefined
     ? resolvedLaunch
     : { ...resolvedLaunch, env: { ...resolvedLaunch.env, ...finalEnvironment } }
+  if (prepared.clean) return launch
+  try {
+    return await prepareMcpLaunch(launchInput, launch)
+  } catch {
+    warn(`Warning     MCP setup unavailable for ${prepared.adapter.id}; launching anyway; configured MCPs may be unavailable (check managed configuration and required environment variables)`)
+    return launch
+  }
 }
 
 const argumentAfter = (args: ReadonlyArray<string>, flag: string): string | undefined => {
@@ -953,10 +973,9 @@ const launchPreparedRun = async (
   let guard: ReturnType<typeof acquireProfileGuard> | undefined
   let cleanup: (() => void | Promise<void>) | undefined
   try {
-    guard =
-      prepared.adapter.id === "omp"
-        ? acquireProfileGuard("omp", [ompProfile ?? "default"], "run", environment.HOME)
-        : undefined
+    guard = prepared.adapter.id === "omp"
+      ? acquireProfileGuard("omp", [ompProfile ?? "default"], "run", environment.HOME)
+      : undefined
     const launchInput = {
       layout: prepared.layout,
       plan: prepared.plan,
@@ -969,7 +988,12 @@ const launchPreparedRun = async (
       workspace: prepared.workspace,
       ...(guard === undefined ? {} : { guard }),
     }
-    const launch = await resolvePreparedLaunch(prepared, launchInput)
+    const resolveLaunch = () => resolvePreparedLaunch(prepared, launchInput, dependencies.write ?? ((line) => process.stderr.write(`${line}\n`)))
+    // Serialize only shared-file preparation, never a Nodecode session's lifetime.
+    // Native Nodecode owns gateway election and admits concurrent client sessions.
+    const launch = await (prepared.adapter.id === "nodecode"
+      ? withCompositionPreparation(prepared.layout.ownerHome, resolveLaunch)
+      : resolveLaunch())
     cleanup = launch.cleanup
     if (prepared.plan.workers === "firstmate") await handOffToFirstmateWorkers(prepared, launch, paths, environment)
     let recorded: Promise<void> = Promise.resolve()
@@ -1030,6 +1054,8 @@ export const runNative = async (options: RunOptions, dependencies: RunDependenci
 
   let prepared = await prepareRun(options, dependencies)
   for (const line of describePreparedRun(prepared)) write(line)
+  const warn = dependencies.write ?? ((line: string) => process.stderr.write(`${line}\n`))
+  for (const warning of prepared.plan.mcpWarnings ?? []) warn(`Warning     ${warning}`)
   if (options.dryRun) return 0
   const resumed = await pickRunResumeSession(prepared, options, dependencies)
   if (resumed === undefined) return 0

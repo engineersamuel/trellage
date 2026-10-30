@@ -464,6 +464,8 @@ export const inventoryComposition = async (
       detail: `missing: ${prepared.missing.join(", ")}`,
       readiness: "not-setup",
     })
+  for (const [index, warning] of (prepared.plan.mcpWarnings ?? []).entries())
+    checks.push({ id: `mcp-${index}`, status: "skipped", detail: warning })
   const names = prepared.plan.skills.map((skill) => skill.name).sort()
   const effectiveProfiles = [
     ...prepared.plan.alwaysProfiles.map((profile) => publicProfile(options.harness, profile)),
@@ -472,7 +474,7 @@ export const inventoryComposition = async (
   const nativePlugins = await pluginInventory(prepared.plan)
   const legacy = legacyResources(admission.inventory)
   const plugins = [...new Map([...nativePlugins, ...legacy.plugins].map((plugin) => [plugin.name, plugin])).values()]
-  const mcps = [...new Set([...(await pluginMcps(prepared.plan)), ...legacy.mcps])].sort()
+  const mcps = [...new Set([...Object.keys(prepared.plan.mcp?.servers ?? {}), ...(await pluginMcps(prepared.plan)), ...legacy.mcps])].sort()
   return {
     schemaVersion: 2,
     harness: options.harness,
