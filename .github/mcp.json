@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "traits": {
+      "type": "local",
+      "command": "mise",
+      "args": ["exec", "--", "bunx", "--no-install", "traits"],
+      "tools": ["derive_trait", "check_traits"]
+    },
+    "reflection": {
+      "type": "local",
+      "command": "mise",
+      "args": ["exec", "--", "bunx", "--no-install", "traits", "reflection"],
+      "tools": ["query"]
+    }
+  }
+}

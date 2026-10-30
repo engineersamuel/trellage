@@ -37,15 +37,23 @@
     "check:root": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
     "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml run --sequential --workspaces test",
     "lint": "oxlint -c .eslintrc.json packages/trellage-launcher/src packages/trellage-runtime/src",
-    "format:check": "oxfmt --check --config .prettierrc.json package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json"
+    "format:check": "oxfmt --check --config .prettierrc.json package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json .github/mcp.json skills-lock.json traits.ts"
   },
   "dependencies": {
+    "@effect/ai-openrouter": "4.0.6",
+    "@effect/platform-node": "4.0.6",
     "@trellage/guide-core": "workspace:*",
     "@trellage/launcher": "workspace:*",
     "@trellage/runtime": "workspace:*",
+    "effect": "4.0.6",
     "skills": "1.5.26",
     "smol-toml": "1.8.0",
+    "traits": "0.5.14",
     "varlock": "1.19.0"
+  },
+  "overrides": {
+    "@effect/platform-node-shared": "4.0.6",
+    "@effect/sql-libsql": "4.0.6"
   },
   "engines": {
     "bun": "1.4.2",

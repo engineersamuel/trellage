@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "traits": {
+      "source": "./node_modules/traits",
+      "sourceType": "local",
+      "computedHash": "7c7b104b604c933182806309e91806037597b2759cea5489d6945fa80041f642"
+    }
+  }
+}
