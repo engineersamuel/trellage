@@ -814,7 +814,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         presets = (REPOSITORY_ROOT / "packages" / "trellage-runtime" / "src" / "native-run" / "presets.ts").read_text()
         discovered = set(re.findall(r'^  ([a-z0-9]+): \[', presets, re.MULTILINE)) | {"grok"}
         # Headlong keeps its background mind after TUI exit; Uji is a direct route, not a managed profile.
-        matrix_exclusions = {"headlong", "uji", "nodecode"}
+        matrix_exclusions = {"headlong", "uji", "nodecode", "empryo"}
         self.assertEqual(set(config["harnesses"]) | matrix_exclusions, discovered)
         self.assertTrue(all(adapter in config["adapters"] for adapter in config["harnesses"].values()))
         for adapter_name in ("agency", "copilot"):

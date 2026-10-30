@@ -381,7 +381,7 @@ const runNodecodeUpgrade = async (args: ReadonlyArray<string>): Promise<number> 
   return spawnInherited({ command, args: argv, env: {} }, process.env, process.cwd(), () => {});
 };
 
-const externallyManagedHarnesses = new Set(["codex", "grok", "headlong", "pi", "uji", "nodecode"]);
+const externallyManagedHarnesses = new Set(["codex", "empryo", "grok", "headlong", "pi", "uji", "nodecode"]);
 
 const externalManagementError = (harness: string, args: ReadonlyArray<string>): Error => {
   const profile = args.find((argument) => !argument.startsWith("-")) ?? "PROFILE";

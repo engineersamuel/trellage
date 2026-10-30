@@ -18,7 +18,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const guideRoot = path.join(root, "profile-guides")
 
 const expected: ProfileGuideIdentity[] = Object.entries(nativeHarnessPresets)
-  .filter(([harness]) => harness !== "uji" && harness !== "nodecode")
+  .filter(([harness]) => harness !== "uji" && harness !== "nodecode" && harness !== "empryo")
   .flatMap(([harness, profiles]) => profiles.map((profile) => ({ surface: "native" as const, harness, profile })))
 // The shared firstmate preset is available only on its supported harnesses.
 for (const harness of ["claude", "pi"]) expected.push({ surface: "native", harness, profile: "firstmate" })

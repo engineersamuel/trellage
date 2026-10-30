@@ -88,6 +88,7 @@ const builtInDescriptions: Readonly<Record<string, string>> = {
   "uji/default":
     "Uji with generated configuration, selected skills, and keyless model routing through copilot-proxy-rs.",
   "nodecode/default": "Nodecode with a profile-scoped home and keyless model routing through copilot-proxy-rs; no added skills.",
+  "empryo/default": "Empryo for repo-wide engineering: code-graph navigation, structural edits, and end-to-end verification; keyless gpt-6.1-sol through copilot-proxy-rs.",
 }
 
 const adapterHeadlessCapabilities: Readonly<Record<string, HeadlessCapabilitiesV1>> = {

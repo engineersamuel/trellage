@@ -353,13 +353,13 @@ case "${1-}" in
         mode='compose-select'
         compose_args=("$@")
         ;;
-      pi|copilot|claude|codex|grok|agency|fx|headlong|jcode|omp|prime|uji|nodecode|-h|--help|help)
+      pi|copilot|claude|codex|grok|agency|fx|headlong|jcode|omp|prime|uji|nodecode|empryo|-h|--help|help)
         mode='compose'
         compose_args=("$@")
-        [[ "${1-}" == pi || "${1-}" == copilot || "${1-}" == claude || "${1-}" == codex || "${1-}" == grok || "${1-}" == agency || "${1-}" == fx || "${1-}" == headlong || "${1-}" == jcode || "${1-}" == omp || "${1-}" == prime || "${1-}" == uji || "${1-}" == nodecode ]] \
+        [[ "${1-}" == pi || "${1-}" == copilot || "${1-}" == claude || "${1-}" == codex || "${1-}" == grok || "${1-}" == agency || "${1-}" == fx || "${1-}" == headlong || "${1-}" == jcode || "${1-}" == omp || "${1-}" == prime || "${1-}" == uji || "${1-}" == nodecode || "${1-}" == empryo ]] \
           || compose_args=(--help)
         ;;
-      *) die "unknown harness: $1; harnesses: agency, claude, codex, copilot, grok, jcode, omp, pi, prime, uji, nodecode (also fx, headlong); usage: trx run HARNESS [PROFILE...]" ;;
+      *) die "unknown harness: $1; harnesses: agency, claude, codex, copilot, empryo, grok, jcode, omp, pi, prime, uji, nodecode (also fx, headlong); usage: trx run HARNESS [PROFILE...]" ;;
     esac
     ;;
   --profile|--profile=*)
@@ -383,7 +383,7 @@ case "${1-}" in
         exit 0
       fi
       case "${1-}" in
-        agency|codex|claude|copilot|fx|grok|headlong|jcode|nodecode|omp|pi|prime|uji)
+        agency|codex|claude|copilot|empryo|fx|grok|headlong|jcode|nodecode|omp|pi|prime|uji)
           mode='lifecycle'
           lifecycle_args=(upgrade "$@")
           ;;

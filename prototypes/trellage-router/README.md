@@ -53,6 +53,8 @@ trx run fx default --plan
 trx run claude default
 trx run uji default
 trx run uji default --model copilot-proxy-rs/gpt-4.1 --effort high
+trx run empryo default
+trx run empryo default --model claude-sonnet-5.5 --effort high
 trx run --model gpt-5.6-terra
 trx list
 trx list --json
@@ -506,6 +508,19 @@ The Lua plugin source is tracked in
 composition copies it into `plugin/`; its content hash is part of the generation
 identity, so a refreshed Trellage runtime installs changed tools on the next
 launch without a separate plugin update step.
+
+Empryo is available directly as `trx run empryo default`. Like Uji, it is not a
+managed lifecycle catalog entry. Empryo reads settings only from
+`~/.empryo/config.json` and its TUI ignores `--model`, so before each launch
+Trellage adds a `copilot-proxy-rs` custom provider
+(`http://127.0.0.1:8080/v1`, no API key) to that file and sets `defaultModel`
+and `performance.effort`. Other keys are kept. A bare `--model ID` routes
+through the proxy; `--model PROVIDER/ID` selects another Empryo provider. The
+default is `copilot-proxy-rs/gpt-6.1-sol` at medium effort. Plain `empryo`
+launches outside trx use the last model trx wrote. Launch fails rather than
+overwrite an existing `copilot-proxy-rs` provider with a different `baseURL`.
+Trellage adds no skills, and Empryo sessions and state stay in the host
+`~/.empryo`. The binary is `~/.empryo/bin/empryo`, or `TRELLAGE_EMPRYO_BIN`.
 
 The first setup or launch through any Native harness fetches the
 `native-common` bundle from the approved repositories' current default

@@ -1,5 +1,6 @@
 import { constants } from "node:fs"
 import { access, lstat, readFile, readdir, realpath } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { primeRuntimePaths } from "./prime-runtime.ts"
 
@@ -17,10 +18,19 @@ export const nativeBinaryNames: Readonly<Record<string, string>> = {
   grok: "grok",
   uji: "uji",
   nodecode: "nodecode",
+  empryo: "empryo",
 }
 
 export const resolveNativeBinary = (environment: NodeJS.ProcessEnv, variable: string, fallback: string): string =>
   environment[variable] && path.isAbsolute(environment[variable]!) ? environment[variable]! : fallback
+
+/** The Empryo installer always writes ~/.empryo/bin/empryo; its PATH edit may not reach trx's shell. */
+export const empryoBinary = (environment: NodeJS.ProcessEnv): string =>
+  resolveNativeBinary(
+    environment,
+    "TRELLAGE_EMPRYO_BIN",
+    path.join(environment.HOME ?? os.homedir(), ".empryo", "bin", "empryo"),
+  )
 
 export const executableOnPath = async (
   command: string,
@@ -102,8 +112,7 @@ export const harnessBinaryAvailable = async (harness: string, environment: NodeJ
     })
     return info?.isFile() === true
   }
-  return !!(await executableOnPath(
-    resolveNativeBinary(environment, `TRELLAGE_${harness.toUpperCase()}_BIN`, name),
-    environment,
-  ))
+  const command =
+    harness === "empryo" ? empryoBinary(environment) : resolveNativeBinary(environment, `TRELLAGE_${harness.toUpperCase()}_BIN`, name)
+  return !!(await executableOnPath(command, environment))
 }

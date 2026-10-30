@@ -1081,7 +1081,7 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_DISCOVERY_LOG="$discovery_log" \
 [[ "$status" == 0 ]] || fail "upgrade dry-run failed (got $status): $(<"$fixture_root/upgrade-dry-run.out")"
 assert_no_upgrade_mutation 'upgrade dry-run'
 [[ ! -s "$discovery_log" ]] || fail 'upgrade dry-run executed a lifecycle backend during catalog loading'
-assert_contains '35 catalog compositions' "$fixture_root/upgrade-dry-run.out"
+assert_contains '36 catalog compositions' "$fixture_root/upgrade-dry-run.out"
 assert_contains 'Scope: 6 Native runtime updates.' "$fixture_root/upgrade-dry-run.out"
 assert_contains 'Externally managed codex: installed and updated outside Trellage.' "$fixture_root/upgrade-dry-run.out"
 assert_contains 'Externally managed pi: installed and updated outside Trellage.' "$fixture_root/upgrade-dry-run.out"
@@ -1239,7 +1239,7 @@ assert_contains 'unknown command: frobnicate; run trx --help' "$fixture_root/unk
 status=0
 "$fixture_bin/trx" run bogus >"$fixture_root/unknown-harness.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail "unknown harness exited $status instead of 1"
-assert_contains 'unknown harness: bogus; harnesses: agency, claude, codex, copilot, grok, jcode, omp, pi, prime, uji, nodecode (also fx, headlong)' \
+assert_contains 'unknown harness: bogus; harnesses: agency, claude, codex, copilot, empryo, grok, jcode, omp, pi, prime, uji, nodecode (also fx, headlong)' \
   "$fixture_root/unknown-harness.out"
 assert_contains 'usage: trx run HARNESS [PROFILE...]' "$fixture_root/unknown-harness.out"
 
