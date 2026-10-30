@@ -1837,7 +1837,7 @@ it("requires a normal-flow choice for a pinned lens without detaching the main g
     await guide.pressAndWait(back, "Profile recommendations", "Goal: 3 approved criteria")
   }
   await guide.pressAndWait("r", "This workflow cannot execute the goal")
-  await guide.pressAndWait("n", "Prompt candidates", "/hyperresearch", "Approach: focused.")
+  await guide.pressAndWait("n", "Prompt candidates", "/hyperresearch:deep-research", "Approach: focused.")
   expect(guide.text()).not.toContain("Prompt \u00b7 Codex /goal")
   const referenceIntent = [
     `Artifact: ${goal.draft.artifact}`,

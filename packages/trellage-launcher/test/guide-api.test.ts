@@ -2329,13 +2329,13 @@ describe("templatePromptCandidates", () => {
     {
       name: "Hyperresearch",
       workflowId: "vault-backed-research",
-      command: "/hyperresearch",
+      command: "/hyperresearch:deep-research",
       body: "Compare passkeys with passwords for enterprise support costs.",
-      prefix: "/hyperresearch Research the evidence that should inform this request before implementation: ",
+      prefix: "/hyperresearch:deep-research Research the evidence that should inform this request before implementation: ",
       suffix:
         "\n\nFind relevant prior art and source-backed evidence, identify unresolved questions and risks,\n" +
         "compare implementation options, and explain how the findings should change the approach.",
-      skill: "hyperresearch",
+      skill: "hyperresearch:deep-research",
     },
   ])("does not duplicate a command-prefixed intent in the $name Direct fallback", (testCase) => {
     const guide: ProfileGuideV1 = {

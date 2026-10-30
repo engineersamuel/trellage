@@ -216,6 +216,9 @@ repository = "charlie947/social-media-skills"
 [native.sources.humanizer]
 repository = "blader/humanizer"
 
+[native.sources.hyperresearch]
+repository = "jordan-gibbs/hyperresearch"
+
 [native.sources.pstack]
 # pstack source repo: https://github.com/ericlitman/open-pstack (used by the pstack profiles in claude + codex)
 repository = "ericlitman/open-pstack"
@@ -542,6 +545,19 @@ marketplace = "gsap-skills"
 [native.profiles.preset-claude-research]
 label = "claude / research"
 harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-research.prerequisites]]
+command = "hyperresearch"
+install = "uv tool install --python '>=3.11,<3.14' hyperresearch"
+autoInstall = true
+
+[[native.profiles.preset-claude-research.plugins]]
+source = "hyperresearch"
+harness = "claude"
+path = "."
+name = "hyperresearch"
+plugin = "hyperresearch"
+marketplace = "hyperresearch"
 
 [[native.profiles.preset-claude-research.skills]]
 source = "caveman"
@@ -1463,13 +1479,16 @@ capabilities = [ "bounded-factual-research", "source-backed-comparisons", "recen
 
 [native.profiles.preset-claude-research.guide]
 document = "shipped:native/claude/research.md"
-prerequisites = []
+
+[[native.profiles.preset-claude-research.guide.prerequisites]]
+id = "hyperresearch-cli"
+description = "Launch automatically installs the Hyperresearch CLI with uv when missing. The plugin bootstraps the pipeline in the current project on first use; Claude may need a restart to discover the new skills and subagents."
 
 [[native.profiles.preset-claude-research.guide.workflows]]
 id = "vault-backed-research"
-description = "Run the focused 5-step hyperresearch pipeline for a bounded factual query, survey, or comparison, saved to the persistent research vault."
-skill = "hyperresearch"
-examples = [ "/hyperresearch compare Postgres and CockroachDB for a multi-region OLTP workload", "Research whether passkeys reduce support costs for an enterprise SaaS, and save the evidence for the implementation decision" ]
+description = "Bootstrap Hyperresearch and run its tier-adaptive pipeline for source-backed research, saved to the persistent research vault."
+skill = "hyperresearch:deep-research"
+examples = [ "/hyperresearch:deep-research compare Postgres and CockroachDB for a multi-region OLTP workload", "Research whether passkeys reduce support costs for an enterprise SaaS, and save the evidence for the implementation decision" ]
 
 [[native.profiles.preset-claude-research.guide.workflows]]
 id = "last-30-days-pulse"

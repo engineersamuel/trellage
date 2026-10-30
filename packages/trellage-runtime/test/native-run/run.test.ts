@@ -1262,6 +1262,61 @@ plugins = [{
   expect(prepared.plan.plugins[0]?.digest).toMatch(/^[a-f0-9]{64}$/)
 })
 
+test("shipped Claude research stages the bootstrap and automatically installs its missing CLI at launch", async () => {
+  const { dependencies, office, root } = await world("[native]\n")
+  const bin = path.join(root, "bin")
+  await mkdir(bin)
+  await writeFile(
+    path.join(bin, "uv"),
+    `#!/bin/sh
+printf '%s\\n' "$@" > "$HOME/uv-args"
+printf '#!/bin/sh\\nexit 0\\n' > "$HOME/bin/hyperresearch"
+/bin/chmod +x "$HOME/bin/hyperresearch"
+`,
+    { mode: 0o755 },
+  )
+  await office.write({
+    ".claude-plugin/plugin.json": JSON.stringify({ name: "hyperresearch" }),
+    "skills/deep-research/SKILL.md": skillMarkdown("deep-research"),
+    "skills/caveman/SKILL.md": skillMarkdown("caveman"),
+    "skills/grill-with-docs/SKILL.md": skillMarkdown("grill-with-docs"),
+    "skills/improve-codebase-architecture/SKILL.md": skillMarkdown("improve-codebase-architecture"),
+    "skills/last30days/SKILL.md": skillMarkdown("last30days"),
+  })
+  const options = {
+    ...base,
+    harness: "claude",
+    profiles: ["research"],
+    noAlways: true,
+    forwardedArgs: ["/hyperresearch:deep-research Compare database options"],
+  }
+  const deps = dependencies()
+  const launchDependencies = {
+    ...deps,
+    environment: { ...deps.environment, PATH: bin },
+    transport: gitSourceTransport(() => office.directory),
+  }
+  const prepared = await prepareRun({ ...options, dryRun: true }, launchDependencies)
+  expect(existsSync(path.join(bin, "hyperresearch"))).toBe(false)
+  const pluginDirectory = path.join(prepared.layout.generationPath, "plugins", "hyperresearch")
+  expect(prepared.plan.plugins[0]?.sourceId).toBe("hyperresearch")
+  expect(prepared.plan.sources.find((source) => source.sourceId === "hyperresearch")?.repository).toBe(
+    "jordan-gibbs/hyperresearch",
+  )
+  expect(await readFile(path.join(pluginDirectory, "skills/deep-research/SKILL.md"), "utf8")).toContain(
+    "name: deep-research",
+  )
+  const pluginFlag = prepared.launch.args.indexOf("--plugin-dir")
+  expect(pluginFlag).toBeGreaterThanOrEqual(0)
+  expect(prepared.launch.args[pluginFlag + 1]).toBe(pluginDirectory)
+  expect(prepared.launch.args.at(-1)).toBe("/hyperresearch:deep-research Compare database options")
+  await prepareRun(options, launchDependencies)
+  expect(await readFile(path.join(root, "uv-args"), "utf8")).toBe(
+    "tool\ninstall\n--python\n>=3.11,<3.14\nhyperresearch\n",
+  )
+  expect(existsSync(path.join(bin, "hyperresearch"))).toBe(true)
+})
+
 test("Native Claude accepts a marketplace plugin whose source is the repository root", async () => {
   const { dependencies, office } = await world(`schema_version = 1
 [native.sources.social]

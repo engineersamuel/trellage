@@ -7,6 +7,7 @@ import { NativeRunError } from "./paths.ts"
 export interface Prerequisite {
   readonly command: string
   readonly install: string
+  readonly autoInstall?: boolean | undefined
 }
 
 export interface PrerequisiteIo {
@@ -57,7 +58,7 @@ export const defaultPrerequisiteIo = (write: (line: string) => void): Prerequisi
 
 /**
  * Stop before launch unless every prerequisite is on PATH. Missing ones are listed with
- * their install commands, and installed only after the user confirms on a terminal.
+ * their install commands, and installed after confirmation unless explicitly automatic.
  */
 export const ensurePrerequisites = async (
   label: string,
@@ -74,7 +75,12 @@ export const ensurePrerequisites = async (
       "prerequisite",
       `missing ${missing.map((entry) => entry.command).join(", ")}; install ${missing.length === 1 ? "it" : "them"} with the commands above and run again`,
     )
-  if (io.confirm === undefined || io.install === undefined || !(await io.confirm("Install them now?"))) throw refused()
+  const needsConfirmation = missing.some((entry) => !entry.autoInstall)
+  if (
+    io.install === undefined ||
+    (needsConfirmation && (io.confirm === undefined || !(await io.confirm("Install them now?"))))
+  )
+    throw refused()
   for (const entry of missing) {
     io.write(`Installing ${entry.command}: ${entry.install}`)
     const status = await io.install(entry.install, environment)
