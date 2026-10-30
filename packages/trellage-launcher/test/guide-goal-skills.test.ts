@@ -107,7 +107,7 @@ describe("Goal me installed skill resolver", () => {
     const skills = await stage()
     const goalDirectory = skills.skillDirectories[0]!
     expect(skills.skillDirectories.map((directory) => path.basename(directory))).toEqual(["goal-me", "grill-me"])
-    expect(await readdir(path.dirname(goalDirectory))).toEqual(["goal-me", "grill-me"])
+    expect((await readdir(path.dirname(goalDirectory))).sort()).toEqual(["goal-me", "grill-me"])
     expect(skills.goalMeContent).toBe(goalMeSkill)
     expect((await lstat(path.join(goalDirectory, "SKILL.md"))).mode & 0o222).toBe(0)
     expect((await lstat(goalDirectory)).mode & 0o222).toBe(0)
