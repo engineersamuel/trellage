@@ -101,8 +101,9 @@ const NativeProfileRepository = Schema.Struct({
 const NativePrerequisite = Schema.Struct({
   /** Executable that must be on PATH. */
   command: NonEmpty.pipe(Schema.pattern(/^[A-Za-z0-9._-]+$/)),
-  /** Shell command that installs it; run only after the user confirms. */
+  /** Shell command that installs it. Requires confirmation unless autoInstall is enabled. */
   install: NonEmpty.pipe(Schema.filter((value) => !hasControlCharacters(value))),
+  autoInstall: Schema.optional(Schema.Boolean),
 })
 
 const NativeSelection = Schema.Struct({

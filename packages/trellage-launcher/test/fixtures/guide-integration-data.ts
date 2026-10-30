@@ -136,8 +136,8 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     harness: "claude",
     workflowId: "vault-backed-research",
     key: "r",
-    skill: "hyperresearch",
-    beforeBody: "/hyperresearch Gather evidence for:\n",
+    skill: "hyperresearch:deep-research",
+    beforeBody: "/hyperresearch:deep-research Gather evidence for:\n",
     afterBody: "\nCite the sources.",
   },
   {

@@ -281,10 +281,10 @@ const guideResearch: ProfileGuideV1 = {
     {
       id: "vault-backed-research",
       description: "Research evidence before implementation.",
-      skill: "hyperresearch",
+      skill: "hyperresearch:deep-research",
       examples: ["Research this implementation approach", "Compare these options with sources"],
       promptTemplate:
-        "/hyperresearch Research the evidence that should inform this request before implementation: {{intent}}\n\n" +
+        "/hyperresearch:deep-research Research the evidence that should inform this request before implementation: {{intent}}\n\n" +
         "Find relevant prior art and source-backed evidence, identify unresolved questions and risks,\n" +
         "compare implementation options, and explain how the findings should change the approach.",
     },
@@ -305,12 +305,12 @@ prerequisites: []
 workflows:
   - id: vault-backed-research
     description: Research evidence before implementation.
-    skill: hyperresearch
+    skill: hyperresearch:deep-research
     examples:
       - Research this implementation approach
       - Compare these options with sources
     promptTemplate: |
-      /hyperresearch Research the evidence that should inform this request before implementation: {{intent}}
+      /hyperresearch:deep-research Research the evidence that should inform this request before implementation: {{intent}}
 
       Find relevant prior art and source-backed evidence, identify unresolved questions and risks,
       compare implementation options, and explain how the findings should change the approach.

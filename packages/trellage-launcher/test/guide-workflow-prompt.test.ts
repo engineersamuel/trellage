@@ -104,10 +104,10 @@ const currentCommandProseGuide: ProfileGuideV1 = {
     {
       id: "vault-backed-research",
       description: "Run the current Research evidence frame.",
-      skill: "hyperresearch",
+      skill: "hyperresearch:deep-research",
       examples: ["Research this implementation approach", "Compare these options with sources"],
       promptTemplate:
-        "/hyperresearch Research the evidence that should inform this request before implementation: {{intent}}" +
+        "/hyperresearch:deep-research Research the evidence that should inform this request before implementation: {{intent}}" +
         researchSuffix,
     },
   ],
@@ -128,7 +128,7 @@ const currentCommandProseCases = [
   {
     name: "Research",
     workflowId: "vault-backed-research",
-    command: "/hyperresearch",
+    command: "/hyperresearch:deep-research",
     body: "Compare passkeys with passwords for enterprise support costs.",
     suffix: researchSuffix,
     partialSuffix: "\n\nFind relevant prior art and source-backed evidence",

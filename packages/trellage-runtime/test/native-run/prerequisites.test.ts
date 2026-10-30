@@ -58,6 +58,33 @@ test("a confirmed install runs the command and checks PATH again", async () => {
   )
 })
 
+test("automatic prerequisites install without a terminal, skip existing tools, and verify PATH", async () => {
+  const { environment, io, installed } = await setup()
+  const automatic = { ...tool, autoInstall: true }
+  await ensurePrerequisites("Research", [automatic], environment, io(undefined))
+  await ensurePrerequisites("Research", [automatic], environment, io(undefined))
+  expect(installed).toEqual(["install fixture-tool"])
+  const absent = await setup()
+  await expect(
+    ensurePrerequisites("Research", [automatic], absent.environment, absent.io(undefined, false)),
+  ).rejects.toThrow(/still not on PATH/)
+})
+
+test("automatic installation reports failure and does not authorize other prerequisites", async () => {
+  const { environment, io, installed } = await setup()
+  const automatic = { ...tool, autoInstall: true }
+  await expect(
+    ensurePrerequisites("Research", [automatic], environment, {
+      write: () => undefined,
+      install: async () => 7,
+    }),
+  ).rejects.toThrow("installing fixture-tool failed (exit 7)")
+  await expect(
+    ensurePrerequisites("Research", [automatic, { command: "manual", install: "install manual" }], environment, io(undefined)),
+  ).rejects.toThrow(/missing fixture-tool, manual/)
+  expect(installed).toEqual([])
+})
+
 test("prepareRun checks profile prerequisites before launch but not on dry run", async () => {
   const { root, environment, io, lines } = await setup()
   const configPath = path.join(root, "config.toml")
@@ -81,4 +108,29 @@ test("prepareRun checks profile prerequisites before launch but not on dry run",
   expect(dry.missing).toEqual(["fixture-tool"])
   await expect(prepareRun({ ...options, dryRun: false }, dependencies)).rejects.toThrow(/missing fixture-tool/)
   expect(lines[0]).toBe("Profile fm needs 1 missing tool:")
+})
+
+test("prepareRun preserves automatic install policy and installs without confirmation only on launch", async () => {
+  const { root, environment, io, installed } = await setup()
+  const configPath = path.join(root, "config.toml")
+  await writeFile(
+    configPath,
+    `[native.profiles.research]\nprerequisites = [{ command = "fixture-tool", install = "install fixture-tool", autoInstall = true }]\n`,
+    { mode: 0o600 },
+  )
+  const dependencies = {
+    environment: { ...environment, TRELLAGE_CONFIG: configPath },
+    paths: await fixturePaths(root),
+    cwd: root,
+    write: () => undefined,
+    prerequisiteIo: io(undefined),
+  }
+  const options = { harness: "pi", profiles: ["research"], allowUnprovenIsolation: true, forwardedArgs: [] }
+  const dry = await prepareRun({ ...options, dryRun: true }, dependencies)
+  expect(dry.missing).toEqual(["fixture-tool"])
+  expect(installed).toEqual([])
+  await prepareRun({ ...options, dryRun: false }, dependencies)
+  expect(installed).toEqual(["install fixture-tool"])
+  await prepareRun({ ...options, dryRun: false }, dependencies)
+  expect(installed).toEqual(["install fixture-tool"])
 })

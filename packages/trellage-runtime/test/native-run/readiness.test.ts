@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { inspectHarnessReadiness, inspectProfileReadiness } from "../../src/native-run/readiness.ts"
 import { resolveNamedRunProfile } from "../../src/native-run/selection.ts"
+import { loadEffectiveRunConfig } from "../../src/native-run/catalog-config.ts"
 const roots: string[] = []
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
@@ -68,6 +69,29 @@ test("missing selected and always-on prerequisite commands exclude only that cho
     prerequisite: "needed",
   })
 })
+
+test("shipped Claude research stays ready and declares automatic setup until the CLI is on PATH", async () => {
+  const f = await fixture()
+  await writeFile(path.join(f.bin, "claude"), "#!/bin/sh\nexit 99\n", { mode: 0o755 })
+  const config = await loadEffectiveRunConfig({
+    home: f.home,
+    environment: f.context.environment,
+    cwd: f.home,
+    shippedConfigPath: path.resolve(import.meta.dir, "../../../../config.example.toml"),
+  })
+  const context = { ...f.context, shippedRoot: config.shippedRoot }
+  const profile = resolveNamedRunProfile(config.catalog, config.shipped, "claude", "research")
+  const ready = await inspectHarnessReadiness("claude", context)
+  const pending = await inspectProfileReadiness(profile, ready, context)
+  expect(pending.status).toBe("ready")
+  expect(pending.automaticSetup).toContain("install:hyperresearch")
+  expect(await readdir(f.bin)).not.toContain("hyperresearch")
+  await writeFile(path.join(f.bin, "hyperresearch"), "#!/bin/sh\nexit 99\n", { mode: 0o755 })
+  const installed = await inspectProfileReadiness(profile, ready, context)
+  expect(installed.status).toBe("ready")
+  expect(installed.automaticSetup).not.toContain("install:hyperresearch")
+})
+
 test("missing instruction files are reported before recommending a profile", async () => {
   const f = await fixture()
   const c = catalog()

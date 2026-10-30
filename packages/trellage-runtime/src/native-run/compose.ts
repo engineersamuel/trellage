@@ -4,6 +4,7 @@ import path from "node:path"
 import type { NativeCatalog, NativePluginSelection } from "../native-config.ts"
 import { NativeRunError, type NativeRunPaths } from "./paths.ts"
 import { digestDirectory, type ResolvedSource, type SourceResolver } from "./source.ts"
+import type { Prerequisite } from "./prerequisites.ts"
 
 export const COMPOSITION_SCHEMA = 1
 
@@ -58,7 +59,7 @@ export interface CompositionPlan {
   /** Load the working directory's own harness extensions and skills. */
   readonly projectResources?: boolean
   /** Executables the effective profiles need, by command. */
-  readonly prerequisites?: ReadonlyArray<{ readonly command: string; readonly install: string }>
+  readonly prerequisites?: ReadonlyArray<Prerequisite>
   /** Hand the harness setup to the workers the agent starts. */
   readonly workers?: "firstmate"
 }
@@ -195,10 +196,10 @@ const selectedWorkspace = (
     )
   const owner = declaring[0] === undefined ? undefined : request.catalog.profiles[declaring[0]]!
   const repository = declaring.map((id) => request.catalog.profiles[id]!.repository).find(Boolean)
-  const prerequisites = new Map<string, { readonly command: string; readonly install: string }>()
+  const prerequisites = new Map<string, Prerequisite>()
   for (const id of effective) {
     for (const entry of request.catalog.profiles[id]!.prerequisites ?? [])
-      if (!prerequisites.has(entry.command)) prerequisites.set(entry.command, { command: entry.command, install: entry.install })
+      if (!prerequisites.has(entry.command)) prerequisites.set(entry.command, entry)
   }
   return {
     ...(owner?.current_working_directory ? { workingDirectory: owner.current_working_directory } : {}),
