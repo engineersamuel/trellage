@@ -67,6 +67,15 @@ describe("buildHarnessVersionCommand", () => {
     }))).toEqual({ installed: { kind: "known", version: "1.0.46" }, latest: { kind: "unsupported" } })
   })
 
+  it("uses JCode's host version command when lifecycle metadata is absent", () => {
+    const jcode = nativeEntry({
+      ref: "native:jcode/awesome", launcher: "jcode", harness: "jcode", profiles: ["awesome"], lifecycle: null,
+    })
+    expect(buildHarnessVersionCommand(jcode)).toEqual({
+      executable: "/usr/local/bin/trx",
+      args: ["harness-version", "jcode", "awesome"],
+    })
+  })
 })
 
 describe("parseHarnessVersionOutput", () => {

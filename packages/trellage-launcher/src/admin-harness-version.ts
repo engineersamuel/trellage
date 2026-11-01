@@ -66,7 +66,7 @@ export const harnessVersionOperationKeyFor = (entry: AdminProfileEntry): string 
 }
 
 export const buildHarnessVersionCommand = (entry: AdminProfileEntry): CommandSpec =>
-  entry.lifecycle === null
+  entry.lifecycle === null && entry.launcher !== "jcode"
     ? { executable: entry.commandPath, args: ["inventory", entry.harness, ...entry.profiles, "--json"] }
     : { executable: entry.commandPath, args: ["harness-version", entry.harness, ...entry.profiles] }
 
