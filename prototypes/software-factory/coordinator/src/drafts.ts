@@ -20,13 +20,20 @@ export const isUnstartedDraft = (t: Pick<Thread, "draft"> | undefined): boolean 
 /** Note for coordinators that list an unstarted draft. */
 export const DRAFT_NOTE = "draft: do not message; the human runs it from the canvas"
 
-export const ACTION_WORKFLOW: Record<DraftAction, "council" | "six-hats" | "hyperresearch"> = {
+export const ACTION_WORKFLOW: Record<DraftAction, "council" | "six-hats" | "rpi-research" | "hyperresearch"> = {
   council: "council",
   debate: "six-hats",
-  research: "hyperresearch",
+  research: "rpi-research",
+  hyperresearch: "hyperresearch",
 }
 
-const LABEL: Record<DraftAction, string> = { council: "Council", debate: "Debate", research: "Research" }
+const LABEL: Record<DraftAction, string> = { council: "Council", debate: "Debate", research: "Research", hyperresearch: "Hyperresearch" }
+
+/** Extra task text per action, after the shared research instructions. */
+const ACTION_NOTE: Partial<Record<DraftAction, string>> = {
+  research:
+    "Use the rpi-research skill in agent-owned decision mode: ask no questions. Use posture balanced. Write the skill's research artifact under .copilot-tracking/research/ as the skill specifies. Also save a summary with key findings, alternatives, open questions and the artifact path to reports/draft-rpi-research.md.",
+}
 
 export type DraftDeps = {
   threads: Threads
@@ -50,12 +57,26 @@ export type DraftDeps = {
 
 const currentPrompt = (draft: Draft) => draft.versions.find((v) => v.id === draft.current)!.prompt
 
+/** One line per report: path, action and the prompt version it read. */
+const reportLines = (draft: Draft, reports: Draft["reports"]): string =>
+  reports
+    .map((r) => `- ${r.path} (${LABEL[r.action]}, on prompt version ${draft.versions.findIndex((v) => v.id === r.versionId) + 1})`)
+    .join("\n")
+
 /** The first message of a started draft: its current prompt and the reports to read. */
 export const runMessage = (draft: Draft): string => {
   const head = `[from a guided draft] ${currentPrompt(draft)}`
   if (!draft.reports.length) return head
-  const lines = draft.reports.map((r) => `- ${r.path} (${LABEL[r.action]}, on prompt version ${draft.versions.findIndex((v) => v.id === r.versionId) + 1})`)
-  return `${head}\n\nPre-work reports in this worktree (read before planning):\n${lines.join("\n")}`
+  return `${head}\n\nPre-work reports in this worktree (read before planning):\n${reportLines(draft, draft.reports)}`
+}
+
+/** Task of a draft action: the other actions' reports to read first, then the research instructions. */
+const actionTask = (draft: Draft, action: DraftAction): string => {
+  const workflow = ACTION_WORKFLOW[action]
+  const others = draft.reports.filter((r) => r.action !== action)
+  const context = others.length ? `Context from earlier pre-work in this worktree (read first):\n${reportLines(draft, others)}\n\n` : ""
+  const note = ACTION_NOTE[action]
+  return `${context}${researchTask(workflow, currentPrompt(draft), `draft-${workflow}`)}${note ? `\n\n${note}` : ""}`
 }
 
 export const makeDrafts = (d: DraftDeps) => {
@@ -139,8 +160,18 @@ export const makeDrafts = (d: DraftDeps) => {
       return save(id, { ...rest, versions: [...draft.versions, v], current: v.id })
     },
 
+    /** Drop the enhance candidates and keep the current prompt. */
+    dismiss(id: string): Draft {
+      const { draft } = open(id)
+      if (!draft.pending) throw new DraftError(400, "no rewrites to dismiss")
+      const { pending: _, ...rest } = draft
+      void d.stopEnhance?.(id).catch(console.error)
+      return save(id, rest)
+    },
+
     async act(id: string, action: DraftAction): Promise<Draft> {
       const t = open(id)
+      if (t.draft.pending) throw new DraftError(409, "pick a rewrite first")
       const pending = acting.get(id)
       if (pending) throw new DraftError(409, `${pending} is starting`)
       if (t.draft.reports.some((r) => r.action === action && d.isRunning(r.workerId))) throw new DraftError(409, `${action} is already running`)
@@ -152,7 +183,7 @@ export const makeDrafts = (d: DraftDeps) => {
           step: workflow,
           owner: draftNodeId(id),
           workdir: t.worktree!,
-          task: researchTask(workflow, currentPrompt(t.draft), `draft-${workflow}`),
+          task: actionTask(t.draft, action),
         })
         let fresh: Draft
         try {
@@ -171,6 +202,7 @@ export const makeDrafts = (d: DraftDeps) => {
 
     async run(id: string): Promise<Draft> {
       const { draft } = open(id)
+      if (draft.pending) throw new DraftError(409, "pick a rewrite first")
       const b = acting.get(id) ?? draft.reports.find((r) => d.isRunning(r.workerId))?.action
       if (b) throw new DraftError(409, `wait for ${b} to finish`)
       const started = save(id, { ...draft, startedAt: now() })

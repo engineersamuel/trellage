@@ -122,6 +122,17 @@ export const STEPS: Step[] = [
     gateTools: false,
     factoryOnly: true,
   },
+  {
+    id: "rpi-research",
+    description:
+      "HVE Core RPI Research: evidence-backed task research with wider, deeper and contrarian waves; writes a research artifact and a report. Read-only for code.",
+    bestFor: ["The factory's draft Research action"],
+    avoidFor: ["Manual selection"],
+    skills: ["rpi-research"],
+    skillDirs: ["hve-core/.github/skills/rpi"],
+    gateTools: false,
+    factoryOnly: true,
+  },
 ]
 
 /** Skill directories (under the skills directory) for the GitHub repos Optimize skills come from. */
@@ -153,6 +164,7 @@ export const SKILL_REPOS: Record<string, string> = {
   "security-audit-skill": "https://github.com/cloudflare/security-audit-skill.git",
   "mattpocock-skills": "https://github.com/mattpocock/skills.git",
   "prompt-master": "https://github.com/nidhinjs/prompt-master.git",
+  "hve-core": "https://github.com/microsoft/hve-core.git",
 }
 export const TOOL_REPOS: Record<string, string> = {
   crapper: "https://github.com/unclebob/crapper.git",

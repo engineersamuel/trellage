@@ -61,7 +61,7 @@ const isDraft = (t: Thread) => !!t.draft && !t.draft.startedAt
 const draftPrompt = (t: Thread) => t.draft?.versions.find((v) => v.id === t.draft!.current)?.prompt ?? ""
 
 /** The ring around a draft node, in clockwise order from the top. */
-const RING = [["enhance", "✨", "Enhance"], ["council", "🏛", "Council"], ["debate", "⚖", "Debate"], ["research", "🔎", "Research"], ["run", "▶", "Run"]] as const
+const RING = [["enhance", "✨", "Enhance"], ["council", "🏛", "Council"], ["debate", "⚖", "Debate"], ["research", "🔎", "Research"], ["hyperresearch", "📚", "Hyperresearch"], ["run", "▶", "Run"]] as const
 type RingAction = (typeof RING)[number][0]
 const LABEL: Record<string, string> = Object.fromEntries(RING.map(([a, , l]) => [a, l]))
 
@@ -453,6 +453,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const t = n.thread!, d = t.draft!, b = busy.get(t.id)
     if (b) return b === "enhance" ? "Enhancing…" : `${LABEL[b]} is starting…`
     if (a === "enhance") return null
+    if (d.pending) return "Pick a rewrite first"
     if (a === "run") {
       const r = d.reports.find((r) => running(r.workerId))
       return r ? `${LABEL[r.action]} is running` : s!.agents.some((x) => x.owner === n.id && x.status === "running") ? "A draft worker is running" : null
@@ -605,7 +606,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
         card.append(el("b", "", c.title), el("div", "p2-cand-prompt", c.prompt), el("div", "p2-ver-notes", c.notes), pick)
         row.append(card)
       })
-      body.append(row)
+      const keep = el("button", "p2-more", "Keep current")
+      keep.title = "Dismiss the rewrites and keep the current prompt"
+      keep.onclick = () => change(t.id, "dismiss", undefined)
+      body.append(row, keep)
     }
     body.append(el("h4", "", "Versions"))
     for (let i = d.versions.length - 1; i >= 0; i--) body.append(versionRow(t, i))
@@ -673,7 +677,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const chips = el("div", "p2-n-act p2-chips")
     for (const r of d.reports) {
       const running = s!.agents.some((a) => a.id === r.workerId && a.status === "running")
-      chips.append(el("span", `p2-chip${running ? " run" : ""}`, r.action[0]!.toUpperCase() + r.action.slice(1)))
+      chips.append(el("span", `p2-chip${running ? " run" : ""}`, LABEL[r.action]))
     }
     const err = errs.get(t.id), b = busy.get(t.id)
     card.replaceChildren(head, el("div", "p2-n-name", n.name), el("div", "p2-n-wt", t.folderId), chips, ...(err ? [errLine(err)] : []),

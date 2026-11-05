@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { addFolder, GENERAL, type Folder, type Worktree } from "./folders.ts"
 
-export type DraftAction = "council" | "debate" | "research"
+export type DraftAction = "council" | "debate" | "research" | "hyperresearch"
 export type DraftVersion = { id: string; prompt: string; source: "human" | "enhance"; title?: string; notes?: string; at: number }
 export type Candidate = { title: string; prompt: string; notes: string }
 export type Draft = {

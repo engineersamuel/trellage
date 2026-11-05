@@ -97,7 +97,8 @@ test("draft: create, enhance, pick, council, run", async ({ page }) => {
   await expect(node(page)).toContainText("v1")
 
   await openRing(page)
-  await expect(page.getByRole("menuitem")).toHaveCount(5)
+  await expect(page.getByRole("menuitem")).toHaveCount(6)
+  await expect(page.getByRole("menuitem", { name: "Hyperresearch", exact: true })).toBeVisible()
   await page.getByRole("menuitem", { name: "Enhance" }).click()
   const cards = page.locator(".p2-cand")
   await expect(cards).toHaveCount(3)
@@ -150,6 +151,42 @@ test("draft: Run disabled while Council runs", async ({ page }) => {
   await page.locator(".p2-canvas").click({ position: { x: 5, y: 5 } })
   await expect(page.getByRole("menu")).toHaveCount(0)
   expect(s.posts).toEqual([])
+  expect(agui).toEqual([])
+})
+
+test("draft: pending rewrites block Research until Keep current dismisses them", async ({ page }) => {
+  let draft: any = { versions: [v1], current: "v1", reports: [], pending: { kind: "enhance", candidates, at: 3 } }
+  const s: Stub = {
+    thread: draftThread(draft),
+    workers: [],
+    posts: [],
+    post: (path) => {
+      if (path.endsWith("/dismiss")) {
+        const { pending: _, ...rest } = draft
+        return { draft: (draft = rest) }
+      }
+      return { status: 500, json: { error: "unexpected" } }
+    },
+  }
+  const agui = await stub(page, s)
+  await page.goto(`${PAGE}?proto=2`)
+  await openRing(page)
+  for (const name of ["Council", "Debate", "Research", "Hyperresearch", "Run"]) {
+    const b = page.getByRole("menuitem", { name, exact: true })
+    await expect(b).toBeDisabled()
+    await expect(b).toHaveAttribute("title", "Pick a rewrite first")
+  }
+  await expect(page.getByRole("menuitem", { name: "Enhance" })).toBeEnabled()
+  await page.keyboard.press("Escape")
+
+  await expect(page.getByRole("menu")).toHaveCount(0)
+  await node(page).getByRole("button", { name: "v1" }).click()
+  await expect(page.locator(".p2-cand")).toHaveCount(3)
+  await page.getByRole("button", { name: "Keep current" }).click()
+  await expect(page.locator(".p2-cand")).toHaveCount(0)
+  expect(s.posts).toEqual([{ path: `/api/drafts/${ID}/dismiss`, body: undefined }])
+  await openRing(page)
+  await expect(page.getByRole("menuitem", { name: "Research", exact: true })).toBeEnabled()
   expect(agui).toEqual([])
 })
 

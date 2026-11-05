@@ -99,8 +99,79 @@ test("a finished action runs again and replaces its report entry", async () => {
   await drafts.act(t.id, "research")
   const d = await drafts.act(t.id, "research")
   expect(spawned).toHaveLength(2)
-  expect(spawned[1]).toMatchObject({ name: "draft-research", step: "hyperresearch", workdir: "/wt" })
-  expect(d.reports).toEqual([{ action: "research", workerId: "w2", path: "reports/draft-hyperresearch.md", versionId: d.current }])
+  expect(spawned[1]).toMatchObject({ name: "draft-research", step: "rpi-research", workdir: "/wt" })
+  expect(d.reports).toEqual([{ action: "research", workerId: "w2", path: "reports/draft-rpi-research.md", versionId: d.current }])
+})
+
+test("Research runs hve-core RPI research in agent-owned mode", async () => {
+  const { drafts, spawned } = setup()
+  const t = drafts.create("repo", "build x")
+  await drafts.act(t.id, "research")
+  expect(spawned[0]!.step).toBe("rpi-research")
+  expect(spawned[0]!.task).toContain("reports/draft-rpi-research.md")
+  expect(spawned[0]!.task).toContain("agent-owned")
+  expect(spawned[0]!.task).toContain(".copilot-tracking/research/")
+})
+
+test("Hyperresearch runs the hyperresearch step", async () => {
+  const { drafts, spawned } = setup()
+  const t = drafts.create("repo", "build x")
+  const d = await drafts.act(t.id, "hyperresearch")
+  expect(spawned[0]).toMatchObject({ name: "draft-hyperresearch", step: "hyperresearch" })
+  expect(spawned[0]!.task).toContain("reports/draft-hyperresearch.md")
+  expect(spawned[0]!.task).not.toContain("agent-owned")
+  expect(d.reports).toEqual([{ action: "hyperresearch", workerId: "w1", path: "reports/draft-hyperresearch.md", versionId: d.current }])
+})
+
+test("Enhance, Pick, then Research runs on the picked prompt", async () => {
+  const { drafts, spawned } = setup()
+  const t = drafts.create("repo", "build x")
+  await drafts.enhance(t.id)
+  const picked = drafts.pick(t.id, 2)
+  const d = await drafts.act(t.id, "research")
+  expect(spawned[0]!.task).toContain("build x safe")
+  expect(spawned[0]!.task).not.toMatch(/build x(?! safe)/)
+  expect(d.reports[0]!.versionId).toBe(picked.current)
+})
+
+test("pending candidates block actions and Run; dismiss keeps the current prompt", async () => {
+  const { drafts, spawned, delivered } = setup()
+  const t = drafts.create("repo", "build x")
+  expect(() => drafts.dismiss(t.id)).toThrow(expect.objectContaining({ status: 400 }))
+  await drafts.enhance(t.id)
+  for (const a of ["council", "debate", "research", "hyperresearch"] as const)
+    await expect(drafts.act(t.id, a)).rejects.toMatchObject({ status: 409, message: "pick a rewrite first" })
+  await expect(drafts.run(t.id)).rejects.toMatchObject({ status: 409, message: "pick a rewrite first" })
+  expect(spawned).toEqual([])
+  expect(delivered).toEqual([])
+  const d = drafts.dismiss(t.id)
+  expect(d.pending).toBeUndefined()
+  expect(d.versions.map((v) => v.prompt)).toEqual(["build x"])
+  expect(d.current).toBe(t.draft!.current)
+  await drafts.act(t.id, "council")
+  expect(spawned).toHaveLength(1)
+})
+
+test("dismiss after Run is refused", async () => {
+  const { drafts } = setup()
+  const t = drafts.create("repo", "build x")
+  await drafts.run(t.id)
+  expect(() => drafts.dismiss(t.id)).toThrow(expect.objectContaining({ status: 409 }))
+})
+
+test("a later action reads the earlier reports of the other actions first", async () => {
+  const { drafts, spawned } = setup()
+  const t = drafts.create("repo", "build x")
+  await drafts.act(t.id, "research")
+  expect(spawned[0]!.task).not.toContain("Context from earlier pre-work")
+  await drafts.act(t.id, "council")
+  expect(spawned[1]!.task).toContain(
+    "Context from earlier pre-work in this worktree (read first):\n- reports/draft-rpi-research.md (Research, on prompt version 1)",
+  )
+  // Its own earlier report is not listed.
+  await drafts.act(t.id, "research")
+  expect(spawned[2]!.task).toContain("- reports/draft-council.md (Council, on prompt version 1)")
+  expect(spawned[2]!.task).not.toContain("- reports/draft-rpi-research.md (")
 })
 
 test("Run waits for draft workers, then delivers the prompt with reports", async () => {

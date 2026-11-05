@@ -60,7 +60,7 @@
 .sfp-p2 .p2-chips button.p2-chip:hover { background: color-mix(in srgb, var(--sf-accent) 25%, transparent); }
 .sfp-p2 .p2-node.draft .p2-badge { cursor: pointer; }
 .sfp-p2 .p2-n-err { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Draft action ring: 5 round buttons centred on the node. */
+/* Draft action ring: 6 round buttons centred on the node. */
 .sfp-p2 .p2-ring { position: absolute; z-index: 3; width: 394px; height: 290px; margin: -145px 0 0 -197px; pointer-events: none; }
 .sfp-p2 .p2-ring-btn { position: absolute; left: 170px; top: 118px; pointer-events: auto; width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; align-content: center; gap: 1px;
   border: 1px solid var(--sf-accent); background: color-mix(in srgb, var(--sf-accent) 22%, var(--sf-surface)); color: var(--sf-text); font-size: 17px; line-height: 1;
