@@ -1,0 +1,29 @@
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/client/flags.js b/node_modules/@plana-solutions/agent-interface/dist/client/flags.js
+index 7fd6656..a7f5c8a 100644
+--- a/node_modules/@plana-solutions/agent-interface/dist/client/flags.js
++++ b/node_modules/@plana-solutions/agent-interface/dist/client/flags.js
+@@ -1,13 +1,12 @@
+ import { brandViewResult as __foldkitBrandViewResult } from 'foldkit/brand'
+-import { BrowserCrypto } from "@effect/platform-browser";
+-import { Crypto, Effect } from "effect";
++import { Effect } from "effect";
+ import { readSavedSidebarOpen, readSavedSidebarWidth, readSavedThemePreference } from "./preferences.js";
+ import { SYSTEM_DARK_QUERY, systemModeFor } from "./theme.js";
+ const readViewportWidth = /*#__PURE__*/Effect.sync(() => __foldkitBrandViewResult((document.documentElement.clientWidth), "@plana-solutions/agent-interface/client/flags.js#anonymous"));
+ const readSystemThemeMode = /*#__PURE__*/Effect.sync(() => __foldkitBrandViewResult((systemModeFor(window.matchMedia(SYSTEM_DARK_QUERY).matches)), "@plana-solutions/agent-interface/client/flags.js#anonymous~2"));
+ export const readFlags = config => __foldkitBrandViewResult((Effect.gen(function* readBrowserFlags() {
+-  const crypto = yield* Crypto.Crypto;
+-  const sessionId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
++  // Effect 4.1 removed the root Crypto export; the Web Crypto API gives the same v4 UUID.
++  const sessionId = yield* Effect.sync(() => globalThis.crypto.randomUUID());
+   const isSidebarOpen = yield* readSavedSidebarOpen;
+   const maybeSidebarWidth = yield* readSavedSidebarWidth;
+   const containerWidth = yield* readViewportWidth;
+@@ -24,5 +23,5 @@ export const readFlags = config => __foldkitBrandViewResult((Effect.gen(function
+       systemMode
+     }
+   }), "@plana-solutions/agent-interface/client/flags.js#readBrowserFlags");
+-}).pipe(Effect.provide(BrowserCrypto.layer))), "@plana-solutions/agent-interface/client/flags.js#readFlags");
++})), "@plana-solutions/agent-interface/client/flags.js#readFlags");
+ //# sourceMappingURL=flags.js.map
+\ No newline at end of file

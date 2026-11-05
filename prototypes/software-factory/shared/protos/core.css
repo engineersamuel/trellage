@@ -1,0 +1,11 @@
+/* Prototype stage + switcher. Prototype-specific styles live in pN.css, scoped under .sfp-pN. */
+.sfp-stage { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.sfp-stage > .sfp-chat { position: absolute; z-index: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
+  background: var(--sf-bg, #0a0a0a); transition: left .25s, right .25s, top .25s, bottom .25s, width .25s, height .25s; }
+.sfp-stage > .sfp-chat > * { flex: 1; min-height: 0; }
+.sfp-stage > .sfp-host { position: absolute; inset: 0; z-index: 1; color: var(--sf-text, #e5e5e5); font: 13px system-ui, sans-serif; }
+.sfp-switcher { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 980; display: flex; gap: 2px; align-items: center; padding: 3px;
+  border-radius: 999px; background: var(--sf-surface, #171717); border: 1px solid var(--sf-border, #262626); box-shadow: 0 8px 24px #000a; font: 12px system-ui, sans-serif; }
+.sfp-switcher button { border: 0; background: none; color: var(--sf-muted, #a3a3a3); padding: 4px 10px; border-radius: 999px; cursor: pointer; font: inherit; }
+.sfp-switcher button.on { background: var(--sf-accent, #6366f1); color: #fff; }
+.sfp-sw-label { padding: 0 6px 0 10px; color: var(--sf-muted, #a3a3a3); font-weight: 600; }

@@ -1,0 +1,32 @@
+{
+  "name": "software-factory-web-react",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173 --strictPort",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ag-ui/client": "1.0.2",
+    "@copilotkit/react-core": "2.0.0-rc.13",
+    "@mdx-js/mdx": "3.1.1",
+    "@openuidev/react-headless": "0.18.1",
+    "@openuidev/react-lang": "1.0.2",
+    "@openuidev/react-ui": "0.18.1",
+    "effect": "4.1.2",
+    "highlight.js": "11.11.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "zod": "4.6.7",
+    "zustand": "4.5.7"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "typescript": "5.9.3",
+    "vite": "8.3.5"
+  }
+}

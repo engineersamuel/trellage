@@ -1,0 +1,18 @@
+.sf-code-block {
+  margin: 0.75rem 0;
+  border-radius: 8px;
+  overflow-x: auto;
+  background: #0d1117;
+}
+
+.sf-code-block > code.hljs {
+  display: block;
+  padding: 1rem;
+  font:
+    0.875rem/1.6 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  white-space: pre;
+}

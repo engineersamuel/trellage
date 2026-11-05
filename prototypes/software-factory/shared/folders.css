@@ -1,0 +1,29 @@
+/* Conversation sidebar: folders with their conversations. Uses the factory theme variables. */
+.sff-root { font: 13px system-ui, sans-serif; color: var(--sf-text, #e5e5e5); }
+.sff-root [hidden] { display: none !important; }
+.sff-root button { font: inherit; cursor: pointer; color: inherit; }
+.sff-toggle { position: fixed; left: 12px; bottom: 14px; z-index: 950; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--sf-border, #262626);
+  background: var(--sf-surface, #171717); box-shadow: 0 6px 18px #0008; }
+.sff-panel { position: fixed; left: 0; top: 0; bottom: 0; z-index: 955; width: min(320px, 86vw); display: flex; flex-direction: column;
+  background: var(--sf-surface, #171717); border-right: 1px solid var(--sf-border, #262626); box-shadow: 12px 0 40px #000a; animation: sff-in .2s ease-out; }
+@keyframes sff-in { from { transform: translateX(-100%); } }
+.sff-top { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--sf-border, #262626); }
+.sff-close { border: 0; background: none; color: var(--sf-muted, #a3a3a3); }
+.sff-target { padding: 8px 14px; font-size: 12px; color: var(--sf-accent, #6366f1); font-weight: 600; }
+.sff-list { flex: 1; overflow: auto; padding: 0 8px 8px; }
+.sff-folder { margin: 6px 0 10px; border-radius: 10px; padding: 4px; }
+.sff-target-folder { background: color-mix(in srgb, var(--sf-accent, #6366f1) 10%, transparent); }
+.sff-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; }
+.sff-name { font-weight: 700; }
+.sff-add { border: 1px solid var(--sf-border, #262626); background: var(--sf-bg, #0a0a0a); border-radius: 6px; width: 26px; height: 24px; font-weight: 700; }
+.sff-add:hover { border-color: var(--sf-accent, #6366f1); }
+.sff-thread { display: flex; align-items: center; gap: 6px; width: 100%; box-sizing: border-box; color: inherit; text-decoration: none; text-align: left; border: 0; background: none; padding: 6px 8px 6px 22px; border-radius: 7px; }
+.sff-thread:hover { background: var(--sf-bg, #0a0a0a); }
+.sff-current { background: var(--sf-bg, #0a0a0a); box-shadow: inset 3px 0 0 var(--sf-accent, #6366f1); }
+.sff-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sff-badge { background: #f59e0b; color: #000; font-weight: 700; font-size: 11px; border-radius: 999px; padding: 0 7px; }
+.sff-addrepo { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; border-top: 1px solid var(--sf-border, #262626); }
+.sff-addrepo input { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--sf-border, #262626); background: var(--sf-bg, #0a0a0a); color: inherit; font: inherit; }
+.sff-addrepo button { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--sf-border, #262626); background: var(--sf-bg, #0a0a0a); }
+.sff-error { width: 100%; color: #ef4444; font-size: 12px; }
+.sff-merged { font-size: 10.5px; color: #22c55e; border: 1px solid #22c55e66; border-radius: 999px; padding: 0 6px; }
