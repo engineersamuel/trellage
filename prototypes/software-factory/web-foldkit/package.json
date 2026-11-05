@@ -1,0 +1,46 @@
+{
+  "name": "software-factory-web-foldkit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5174 --strictPort",
+    "check": "tsc --noEmit",
+    "postinstall": "patch-package",
+    "lint": "oxlint src",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "overrides": {
+    "@plana-solutions/agent-interface": {
+      "effect": "$effect",
+      "@effect/platform-browser": "$@effect/platform-browser",
+      "foldkit": "$foldkit",
+      "@foldkit/ui": "$@foldkit/ui"
+    }
+  },
+  "dependencies": {
+    "@effect/platform-browser": "4.1.2",
+    "@foldkit/ui": "0.170.0",
+    "@openuidev/react-headless": "0.18.1",
+    "@openuidev/react-lang": "1.0.2",
+    "@openuidev/react-ui": "0.18.1",
+    "@plana-solutions/agent-interface": "0.5.0",
+    "effect": "4.1.2",
+    "foldkit": "0.170.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zustand": "4.5.7"
+  },
+  "devDependencies": {
+    "@foldkit/oxlint-plugin": "0.15.4",
+    "@foldkit/vite-plugin": "0.29.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "happy-dom": "21.0.4",
+    "oxlint": "1.91.0",
+    "patch-package": "8.0.1",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vitest": "4.1.12"
+  }
+}

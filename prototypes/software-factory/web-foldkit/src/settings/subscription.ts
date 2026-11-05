@@ -1,0 +1,49 @@
+import { Effect, Filter, Match, Option, Queue, Schema, Stream } from "effect";
+import { Subscription } from "foldkit";
+import { Slider } from "@foldkit/ui";
+import { type FeedEvent, RESYNC, onFeed } from "../../../shared/feed";
+import { StoredEvent } from "../../../shared/schemas";
+import { Settings } from "../domain";
+import { Message } from "./message";
+import type { Model } from "./model";
+
+const decodeEvent = Schema.decodeUnknownOption(StoredEvent);
+const decodeSettingsUpdate = Schema.decodeUnknownOption(Schema.Struct({ settings: Settings, css: Schema.String }));
+
+/** The feed events that change settings or delivery, as settings Messages. */
+export const feedEventToMessage = (raw: FeedEvent): Option.Option<Message> =>
+  Option.flatMap(decodeEvent(raw), (event) =>
+    Match.value(event.type).pipe(
+      Match.withReturnType<Option.Option<Message>>(),
+      Match.when(RESYNC, () => Option.some(Message.ReceivedFeedGap())),
+      Match.when("factory.settings_updated", () =>
+        Option.map(decodeSettingsUpdate(event.data), (document) => Message.ReceivedSettingsUpdate({ document })),
+      ),
+      Match.when(Match.is("factory.run_started", "factory.step_decided", "factory.security_review"), () =>
+        Option.some(Message.ReceivedDeliveryChange()),
+      ),
+      Match.orElse(() => Option.none()),
+    ),
+  );
+
+/** shared/feed keeps one connection per page and fans events out to every subscriber. */
+const feedEvents: Stream.Stream<FeedEvent> = Stream.callback<FeedEvent>((queue) =>
+  Effect.acquireRelease(
+    Effect.sync(() => onFeed((event) => Queue.offerUnsafe(queue, event))),
+    (unsubscribe) => Effect.sync(unsubscribe),
+  ),
+);
+
+const panelWidthSlider = Subscription.lift({
+  panelWidthPointer: Slider.subscriptions.dragPointer,
+  panelWidthEscape: Slider.subscriptions.dragEscape,
+})<Model, Message>({
+  read: (model) => Option.some(model.panelWidthSlider),
+  toParentMessage: (message) => Message.GotPanelWidthSliderMessage({ message }),
+});
+
+const feed = Subscription.make<Model, Message>()((entry) => ({
+  settingsFeed: entry({}, { modelToDependencies: () => ({}), dependenciesToStream: () => feedEvents.pipe(Stream.filterMap(Filter.fromPredicateOption(feedEventToMessage))) }),
+}));
+
+export const subscriptions = Subscription.aggregate(feed, panelWidthSlider);

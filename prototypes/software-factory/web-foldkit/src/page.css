@@ -1,0 +1,89 @@
+:root { --sf-bg: #0a0a0a; --sf-surface: #171717; --sf-border: #262626; --sf-text: #e5e5e5; --sf-muted: #a3a3a3; --sf-accent: #6366f1; }
+html, body, #root { height: 100%; margin: 0; font: 14px system-ui, sans-serif; background: var(--sf-bg); color: var(--sf-text); }
+.fk-root { display: flex; flex-direction: column; height: 100vh; }
+.fk-nav { display: flex; gap: 14px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--sf-border); background: var(--sf-surface); font-size: 13px; }
+.fk-nav-item { display: inline-flex; gap: 6px; align-items: center; }
+.fk-muted { color: var(--sf-muted); }
+.fk-nav button, .fk-drawer button, .fk-panel button { background: var(--sf-surface); color: var(--sf-text); border: 1px solid var(--sf-border); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+.fk-ctx-bar { display: inline-block; width: 80px; height: 6px; background: var(--sf-border); border-radius: 3px; overflow: hidden; }
+.fk-ctx-bar > span { display: block; height: 100%; background: var(--sf-accent); }
+.fk-banner { padding: 6px 12px; background: color-mix(in srgb, var(--sf-accent) 22%, var(--sf-bg)); border-bottom: 1px solid var(--sf-border); }
+.fk-layout { display: grid; flex: 1; min-height: 0; }
+.fk-chat { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.fk-chat-body { position: relative; z-index: 1; height: 100%; }
+.fk-chat-body > * { height: 100%; }
+.fk-chat .openui-agent-container { width: 100%; max-width: 100%; height: 100%; }
+.fk-panel { display: grid; grid-template-rows: auto auto 1fr; min-height: 0; min-width: 0; border-left: 1px solid var(--sf-border); border-right: 1px solid var(--sf-border); }
+.fk-workers { padding: 8px 12px; border-bottom: 1px solid var(--sf-border); max-height: 35vh; overflow: auto; }
+.fk-workers h2, .fk-peer h2 { margin: 4px 0 8px; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+.fk-panel .fk-row { display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; padding: 6px 8px; border: 0; background: none; color: inherit; border-radius: 6px; cursor: pointer; }
+.fk-panel .fk-branch { color: var(--sf-muted); margin-right: -2px; }
+.fk-panel .fk-row.active { background: color-mix(in srgb, var(--sf-accent) 25%, transparent); }
+.fk-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+.fk-meta { color: var(--sf-muted); font-size: 12px; }
+.fk-peer { display: flex; flex-direction: column; min-height: 0; padding: 8px 12px; }
+.fk-log { flex: 1; overflow: auto; font: 12px ui-monospace, monospace; background: var(--sf-surface); border: 1px solid var(--sf-border); border-radius: 6px; padding: 6px; }
+.fk-ev { display: grid; grid-template-columns: 200px 1fr; gap: 8px; padding: 2px 0; border-bottom: 1px dotted var(--sf-border); }
+.fk-type { color: var(--sf-accent); }
+.fk-text { white-space: pre-wrap; word-break: break-word; }
+.fk-send { display: flex; gap: 6px; margin-top: 8px; }
+.fk-send input, .fk-drawer input, .fk-drawer select, .fk-drawer textarea { flex: 1; padding: 6px; border: 1px solid var(--sf-border); border-radius: 6px; background: var(--sf-bg); color: inherit; font: inherit; }
+.fk-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 100vw; box-sizing: border-box; overflow: auto; background: var(--sf-surface); border-left: 1px solid var(--sf-border); padding: 12px; z-index: 1000; box-shadow: -8px 0 24px #0008; }
+.fk-drawer header { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+.fk-drawer header button { margin-left: auto; }
+.fk-drawer section { border-top: 1px solid var(--sf-border); padding: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+.fk-drawer h2 { margin: 0; font-size: 15px; }
+.fk-drawer h3 { margin: 0; font-size: 14px; }
+.fk-drawer h4 { margin: 0; font-size: 12px; font-weight: 600; }
+.fk-drawer label { display: flex; gap: 8px; align-items: center; }
+.fk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fk-chips button.on { border-color: var(--sf-accent); background: color-mix(in srgb, var(--sf-accent) 30%, transparent); }
+.fk-chips button.on.danger { border-color: #f87171; background: #7f1d1d; }
+.fk-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 2px solid; margin-right: 6px; vertical-align: -2px; }
+.fk-cron { display: flex; gap: 6px; align-items: center; font-size: 12px; }
+.fk-error { color: #f87171; font-size: 12px; white-space: pre-wrap; }
+kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; margin-right: 6px; }
+.fk-drawer input[type=checkbox] { flex: none; }
+.fk-drawer form input { min-width: 0; }
+.fk-drawer label { justify-content: flex-start; }
+.fk-root { position: relative; }
+.fk-slot-bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.fk-root > .fk-nav, .fk-root > .fk-banner, .fk-root > .fk-layout { position: relative; z-index: 1; }
+.fk-slot-overlay { position: fixed; inset: 0; z-index: 900; pointer-events: none; }
+.fk-raw { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--sf-muted); display: inline-flex; gap: 4px; align-items: center; }
+
+/* Native chat: match the CopilotKit dark chat (system font, dark bubbles, dark composer), driven by the theme variables. */
+.fk-chat .openui-agent-container, .fk-chat .openui-agent-container * { font-family: ui-sans-serif, system-ui, sans-serif !important; }
+.fk-chat .openui-agent-container code, .fk-chat .openui-agent-container code *, .fk-chat .openui-agent-container pre, .fk-chat .openui-agent-container kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; }
+.fk-chat .openui-shell-thread-message-user__content, .fk-chat .openui-agent-thread-message-user__content {
+  background: var(--sf-surface) !important; color: var(--sf-text) !important; border: 1px solid var(--sf-border); border-radius: 18px !important; font-size: 14px; line-height: 1.55; }
+.fk-chat .openui-shell-thread-message-user__content *, .fk-chat .openui-agent-thread-message-user__content * { color: inherit !important; }
+.fk-chat .openui-agent-thread-header { background: var(--sf-surface); border-bottom: 1px solid var(--sf-border); }
+.fk-chat .openui-agent-thread-header h1, .fk-chat .openui-agent-thread-header h2, .fk-chat .openui-agent-thread-header [class*="title"] { font-size: 15px !important; font-weight: 600; }
+.fk-chat [class*="composer"] textarea { color: var(--sf-text) !important; font-size: 14px !important; }
+.fk-chat .openui-agent-thread-composer { background: var(--sf-surface) !important; border-color: var(--sf-border) !important; }
+
+/* Panel body: the worker panel Submodel fills the grid rows of .fk-panel below the slot. */
+.fk-panel { grid-template-rows: auto 1fr; }
+.fk-panel-body { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+.fk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.fk-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.fk-log-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fk-field { display: flex; flex: 1; gap: 8px; align-items: center; min-width: 0; }
+.fk-field input, .fk-field select, .fk-field textarea { flex: 1; min-width: 0; padding: 6px; border: 1px solid var(--sf-border); border-radius: 6px; background: var(--sf-bg); color: inherit; font: inherit; }
+.fk-check-row { display: inline-flex; gap: 6px; align-items: center; }
+.fk-check { width: 16px; height: 16px; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; }
+.fk-check[data-checked] { background: var(--sf-accent) !important; border-color: var(--sf-accent) !important; }
+.fk-title { margin: 0; font-size: 13px; font-weight: 700; }
+.fk-spacer { flex: 1; }
+.fk-error { display: flex; gap: 8px; align-items: center; }
+.fk-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* Settings drawer: a modal <dialog> with a backdrop, laid out as a right-hand panel. */
+.fk-dialog { padding: 0; border: 0; background: transparent; max-width: none; max-height: none; width: 100vw; height: 100vh; }
+.fk-dialog::backdrop { background: transparent; }
+.fk-backdrop { position: fixed; inset: 0; background: #0006; }
+.fk-slider { display: flex; flex-direction: column; gap: 6px; }
+.fk-slider-root { position: relative; height: 16px; display: flex; align-items: center; }
+.fk-slider-track { position: relative; flex: 1; height: 4px; border-radius: 2px; background: var(--sf-border); }
+.fk-slider-fill { border-radius: 2px; background: var(--sf-accent); }
+.fk-slider-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--sf-text); cursor: grab; }

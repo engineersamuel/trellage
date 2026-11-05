@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Software Factory coordinator</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 900px; margin: 40px auto; color: #e5e5e5; background: #0a0a0a; padding: 0 16px; color-scheme: dark; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #2a2a2a; padding: 8px; text-align: left; vertical-align: top; }
+  th { background: #171717; }
+  a.btn { display: inline-block; padding: 6px 12px; border-radius: 6px; background: #4f46e5; color: #fff; text-decoration: none; }
+  code { background: #1f1f1f; padding: 1px 4px; border-radius: 4px; }
+  #info { color: #a3a3a3; }
+</style>
+</head>
+<body>
+<h1>Software Factory coordinator</h1>
+<p id="info">loading…</p>
+<table>
+  <tr><th>Option</th><th>Stack</th><th>Wire</th><th>Open</th></tr>
+  <tr><td>1</td><td>React + CopilotKit 2.0 RC</td><td>AG-UI SSE via <code>HttpAgent</code></td><td><a class="btn" href="http://localhost:5173/copilotkit.html">Open</a></td></tr>
+  <tr><td>2</td><td>Foldkit + agent-interface</td><td>AG-UI SSE, answers in OpenUI Lang</td><td><a class="btn" href="http://localhost:5174/">Open</a></td></tr>
+</table>
+<h3>API</h3>
+<ul>
+  <li><code>POST /api/agui</code>: AG-UI run against the coordinator (<code>?answer=openui</code> for OpenUI Lang answers)</li>
+  <li><code>POST /api/agui/{id}</code>: AG-UI run against any worker</li>
+  <li><code>GET /api/feed[?worker=id]</code>: raw Copilot SDK events, all workers (SSE)</li>
+  <li><code>GET /api/workers</code>, <code>DELETE /api/workers/{id}</code>, <code>POST /api/workers/{id}/message|abort</code>, <code>GET /api/workers/{id}/events</code></li>
+</ul>
+<script>
+fetch("/api/info").then(r => r.json()).then(i => {
+  document.getElementById("info").textContent =
+    `auth=${i.defaultAuth} (${i.defaultAuth === "proxy" ? "copilot-proxy-rs " + i.proxyUrl : "native Copilot subscription"}) · model=${i.defaultModel} · ${i.workers.length} runtime process(es)`;
+});
+</script>
+</body>
+</html>

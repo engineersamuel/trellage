@@ -1,0 +1,868 @@
+// Prototype 2 — Org Canvas: the factory as a live org chart. Global coordinator on top, sub-coordinators
+// below, workers under their owner. Click a node: a slide-over opens with its conversation (native chat for
+// coordinators, readable transcript + direct message for workers). Nothing selected: the global chat floats docked.
+// Left rail: the factory stream (one timeline across agents, Slack-style runs, report/decision/review cards),
+// filtered to the selected node's subtree; clicking an agent in the stream selects its node.
+import "./p2.css"
+import { openSpec } from "../spec"
+import { harnessBadge } from "../harness"
+import { markdown } from "../decisions"
+import { Schema } from "effect"
+import { fire, json, runOr, send } from "../http"
+import { SearchHit, StoredEvent } from "../schemas"
+import {
+  agentLabel, agentOfThread, el, isOpenUi, messageAgent, mountTranscript, openAgentChat, openDecision, openThread, register, renderOpenUi, statusColor, subscribe, threadOf,
+  type Agent, type Ctx, type Decision, type Review, type State, type Thread,
+} from "./core"
+
+type Node = { id: string; kind: "global" | "sub" | "worker" | "ghost"; tag: string; name: string; status: string; agent?: Agent; thread?: Thread; parent: string | null; children: Node[]; x: number; y: number; w: number }
+
+const W = 236, H = 132, GX = 26, GY = 74, PAD = 40, HEAD = 78
+const MAX_GHOSTS = 6
+/** Width the docked global chat takes from the canvas when nothing is selected (518px chat + gaps). */
+const DOCK_W = 560
+const TIERS = ["Factory desk · sees everything", "General chats · own memory each", "Sub-coordinators · one per repo conversation", "Workers"]
+
+const agentNode = (a: Agent): Node => {
+  const l = agentLabel(a)
+  const tag = l.kind === "global" ? "Factory desk" : a.id.startsWith("gen-") ? "General chat" : l.kind === "sub" ? `Sub-coordinator · ${a.name.split(" · ")[0]}` : "Worker"
+  return { id: a.id, kind: l.kind, tag, name: l.kind === "global" ? "Factory desk" : l.name, status: a.status, agent: a, thread: l.kind === "sub" ? threadOf(a.id) : undefined, parent: null, children: [], x: 0, y: 0, w: W }
+}
+
+const linkParents = (nodes: Map<string, Node>) => {
+  const root = nodes.get("coordinator")
+  for (const n of nodes.values()) {
+    if (n === root) continue
+    const o = n.agent?.owner
+    n.parent = o && o !== n.id && nodes.has(o) ? o : root ? root.id : null
+    if (n.parent) nodes.get(n.parent)!.children.push(n)
+  }
+}
+
+const placeNode = (n: Node, x: number, depth: number): number => {
+  n.y = depth * (H + GY)
+  if (!n.children.length) return (n.x = x), (n.w = W)
+  let cx = x
+  for (const c of n.children) cx += placeNode(c, cx, depth + 1) + GX
+  n.w = Math.max(W, cx - GX - x)
+  n.x = x + (n.w - W) / 2
+  return n.w
+}
+
+/** Build the org tree: agents by owner, plus dormant repo conversations (no live sub-coordinator) as ghosts under the global node. */
+const buildTree = (s: State): Map<string, Node> => {
+  const nodes = new Map(s.agents.map((a) => [a.id, agentNode(a)]))
+  const live = new Set(s.agents.map((a) => a.id))
+  s.threads.filter((t) => t.worktree && !t.cleanedAt && !t.archivedAt && !live.has(`sub-${t.id.slice(0, 8)}`)).sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_GHOSTS)
+    .forEach((t) => nodes.set(`t:${t.id}`, { id: `t:${t.id}`, kind: "ghost", tag: `Dormant · ${t.folderId}`, name: t.title, status: "dormant", thread: t, parent: null, children: [], x: 0, y: 0, w: W }))
+  linkParents(nodes)
+  let x = 0
+  for (const n of nodes.values()) if (!n.parent) x += placeNode(n, x, 0) + GX * 2
+  return nodes
+}
+
+// ---------- stream items (ported from the Unified Stream prototype) ----------
+
+type Kind = "line" | "user" | "report" | "decision" | "review"
+type Item = { key: string; at: number; agentId: string; kind: Kind; text: string; ref?: any; threadId?: string }
+type Ev = { seq: number; type: string; timestamp: string; data: any }
+
+const PALETTE = ["#f472b6", "#34d399", "#fbbf24", "#60a5fa", "#f87171", "#2dd4bf", "#fb923c"]
+const colorOf = (id: string) => {
+  if (id === "coordinator") return "#818cf8"
+  let h = 0
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return PALETTE[h % PALETTE.length]!
+}
+/** Long messages and OpenUI programs stand alone as report cards. */
+const isReport = (t: string) => t.length > 220 || isOpenUi(t)
+const clean = (s: string) => s.replace(/<(ui-format|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim()
+const hhmm = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+const day = (t: number) => new Date(t).toDateString()
+const standaloneItem = (it: Item) => it.kind === "report" || it.kind === "decision" || it.kind === "review"
+const startsNewRun = (prev: Item | undefined, it: Item) => prev !== undefined && (prev.agentId !== it.agentId || it.at - prev.at > 600_000)
+/** Stream agent id of a node: a dormant conversation's events still belong to its sub-coordinator id. */
+const streamId = (n: Node) => (n.kind === "ghost" ? `sub-${n.thread!.id.slice(0, 8)}` : n.id)
+
+const toItem = (agentId: string, e: Ev, at: number): Item | null => {
+  const d = e.data ?? {}
+  const key = `${agentId}:${e.seq}`
+  switch (e.type) {
+    case "user.message": {
+      const t = clean(String(d.content ?? ""))
+      return t ? { key, at, agentId, kind: "user", text: t } : null
+    }
+    case "assistant.message": {
+      const t = String(d.content ?? "").trim()
+      return t ? { key, at, agentId, kind: isReport(t) ? "report" : "line", text: t, threadId: d.threadId } : null
+    }
+    case "tool.execution_start":
+      return d.parentToolCallId ? null : { key, at, agentId, kind: "line", text: `⚙ ${d.toolName}` }
+    case "session.error":
+      return { key, at, agentId, kind: "line", text: `✗ ${d.message ?? "error"}` }
+  }
+  return null
+}
+
+const generalIds = (s: State) => new Set(s.threads.filter((t) => t.folderId === "general").map((t) => t.id))
+const pendingOf = (s: State, n: Node): Decision[] => {
+  const p = s.decisions.filter((d) => d.status === "pending")
+  if (n.kind === "global") { const g = generalIds(s); return p.filter((d) => !d.threadId || g.has(d.threadId)) }
+  return n.thread ? p.filter((d) => d.threadId === n.thread!.id) : []
+}
+const reviewOf = (s: State, n: Node): Review | undefined =>
+  n.thread ? s.reviews.filter((r) => r.threadId === n.thread!.id).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))[0] : undefined
+const reviewText = (r: Review) => {
+  if (r.status !== "done") return `review ${r.status}`
+  const kept = r.findings.filter((f) => f.verdict === "keep").length
+  return r.findings.length ? `${r.findings.length} findings · ${kept} kept` : "review clean"
+}
+/** The repo conversation a node works in: its own for a sub-coordinator or ghost, its owner's for a worker. */
+const worktreeOf = (n: Node): Thread | undefined => n.thread ?? (n.agent?.owner ? threadOf(n.agent.owner) : undefined)
+const shortSha = (s?: string) => (s ? s.slice(0, 7) : "")
+/** One line naming where the node's work happens: repo, branch, and the commit it came from. */
+const worktreeLine = (t: Thread) => `${t.folderId} ⎇ ${t.branch ?? "?"}${t.base ? ` ← ${shortSha(t.base)}` : ""}`
+
+const activityText = (s: State, n: Node) => {
+  if (n.kind === "ghost") return n.thread?.branch ?? "no live coordinator"
+  const a = s.activity[n.id]
+  if (a) return `${a.label} ${a.detail}`.trim()
+  return n.agent?.status === "running" ? "Working…" : (n.agent?.lastMessage ?? "Idle").replace(/[`*#>\n]+/g, " ").trim()
+}
+
+/** Archive hides a dormant conversation from the canvas. Delete removes the conversation, its worktree, and its local branch. */
+const ghostAction = (t: Thread, kind: "archive" | "delete") => {
+  const b = el("button", `p2-gact ${kind}`, kind === "archive" ? "⤓" : "✕")
+  b.title = kind === "archive" ? "Archive: hide from the canvas (stays in the sidebar)" : "Delete conversation, worktree, and branch"
+  b.setAttribute("aria-label", `${kind === "archive" ? "Archive" : "Delete"} ${t.title}`)
+  b.onclick = (e) => {
+    e.stopPropagation()
+    if (kind === "archive") return fire(send(`/api/threads/update/${t.id}`, "PATCH", { archivedAt: Date.now() }))
+    if (!confirm(`Delete "${t.title}"?\n\nThis removes the conversation, the worktree ${t.worktree ?? ""} (uncommitted changes too), and the local branch ${t.branch ?? ""}. It cannot be undone.`)) return
+    fire(send(`/api/threads/delete/${t.id}`, "DELETE"))
+  }
+  return b
+}
+
+const mount = ({ root, placeChat }: Ctx): (() => void) => {
+  root.classList.add("sfp-p2")
+  const canvas = el("div", "p2-canvas")
+  const world = el("div", "p2-world")
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+  svg.classList.add("p2-edges")
+  world.append(svg)
+  canvas.append(world)
+  const top = el("div", "p2-top")
+  const brand = el("div", "p2-brand")
+  const where = el("span")
+  brand.append(el("b", "", "Org Canvas"), where)
+  const stats = el("div", "p2-stats")
+  const decisions = el("div", "p2-decisions")
+  top.append(brand, decisions, stats)
+  const dock = el("div", "p2-dock")
+  const dockHead = el("div", "p2-dock-head")
+  dock.append(dockHead)
+  const panel = el("aside", "p2-panel")
+  const panelHead = el("div", "p2-panel-head")
+  const panelBody = el("div", "p2-panel-body")
+  panel.append(panelHead, panelBody)
+  const rail = el("section", "p2-rail")
+  const railHead = el("header", "p2-rail-head")
+  const railScroll = el("div", "p2-rail-scroll")
+  const list = el("div", "p2-list")
+  // Full-text search over every agent's history (SQLite FTS5 on the coordinator).
+  const searchBar = el("div", "p2-search")
+  const searchInput = document.createElement("input")
+  searchInput.type = "search"
+  searchInput.placeholder = "Search every agent…"
+  searchInput.setAttribute("aria-label", "Search every agent's messages and tool calls")
+  searchBar.append(searchInput)
+  const results = el("div", "p2-results")
+  railScroll.append(list, results)
+  rail.append(railHead, searchBar, railScroll)
+  root.replaceChildren(rail, canvas, top, dock, panel)
+
+  let s: State | null = null
+  let nodes = new Map<string, Node>()
+  let sel: string | null = null
+  let mounted: { key: string; stop: () => void } | null = null
+  const cards = new Map<string, HTMLElement>()
+  const edges = new Map<string, SVGPathElement>()
+  let orderKey = ""
+  const tiers = el("div", "p2-tiers")
+  world.append(tiers)
+
+  // ---- stream state ----
+  const backlog = new Map<string, Item[]>()
+  const fetched = new Set<string>()
+  const refetched = new Set<string>()
+  const expanded = new Set<string>()
+  /** Rendered OpenUI cards, by item key + program, reused across rail rebuilds. */
+  const genui = new Map<string, { el: HTMLElement; stop: () => void }>()
+  const genuiUsed = new Set<string>()
+  const openUiBody = (key: string, program: string, agentId: string, threadId?: string): HTMLElement | null => {
+    const k = `${key}:${program}`
+    genuiUsed.add(k)
+    let g = genui.get(k)
+    if (!g) {
+      const el = document.createElement("div")
+      const stop = renderOpenUi(el, program, agentId, threadId)
+      if (!stop) return null
+      genui.set(k, (g = { el, stop }))
+    }
+    return g.el
+  }
+  let railOpen = true
+  let alive = true
+  let backlogVer = 0
+  let streamSig = ""
+  let streamSel: string | null | undefined
+
+  /** Load the rail's history of several agents in one cross-agent query, only the event types it shows. */
+  const fetchBacklog = (...ids: string[]) => {
+    if (!ids.length) return
+    for (const id of ids) fetched.add(id)
+    const q = new URLSearchParams({ workers: ids.join(","), types: "user.message,assistant.message,tool.execution_start,session.error", perWorker: "1000" })
+    void runOr(json(`/api/events?${q}`, Schema.Array(StoredEvent)), null)
+      .then((log) => {
+        if (!log || !alive) return
+        for (const id of ids) backlog.set(id, [])
+        for (const e of log) {
+          const it = toItem(e.workerId, e, Date.parse(e.timestamp) || 0)
+          if (it) backlog.get(e.workerId)!.push(it)
+        }
+        backlogVer++
+        renderStream()
+      })
+  }
+
+  /** Read-only transcript of a stopped agent, from the event store. Esc, ✕ or a click outside closes it. */
+  /** Transcript of one agent in a dialog, scrolled to event `seq`; live unless the agent has stopped. */
+  const openHistory = (id: string, seq: number, stopped = true) => {
+    const back = el("div", "sfs-backdrop")
+    const box = el("div", "sfs-modal p2-history")
+    box.setAttribute("role", "dialog")
+    box.setAttribute("aria-label", `History of ${id}`)
+    const head = el("div", "sfs-head")
+    const close = el("button", "sfs-x", "✕")
+    close.setAttribute("aria-label", "Close")
+    head.append(el("b", "", stopped ? `${id} · stopped · saved history` : `${nodes.get(id)?.name ?? id} · live transcript`), close)
+    const scroll = el("div", "sfs-body p2-transcript")
+    box.append(head, scroll)
+    back.append(box)
+    const stop = mountTranscript(scroll, id, { stopped, focus: seq })
+    const done = () => (stop(), back.remove(), window.removeEventListener("keydown", onKey, true))
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (e.stopPropagation(), done())
+    close.onclick = done
+    back.onclick = (e) => {
+      if (e.target === back) done()
+    }
+    window.addEventListener("keydown", onKey, true)
+    document.body.append(back)
+    close.focus()
+  }
+
+  // ---- search ----
+  const HIT_KIND: Record<string, string> = { "user.message": "prompt", "assistant.message": "reply", "tool.execution_start": "tool call", "session.error": "error" }
+  let searchSeq = 0
+  /** Text with «…» match markers as nodes, so search text is never parsed as HTML. */
+  const marked = (snippet: string): ChildNode[] =>
+    snippet.split(/(«[^»]*»)/).map((part) => {
+      if (!part.startsWith("«")) return document.createTextNode(part)
+      const m = document.createElement("mark")
+      m.textContent = part.slice(1, -1)
+      return m
+    })
+  const runSearch = () => {
+    const q = searchInput.value.trim()
+    const mine = ++searchSeq
+    rail.classList.toggle("searching", q.length > 0)
+    if (!q) return void results.replaceChildren()
+    void runOr(json(`/api/search?${new URLSearchParams({ q, limit: "60" })}`, Schema.Array(SearchHit)), null)
+      .then((hits) => {
+        if (!hits || mine !== searchSeq || !alive) return
+        if (!hits.length) return void results.replaceChildren(el("div", "p2-empty", "No match in any agent."))
+        results.replaceChildren(
+          el("div", "p2-results-head", `${hits.length}${hits.length === 60 ? "+" : ""} matches, best first`),
+          ...hits.map((h) => {
+            const b = el("button", "p2-hit")
+            const at = Date.parse(h.timestamp) || Number(h.timestamp) || 0
+            const head = el("div", "p2-hit-head")
+            head.append(el("b", "", nodes.get(h.workerId)?.name ?? h.workerId), el("span", "", `${HIT_KIND[h.type] ?? h.type} · ${at ? new Date(at).toLocaleString() : ""}`))
+            const text = el("div", "p2-hit-text")
+            text.append(...marked(h.snippet))
+            b.append(head, text)
+            b.title = nodes.has(h.workerId) ? "Show this match in the agent's transcript" : "This agent has stopped: open its saved history"
+            b.onclick = () => {
+              const n = nodes.get(h.workerId)
+              if (!n) return openHistory(h.workerId, h.seq)
+              // A coordinator's panel is its chat, which cannot scroll to an event: show its transcript instead.
+              if (n.kind !== "worker") return openHistory(h.workerId, h.seq, false)
+              searchInput.value = ""
+              runSearch()
+              panelFocus = { id: h.workerId, seq: h.seq }
+              // Already open: remount so the transcript scrolls to the match.
+              if (sel === h.workerId) mounted?.stop(), (mounted = null)
+              select(h.workerId)
+            }
+            return b
+          }),
+        )
+      })
+      .catch(() => {})
+  }
+  let searchTimer: ReturnType<typeof setTimeout> | undefined
+  searchInput.oninput = () => (clearTimeout(searchTimer), (searchTimer = setTimeout(runSearch, 200)))
+  // Escape clears the box. A library listener on document (capture) stops Escape before it reaches the
+  // input, so this listens on window (capture), which runs first. Removed on unmount with onKey below.
+  const onSearchKey = (e: KeyboardEvent) => e.key === "Escape" && e.target === searchInput && searchInput.value && ((searchInput.value = ""), runSearch())
+  window.addEventListener("keydown", onSearchKey, true)
+  searchInput.addEventListener("search", runSearch)
+
+  const select = (id: string | null) => {
+    sel = id && nodes.has(id) ? id : null
+    sync(true)
+  }
+
+  const fit = () => {
+    const cw = Math.max(...[...nodes.values()].map((n) => n.x + W), W) + PAD * 2
+    const ch = Math.max(...[...nodes.values()].map((n) => n.y + H), H) + PAD * 2
+    const aw = canvas.clientWidth - (sel ? 0 : DOCK_W), ah = canvas.clientHeight - HEAD - (sel ? 50 : 40)
+    const k = Math.min(1, aw / cw, ah / ch)
+    world.style.width = `${cw}px`
+    world.style.height = `${ch}px`
+    svg.setAttribute("width", String(cw))
+    svg.setAttribute("height", String(ch))
+    world.style.transform = `translate(${Math.max(0, (aw - cw * k) / 2)}px, ${HEAD}px) scale(${k})`
+  }
+
+  const styleCard = (n: Node, card: HTMLElement) => {
+    const path = new Set<string>()
+    for (let p: string | null = sel; p; p = nodes.get(p)?.parent ?? null) path.add(p)
+    card.className = `p2-node k-${n.kind} s-${n.status}${sel === n.id ? " sel" : ""}${sel && !path.has(n.id) ? " dim" : ""}`
+    card.style.left = `${n.x + PAD}px`
+    card.style.top = `${n.y + PAD}px`
+    card.style.setProperty("--glow", n.kind === "ghost" ? "#525252" : statusColor(n.status))
+    card.style.setProperty("--c", colorOf(streamId(n)))
+  }
+
+  const cardHead = (n: Node) => {
+    const pend = pendingOf(s!, n), rev = reviewOf(s!, n)
+    const head = el("div", "p2-n-head")
+    head.append(el("i", "p2-dot"))
+    if (n.agent) head.append(harnessBadge(n.agent.harness))
+    head.append(el("span", "p2-tag", n.tag))
+    if (pend.length) {
+      const b = el("button", "p2-badge warn", `⚑ ${pend.length}`)
+      b.title = pend.map((d) => d.title).join("\n")
+      b.onclick = (e) => (e.stopPropagation(), openDecision(pend[0].id))
+      head.append(b)
+    }
+    if (rev) head.append(el("span", `p2-badge ${rev.findings.some((f) => f.verdict === "keep") ? "warn" : "ok"}`, rev.findings.length ? `🛡 ${rev.findings.length}` : "🛡 ✓"))
+    if (n.kind === "ghost") head.append(ghostAction(n.thread!, "archive"), ghostAction(n.thread!, "delete"))
+    return head
+  }
+
+  const renderCard = (n: Node, card: HTMLElement) => {
+    styleCard(n, card)
+    const ctx = n.agent?.contextTokens && n.agent.contextLimit ? n.agent.contextTokens / n.agent.contextLimit : 0
+    const bar = el("div", "p2-ctx")
+    bar.append(el("span"))
+    ;(bar.firstChild as HTMLElement).style.width = `${Math.round(ctx * 100)}%`
+    const foot = el("div", "p2-n-foot", n.agent ? `${n.status} · ${n.agent.harness ?? "copilot"} · ${n.agent.model.replace(/^claude-/, "")} · ${Math.round(ctx * 100)}% context` : "dormant · click to resume")
+    if (n.children.length) foot.append(el("span", "p2-kids", `${n.children.length} ▾`))
+    const t = n.kind === "global" ? undefined : worktreeOf(n)
+    const wt = el("div", "p2-n-wt", t?.worktree ? worktreeLine(t) : n.kind === "global" ? "sees every conversation" : n.id.startsWith("gen-") ? "own memory · no worktree" : "own workspace")
+    if (t?.worktree) wt.title = `Worktree ${t.worktree}\nBranch ${t.branch}${t.base ? `\nBased on ${t.base}` : ""}`
+    card.replaceChildren(cardHead(n), el("div", "p2-n-name", n.name), wt, el("div", "p2-n-act", activityText(s!, n)), bar, foot)
+  }
+
+  const createCard = (id: string) => {
+    const c = el("div")
+    c.setAttribute("role", "button")
+    c.tabIndex = 0
+    c.onclick = (e) => (e.stopPropagation(), select(sel === id ? null : id))
+    c.onkeydown = (e) => e.key === "Enter" && (e.preventDefault(), select(sel === id ? null : id))
+    cards.set(id, c)
+    world.append(c)
+    return c
+  }
+
+  const renderEdges = () => {
+    const seen = new Set<string>()
+    for (const n of nodes.values()) {
+      if (!n.parent) continue
+      const p = nodes.get(n.parent)!
+      seen.add(n.id)
+      let e = edges.get(n.id)
+      if (!e) {
+        e = document.createElementNS("http://www.w3.org/2000/svg", "path")
+        edges.set(n.id, e)
+        svg.append(e)
+      }
+      const x1 = p.x + PAD + W / 2, y1 = p.y + PAD + H, x2 = n.x + PAD + W / 2, y2 = n.y + PAD, my = (y1 + y2) / 2
+      e.setAttribute("d", `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`)
+      e.setAttribute("class", `${n.status === "running" ? "run" : ""} ${n.kind === "ghost" ? "ghost" : ""}`)
+    }
+    for (const [id, e] of edges) if (!seen.has(id)) {
+      e.remove()
+      edges.delete(id)
+    }
+  }
+
+  const renderGraph = () => {
+    for (const [id, c] of cards) if (!nodes.has(id)) {
+      c.remove()
+      cards.delete(id)
+    }
+    for (const n of nodes.values()) renderCard(n, cards.get(n.id) ?? createCard(n.id))
+    // Reading order (top row first, left to right) for keyboard and screen readers; reorder only when it changes.
+    const order = [...nodes.values()].sort((a, b) => a.y - b.y || a.x - b.x).map((n) => n.id)
+    if (order.join() !== orderKey) {
+      orderKey = order.join()
+      world.append(...order.map((id) => cards.get(id)!))
+    }
+    const depths = Math.min(TIERS.length, new Set([...nodes.values()].map((n) => n.y)).size)
+    tiers.replaceChildren(...TIERS.slice(0, depths).map((t, i) => {
+      const l = el("div", "p2-tier", t)
+      l.style.top = `${i * (H + GY) + PAD - 24}px`
+      return l
+    }))
+    renderEdges()
+  }
+
+  const renderStats = () => {
+    const st = s!
+    const running = st.agents.filter((a) => a.status === "running").length
+    const legend = el("span", "p2-legend")
+    for (const [c, t] of [["#22c55e", "idle"], ["#f59e0b", "running"], ["#ef4444", "error"], ["#525252", "dormant"]]) {
+      const d = el("i", "p2-dot")
+      d.style.setProperty("--glow", c)
+      legend.append(d, el("span", "", t))
+    }
+    stats.replaceChildren(legend, el("span", "", `${st.agents.length} agents`), el("span", running ? "on" : "", `${running} running`))
+    const n = sel ? nodes.get(sel) : undefined
+    where.textContent = n ? `Viewing ${n.kind === "global" ? "Factory" : n.name} · Esc goes back` : "Factory overview · click any card to open its chat"
+    // Decisions waiting for a human: each one is a button that opens its card.
+    const pend = st.decisions.filter((d) => d.status === "pending").sort((a, b) => a.createdAt - b.createdAt)
+    decisions.classList.toggle("warn", pend.length > 0)
+    decisions.replaceChildren(el("b", "", pend.length ? `⚑ ${pend.length} decision${pend.length > 1 ? "s" : ""} waiting` : "Decisions: none waiting"))
+    for (const d of pend.slice(0, 3)) {
+      const b = el("button", "", d.title)
+      b.onclick = () => openDecision(d.id)
+      decisions.append(b)
+    }
+    const last = pend.length ? undefined : [...st.decisions].sort((a, b) => b.createdAt - a.createdAt)[0]
+    if (last) {
+      const b = el("button", "p2-last", `Last answered: ${last.title}`)
+      b.onclick = () => openDecision(last.id)
+      decisions.append(b)
+    }
+  }
+
+  const crumbs = (n: Node) => {
+    const chain: Node[] = []
+    for (let p: Node | undefined = n; p; p = p.parent ? nodes.get(p.parent) : undefined) chain.unshift(p)
+    const c = el("div", "p2-crumbs")
+    chain.forEach((p, i) => {
+      if (i) c.append(el("span", "p2-sep", "›"))
+      const b = el("button", p.id === n.id ? "cur" : "", p.kind === "global" ? "Factory" : p.name)
+      b.onclick = () => select(p.id)
+      c.append(b)
+    })
+    return c
+  }
+
+  const renderPanelHead = (n: Node) => {
+    const st = s!
+    const close = el("button", "p2-close", "✕")
+    close.title = "Close (Esc)"
+    close.onclick = () => select(null)
+    const row1 = el("div", "p2-ph-row")
+    const gear = el("button", "p2-gear", "⚙")
+    gear.title = "Spec: skills, MCP servers, plugins, tools and worktree this agent runs with"
+    gear.setAttribute("aria-label", "Show spec")
+    gear.onclick = () => openSpec(streamId(n))
+    if (n.agent) row1.append(crumbs(n), gear, close)
+    else row1.append(crumbs(n), close)
+    const row2 = el("div", "p2-ph-row")
+    const dot = el("i", "p2-dot")
+    dot.style.setProperty("--glow", n.kind === "ghost" ? "#525252" : statusColor(n.status))
+    row2.append(dot, ...(n.agent ? [harnessBadge(n.agent.harness)] : []), el("span", "p2-ph-tag", n.tag), el("span", "p2-ph-act", activityText(st, n)))
+    for (const d of pendingOf(st, n)) {
+      const b = el("button", "p2-badge warn", `⚑ ${d.title}`)
+      b.onclick = () => openDecision(d.id)
+      row2.append(b)
+    }
+    const rev = reviewOf(st, n)
+    if (rev) row2.append(el("span", "p2-badge", `🛡 ${reviewText(rev)}`))
+    // Drill down without leaving the panel: one button per direct report.
+    const row3 = el("div", "p2-ph-row p2-kidrow")
+    if (n.children.length) {
+      row3.append(el("span", "p2-ph-tag", n.kind === "global" ? "Sub-coordinators" : "Workers"))
+      for (const c of n.children) {
+        const b = el("button", "p2-kid", c.name)
+        const d = el("i", "p2-dot")
+        d.style.setProperty("--glow", c.kind === "ghost" ? "#525252" : statusColor(c.status))
+        b.prepend(d)
+        b.onclick = () => select(c.id)
+        row3.append(b)
+      }
+    } else row3.append(el("span", "p2-ph-tag", n.kind === "worker" ? "No sub-agents" : "No workers yet"))
+    const t = n.kind === "global" ? undefined : worktreeOf(n)
+    const row4 = el("div", "p2-ph-row p2-wtrow")
+    if (t?.worktree) {
+      row4.append(el("span", "p2-wt-repo", t.folderId), el("span", "p2-wt-branch", `⎇ ${t.branch ?? "?"}`))
+      if (t.base) row4.append(el("span", "p2-wt-base", `from ${shortSha(t.base)}`))
+      const p = el("button", "p2-wt-path", t.worktree)
+      p.title = "Copy the worktree path"
+      p.onclick = () => void navigator.clipboard?.writeText(t.worktree!).then(() => ((p.textContent = "Copied ✓"), setTimeout(() => (p.textContent = t.worktree!), 1200)))
+      row4.append(p)
+    } else row4.append(el("span", "p2-ph-tag", n.kind === "global" ? "General · no worktree" : "Own workspace · no repo worktree"))
+    panelHead.replaceChildren(row1, row4, row2, row3)
+  }
+
+  /** A search hit to scroll to when this worker's panel transcript mounts. */
+  let panelFocus: { id: string; seq: number } | null = null
+  const workerBody = (id: string): (() => void) => {
+    const scroll = el("div", "p2-transcript")
+    const form = el("form", "p2-compose")
+    const ta = el("textarea")
+    ta.placeholder = "Message this worker directly… (Enter sends)"
+    ta.rows = 2
+    const send = el("button", "", "Send")
+    form.append(ta, send)
+    form.onsubmit = (e) => {
+      e.preventDefault()
+      const text = ta.value.trim()
+      if (!text) return
+      ta.value = ""
+      void messageAgent(id, text).then((error) => (ta.placeholder = error ? `Send failed: ${error}` : "Sent. Message again…"))
+    }
+    ta.onkeydown = (e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), form.requestSubmit())
+    panelBody.replaceChildren(scroll, form)
+    const focus = panelFocus?.id === id ? panelFocus.seq : undefined
+    panelFocus = null
+    return mountTranscript(scroll, id, focus === undefined ? undefined : { focus })
+  }
+
+  const dockChat = () => {
+    placeChat({ right: "21px", bottom: "57px", width: "518px", height: "calc(70% - 40px)" })
+    if (!new URL(window.location.href).searchParams.has("thread")) openAgentChat("general")
+    panelBody.replaceChildren()
+  }
+
+  const renderDockHead = () => {
+    // The docked chat is the open General chat; its own agent, else the desk.
+    const open = new URL(window.location.href).searchParams.get("thread")
+    const g = (open && nodes.get(`gen-${open.slice(0, 8)}`)) || nodes.get("coordinator")
+    const b = el("button", "p2-expand", "⤢ Expand")
+    b.title = "Open as panel"
+    b.onclick = () => select("coordinator")
+    const dot = el("i", "p2-dot")
+    dot.style.setProperty("--glow", statusColor(g?.status ?? "idle"))
+    dockHead.replaceChildren(dot, el("b", "", "General chat"), el("span", "p2-ph-act", g && s ? activityText(s, g) : ""), b)
+  }
+
+  const mountPanelBody = (n: Node | undefined): (() => void) => {
+    if (!n) {
+      dockChat()
+    } else if (n.kind === "worker") {
+      placeChat(null)
+      return workerBody(n.id)
+    } else {
+      placeChat({ right: "0", top: "112px", bottom: "48px", width: "min(42%, 680px)" })
+      if (n.kind === "ghost") openThread(n.thread!.id)
+      else openAgentChat(n.id)
+      panelBody.replaceChildren()
+    }
+    return () => {}
+  }
+
+  /** Place the native chat and the panel body for the current selection; mount only when the selection changes. */
+  const syncPanel = () => {
+    const n = sel ? nodes.get(sel) : undefined
+    root.classList.toggle("open", !!n)
+    const key = n ? n.id : "dock"
+    if (n) renderPanelHead(n)
+    else renderDockHead()
+    if (mounted?.key === key) return
+    if (key === "dock" && !s!.threads.length) return // wait for threads, or openAgentChat would start a new conversation
+    mounted?.stop()
+    mounted = { key, stop: mountPanelBody(n) }
+  }
+
+  // ---------- factory stream (left rail) ----------
+
+  const nodeOfAgent = (id: string) => nodes.get(id) ?? [...nodes.values()].find((n) => streamId(n) === id)
+  const selectAgent = (id: string) => {
+    const n = nodeOfAgent(id)
+    if (n) select(n.id)
+  }
+  const kindOf = (id: string) => nodeOfAgent(id)?.kind ?? (id.startsWith("sub-") ? "sub" : "worker")
+  const nameOf = (id: string) => {
+    const n = nodeOfAgent(id)
+    return !n ? id : n.kind === "global" ? "Factory desk" : n.name
+  }
+  /** Agent ids of the selected node and everything under it; null = whole factory. */
+  const scope = (): Set<string> | null => {
+    const n = sel ? nodes.get(sel) : undefined
+    if (!n) return null
+    const out = new Set<string>()
+    const walk = (x: Node) => (out.add(streamId(x)), x.children.forEach(walk))
+    walk(n)
+    return out
+  }
+
+  const who = (id: string) => {
+    const k = kindOf(id)
+    const b = el("button", "p2-who", nameOf(id))
+    b.title = "Show on the canvas and open"
+    b.onclick = () => selectAgent(id)
+    return [b, el("span", "p2-stag", k === "global" ? "desk" : id.startsWith("gen-") ? "chat" : k === "worker" ? "worker" : "sub-coordinator")]
+  }
+  const avatar = (id: string) => {
+    const k = kindOf(id)
+    const v = el("button", `p2-av ${k}`, k === "global" ? "◎" : k === "worker" ? nameOf(id).slice(0, 1).toUpperCase() : "⎇")
+    v.title = nameOf(id)
+    v.onclick = () => selectAgent(id)
+    const st = el("span", "p2-av-st")
+    st.style.background = statusColor(nodeOfAgent(id)?.status ?? "idle")
+    v.append(st)
+    return v
+  }
+
+  const decisionCard = (it: Item, c: HTMLElement, head: HTMLElement): boolean => {
+    const d = it.ref
+    const go = el("button", d.status === "pending" ? "p2-open" : "p2-more", d.status === "pending" ? "Answer →" : "Open")
+    go.onclick = () => openDecision(d.id)
+    if (d.status !== "pending") {
+      // Answered decisions shrink to one line; only waiting ones stay big.
+      c.classList.add("done")
+      head.append(el("span", "p2-cbadge", "Decided"), el("span", "p2-done-q", d.title), el("b", "p2-done-a", `→ ${d.answer ?? d.status}`), go)
+      return true
+    }
+    head.append(el("span", "p2-cbadge", d.kind === "question" ? "Question" : "Decision"), el("b", "", d.title), el("span", "p2-state pending", "waiting"))
+    const opts = el("div", "p2-opts")
+    for (const o of (d.options ?? []) as string[]) {
+      const x = el("span", `p2-opt${d.shadow?.pick === o ? " jev" : ""}`, o)
+      if (d.shadow?.pick === o) x.title = `Jev would pick this (${Math.round(d.shadow.confidence * 100)}% confident)`
+      opts.append(x)
+    }
+    opts.append(go)
+    c.append(opts)
+    return false
+  }
+
+  const reviewCard = (it: Item, c: HTMLElement, head: HTMLElement) => {
+    const r = it.ref as Review
+    const kept = r.findings.filter((f) => f.verdict === "keep").length
+    head.append(el("span", "p2-cbadge", "Security review"), el("b", "", r.status === "done" ? (r.findings.length ? `${r.findings.length} findings · ${kept} kept` : "no findings") : r.status), el("span", `p2-state ${r.status}`, r.status))
+    for (const f of r.findings.slice(0, 6)) {
+      const row = el("div", `p2-finding ${f.verdict ?? ""}`)
+      row.append(el("span", `p2-sev ${f.severity ?? ""}`, f.severity ?? "·"), el("span", "", f.title ?? f.id ?? "finding"), el("span", "p2-verdict", f.verdict ?? ""))
+      c.append(row)
+    }
+    if (r.error) c.append(el("div", "p2-err", r.error))
+  }
+
+  const reportCard = (it: Item, c: HTMLElement, head: HTMLElement) => {
+    head.append(el("span", "p2-cbadge", "Report"), ...who(it.agentId), el("time", "", hhmm(it.at)))
+    const body = el("div", `p2-report${expanded.has(it.key) ? " full" : ""}`)
+    const ui = isOpenUi(it.text) ? openUiBody(it.key, it.text, it.agentId, it.threadId) : null
+    if (ui) body.append(ui)
+    else body.innerHTML = markdown(it.text)
+    c.append(body)
+    if (it.text.length > 400 || it.text.split("\n").length > 6) {
+      const more = el("button", "p2-more", expanded.has(it.key) ? "Show less" : "Show all")
+      more.onclick = () => (expanded.has(it.key) ? expanded.delete(it.key) : expanded.add(it.key), renderStream(true))
+      c.append(more)
+    }
+  }
+
+  const streamCard = (it: Item): HTMLElement => {
+    const c = el("article", `p2-card ${it.kind}`)
+    c.style.setProperty("--c", colorOf(it.agentId))
+    c.dataset.agent = it.agentId
+    const head = el("div", "p2-card-head")
+    c.append(head)
+    if (it.kind === "decision") {
+      if (decisionCard(it, c, head)) return c
+    } else if (it.kind === "review") reviewCard(it, c, head)
+    else {
+      reportCard(it, c, head)
+      return c
+    }
+    head.append(...who(it.agentId), el("time", "", hhmm(it.at)))
+    return c
+  }
+
+  const runBlock = (run: Item[]): HTMLElement => {
+    const first = run[0]!
+    const b = el("div", "p2-blk")
+    b.style.setProperty("--c", colorOf(first.agentId))
+    const body = el("div", "p2-blk-body")
+    const head = el("div", "p2-blk-head")
+    head.append(...who(first.agentId), el("time", "", hhmm(first.at)))
+    body.append(head)
+    const open = expanded.has(first.key)
+    const shown = open ? run : run.slice(-3)
+    if (run.length > 3) {
+      const t = el("button", "p2-thread", open ? "▾ collapse" : `▸ ${run.length - shown.length} earlier`)
+      t.onclick = () => (open ? expanded.delete(first.key) : expanded.add(first.key), renderStream(true))
+      body.append(t)
+    }
+    for (const it of shown) body.append(el("div", `p2-line ${it.kind}${it.text.startsWith("⚙") ? " tool" : ""}`, it.kind === "user" ? `→ ${it.text.slice(0, 400)}` : it.text))
+    b.append(avatar(first.agentId), body)
+    return b
+  }
+
+  const appendPulses = (st: State, seen: Set<string>, out: Item[]) => {
+    for (const p of st.pulses) {
+      const key = `${p.agentId}:${p.seq}`
+      if (seen.has(key) || !backlog.has(p.agentId)) continue
+      // Pulse text is cut at 240 chars: reload the agent's log once to get the full report.
+      if (p.type === "assistant.message" && p.text.length >= 240 && !refetched.has(key)) {
+        refetched.add(key)
+        fetchBacklog(p.agentId)
+      }
+      const kind: Kind = p.type === "user.message" ? "user" : p.type === "assistant.message" && isReport(p.text) ? "report" : "line"
+      out.push({ key, at: p.at, agentId: p.agentId, kind, text: kind === "user" ? p.text.replace(/^→ /, "") : p.text, threadId: p.threadId })
+    }
+  }
+
+  const appendDecisionItems = (st: State, out: Item[]) => {
+    const ownerOf = (threadId: string | null) => {
+      const t = st.threads.find((t) => t.id === threadId)
+      return (t && agentOfThread(t)) || "coordinator"
+    }
+    for (const d of st.decisions) out.push({ key: `d:${d.id}`, at: d.createdAt, agentId: ownerOf(d.threadId), kind: "decision", text: d.title, ref: d })
+    for (const r of st.reviews) out.push({ key: `r:${r.id}`, at: r.at ?? 0, agentId: r.scopeId ?? (r.threadId ? ownerOf(r.threadId) : "coordinator"), kind: "review", text: "", ref: r })
+  }
+
+  const streamItems = (st: State): Item[] => {
+    fetchBacklog(...st.agents.map((a) => a.id).filter((id) => !fetched.has(id)))
+    const out = [...backlog.values()].flat()
+    const seen = new Set(out.map((it) => it.key))
+    appendPulses(st, seen, out)
+    appendDecisionItems(st, out)
+    const only = scope()
+    return out.filter((i) => !only || only.has(i.agentId)).sort((a, b) => a.at - b.at).slice(-300)
+  }
+
+  const streamTitle = (n: Node | undefined) => {
+    if (!n) return "Every agent, newest at the bottom"
+    return `${n.kind === "global" ? "Factory desk" : n.name}${n.children.length ? " and its agents" : ""}`
+  }
+
+  const renderStreamHead = (n: Node | undefined) => {
+    const toggle = el("button", "p2-rail-toggle", railOpen ? "⟨" : "⟩")
+    toggle.title = railOpen ? "Collapse the stream" : "Show the factory stream"
+    toggle.onclick = () => ((railOpen = !railOpen), renderStream(true), requestAnimationFrame(fit))
+    const title = el("div", "p2-rail-title")
+    title.append(el("b", "", "Factory stream"), el("span", "", streamTitle(n)))
+    railHead.replaceChildren(toggle, title)
+    if (n) {
+      const all = el("button", "p2-rail-all", "Show all")
+      all.onclick = () => select(null)
+      railHead.append(all)
+    }
+  }
+
+  const streamBlocks = (items: Item[]): HTMLElement[] => {
+    // Runs of consecutive lines by one agent (< 10 min apart); reports, decisions, reviews stand alone as cards.
+    const out: HTMLElement[] = []
+    let run: Item[] = []
+    let lastDay = ""
+    const flush = () => (run.length && out.push(runBlock(run)), (run = []))
+    for (const it of items) {
+      if (day(it.at) !== lastDay) {
+        flush()
+        lastDay = day(it.at)
+        out.push(el("div", "p2-day", lastDay === day(Date.now()) ? "Today" : lastDay))
+      }
+      if (standaloneItem(it)) {
+        flush()
+        out.push(streamCard(it))
+        continue
+      }
+      const prev = run.at(-1)
+      if (startsNewRun(prev, it)) flush()
+      run.push(it)
+    }
+    flush()
+    return out
+  }
+
+  const pruneGenui = () => {
+    for (const [k, g] of genui) if (!genuiUsed.has(k)) {
+      g.stop()
+      genui.delete(k)
+    }
+    genuiUsed.clear()
+  }
+
+  /** Rebuild the rail only when its inputs change (new events, decisions, reviews, scope, expansions). */
+  const renderStream = (force = false) => {
+    const st = s
+    if (!st) return
+    const sig = [backlogVer, st.pulses.at(-1)?.seq, sel, railOpen, st.decisions.map((d) => d.id + d.status).join(), st.reviews.map((r) => r.id + r.status + r.findings.length).join(), st.agents.map((a) => a.id + a.status).join()].join("|")
+    if (!force && sig === streamSig) return
+    streamSig = sig
+    rail.classList.toggle("shut", !railOpen)
+    const n = sel ? nodes.get(sel) : undefined
+    renderStreamHead(n)
+    if (!railOpen) return void list.replaceChildren()
+    const atEnd = railScroll.scrollHeight - railScroll.scrollTop - railScroll.clientHeight < 80
+    const out = streamBlocks(streamItems(st))
+    if (!out.length) out.push(el("div", "p2-empty", n ? "Nothing from this agent yet." : "Nothing yet. Events from every agent appear here as they happen."))
+    list.replaceChildren(...out)
+    pruneGenui()
+    const jump = streamSel !== sel
+    streamSel = sel
+    if (atEnd || jump) railScroll.scrollTop = railScroll.scrollHeight
+  }
+
+  const sync = (refit = false) => {
+    if (!s) return
+    if (sel && !nodes.has(sel)) sel = null
+    renderGraph()
+    renderStats()
+    syncPanel()
+    renderStream()
+    if (refit) requestAnimationFrame(fit)
+    else fit()
+  }
+
+  const unsub = subscribe((st) => {
+    s = st
+    nodes = buildTree(st)
+    if (!mounted) {
+      const threadId = new URL(window.location.href).searchParams.get("thread")
+      const linked = [...nodes.values()].find((n) => n.thread?.id === threadId)
+      if (linked) sel = linked.id
+    }
+    sync()
+  })
+  const ro = new ResizeObserver(() => fit())
+  ro.observe(canvas)
+  canvas.addEventListener("click", () => sel && select(null))
+  canvas.addEventListener("transitionend", () => fit())
+  const onKey = (e: KeyboardEvent) => e.key === "Escape" && sel && !(e.target as HTMLElement)?.closest?.(".p2-compose") && select(null)
+  window.addEventListener("keydown", onKey, true)
+
+  return () => {
+    alive = false
+    unsub()
+    ro.disconnect()
+    window.removeEventListener("keydown", onKey, true)
+    window.removeEventListener("keydown", onSearchKey, true)
+    clearTimeout(searchTimer)
+    mounted?.stop()
+    for (const g of genui.values()) g.stop()
+    root.classList.remove("sfp-p2", "open")
+    root.replaceChildren()
+  }
+}
+
+register({ id: 2, name: "Org Canvas", blurb: "Live org chart of every agent; click a node to open its chat in a slide-over", mount })

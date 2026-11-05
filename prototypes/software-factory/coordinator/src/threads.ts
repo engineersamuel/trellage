@@ -1,0 +1,160 @@
+// Saved chat threads, so a conversation started in one place (a browser, the sf CLI)
+// shows its messages everywhere. Messages use agent-interface's ChatMessage shape.
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import path from "node:path"
+import { addFolder, GENERAL, type Folder, type Worktree } from "./folders.ts"
+
+/** folderId is "general" or a repo folder id; repo conversations also have their own worktree. */
+export type Thread = { id: string; title: string; createdAt: number; folderId: string; /** Set when the merged worktree was removed. */ cleanedAt?: number; /** Set when hidden from the org canvas. */ archivedAt?: number; /** General chat that started this repo conversation; its report goes back there. */ parentThreadId?: string; /** The Factory desk thread. */ desk?: boolean } & Partial<Worktree>
+export type ChatMessage =
+  | { id: string; role: "user"; content: string }
+  | { id: string; role: "assistant"; content: string | null; toolCalls?: { id: string; type: "function"; function: { name: string; arguments: string } }[] }
+  | { id: string; role: "tool"; content: string; toolCallId: string }
+
+type Doc = { threads: Thread[]; messages: Record<string, ChatMessage[]>; folders: Folder[] }
+
+export class Threads {
+  private doc: Doc = { threads: [], messages: {}, folders: [] }
+  private readonly file: string
+
+  constructor(root: string) {
+    this.file = path.join(root, "threads.json")
+    try {
+      if (existsSync(this.file)) this.doc = { ...this.doc, ...JSON.parse(readFileSync(this.file, "utf8")) }
+    } catch {}
+    for (const t of this.doc.threads) t.folderId ??= GENERAL.id
+  }
+
+  private save() {
+    writeFileSync(this.file, JSON.stringify(this.doc))
+  }
+
+  list(): Thread[] {
+    return this.doc.threads
+  }
+
+  get(id: string): Thread | undefined {
+    return this.doc.threads.find((t) => t.id === id)
+  }
+
+  folders(): Folder[] {
+    return [GENERAL, ...this.doc.folders]
+  }
+
+  folder(id: string): Folder | undefined {
+    return this.folders().find((f) => f.id === id)
+  }
+
+  /** Add the repo that contains `p` as a folder; the same repo always maps to the same folder. */
+  addFolder(p: string): Folder {
+    const f = addFolder(this.doc.folders, p)
+    if (!this.doc.folders.includes(f)) this.doc.folders.push(f), this.save()
+    return f
+  }
+
+  messages(id: string): ChatMessage[] {
+    return this.doc.messages[id] ?? []
+  }
+
+  /** `worktree` makes the folder's worktree for the new thread id (repo folders only). */
+  create(firstText: string | null, folderId = GENERAL.id, worktree?: (id: string) => Worktree): Thread {
+    if (!this.folder(folderId)) throw new Error(`unknown folder ${folderId}`)
+    const title = firstText ? [...firstText].slice(0, 48).join("") : "New chat"
+    const id = crypto.randomUUID()
+    const t: Thread = { id, title, createdAt: Date.now(), folderId, ...worktree?.(id) }
+    this.doc.threads.unshift(t)
+    this.save()
+    return t
+  }
+
+  /** Make sure a thread exists for a run, e.g. a browser that did not call create. */
+  ensure(id: string, firstText: string, folderId = GENERAL.id, worktree?: (id: string) => Worktree): void {
+    if (this.doc.threads.some((t) => t.id === id)) return
+    this.doc.threads.unshift({ id, title: [...firstText].slice(0, 48).join(""), createdAt: Date.now(), folderId, ...worktree?.(id) })
+    this.save()
+  }
+
+  update(id: string, patch: Partial<Thread>): Thread | undefined {
+    const t = this.doc.threads.find((x) => x.id === id)
+    if (t) Object.assign(t, { title: patch.title ?? t.title }, patch.cleanedAt ? { cleanedAt: patch.cleanedAt } : {})
+    if (t && "archivedAt" in patch) patch.archivedAt ? (t.archivedAt = patch.archivedAt) : delete t.archivedAt
+    this.save()
+    return t
+  }
+
+  /** Set routing metadata that the UI never edits. */
+  setMeta(id: string, meta: Pick<Thread, "parentThreadId" | "desk">): void {
+    const t = this.doc.threads.find((x) => x.id === id)
+    if (t) Object.assign(t, meta), this.save()
+  }
+
+  delete(id: string): void {
+    this.doc.threads = this.doc.threads.filter((t) => t.id !== id)
+    delete this.doc.messages[id]
+    this.save()
+  }
+
+  append(id: string, ...msgs: ChatMessage[]): void {
+    ;(this.doc.messages[id] ??= []).push(...msgs)
+    this.save()
+  }
+}
+
+/** Collect one run's AG-UI events into the assistant and tool messages to save. */
+export class RunRecorder {
+  private readonly out: ChatMessage[] = []
+  private current: Extract<ChatMessage, { role: "assistant" }> | null = null
+
+  private assistant() {
+    if (!this.current) {
+      this.current = { id: crypto.randomUUID(), role: "assistant", content: "" }
+      this.out.push(this.current)
+    }
+    return this.current
+  }
+
+  add(e: any): void {
+    switch (e.type) {
+      case "TEXT_MESSAGE_CONTENT":
+        this.assistant().content += e.delta
+        break
+      case "TOOL_CALL_START":
+        ;(this.assistant().toolCalls ??= []).push({ id: e.toolCallId, type: "function", function: { name: e.toolCallName, arguments: "" } })
+        break
+      case "TOOL_CALL_ARGS": {
+        const call = this.current?.toolCalls?.find((c) => c.id === e.toolCallId)
+        if (call) call.function.arguments += e.delta
+        break
+      }
+      case "TOOL_CALL_RESULT":
+        this.out.push({ id: e.messageId, role: "tool", content: e.content, toolCallId: e.toolCallId })
+        this.current = null
+        break
+    }
+  }
+
+  messages(): ChatMessage[] {
+    return this.out.filter((m) => m.role !== "assistant" || m.content || m.toolCalls?.length)
+  }
+}
+
+/** Agent id of a repo conversation's sub-coordinator. */
+export const subId = (threadId: string) => `sub-${threadId.slice(0, 8)}`
+
+/**
+ * The conversation a prompt to agent `agentId` is saved in. `named` (the conversation of the card the
+ * prompt answers) wins only when it belongs to that agent; else the global coordinator's last-used
+ * conversation, then the newest General one; a sub-coordinator's own conversation. undefined: a worker.
+ */
+export const messageThread = (
+  list: readonly Thread[],
+  agentId: string,
+  named: string | undefined,
+  current: string | null,
+): string | undefined => {
+  const n = named ? list.find((t) => t.id === named) : undefined
+  if (n && (n.worktree ? subId(n.id) : "coordinator") === agentId) return n.id
+  if (agentId === "coordinator") return list.find((t) => t.desk)?.id ?? current ?? list.find((t) => t.folderId === GENERAL.id && !t.cleanedAt)?.id
+  if (agentId.startsWith("gen-")) return list.find((t) => !t.worktree && `gen-${t.id.slice(0, 8)}` === agentId)?.id
+  return list.find((t) => subId(t.id) === agentId)?.id
+}

@@ -40,20 +40,20 @@
     "format:check": "oxfmt --check --config .prettierrc.json package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json .github/mcp.json skills-lock.json traits.ts"
   },
   "dependencies": {
-    "@effect/ai-openrouter": "4.0.6",
-    "@effect/platform-node": "4.0.6",
+    "@effect/ai-openrouter": "4.1.2",
+    "@effect/platform-node": "4.1.2",
     "@trellage/guide-core": "workspace:*",
     "@trellage/launcher": "workspace:*",
     "@trellage/runtime": "workspace:*",
-    "effect": "4.0.6",
+    "effect": "4.1.2",
     "skills": "1.5.26",
     "smol-toml": "1.8.0",
     "traits": "0.5.14",
     "varlock": "1.19.0"
   },
   "overrides": {
-    "@effect/platform-node-shared": "4.0.6",
-    "@effect/sql-libsql": "4.0.6"
+    "@effect/platform-node-shared": "4.1.2",
+    "@effect/sql-libsql": "4.1.2"
   },
   "engines": {
     "bun": "1.4.2",

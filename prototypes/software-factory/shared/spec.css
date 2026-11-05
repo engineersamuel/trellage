@@ -1,0 +1,19 @@
+.sfs-backdrop { position: fixed; inset: 0; z-index: 1000; background: #000a; display: grid; place-items: center; padding: 16px; }
+.sfs-modal { width: min(640px, 100%); max-height: 86vh; display: flex; flex-direction: column; background: var(--sf-surface, #121217); color: var(--sf-text, #e5e5e5); border: 1px solid var(--sf-border, #2a2a33); border-radius: 12px; overflow: hidden; }
+.sfs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--sf-border, #2a2a33); }
+.sfs-x, .sfs-copy { background: transparent; color: inherit; border: 1px solid var(--sf-border, #2a2a33); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
+.sfs-x { border: 0; font-size: 15px; }
+.sfs-body { overflow: auto; padding: 4px 16px 16px; font-size: 13px; }
+.sfs-sec h3 { margin: 14px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--sf-muted, #a3a3a3); }
+.sfs-row { display: flex; gap: 10px; align-items: baseline; padding: 2px 0; min-width: 0; }
+.sfs-key { flex: none; width: 110px; color: var(--sf-muted, #a3a3a3); }
+.sfs-val { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12.5px; }
+.sfs-skill { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+.sfs-skill.bad { color: #fca5a5; }
+.sfs-skill.ok .sfs-mark { color: #22c55e; }
+.sfs-mark { flex: none; width: 14px; text-align: center; }
+.sfs-muted { color: var(--sf-muted, #a3a3a3); font-size: 12px; }
+.sfs-mono { font-family: ui-monospace, monospace; font-size: 12.5px; overflow-wrap: anywhere; }
+.sfs-error { color: #ef4444; }
+.sfs-more summary { cursor: pointer; color: var(--sf-muted, #a3a3a3); padding: 2px 0; }
+.sfs-x:focus-visible, .sfs-copy:focus-visible { outline: 2px solid var(--sf-accent, #6366f1); outline-offset: 2px; }
