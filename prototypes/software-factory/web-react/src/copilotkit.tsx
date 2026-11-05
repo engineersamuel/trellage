@@ -66,7 +66,8 @@ function CoordinatorChat() {
 
 /** Saved threads (shared with Foldkit and the sf CLI). The store holds the list and the open id. */
 function ThreadPicker() {
-  const threads = useApp((s) => s.threads);
+  // An unstarted draft is not a conversation yet: it is run from its node on the Org Canvas.
+  const threads = useApp((s) => s.threads).filter((t) => !(t.draft && !t.draft.startedAt));
   const current = useApp((s) => s.threadId);
   return (
     <div className="ck-threads">

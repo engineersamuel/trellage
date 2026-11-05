@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 import "../bun-runtime.setup.ts"
 
-// Org canvas (Foldkit, ?proto=2): the draft node's radial menu and slide-over. Every /api/** call is stubbed.
+// Org canvas (?proto=2, shared by Foldkit at / and CopilotKit at /copilotkit.html): the draft node's radial menu and slide-over. Every /api/** call is stubbed.
 test.use({ channel: "chrome" })
 
 /** Page under test: FACTORY_PAGE, else the path of PLAYWRIGHT_BASE_URL, else "/". */
@@ -23,6 +23,9 @@ const worker = (id: string, status: string) => ({
   id, name: "council", role: "worker", status, model: "m", auth: "a", pid: null, rssKb: null, task: null, lastMessage: null,
   owner: "draft-d1a2b3c4", contextTokens: null, contextLimit: null,
 })
+
+/** A minimal settings document (GET /api/settings), as the coordinator sends it. */
+const SETTINGS = {"settings":{"theme":"default","themes":{"default":{"bg":"#0a0a0a","surface":"#171717","border":"#262626","text":"#e5e5e5","muted":"#a3a3a3","accent":"#6366f1"}},"layout":{"panel":"right","panelWidth":35},"navbar":["status","workers","model","context"],"animations":true,"hotkeys":{",":"toggleSettings","p":"togglePanel","t":"cycleTheme",".":"focusCoordinator"},"focus":"coordinator","banner":null,"agent":{"model":"m","reasoningEffort":"default","disabledTools":[],"instructions":""},"crons":{},"extensions":{},"repo":"","supervisor":{"enabled":true,"everySeconds":60,"stallSeconds":300,"offTrackCheck":true}},"css":"","run":null,"options":{"navbarItems":["status","workers","model","context","auth","crons","repo"],"panelPositions":["right","left","hidden"],"hotkeyActions":["toggleSettings","togglePanel","cycleTheme","focusCoordinator","abortCoordinator"],"efforts":["default","low","medium","high","xhigh"],"toolKinds":["shell","write","read","url","mcp"],"slots":["chat-background","page-background","navbar","banner","panel-top","overlay"],"models":[]}}
 
 type Stub = {
   thread: object | null
@@ -48,6 +51,8 @@ const stub = async (page: Page, s: Stub) => {
     if (path === "/api/workers") return route.fulfill({ json: s.workers })
     if (path === "/api/approvals") return route.fulfill({ json: [] })
     if (path === "/api/steps") return route.fulfill({ json: { securityReviews: [] } })
+    // The CopilotKit (React) shell renders the canvas only after settings load.
+    if (path === "/api/settings") return route.fulfill({ json: SETTINGS })
     if (path.startsWith("/api/drafts") && req.method() === "POST") {
       const body = req.postData() ? JSON.parse(req.postData()!) : undefined
       s.posts.push({ path, body })
@@ -242,5 +247,16 @@ test("draft: ✕ deletes the draft after confirm, shows a failure, and does not 
   await expect(node(page)).toHaveCount(0)
   expect(deletes).toEqual([`/api/drafts/${ID}`, `/api/drafts/${ID}`])
   expect(s.posts).toEqual([])
+  expect(agui).toEqual([])
+})
+
+test("draft: CopilotKit thread picker hides an unstarted draft", async ({ page }) => {
+  test.skip(!PAGE.includes("copilotkit"), "React-only thread picker")
+  const s: Stub = { thread: draftThread({ versions: [v1], current: "v1", reports: [] }), workers: [], posts: [], post: () => ({ status: 500, json: { error: "unexpected" } }) }
+  const agui = await stub(page, s)
+  await page.goto(`${PAGE}?proto=0`)
+  const picker = page.locator(".ck-threads select")
+  await expect(picker.locator("option", { hasText: "General" })).toHaveCount(1)
+  await expect(picker.locator("option", { hasText: "Add retries" })).toHaveCount(0)
   expect(agui).toEqual([])
 })
