@@ -1,12 +1,9 @@
 // Must be the first import: ES modules run imports before this file, and the store calls randomUUID on load.
 import "./secure-context";
 // Option 1: React + CopilotKit + Effect + one zustand store. See AGENTS.md for the rules.
-import { CopilotChat, CopilotKitProvider, useRenderTool } from "@copilotkit/react-core";
-import { Renderer } from "@openuidev/react-lang";
-import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
-import "@openuidev/react-ui/components.css";
-import { ThemeProvider } from "@openuidev/react-ui";
-import { useEffect } from "react";
+import { CopilotChat, CopilotKitProvider, useCopilotKit, useRenderTool } from "@copilotkit/react-core";
+import { OpenUiCard, renderOpenUiInto } from "./genui/OpenUi";
+import { useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
 import { startDecisionCenter } from "../../shared/decisions";
@@ -18,25 +15,25 @@ import { factoryMarkdownRenderer } from "./shared/CodeBlock";
 import { REPORT_REF, ReportViewer } from "./shared/ReportViewer";
 import { DecisionCard } from "./chat/DecisionCard";
 import { ToolCard, ToolGroup } from "./chat/ToolCards";
-import { coordinator, freshThread, openThread } from "./state/chat";
+import { coordinator, freshThread, openThread, openUiChatAction } from "./state/chat";
 import { startHostEvents } from "./state/host-events";
 import { Action } from "./state/model";
 import { dispatch, startStore, useApp } from "./state/store";
 
 function ToolRenderers() {
-  // Generative UI pushed by the backend: the coordinator's render_ui tool carries OpenUI Lang.
+  // Agent-designed UI: render_ui carries an OpenUI Lang program (rule 10). Buttons continue the chat.
+  const { copilotkit } = useCopilotKit();
+  const onAction = useMemo(() => openUiChatAction(copilotkit), [copilotkit]);
   useRenderTool({
     name: "render_ui",
     parameters: z.object({ title: z.string().optional(), program: z.string() }),
     render: ({ parameters, status }) =>
       parameters?.program ? (
-        <div style={{ margin: "8px 0" }}>
-          <ThemeProvider mode="dark">
-            <Renderer response={parameters.program} library={openuiChatLibrary} isStreaming={status !== "complete"} />
-          </ThemeProvider>
+        <div className="sf-openui">
+          <OpenUiCard program={parameters.program} streaming={status !== "complete"} onAction={onAction} />
         </div>
       ) : null,
-  });
+  }, [onAction]);
   // Decisions render as an answerable card in the chat (own row, not grouped).
   const decision = z.object({ title: z.string(), summary: z.string().optional(), options: z.array(z.string()).optional() });
   useRenderTool({ name: "request_approval", parameters: decision, render: (p) => <DecisionCard name={p.name} toolCallId={p.toolCallId} args={p.parameters} result={p.result} /> });
@@ -134,7 +131,9 @@ function App() {
       />
       <style>{`.ck-threads{padding:6px 12px;border-bottom:1px solid var(--sf-border)}
         .ck-threads select{max-width:100%;background:var(--sf-surface);color:var(--sf-text);border:1px solid var(--sf-border);border-radius:6px;padding:3px 6px}
-        .sf-chat .ui-tcc, .sf-chat .ui-tcc-group{margin:6px 0}`}</style>
+        .sf-chat .ui-tcc, .sf-chat .ui-tcc-group, .sf-openui{margin:6px 0}
+        /* affectUI card stays verbatim; its variables follow the factory palette from outside (rule 12). */
+        :root .sf-chat .ui-tcc, :root .sf-chat .ui-tcc-group{--ui-tcc-card:var(--sf-surface);--ui-tcc-code:var(--sf-bg);--ui-tcc-accent:var(--sf-accent);--ui-tcc-strong:var(--sf-text);--ui-tcc-ink:var(--sf-text);--ui-tcc-text:var(--sf-muted);--ui-tcc-focus:var(--sf-accent)}`}</style>
     </CopilotKitProvider>
   );
 }
@@ -145,14 +144,6 @@ createRoot(document.getElementById("root")!).render(<App />);
 startDecisionCenter();
 startFolderSidebar();
 startTranscripts();
-// The factory stream renders coordinator answers written in OpenUI Lang (for the Foldkit chat) as cards.
-setOpenUiRenderer((el, program, onAction) => {
-  const root = createRoot(el);
-  root.render(
-    <ThemeProvider mode="dark">
-      <Renderer response={program} library={openuiChatLibrary} isStreaming={false} onAction={onAction} />
-    </ThemeProvider>,
-  );
-  return () => root.unmount();
-});
+// The factory stream and canvas render coordinator answers written in OpenUI Lang with the same themed card.
+setOpenUiRenderer(renderOpenUiInto);
 startPrototypes();

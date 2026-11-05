@@ -112,7 +112,7 @@ export const StoredEvent = Schema.Struct({
 export const SearchHit = Schema.Struct({ seq: Schema.Number, workerId: Schema.String, type: Schema.String, timestamp: Schema.String, snippet: Schema.String })
 
 // Factory settings: the same document the coordinator agent edits with update_settings.
-const Palette = Schema.Struct({
+export const Palette = Schema.Struct({
   bg: Schema.String,
   surface: Schema.String,
   border: Schema.String,

@@ -36,4 +36,34 @@ If you change `../shared`, also run the Foldkit checks (`../web-foldkit/AGENTS.m
 9. **Pin CopilotKit and AG-UI together.** `@ag-ui/client` must match the version `@copilotkit/react-core` depends on,
    so there is one agent class. The root `zustand` stays 4.x for OpenUI's peer dependency; the store imports
    `zustand5` (an npm alias). **Pin CopilotKit.** `@copilotkit/react-core` is a release candidate; keep the exact version and keep
-   CopilotKit calls in `copilotkit.tsx`, `src/chat/` and `src/state/chat.ts`.
+   CopilotKit calls in `copilotkit.tsx`, `src/chat/`, `src/genui/` and `src/state/chat.ts`.
+
+## CopilotKit and OpenUI: which one draws what
+
+CopilotKit owns the chat and every UI whose layout we know in advance. OpenUI draws only UI the agent designs.
+
+| UI | Use | Where |
+|---|---|---|
+| Chat shell: messages, input, threads, reasoning, tool-call grouping | CopilotKit `CopilotChat` and its slots | `copilotkit.tsx` |
+| A tool call | `useRenderTool("*")` + affectUI card | `src/chat/ToolCards.tsx` |
+| A known card (approval, question, status, report) | `useRenderTool` with a zod `parameters` schema + our React component | `src/chat/` |
+| A layout the agent decides (dashboard, plan, comparison, chart) | the `render_ui` tool with an OpenUI Lang program | `src/genui/OpenUi.tsx` |
+
+10. **Known layout → CopilotKit; agent layout → OpenUI.** Before adding a card, ask: do we know its layout? If yes,
+    add a backend tool with typed arguments and a `useRenderTool` renderer. Only `render_ui` carries OpenUI Lang.
+    Do not teach the agent a second UI language (CopilotKit `standardUI`, A2UI, Open Generative UI) while OpenUI is in use.
+11. **OpenUI goes through one module.** Only `src/genui/OpenUi.tsx` imports `@openuidev/*`. The chat (`OpenUiCard`) and the
+    shared stream and canvas (`renderOpenUiInto`, via `setOpenUiRenderer`) use it, so every agent card looks the same.
+    OpenUI buttons are actions: `continue_conversation` sends the text as the next user message of the open thread
+    (`openUiChatAction`), `open_url` opens a tab. A card with buttons that do nothing is a bug.
+12. **One theme.** Every surface follows the factory palette (`--sf-*`, from settings): OpenUI through `openUiTheme`,
+    the affectUI card by overriding its `--ui-tcc-*` variables from our CSS, our own cards with `var(--sf-*)`.
+    No hard-coded surface, text or accent colours in our components (status colours such as red for errors are fine).
+13. **Reuse, don't wrap twice.** A known card may use OpenUI's React components directly (for example a chart inside a
+    typed card) through `src/genui/`; it still renders through `useRenderTool`, not `render_ui`.
+14. **A gap is a typed tool, not a new library.** When neither catalog has a component (map, video, HTML), add a tool
+    with typed arguments and a renderer. Add a component library only verbatim under `src/components/ui/` (rule 8).
+15. **Generative UI is data, not state.** A renderer reads its tool arguments and the store; it never writes app state
+    except through actions (`dispatch`) or Effect APIs (`../shared/approvals.ts`). Card-local state (open, input) stays local.
+16. **OpenUI stays while Foldkit stays.** OpenUI is the one agent UI format both UIs draw. Revisit when Foldkit is retired
+    and CopilotKit `standardUI` is no longer Experimental; then gaps (Steps, metrics, radar charts) become custom components.
