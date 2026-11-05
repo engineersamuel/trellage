@@ -10,17 +10,26 @@
 //   sf settings ['{"theme":"nord"}']   read, or apply a JSON merge patch
 //   sf approvals                        pending approvals
 //   sf approve ID "Option" [note]       answer one (the coordinator continues in its thread)
+//   sf draft FOLDER "prompt"            new draft (nothing starts until run); prints its id
+//   sf draft ID                         show the draft: versions, pending rewrites, reports
+//   sf draft ID enhance|council|debate|research|hyperresearch|dismiss|run
+//   sf draft ID pick N | use VERSION_ID | edit "prompt" | rm
 import { Console, Effect, Stream } from "effect"
 
 const base = process.env.SF_URL ?? "http://127.0.0.1:7700"
 
+/** Keep the real error (e.g. the server's `400 {"error":…}`), not Effect's generic wrapper. */
+const keep = (e: unknown) => (e instanceof Error ? e : new Error(String(e)))
 const request = (path: string, init?: RequestInit) =>
-  Effect.tryPromise(async () => {
-    const r = await fetch(`${base}${path}`, { ...init, headers: { "content-type": "application/json" } })
-    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
-    return r
+  Effect.tryPromise({
+    try: async () => {
+      const r = await fetch(`${base}${path}`, { ...init, headers: { "content-type": "application/json" } })
+      if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+      return r
+    },
+    catch: keep,
   })
-const json = (path: string, init?: RequestInit) => request(path, init).pipe(Effect.flatMap((r) => Effect.tryPromise(() => r.json())))
+const json = (path: string, init?: RequestInit) => request(path, init).pipe(Effect.flatMap((r) => Effect.tryPromise({ try: () => r.json(), catch: keep })))
 const print = (v: unknown) => Console.log(JSON.stringify(v, null, 2))
 
 /** Server-sent events from a response body, one parsed JSON value per `data:` line. */
@@ -53,13 +62,54 @@ const ask = (prompt: string, thread?: string, folderId = "general", base?: strin
     )
   })
 
+/** A draft in short form: versions (current marked), waiting rewrites, reports. */
+const showDraft = (id: string, d: any) => {
+  const n = (vid: string) => d.versions.findIndex((v: any) => v.id === vid) + 1
+  const lines = [`draft ${id}${d.startedAt ? "  (started)" : ""}`]
+  d.versions.forEach((v: any, i: number) => lines.push(`${v.id === d.current ? "*" : " "} v${i + 1} ${v.source}${v.title ? ` · ${v.title}` : ""}  ${v.id}\n    ${v.prompt.split("\n")[0].slice(0, 120)}`))
+  d.pending?.candidates.forEach((c: any, i: number) => lines.push(`  rewrite ${i}: ${c.title}\n    ${c.notes}`))
+  for (const r of d.reports) lines.push(`  report ${r.action} (v${n(r.versionId)}): ${r.path}  worker ${r.workerId}`)
+  return Console.log(lines.join("\n"))
+}
+
+const draft = (args: string[]) => {
+  const [a, b, ...more] = args
+  const id = a ?? ""
+  const post = (path: string, body?: unknown) =>
+    json(`/api/drafts/${encodeURIComponent(id)}/${path}`, { method: "POST", ...(body === undefined ? {} : { body: JSON.stringify(body) }) }).pipe(Effect.flatMap((d) => showDraft(id, d)))
+  switch (b) {
+    case undefined:
+      return json("/api/threads/get").pipe(
+        Effect.flatMap((v: any) => {
+          const t = v.threads.find((t: any) => t.id === id || t.id.startsWith(id))
+          return t?.draft ? showDraft(t.id, t.draft) : Effect.fail(new Error(`no draft ${id}`))
+        }),
+      )
+    case "pick":
+      return post("pick", { index: Number(more[0]) })
+    case "use":
+      return post("current", { versionId: more[0] })
+    case "edit":
+      return post("versions", { prompt: more.join(" ") })
+    case "rm":
+      return request(`/api/drafts/${encodeURIComponent(id)}`, { method: "DELETE" }).pipe(Effect.flatMap(() => Console.log(`deleted ${id}`)))
+    default:
+      // A folder id and a prompt create a draft; anything else is an action on a draft id.
+      return ["enhance", "council", "debate", "research", "hyperresearch", "dismiss", "run"].includes(b)
+        ? post(b)
+        : json("/api/drafts", { method: "POST", body: JSON.stringify({ folderId: a, prompt: [b, ...more].join(" ") }) }).pipe(
+            Effect.flatMap((t: any) => Effect.andThen(Console.log(t.id), showDraft(t.id, t.draft))),
+          )
+  }
+}
+
 const [cmd, ...rest] = process.argv.slice(2)
 const program = (() => {
   switch (cmd) {
     case undefined:
     case "-h":
     case "--help":
-      return Console.log('usage: sf "prompt" | sf -t THREAD "prompt" | sf -f FOLDER [-b BASE] "prompt" | sf folders [PATH] | sf status | sf workers | sf threads | sf settings [PATCH_JSON] | sf approvals | sf approve ID "Option" [note]')
+      return Console.log('usage: sf "prompt" | sf -t THREAD "prompt" | sf -f FOLDER [-b BASE] "prompt" | sf folders [PATH] | sf status | sf workers | sf threads | sf settings [PATCH_JSON] | sf approvals | sf approve ID "Option" [note] | sf draft FOLDER "prompt" | sf draft ID [enhance|council|debate|research|hyperresearch|dismiss|run|pick N|use VERSION|edit "prompt"|rm]')
     case "status":
       return json("/api/steps").pipe(Effect.flatMap(print))
     case "workers":
@@ -90,6 +140,8 @@ const program = (() => {
       return ask(rest.slice(1).join(" "), rest[0])
     case "-f":
       return rest[1] === "-b" ? ask(rest.slice(3).join(" "), undefined, rest[0], rest[2]) : ask(rest.slice(1).join(" "), undefined, rest[0])
+    case "draft":
+      return draft(rest)
     case "folders":
       return (rest[0] ? json("/api/folders", { method: "POST", body: JSON.stringify({ path: rest[0] }) }) : json("/api/folders")).pipe(Effect.flatMap(print))
     default:
