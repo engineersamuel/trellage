@@ -21,7 +21,11 @@ while IFS= read -r -d '' file; do
 
   shebang=''
   IFS= read -r shebang <"$file" || :
-  read -r -a shebang_parts <<<"$shebang"
+  # Only a shebang line is split; read can fail on the first line of a binary file.
+  shebang_parts=()
+  if [[ "$shebang" == '#!'* ]]; then
+    read -r -a shebang_parts <<<"$shebang"
+  fi
   shell=''
   case "${shebang_parts[0]:-}" in
     '#!/usr/bin/env')
