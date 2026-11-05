@@ -689,9 +689,17 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       pick.onclick = (e) => (e.stopPropagation(), openOver(t.id))
       chips.append(pick)
     }
+    // A finished report opens from the card; a running one says so.
     for (const r of d.reports) {
       const running = s!.agents.some((a) => a.id === r.workerId && a.status === "running")
-      chips.append(el("span", `p2-chip${running ? " run" : ""}`, LABEL[r.action]))
+      if (running) {
+        chips.append(el("span", "p2-chip run", `${LABEL[r.action]} · running…`))
+        continue
+      }
+      const open = el("button", "p2-chip done", `📄 ${LABEL[r.action]} · v${d.versions.findIndex((v) => v.id === r.versionId) + 1}`)
+      open.title = `Open ${r.path}`
+      open.onclick = (e) => (e.stopPropagation(), openReport(t.id, r.path))
+      chips.append(open)
     }
     const err = errs.get(t.id), b = busy.get(t.id)
     card.replaceChildren(head, el("div", "p2-n-name", n.name), el("div", "p2-n-wt", t.folderId), chips, ...(err ? [errLine(err)] : []),

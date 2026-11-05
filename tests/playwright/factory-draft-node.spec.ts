@@ -40,7 +40,8 @@ const stub = async (page: Page, s: Stub) => {
   const agui: string[] = []
   await page.route("**/api/**", async (route) => {
     const req = route.request()
-    const path = new URL(req.url()).pathname
+    const url = new URL(req.url())
+    const path = url.pathname
     if (path.startsWith("/api/agui")) {
       agui.push(path)
       throw new Error("A draft must never start an agent")
@@ -62,6 +63,8 @@ const stub = async (page: Page, s: Stub) => {
       if (r.draft) s.thread = draftThread(r.draft)
       return route.fulfill({ json: r.draft ?? r.thread })
     }
+    if (path === "/api/reports")
+      return route.fulfill({ json: { threadId: ID, folderId: "repo", title: "Add retries", path: url.searchParams.get("path"), file: "/wt/x", content: "# Council verdict\n\nUse bounded retries." } })
     if (path === "/api/events" || path.startsWith("/api/threads/get/")) return route.fulfill({ json: [] })
     return route.fulfill({ json: {} })
   })
@@ -122,7 +125,8 @@ test("draft: create, enhance, pick, council, run", async ({ page }) => {
 
   await openRing(page)
   await page.getByRole("menuitem", { name: "Council" }).click()
-  await expect(node(page).getByText("Council", { exact: true })).toBeVisible()
+  // No worker is listed as running, so the report counts as finished and opens from the card.
+  await expect(node(page).getByRole("button", { name: "📄 Council · v2" })).toBeVisible()
   expect(s.posts.filter((p) => p.path === `/api/drafts/${ID}/council`)).toHaveLength(1)
 
   await openRing(page)
@@ -258,5 +262,25 @@ test("draft: CopilotKit thread picker hides an unstarted draft", async ({ page }
   const picker = page.locator(".ck-threads select")
   await expect(picker.locator("option", { hasText: "General" })).toHaveCount(1)
   await expect(picker.locator("option", { hasText: "Add retries" })).toHaveCount(0)
+  expect(agui).toEqual([])
+})
+
+test("draft: a finished report opens from the draft card; a running one says so", async ({ page }) => {
+  const s: Stub = {
+    thread: draftThread({ versions: [v1, v2], current: "v2", reports: [council] }),
+    workers: [worker("w-council", "running")],
+    posts: [],
+    post: () => ({ status: 500, json: { error: "unexpected" } }),
+  }
+  const agui = await stub(page, s)
+  await page.goto(`${PAGE}?proto=2`)
+  await expect(node(page).getByText("Council · running…")).toBeVisible()
+  s.workers = [worker("w-council", "idle")]
+  await page.reload()
+  const chip = node(page).getByRole("button", { name: "📄 Council · v2" })
+  await expect(chip).toBeVisible()
+  await chip.click()
+  await expect(page.getByRole("dialog", { name: "Report reports/draft-council.md" })).toContainText("Use bounded retries.")
+  await expect(page.getByRole("menu")).toHaveCount(0)
   expect(agui).toEqual([])
 })
