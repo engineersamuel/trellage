@@ -50,6 +50,8 @@ export const runMessage = (draft: Draft): string => {
 export const makeDrafts = (d: DraftDeps) => {
   const now = d.now ?? Date.now
   const enhancing = new Set<string>()
+  /** Draft id -> action whose spawn is still pending. */
+  const acting = new Map<string, DraftAction>()
 
   const find = (id: string): Thread & { draft: Draft } => {
     const t = d.threads.get(id)
@@ -85,7 +87,9 @@ export const makeDrafts = (d: DraftDeps) => {
 
     addVersion(id: string, prompt: string): Draft {
       const { draft } = open(id)
-      const v = version(prompt)
+      const text = prompt.trim()
+      if (!text) throw new DraftError(400, "prompt is empty")
+      const v = version(text)
       return save(id, { ...draft, versions: [...draft.versions, v], current: v.id })
     },
 
@@ -125,26 +129,50 @@ export const makeDrafts = (d: DraftDeps) => {
 
     async act(id: string, action: DraftAction): Promise<Draft> {
       const t = open(id)
+      const pending = acting.get(id)
+      if (pending) throw new DraftError(409, `${pending} is starting`)
       if (t.draft.reports.some((r) => r.action === action && d.isRunning(r.workerId))) throw new DraftError(409, `${action} is already running`)
       const workflow = ACTION_WORKFLOW[action]
-      const w = await d.spawn({
-        name: `draft-${action}`,
-        step: workflow,
-        owner: draftNodeId(id),
-        workdir: t.worktree!,
-        task: researchTask(workflow, currentPrompt(t.draft), `draft-${workflow}`),
-      })
-      const fresh = open(id).draft
-      const report = { action, workerId: w.id, path: `reports/draft-${workflow}.md`, versionId: t.draft.current }
-      return save(id, { ...fresh, reports: [...fresh.reports.filter((r) => r.action !== action), report] })
+      acting.set(id, action)
+      try {
+        const w = await d.spawn({
+          name: `draft-${action}`,
+          step: workflow,
+          owner: draftNodeId(id),
+          workdir: t.worktree!,
+          task: researchTask(workflow, currentPrompt(t.draft), `draft-${workflow}`),
+        })
+        let fresh: Draft
+        try {
+          fresh = open(id).draft
+        } catch (e) {
+          // Removed during the spawn: do not leave the new worker running.
+          await d.stopOwned(draftNodeId(id))
+          throw e
+        }
+        const report = { action, workerId: w.id, path: `reports/draft-${workflow}.md`, versionId: t.draft.current }
+        return save(id, { ...fresh, reports: [...fresh.reports.filter((r) => r.action !== action), report] })
+      } finally {
+        acting.delete(id)
+      }
     },
 
     async run(id: string): Promise<Draft> {
       const { draft } = open(id)
-      const b = draft.reports.find((r) => d.isRunning(r.workerId))
-      if (b) throw new DraftError(409, `wait for ${b.action} to finish`)
+      const b = acting.get(id) ?? draft.reports.find((r) => d.isRunning(r.workerId))?.action
+      if (b) throw new DraftError(409, `wait for ${b} to finish`)
       const started = save(id, { ...draft, startedAt: now() })
-      await d.deliver(id, runMessage(started))
+      try {
+        await d.deliver(id, runMessage(started))
+      } catch (e) {
+        // Not delivered: unlock the draft so the user can try again.
+        const t = d.threads.get(id)
+        if (t?.draft) {
+          const { startedAt: _, ...rest } = t.draft
+          save(id, rest)
+        }
+        throw e
+      }
       return started
     },
 

@@ -174,6 +174,56 @@ test("enhance does not clobber a version added while it waited", async () => {
   expect(d.pending?.candidates).toEqual(candidates)
 })
 
+test("act while a spawn is pending is refused, and Run waits for it", async () => {
+  let release!: () => void
+  const spawned: string[] = []
+  const { drafts, delivered } = setup({
+    spawn: (spec) => new Promise((r) => (spawned.push(spec.step), (release = () => r({ id: "w1" })))),
+  })
+  const t = drafts.create("repo", "build x")
+  const first = drafts.act(t.id, "council")
+  await expect(drafts.act(t.id, "council")).rejects.toMatchObject({ status: 409 })
+  await expect(drafts.run(t.id)).rejects.toMatchObject({ status: 409, message: "wait for council to finish" })
+  expect(spawned).toHaveLength(1)
+  expect(delivered).toEqual([])
+  release()
+  expect((await first).reports).toHaveLength(1)
+})
+
+test("remove during a pending spawn stops the new worker", async () => {
+  let release!: () => void
+  const { drafts, calls } = setup({ spawn: () => new Promise((r) => (release = () => r({ id: "w1" }))) })
+  const t = drafts.create("repo", "build x")
+  const p = drafts.act(t.id, "council")
+  await drafts.remove(t.id)
+  release()
+  await expect(p).rejects.toMatchObject({ status: 404 })
+  expect(calls).toEqual([`stopOwned ${draftNodeId(t.id)}`, `discard ${t.id}`, `stopOwned ${draftNodeId(t.id)}`])
+})
+
+test("addVersion refuses an empty prompt", () => {
+  const { drafts } = setup()
+  const t = drafts.create("repo", "build x")
+  expect(() => drafts.addVersion(t.id, "  ")).toThrow(expect.objectContaining({ status: 400 }))
+  expect(drafts.addVersion(t.id, " build y ").versions[1]!.prompt).toBe("build y")
+})
+
+test("a failed delivery unlocks the draft", async () => {
+  let fail = true
+  const { drafts, threads, delivered } = setup({
+    deliver: async (threadId, text) => {
+      if (fail) throw new Error("sub down")
+      delivered.push({ threadId, text })
+    },
+  })
+  const t = drafts.create("repo", "build x")
+  await expect(drafts.run(t.id)).rejects.toThrow("sub down")
+  expect(threads.get(t.id)!.draft!.startedAt).toBeUndefined()
+  fail = false
+  await drafts.run(t.id)
+  expect(delivered).toHaveLength(1)
+})
+
 test("pick makes the candidate the current version", async () => {
   const { drafts } = setup()
   const t = drafts.create("repo", "build x")
