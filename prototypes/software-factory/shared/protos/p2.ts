@@ -11,7 +11,7 @@ import { Schema } from "effect"
 import { fire, json, runOr, send } from "../http"
 import { SearchHit, StoredEvent } from "../schemas"
 import {
-  agentLabel, agentOfThread, el, isOpenUi, messageAgent, mountTranscript, openAgentChat, openDecision, openThread, register, renderOpenUi, statusColor, subscribe, threadOf,
+  agentLabel, agentOfThread, el, newThread, isOpenUi, messageAgent, mountTranscript, openAgentChat, openDecision, openThread, register, renderOpenUi, statusColor, subscribe, threadOf,
   type Agent, type Ctx, type Decision, type Review, type State, type Thread,
 } from "./core"
 
@@ -21,7 +21,13 @@ const W = 236, H = 132, GX = 26, GY = 74, PAD = 40, HEAD = 78
 const MAX_GHOSTS = 6
 /** Width the docked global chat takes from the canvas when nothing is selected (518px chat + gaps). */
 const DOCK_W = 560
-const TIERS = ["Factory desk · sees everything", "General chats · own memory each", "Sub-coordinators · one per repo conversation", "Workers"]
+/** Row label from what is in the row: a dormant or desk-owned repo conversation sits next to General chats, so a fixed label per depth is wrong. */
+const ROLE = (n: Node) => (n.kind === "global" ? "Factory desk · event inbox · read only" : n.id.startsWith("gen-") ? "General chats · chat here" : n.kind === "worker" ? "Workers" : "Repo conversations · one per run")
+const tierLabels = (nodes: Iterable<Node>): [number, string][] => {
+  const rows = new Map<number, Set<string>>()
+  for (const n of nodes) (rows.get(n.y) ?? rows.set(n.y, new Set()).get(n.y)!).add(ROLE(n))
+  return [...rows].sort((a, b) => a[0] - b[0]).map(([y, r]) => [y, [...r].join("  +  ")])
+}
 
 const agentNode = (a: Agent): Node => {
   const l = agentLabel(a)
@@ -160,6 +166,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const decisions = el("div", "p2-decisions")
   top.append(brand, decisions, stats)
   const dock = el("div", "p2-dock")
+  const dockCue = el("div", "p2-dock-cue", "▼ Type new requests here · ＋ New chat for each new topic")
   const dockHead = el("div", "p2-dock-head")
   dock.append(dockHead)
   const panel = el("aside", "p2-panel")
@@ -180,7 +187,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const results = el("div", "p2-results")
   railScroll.append(list, results)
   rail.append(railHead, searchBar, railScroll)
-  root.replaceChildren(rail, canvas, top, dock, panel)
+  root.replaceChildren(rail, canvas, top, dock, dockCue, panel)
 
   let s: State | null = null
   let nodes = new Map<string, Node>()
@@ -372,7 +379,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const foot = el("div", "p2-n-foot", n.agent ? `${n.status} · ${n.agent.harness ?? "copilot"} · ${n.agent.model.replace(/^claude-/, "")} · ${Math.round(ctx * 100)}% context` : "dormant · click to resume")
     if (n.children.length) foot.append(el("span", "p2-kids", `${n.children.length} ▾`))
     const t = n.kind === "global" ? undefined : worktreeOf(n)
-    const wt = el("div", "p2-n-wt", t?.worktree ? worktreeLine(t) : n.kind === "global" ? "sees every conversation" : n.id.startsWith("gen-") ? "own memory · no worktree" : "own workspace")
+    const wt = el("div", "p2-n-wt", t?.worktree ? worktreeLine(t) : n.kind === "global" ? "event inbox · read only" : n.id.startsWith("gen-") ? "own memory · no worktree" : "own workspace")
     if (t?.worktree) wt.title = `Worktree ${t.worktree}\nBranch ${t.branch}${t.base ? `\nBased on ${t.base}` : ""}`
     card.replaceChildren(cardHead(n), el("div", "p2-n-name", n.name), wt, el("div", "p2-n-act", activityText(s!, n)), bar, foot)
   }
@@ -422,10 +429,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       orderKey = order.join()
       world.append(...order.map((id) => cards.get(id)!))
     }
-    const depths = Math.min(TIERS.length, new Set([...nodes.values()].map((n) => n.y)).size)
-    tiers.replaceChildren(...TIERS.slice(0, depths).map((t, i) => {
+    tiers.replaceChildren(...tierLabels(nodes.values()).map(([y, t]) => {
       const l = el("div", "p2-tier", t)
-      l.style.top = `${i * (H + GY) + PAD - 24}px`
+      l.style.top = `${y + PAD - 24}px`
       return l
     }))
     renderEdges()
@@ -555,13 +561,17 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const renderDockHead = () => {
     // The docked chat is the open General chat; its own agent, else the desk.
     const open = new URL(window.location.href).searchParams.get("thread")
-    const g = (open && nodes.get(`gen-${open.slice(0, 8)}`)) || nodes.get("coordinator")
+    // A General chat has no node until its session starts; then show idle, not the desk's status.
+    const g = open ? nodes.get(`gen-${open.slice(0, 8)}`) : undefined
     const b = el("button", "p2-expand", "⤢ Expand")
     b.title = "Open as panel"
-    b.onclick = () => select("coordinator")
+    b.onclick = () => select(g?.id ?? "coordinator")
+    const fresh = el("button", "p2-newchat", "＋ New chat")
+    fresh.title = "Start a new General chat (clean memory, sees the whole factory)"
+    fresh.onclick = () => newThread("general")
     const dot = el("i", "p2-dot")
     dot.style.setProperty("--glow", statusColor(g?.status ?? "idle"))
-    dockHead.replaceChildren(dot, el("b", "", "General chat"), el("span", "p2-ph-act", g && s ? activityText(s, g) : ""), b)
+    dockHead.replaceChildren(dot, el("b", "", "💬 Chat here"), el("span", "p2-ph-act", g && s ? activityText(s, g) : "new requests start here"), fresh, b)
   }
 
   const mountPanelBody = (n: Node | undefined): (() => void) => {

@@ -70,6 +70,14 @@
 .sfp-p2 .p2-dock { position: absolute; right: 20px; bottom: 56px; width: 520px; height: 70%; box-sizing: border-box; border-radius: 14px; overflow: hidden;
   border: 1px solid var(--sf-border); background: var(--sf-bg); box-shadow: 0 20px 50px #000c, 0 0 0 1px color-mix(in srgb, var(--sf-accent) 25%, transparent); transition: opacity .2s; }
 .sfp-p2.open .p2-dock { opacity: 0; pointer-events: none; }
+.sfp-p2 .p2-dock { outline: 2px solid var(--sf-accent); outline-offset: 0; animation: p2-dock-glow 2.4s ease-in-out infinite; }
+@keyframes p2-dock-glow { 0%,100% { box-shadow: 0 20px 50px #000c, 0 0 0 0 color-mix(in srgb, var(--sf-accent) 0%, transparent); } 50% { box-shadow: 0 20px 50px #000c, 0 0 22px 4px color-mix(in srgb, var(--sf-accent) 55%, transparent); } }
+.sfp-p2 .p2-dock-cue { position: absolute; right: 20px; bottom: calc(56px + 70% + 8px); width: 520px; box-sizing: border-box; padding: 6px 12px; border-radius: 10px; font-size: 12px; font-weight: 600; text-align: center;
+  color: var(--sf-text); background: color-mix(in srgb, var(--sf-accent) 30%, var(--sf-surface)); border: 1px solid var(--sf-accent); pointer-events: none; transition: opacity .2s; }
+.sfp-p2.open .p2-dock-cue { opacity: 0; }
+.sfp-p2 .p2-newchat { flex: none; border: 1px solid var(--sf-accent); background: color-mix(in srgb, var(--sf-accent) 25%, transparent); color: var(--sf-text); font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
+.sfp-p2 .p2-newchat:hover { background: color-mix(in srgb, var(--sf-accent) 45%, transparent); }
+@media (prefers-reduced-motion: reduce) { .sfp-p2 .p2-dock { animation: none; } }
 .sfp-p2 .p2-dock-head { height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--sf-border);
   background: linear-gradient(90deg, color-mix(in srgb, var(--sf-accent) 18%, var(--sf-surface)), var(--sf-surface)); }
 .sfp-p2 .p2-dock-head b { flex: none; font-size: 13px; }
