@@ -24,4 +24,9 @@ describe("chat/ToolCards cardProps", () => {
     const p = cardProps(call("ok"), undefined)
     expect([p.status, p.startedAt, p.duration]).toEqual(["success", undefined, undefined])
   })
+
+  test("error on the AG-UI tool message wins, even without feed timing", () => {
+    const p = cardProps({ ...call("Path missing"), error: "Path missing" }, undefined)
+    expect([p.status, p.error, p.result]).toEqual(["error", "Path missing", undefined])
+  })
 })

@@ -1,6 +1,6 @@
 // Tool calls in the coordinator chat, drawn with affectUI's Tool Call Card (src/components/ui).
 // AG-UI tool messages carry no times and no failure flag; both come from the store (factory feed).
-import type { ToolCallEntry } from "@copilotkit/react-core"
+import { useAgent, UseAgentUpdate, type ToolCallEntry } from "@copilotkit/react-core"
 import { createElement, useState, type ReactNode } from "react"
 import { toolGlyph } from "../../../shared/toolglyphs"
 import { toolLine } from "../../../shared/transcript"
@@ -23,11 +23,12 @@ const parse = (s: string): unknown => {
 
 /** Card props for one call. Pure, so tests check the mapping without rendering. */
 export const cardProps = (
-  call: { id: string; name: string; args: unknown; result: string | undefined },
+  call: { id: string; name: string; args: unknown; result: string | undefined; error?: string },
   timing: ToolTiming | undefined,
 ): ToolCallCardProps & { key: string } => {
   const done = call.result !== undefined || timing?.endedAt !== undefined
-  const failed = timing?.failed === true
+  // The AG-UI tool message says whether it failed; the feed is the fallback for older saved threads.
+  const failed = call.error !== undefined || timing?.failed === true
   const status = !done ? "running" : failed ? "error" : "success"
   const args = (typeof call.args === "object" && call.args !== null ? call.args : {}) as Record<string, unknown>
   const summary = toolLine({ kind: "tool", id: call.id, name: call.name, args, done, ok: !failed, result: call.result ?? "" }).text
@@ -39,7 +40,7 @@ export const cardProps = (
     status,
     args: call.args,
     ...(status === "success" && call.result !== undefined ? { result: call.result } : {}),
-    ...(status === "error" ? { error: timing?.error ?? call.result ?? "The tool call failed." } : {}),
+    ...(status === "error" ? { error: call.error || timing?.error || call.result || "The tool call failed." } : {}),
     ...(timing ? { startedAt: timing.startedAt } : {}),
     ...(timing?.endedAt !== undefined ? { duration: timing.endedAt - timing.startedAt } : {}),
   }
@@ -52,13 +53,22 @@ const entryCall = (e: ToolCallEntry) => {
     name: e.toolCall.function.name,
     args: parse(e.toolCall.function.arguments),
     result: content === undefined ? undefined : typeof content === "string" ? content : JSON.stringify(content),
+    ...(e.toolMessage?.error !== undefined ? { error: e.toolMessage.error } : {}),
   }
 }
 
+/** The `error` of a call's AG-UI tool message. Render props carry only the result text, so it is read from the agent. */
+const useToolError = (toolCallId: string): string | undefined => {
+  const { agent } = useAgent({ agentId: "coordinator", updates: [UseAgentUpdate.OnMessagesChanged] })
+  const m = agent.messages.find((x) => x.role === "tool" && x.toolCallId === toolCallId)
+  return m?.role === "tool" ? m.error : undefined
+}
+
 /** Wildcard renderer: one call that the chat did not group. */
-export function ToolCard({ name, toolCallId, args, result }: { name: string; toolCallId: string; args: unknown; result?: string }) {
+export function ToolCard({ name, toolCallId, args, result }: { name: string; toolCallId: string; args: unknown; result?: string | undefined }) {
   const timing = useApp((s) => s.toolTimings[toolCallId])
-  const { key, ...props } = cardProps({ id: toolCallId, name, args, result }, timing)
+  const error = useToolError(toolCallId)
+  const { key, ...props } = cardProps({ id: toolCallId, name, args, result, ...(error !== undefined ? { error } : {}) }, timing)
   return <ToolCallCard key={key} {...props} />
 }
 

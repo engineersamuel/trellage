@@ -302,7 +302,7 @@ const recordTurn = (t: Thread, c: Worker, text: string) => {
   const tr = new Translator(t.id, crypto.randomUUID())
   const rec = new RunRecorder()
   const off = c.events.subscribe((ev) => {
-    for (const e of tr.translate(ev, () => ({ workers: factory.summaries() }))) rec.add(e)
+    for (const e of tr.translate(ev)) rec.add(e)
     if (tr.done) {
       off()
       threads.append(t.id, ...rec.messages())
@@ -462,16 +462,15 @@ const recordAguiPrompt = (worker: Worker, threadId: string, prompt: string): voi
 const streamAguiRun = (worker: Worker, threadId: string, runId: string, url: URL, prompt: string | null): Response => {
   const tr = new Translator(threadId, runId)
   const rec = new RunRecorder()
-  const snapshot = () => ({ workers: factory.summaries() })
   return sse((send, close) => {
-    for (const e of tr.started(snapshot())) send(e)
+    for (const e of tr.started()) send(e)
     if (prompt === null) {
       send(tr.finished())
       close()
       return () => {}
     }
     const off = worker.events.subscribe((ev) => {
-      for (const e of tr.translate(ev, snapshot)) {
+      for (const e of tr.translate(ev)) {
         rec.add(e)
         send(e)
       }

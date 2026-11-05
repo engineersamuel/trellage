@@ -1,0 +1,18 @@
+/* Decision card inside the coordinator chat. Same tokens as the tool card (dark, hairline shadows). */
+.sfc-decision { margin: 6px 0; padding: 12px 14px; border-radius: 10px; background: #1c1c1e; font: 13px/20px Inter, system-ui, sans-serif;
+  color: rgba(255, 255, 255, 0.9); box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 2px rgba(0, 0, 0, 0.4); border-left: 3px solid #4d8dff; }
+.sfc-question { border-left-color: #f59e0b; }
+.sfc-decision header { display: grid; gap: 2px; }
+.sfc-kind { font-size: 10px; line-height: 16px; letter-spacing: 0.5px; text-transform: uppercase; color: rgba(255, 255, 255, 0.46); font-weight: 500; }
+.sfc-summary { margin: 8px 0 0; color: rgba(255, 255, 255, 0.62); white-space: pre-line; max-height: 160px; overflow: auto; }
+.sfc-options { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.sfc-options button { all: unset; cursor: pointer; padding: 4px 12px; border-radius: 6px; font-weight: 500; background: #1c1c1e;
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 1px 2px rgba(0, 0, 0, 0.4); }
+.sfc-options button.sfc-primary { background: #4d8dff; color: #fff; }
+.sfc-options button:disabled { opacity: 0.6; cursor: default; }
+.sfc-options button:focus-visible, .sfc-decision input:focus-visible { outline: 2px solid rgba(77, 141, 255, 0.5); outline-offset: 1px; }
+.sfc-decision input { box-sizing: border-box; width: 100%; margin-top: 8px; padding: 6px 8px; border-radius: 6px; border: 0; background: #212123;
+  color: inherit; font: inherit; box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.08); }
+.sfc-done { margin: 8px 0 0; color: #4d8dff; font-weight: 500; }
+.sfc-done span { color: rgba(255, 255, 255, 0.46); font-weight: 400; }
+.sfc-error { margin: 6px 0 0; color: #ff7b72; }

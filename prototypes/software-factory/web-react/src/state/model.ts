@@ -1,6 +1,7 @@
 // The one app state of the CopilotKit UI and its pure reducer. No React, no fetch, no DOM:
 // every change is a named Action, so tests drive `reduce` directly (like Foldkit's story tests).
 import { Data } from "effect"
+import type { Decision } from "../../../shared/approvals"
 import type { SecurityReview, SettingsDocument, Thread, Worker } from "../../../shared/schemas"
 
 /** Start and end of one tool call, from the factory feed. AG-UI messages carry no times. */
@@ -14,10 +15,14 @@ export type Model = {
   readonly threads: readonly Thread[]
   /** Thread the chat shows. A fresh id that is not in `threads` is a new, unsaved conversation. */
   readonly threadId: string
+  /** Bumped to reload the open thread (another client wrote it); the chat remounts and reconnects. */
+  readonly threadVersion: number
   readonly proto: number
   readonly report: { readonly ref: string; readonly agent?: string } | null
   readonly settingsOpen: boolean
   readonly toolTimings: Readonly<Record<string, ToolTiming>>
+  /** Every decision (approvals and questions), from the shared approvals store. */
+  readonly decisions: readonly Decision[]
 }
 
 export type Action = Data.TaggedEnum<{
@@ -30,10 +35,12 @@ export type Action = Data.TaggedEnum<{
   SecurityReviewsLoaded: { readonly reviews: readonly SecurityReview[] }
   ThreadsLoaded: { readonly threads: readonly Thread[] }
   ThreadSelected: { readonly threadId: string }
+  ThreadReloaded: {}
   ProtoChanged: { readonly proto: number }
   ReportOpened: { readonly ref: string; readonly agent?: string }
   ReportClosed: {}
   SettingsToggled: { readonly open?: boolean }
+  DecisionsChanged: { readonly decisions: readonly Decision[] }
   ToolStarted: { readonly id: string; readonly at: number }
   ToolFinished: { readonly id: string; readonly at: number; readonly failed: boolean; readonly error?: string }
 }>
@@ -49,10 +56,12 @@ export const initial = (threadId: string, proto: number): Model => ({
   securityReviews: [],
   threads: [],
   threadId,
+  threadVersion: 0,
   proto,
   report: null,
   settingsOpen: false,
   toolTimings: {},
+  decisions: [],
 })
 
 const trim = (t: Readonly<Record<string, ToolTiming>>): Readonly<Record<string, ToolTiming>> => {
@@ -74,10 +83,12 @@ export const reduce = (m: Model, a: Action): Model =>
     SecurityReviewsLoaded: ({ reviews }) => ({ ...m, securityReviews: reviews }),
     ThreadsLoaded: ({ threads }) => ({ ...m, threads }),
     ThreadSelected: ({ threadId }) => ({ ...m, threadId }),
+    ThreadReloaded: () => ({ ...m, threadVersion: m.threadVersion + 1 }),
     ProtoChanged: ({ proto }) => ({ ...m, proto }),
     ReportOpened: ({ ref, agent }) => ({ ...m, report: agent === undefined ? { ref } : { ref, agent } }),
     ReportClosed: () => ({ ...m, report: null }),
     SettingsToggled: ({ open }) => ({ ...m, settingsOpen: open ?? !m.settingsOpen }),
+    DecisionsChanged: ({ decisions }) => ({ ...m, decisions }),
     // A replayed start keeps the first time; a start after the end is ignored.
     ToolStarted: ({ id, at }) => (m.toolTimings[id] ? m : { ...m, toolTimings: trim({ ...m.toolTimings, [id]: { startedAt: at } }) }),
     ToolFinished: ({ id, at, failed, error }) => {

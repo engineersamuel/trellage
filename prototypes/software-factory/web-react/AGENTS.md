@@ -25,10 +25,15 @@ If you change `../shared`, also run the Foldkit checks (`../web-foldkit/AGENTS.m
 6. **Shared DOM modules talk through `src/state/host-events.ts`.** `../shared` code raises window events
    (`sf:open-thread`, `sf:new-thread`, `sf:select-worker`, `sf:open-report`) because Foldkit mounts it too.
    Only `host-events.ts` turns them into actions. Do not convert `../shared` modules to React while Foldkit uses them.
-7. **Chat goes through CopilotKit.** The coordinator agent and thread switching live in `src/state/chat.ts`;
-   it is the only code that writes `coordinator.threadId` or calls `setMessages`. Tool calls render with
-   `useRenderTool` (`src/copilotkit.tsx`), drawn by the affectUI card (`src/chat/ToolCards.tsx`).
+7. **Chat goes through CopilotKit.** The store owns the open thread id; `CopilotChat` gets it as `threadId`
+   and loads history through `FactoryAgent.connect()` (`src/state/chat.ts`, a `MESSAGES_SNAPSHOT` of the saved
+   thread). Never write `coordinator.threadId` or call `setMessages` yourself; dispatch `ThreadSelected` /
+   `ThreadReloaded`. Tool calls render with `useRenderTool` (`src/copilotkit.tsx`): the affectUI card for every
+   tool (`src/chat/ToolCards.tsx`), an answerable card for `request_approval` / `ask_user` (`src/chat/DecisionCard.tsx`).
+   A failed call is the AG-UI tool message `error`; the feed timing is the fallback for old threads.
 8. **Third-party components are installed verbatim** under `src/components/ui/` (shadcn registry files),
    with a source/licence header. Do not edit them; wrap them. Re-fetch to update.
-9. **Pin CopilotKit.** `@copilotkit/react-core` is a release candidate; keep the exact version and keep
+9. **Pin CopilotKit and AG-UI together.** `@ag-ui/client` must match the version `@copilotkit/react-core` depends on,
+   so there is one agent class. The root `zustand` stays 4.x for OpenUI's peer dependency; the store imports
+   `zustand5` (an npm alias). **Pin CopilotKit.** `@copilotkit/react-core` is a release candidate; keep the exact version and keep
    CopilotKit calls in `copilotkit.tsx`, `src/chat/` and `src/state/chat.ts`.

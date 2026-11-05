@@ -1,7 +1,9 @@
 // The zustand store that holds the one Model, and the Effect programs that feed it.
 // Components read with `useApp(selector)` and change state only through `dispatch` or the `actions` below.
 import { Effect, Fiber, Queue, Schema, Stream } from "effect"
-import { create } from "zustand"
+// zustand 5 under an alias: the root "zustand" stays 4.x because OpenUI declares it as a peer (^4.5.5).
+import { create } from "zustand5"
+import { changes as approvalChanges } from "../../../shared/approvals"
 import { onFeed, RESYNC, type FeedEvent } from "../../../shared/feed"
 import { json, send, type HttpError } from "../../../shared/http"
 import { currentProto, onProto } from "../../../shared/protos"
@@ -61,6 +63,8 @@ const reloadFor = (type: string): Effect.Effect<void> | null =>
 export const bridge: Effect.Effect<void> = Effect.gen(function* () {
   yield* reloadAll
   yield* Effect.forkChild(loadToolTimes("coordinator"))
+  // Decisions come from the shared approvals store (one feed-driven Effect store for both UIs).
+  yield* Effect.forkChild(Stream.runForEach(approvalChanges, (a) => Effect.sync(() => dispatch(Action.DecisionsChanged({ decisions: a.all })))))
   yield* feed.pipe(
     Stream.runForEach((ev) => {
       for (const a of feedActions(ev)) dispatch(a)

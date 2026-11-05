@@ -162,3 +162,17 @@ export type SettingsOptions = typeof SettingsOptions.Type
 /** GET /api/settings: the document, its generated theme CSS, and the choices the controls offer. */
 export const SettingsDocument = Schema.Struct({ settings: Settings, css: Schema.String, options: SettingsOptions })
 export type SettingsDocument = typeof SettingsDocument.Type
+
+/** GET /api/reports: one saved report file of a conversation worktree. */
+export const Report = Schema.Struct({
+  threadId: Schema.String,
+  folderId: Schema.String,
+  title: Schema.String,
+  path: Schema.String,
+  file: Schema.String,
+  content: Schema.String,
+})
+export type Report = typeof Report.Type
+
+/** POST /api/reports/start: the new conversation that runs the finding. */
+export const StartedConversation = Schema.Struct({ threadId: Schema.String, branch: Schema.NullOr(Schema.String).pipe(withDefault(null)) })

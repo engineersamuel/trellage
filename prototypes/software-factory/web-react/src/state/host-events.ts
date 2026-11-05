@@ -11,7 +11,7 @@ const detail = <T>(e: Event): T => (e as CustomEvent<T>).detail
 /** Listen once per page. Returns a stop function. */
 export const startHostEvents = (): (() => void) => {
   const on: Record<string, (e: Event) => void> = {
-    "sf:open-thread": (e) => void openThread(detail<string>(e)),
+    "sf:open-thread": (e) => openThread(detail<string>(e)),
     "sf:new-thread": () => freshThread(),
     "sf:select-worker": (e) => patchSettings({ focus: detail<string>(e) }),
     "sf:open-report": (e) => dispatch(Action.ReportOpened({ ref: detail<string>(e) })),
@@ -23,7 +23,7 @@ export const startHostEvents = (): (() => void) => {
   })
   // The folder sidebar announces ?thread= on load, possibly before this listener exists: open it here too.
   const linked = new URL(window.location.href).searchParams.get("thread")
-  if (linked) void openThread(linked)
+  if (linked) openThread(linked)
   return () => {
     for (const [name, f] of Object.entries(on)) window.removeEventListener(name, f)
     offFeed()

@@ -29,7 +29,8 @@ test("factory tools get readable lines with worker and decision links", () => {
   expect(toolLine(t("spawn_worker", { name: "sec", step: "implement" }, { id: "w-1", model: "m" }))).toEqual({ icon: "▶", text: "Started worker · m · step implement", link: { worker: "w-1", label: "sec" } })
   expect(toolLine(t("request_approval", { title: "Plan" }, { id: "d1" })).link).toEqual({ decision: "d1", label: "Plan" })
   expect(toolLine(t("next_step", {}, { step: "verify", confidence: 0.91 })).text).toBe("Jev: next step verify (91%)")
-  expect(toolLine(t("bash", { command: "git diff\n--stat" })).text).toBe("bash · git diff")
+  // The card shows the tool name, so the summary is only the first line of the main argument.
+  expect(toolLine(t("bash", { command: "git diff\n--stat" })).text).toBe("git diff")
 })
 
 test("activity always names what a working agent is doing", () => {

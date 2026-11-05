@@ -20,7 +20,8 @@ export type Thread = { id: string; title: string; createdAt: number; folderId: s
 export type ChatMessage =
   | { id: string; role: "user"; content: string }
   | { id: string; role: "assistant"; content: string | null; toolCalls?: { id: string; type: "function"; function: { name: string; arguments: string } }[] }
-  | { id: string; role: "tool"; content: string; toolCallId: string }
+  | { id: string; role: "tool"; content: string; toolCallId: string; error?: string }
+  | { id: string; role: "reasoning"; content: string }
 
 type Doc = { threads: Thread[]; messages: Record<string, ChatMessage[]>; folders: Folder[] }
 
@@ -120,6 +121,7 @@ export class Threads {
 export class RunRecorder {
   private readonly out: ChatMessage[] = []
   private current: Extract<ChatMessage, { role: "assistant" }> | null = null
+  private thinking: Extract<ChatMessage, { role: "reasoning" }> | null = null
 
   private assistant() {
     if (!this.current) {
@@ -134,6 +136,18 @@ export class RunRecorder {
       case "TEXT_MESSAGE_CONTENT":
         this.assistant().content += e.delta
         break
+      case "REASONING_MESSAGE_START":
+        // Thinking comes before the reply or the tool calls it leads to.
+        this.thinking = { id: e.messageId, role: "reasoning", content: "" }
+        this.out.push(this.thinking)
+        this.current = null
+        break
+      case "REASONING_MESSAGE_CONTENT":
+        if (this.thinking) this.thinking.content += e.delta
+        break
+      case "REASONING_MESSAGE_END":
+        this.thinking = null
+        break
       case "TOOL_CALL_START":
         ;(this.assistant().toolCalls ??= []).push({ id: e.toolCallId, type: "function", function: { name: e.toolCallName, arguments: "" } })
         break
@@ -143,14 +157,14 @@ export class RunRecorder {
         break
       }
       case "TOOL_CALL_RESULT":
-        this.out.push({ id: e.messageId, role: "tool", content: e.content, toolCallId: e.toolCallId })
+        this.out.push({ id: e.messageId, role: "tool", content: e.content, toolCallId: e.toolCallId, ...(e.error ? { error: e.error } : {}) })
         this.current = null
         break
     }
   }
 
   messages(): ChatMessage[] {
-    return this.out.filter((m) => m.role !== "assistant" || m.content || m.toolCalls?.length)
+    return this.out.filter((m) => (m.role === "assistant" ? m.content || m.toolCalls?.length : m.role === "reasoning" ? m.content.trim() : true))
   }
 }
 

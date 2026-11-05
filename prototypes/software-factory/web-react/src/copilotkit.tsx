@@ -16,6 +16,7 @@ import { setOpenUiRenderer, startPrototypes } from "../../shared/protos";
 import { FactoryShell } from "./shared/FactoryShell";
 import { factoryMarkdownRenderer } from "./shared/CodeBlock";
 import { REPORT_REF, ReportViewer } from "./shared/ReportViewer";
+import { DecisionCard } from "./chat/DecisionCard";
 import { ToolCard, ToolGroup } from "./chat/ToolCards";
 import { coordinator, freshThread, openThread } from "./state/chat";
 import { startHostEvents } from "./state/host-events";
@@ -36,9 +37,31 @@ function ToolRenderers() {
         </div>
       ) : null,
   });
+  // Decisions render as an answerable card in the chat (own row, not grouped).
+  const decision = z.object({ title: z.string(), summary: z.string().optional(), options: z.array(z.string()).optional() });
+  useRenderTool({ name: "request_approval", parameters: decision, render: (p) => <DecisionCard name={p.name} toolCallId={p.toolCallId} args={p.parameters} result={p.result} /> });
+  useRenderTool({ name: "ask_user", parameters: decision, render: (p) => <DecisionCard name={p.name} toolCallId={p.toolCallId} args={p.parameters} result={p.result} /> });
   // Every other tool: affectUI's Tool Call Card. `group` lets the chat fold calls in a row into ToolGroup.
   useRenderTool({ name: "*", group: true, render: ToolCard });
   return null;
+}
+
+/**
+ * The chat owns no thread state: the store's thread id is passed as `threadId`, so CopilotKit sets the agent's
+ * thread and loads its history through FactoryAgent.connect(). `threadVersion` remounts it to reload.
+ */
+function CoordinatorChat() {
+  const threadId = useApp((s) => s.threadId);
+  const version = useApp((s) => s.threadVersion);
+  return (
+    <CopilotChat
+      key={`${threadId}:${version}`}
+      agentId="coordinator"
+      threadId={threadId}
+      labels={{ chatInputPlaceholder: "Ask the coordinator to build something… (try: switch to the nord theme)" }}
+      chatView={{ messageView: { assistantMessage: { toolCallsView: { group: ToolGroup } } } }}
+    />
+  );
 }
 
 /** Saved threads (shared with Foldkit and the sf CLI). The store holds the list and the open id. */
@@ -47,7 +70,7 @@ function ThreadPicker() {
   const current = useApp((s) => s.threadId);
   return (
     <div className="ck-threads">
-      <select value={threads.some((x) => x.id === current) ? current : ""} onChange={(e) => (e.target.value ? void openThread(e.target.value) : freshThread())}>
+      <select value={threads.some((x) => x.id === current) ? current : ""} onChange={(e) => (e.target.value ? openThread(e.target.value) : freshThread())}>
         <option value="">New thread</option>
         {threads.map((x) => (
           <option key={x.id} value={x.id}>{x.title}</option>
@@ -83,11 +106,15 @@ function ReportLinks() {
       const agent = host?.dataset.agent ?? host?.dataset.transcript;
       dispatch(Action.ReportOpened(agent ? { ref, agent } : { ref }));
     };
-    const mo = new MutationObserver(tag);
-    mo.observe(document.body, { subtree: true, childList: true, characterData: true });
+    // Streaming fires many mutations per second: scan at most once per frame. Report paths sit in <code>/<a>
+    // elements, which arrive as new nodes, so text-only changes (characterData) need no scan.
+    let frame = 0;
+    const schedule = () => (frame ||= requestAnimationFrame(() => ((frame = 0), tag())));
+    const mo = new MutationObserver(schedule);
+    mo.observe(document.body, { subtree: true, childList: true });
     tag();
     document.addEventListener("click", onClick, true);
-    return () => (mo.disconnect(), document.removeEventListener("click", onClick, true));
+    return () => (mo.disconnect(), cancelAnimationFrame(frame), document.removeEventListener("click", onClick, true));
   }, []);
   return report ? <ReportViewer refPath={report.ref} agent={report.agent} onClose={() => dispatch(Action.ReportClosed())} /> : null;
 }
@@ -101,11 +128,7 @@ function App() {
         title="Factory · CopilotKit"
         chat={<>
           <ThreadPicker />
-          <CopilotChat
-            agentId="coordinator"
-            labels={{ chatInputPlaceholder: "Ask the coordinator to build something… (try: switch to the nord theme)" }}
-            chatView={{ messageView: { assistantMessage: { toolCallsView: { group: ToolGroup } } } }}
-          />
+          <CoordinatorChat />
         </>}
       />
       <style>{`.ck-threads{padding:6px 12px;border-bottom:1px solid var(--sf-border)}
