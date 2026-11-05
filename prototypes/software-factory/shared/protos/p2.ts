@@ -7,7 +7,7 @@ import "./p2.css"
 import { openSpec } from "../spec"
 import { harnessBadge } from "../harness"
 import { markdown } from "../decisions"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { fire, json, runOr, send } from "../http"
 import { SearchHit, StoredEvent } from "../schemas"
 import {
@@ -15,14 +15,14 @@ import {
   type Agent, type Ctx, type Decision, type Review, type State, type Thread,
 } from "./core"
 
-type Node = { id: string; kind: "global" | "sub" | "worker" | "ghost"; tag: string; name: string; status: string; agent?: Agent; thread?: Thread; parent: string | null; children: Node[]; x: number; y: number; w: number }
+type Node = { id: string; kind: "global" | "sub" | "worker" | "ghost" | "draft"; tag: string; name: string; status: string; agent?: Agent; thread?: Thread; parent: string | null; children: Node[]; x: number; y: number; w: number }
 
 const W = 236, H = 132, GX = 26, GY = 74, PAD = 40, HEAD = 78
 const MAX_GHOSTS = 6
 /** Width the docked global chat takes from the canvas when nothing is selected (518px chat + gaps). */
 const DOCK_W = 560
 /** Row label from what is in the row: a dormant or desk-owned repo conversation sits next to General chats, so a fixed label per depth is wrong. */
-const ROLE = (n: Node) => (n.kind === "global" ? "Factory desk · event inbox · read only" : n.id.startsWith("gen-") ? "General chats · chat here" : n.kind === "worker" ? "Workers" : "Repo conversations · one per run")
+const ROLE = (n: Node) => (n.kind === "global" ? "Factory desk · event inbox · read only" : n.id.startsWith("gen-") ? "General chats · chat here" : n.kind === "worker" ? "Workers" : n.kind === "draft" ? "Drafts · not started" : "Repo conversations · one per run")
 const tierLabels = (nodes: Iterable<Node>): [number, string][] => {
   const rows = new Map<number, Set<string>>()
   for (const n of nodes) (rows.get(n.y) ?? rows.set(n.y, new Set()).get(n.y)!).add(ROLE(n))
@@ -39,7 +39,8 @@ const linkParents = (nodes: Map<string, Node>) => {
   const root = nodes.get("coordinator")
   for (const n of nodes.values()) {
     if (n === root) continue
-    const o = n.agent?.owner
+    // A draft node has no agent: buildTree puts the General chat it came from in `parent`.
+    const o = n.kind === "draft" ? n.parent : n.agent?.owner
     n.parent = o && o !== n.id && nodes.has(o) ? o : root ? root.id : null
     if (n.parent) nodes.get(n.parent)!.children.push(n)
   }
@@ -55,11 +56,20 @@ const placeNode = (n: Node, x: number, depth: number): number => {
   return n.w
 }
 
-/** Build the org tree: agents by owner, plus dormant repo conversations (no live sub-coordinator) as ghosts under the global node. */
+/** A draft that has not started yet: it shows as a draft node, not as a ghost or a sub-coordinator. */
+const isDraft = (t: Thread) => !!t.draft && !t.draft.startedAt
+const draftPrompt = (t: Thread) => t.draft?.versions.find((v) => v.id === t.draft!.current)?.prompt ?? ""
+
+/** Build the org tree: agents by owner, unstarted drafts under their General chat (else the global node), and dormant repo conversations (no live sub-coordinator) as ghosts under the global node. */
 const buildTree = (s: State): Map<string, Node> => {
   const nodes = new Map(s.agents.map((a) => [a.id, agentNode(a)]))
   const live = new Set(s.agents.map((a) => a.id))
-  s.threads.filter((t) => t.worktree && !t.cleanedAt && !t.archivedAt && !live.has(`sub-${t.id.slice(0, 8)}`)).sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_GHOSTS)
+  for (const t of s.threads.filter((t) => isDraft(t) && !t.archivedAt)) {
+    const id = `draft-${t.id.slice(0, 8)}`
+    const gen = t.parentThreadId ? `gen-${t.parentThreadId.slice(0, 8)}` : null
+    nodes.set(id, { id, kind: "draft", tag: `Draft · ${t.folderId}`, name: draftPrompt(t).slice(0, 48), status: "draft", thread: t, parent: gen && live.has(gen) ? gen : null, children: [], x: 0, y: 0, w: W })
+  }
+  s.threads.filter((t) => t.worktree && !t.cleanedAt && !t.archivedAt && !isDraft(t) && !live.has(`sub-${t.id.slice(0, 8)}`)).sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_GHOSTS)
     .forEach((t) => nodes.set(`t:${t.id}`, { id: `t:${t.id}`, kind: "ghost", tag: `Dormant · ${t.folderId}`, name: t.title, status: "dormant", thread: t, parent: null, children: [], x: 0, y: 0, w: W }))
   linkParents(nodes)
   let x = 0
@@ -164,7 +174,52 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   brand.append(el("b", "", "Org Canvas"), where)
   const stats = el("div", "p2-stats")
   const decisions = el("div", "p2-decisions")
-  top.append(brand, decisions, stats)
+  // "+ Draft": an inline form that creates a draft in a repo folder (POST /api/drafts).
+  const draftBox = el("div", "p2-newdraft")
+  const draftBtn = el("button", "p2-newchat", "+ Draft")
+  draftBtn.dataset.testid = "new-draft"
+  draftBtn.title = "Write a prompt as a draft first: refine, enhance or research it before a run starts"
+  const draftForm = el("form", "p2-draft-form")
+  const draftFolder = el("select")
+  draftFolder.setAttribute("aria-label", "Repo folder")
+  const draftText = el("textarea")
+  draftText.placeholder = "What should the factory do?"
+  draftText.rows = 4
+  draftText.setAttribute("aria-label", "Draft prompt")
+  const draftErr = el("div", "p2-err")
+  const draftCreate = el("button", "p2-newchat", "Create")
+  draftCreate.type = "submit"
+  draftForm.append(draftFolder, draftText, draftErr, draftCreate)
+  draftForm.hidden = true
+  draftBox.append(draftBtn, draftForm)
+  draftBtn.onclick = () => {
+    draftForm.hidden = !draftForm.hidden
+    if (draftForm.hidden) return
+    const repos = s?.folders.filter((f) => f.path) ?? []
+    draftFolder.replaceChildren(...repos.map((f) => Object.assign(el("option", "", f.name), { value: f.id })))
+    draftErr.textContent = repos.length ? "" : "No repo folder yet: add one first."
+    draftText.focus()
+  }
+  draftForm.onsubmit = (e) => {
+    e.preventDefault()
+    const prompt = draftText.value.trim()
+    if (!prompt || !draftFolder.value) return
+    draftCreate.disabled = true
+    draftErr.textContent = ""
+    // The error body is `{ error }`; show its text, else the raw reason.
+    const errorText = (reason: string) => {
+      try { return String(JSON.parse(reason).error ?? reason) } catch { return reason }
+    }
+    void Effect.runPromise(send("/api/drafts", "POST", { folderId: draftFolder.value, prompt }).pipe(
+      Effect.match({ onFailure: (err) => errorText(err.reason), onSuccess: () => null }),
+    )).then((error) => {
+      draftCreate.disabled = false
+      if (error) return void (draftErr.textContent = `Create failed: ${error}`)
+      draftText.value = ""
+      draftForm.hidden = true
+    })
+  }
+  top.append(brand, draftBox, decisions, stats)
   const dock = el("div", "p2-dock")
   const dockCue = el("div", "p2-dock-cue", "▼ Type new requests here · ＋ New chat for each new topic")
   const dockHead = el("div", "p2-dock-head")
@@ -327,6 +382,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   searchInput.addEventListener("search", runSearch)
 
   const select = (id: string | null) => {
+    // A draft node has no chat to open; Task 6 gives it an action ring instead.
+    if (id && nodes.get(id)?.kind === "draft") return
     sel = id && nodes.has(id) ? id : null
     sync(true)
   }
@@ -346,10 +403,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const styleCard = (n: Node, card: HTMLElement) => {
     const path = new Set<string>()
     for (let p: string | null = sel; p; p = nodes.get(p)?.parent ?? null) path.add(p)
-    card.className = `p2-node k-${n.kind} s-${n.status}${sel === n.id ? " sel" : ""}${sel && !path.has(n.id) ? " dim" : ""}`
+    card.className = `p2-node k-${n.kind}${n.kind === "draft" ? " draft" : ""} s-${n.status}${sel === n.id ? " sel" : ""}${sel && !path.has(n.id) ? " dim" : ""}`
     card.style.left = `${n.x + PAD}px`
     card.style.top = `${n.y + PAD}px`
-    card.style.setProperty("--glow", n.kind === "ghost" ? "#525252" : statusColor(n.status))
+    card.style.setProperty("--glow", n.kind === "ghost" || n.kind === "draft" ? "#525252" : statusColor(n.status))
     card.style.setProperty("--c", colorOf(streamId(n)))
   }
 
@@ -370,8 +427,22 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     return head
   }
 
+  /** Draft card: version badge, one chip per report (dimmed while its worker runs). */
+  const renderDraftCard = (n: Node, card: HTMLElement) => {
+    const d = n.thread!.draft!
+    const head = el("div", "p2-n-head")
+    head.append(el("i", "p2-dot"), el("span", "p2-tag", n.tag), el("span", "p2-badge", `v${d.versions.findIndex((v) => v.id === d.current) + 1}`))
+    const chips = el("div", "p2-n-act p2-chips")
+    for (const r of d.reports) {
+      const running = s!.agents.some((a) => a.id === r.workerId && a.status === "running")
+      chips.append(el("span", `p2-chip${running ? " run" : ""}`, r.action[0]!.toUpperCase() + r.action.slice(1)))
+    }
+    card.replaceChildren(head, el("div", "p2-n-name", n.name), el("div", "p2-n-wt", n.thread!.folderId), chips, el("div", "p2-n-foot", "draft · click for actions"))
+  }
+
   const renderCard = (n: Node, card: HTMLElement) => {
     styleCard(n, card)
+    if (n.kind === "draft") return renderDraftCard(n, card)
     const ctx = n.agent?.contextTokens && n.agent.contextLimit ? n.agent.contextTokens / n.agent.contextLimit : 0
     const bar = el("div", "p2-ctx")
     bar.append(el("span"))
@@ -409,7 +480,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       }
       const x1 = p.x + PAD + W / 2, y1 = p.y + PAD + H, x2 = n.x + PAD + W / 2, y2 = n.y + PAD, my = (y1 + y2) / 2
       e.setAttribute("d", `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`)
-      e.setAttribute("class", `${n.status === "running" ? "run" : ""} ${n.kind === "ghost" ? "ghost" : ""}`)
+      e.setAttribute("class", `${n.status === "running" ? "run" : ""} ${n.kind === "ghost" || n.kind === "draft" ? "ghost" : ""}`)
     }
     for (const [id, e] of edges) if (!seen.has(id)) {
       e.remove()
@@ -849,7 +920,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     nodes = buildTree(st)
     if (!mounted) {
       const threadId = new URL(window.location.href).searchParams.get("thread")
-      const linked = [...nodes.values()].find((n) => n.thread?.id === threadId)
+      const linked = [...nodes.values()].find((n) => n.thread?.id === threadId && n.kind !== "draft")
       if (linked) sel = linked.id
     }
     sync()

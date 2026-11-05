@@ -52,6 +52,19 @@
 .sfp-p2 .p2-node.k-sub { border-left: 3px solid var(--sf-accent); }
 .sfp-p2 .p2-node.k-ghost { background: transparent; border-style: dashed; opacity: .55; }
 .sfp-p2 .p2-node.k-ghost:hover { opacity: .9; }
+.sfp-p2 .p2-node.draft { background: transparent; border: 1px dashed color-mix(in srgb, var(--sf-accent) 60%, transparent); cursor: default; }
+.sfp-p2 .p2-chips { display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; }
+.sfp-p2 .p2-chip { padding: 1px 7px; border-radius: 999px; border: 1px solid var(--sf-accent); color: var(--sf-text); font-size: 11px; }
+.sfp-p2 .p2-chip.run { opacity: .45; }
+.sfp-p2 .p2-newdraft { position: relative; flex: none; }
+.sfp-p2 .p2-draft-form { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; width: 340px; display: flex; flex-direction: column; gap: 6px; padding: 10px;
+  border-radius: 10px; border: 1px solid var(--sf-border); background: var(--sf-surface); box-shadow: 0 12px 30px #000a; }
+.sfp-p2 .p2-draft-form[hidden] { display: none; }
+.sfp-p2 .p2-draft-form select, .sfp-p2 .p2-draft-form textarea { font: inherit; font-size: 12px; color: var(--sf-text); background: var(--sf-bg); border: 1px solid var(--sf-border); border-radius: 6px; padding: 5px 7px; }
+.sfp-p2 .p2-draft-form textarea { resize: vertical; }
+.sfp-p2 .p2-draft-form .p2-err { margin: 0; }
+.sfp-p2 .p2-draft-form .p2-err:empty { display: none; }
+.sfp-p2 .p2-draft-form button { align-self: flex-end; }
 .sfp-p2 .p2-node.sel { border-color: var(--sf-accent); box-shadow: 0 0 0 2px var(--sf-accent), 0 0 26px color-mix(in srgb, var(--sf-accent) 40%, transparent); opacity: 1; }
 .sfp-p2 .p2-node.dim { opacity: .6; }
 .sfp-p2 .p2-n-head { display: flex; align-items: center; gap: 6px; min-width: 0; }

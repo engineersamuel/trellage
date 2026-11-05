@@ -27,6 +27,27 @@ export const Worker = Schema.Struct({
 })
 export type Worker = typeof Worker.Type
 
+const DraftAction = Schema.Literals(["council", "debate", "research"])
+export const Draft = Schema.Struct({
+  versions: Schema.Array(Schema.Struct({
+    id: Schema.String,
+    prompt: Schema.String,
+    source: Schema.Literals(["human", "enhance"]),
+    title: Schema.optionalKey(Schema.String),
+    notes: Schema.optionalKey(Schema.String),
+    at: Schema.Number,
+  })),
+  current: Schema.String,
+  pending: Schema.optionalKey(Schema.Struct({
+    kind: Schema.Literal("enhance"),
+    candidates: Schema.Array(Schema.Struct({ title: Schema.String, prompt: Schema.String, notes: Schema.String })),
+    at: Schema.Number,
+  })),
+  reports: Schema.Array(Schema.Struct({ action: DraftAction, workerId: Schema.String, path: Schema.String, versionId: Schema.String })),
+  startedAt: Schema.optionalKey(Schema.Number),
+})
+export type Draft = typeof Draft.Type
+
 export const Thread = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
@@ -40,6 +61,7 @@ export const Thread = Schema.Struct({
   archivedAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   desk: Schema.optionalKey(Schema.Boolean),
   parentThreadId: Schema.optionalKey(Schema.String),
+  draft: Schema.optionalKey(Draft),
 })
 export type Thread = typeof Thread.Type
 
