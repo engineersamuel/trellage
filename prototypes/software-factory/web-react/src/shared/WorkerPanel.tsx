@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, describe, type FeedEvent, type Worker, useWorkerEvents } from "./factory";
+import { describe, type FeedEvent, type Worker, useWorkerEvents } from "./factory";
+import { workerApi as api } from "../state/store";
 import "./panel.css";
 import { agentLabel, workerTree } from "../../../shared/tree";
 

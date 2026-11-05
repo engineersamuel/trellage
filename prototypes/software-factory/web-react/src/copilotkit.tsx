@@ -7,27 +7,27 @@ if (typeof crypto.randomUUID !== "function") {
     ) as `${string}-${string}-${string}-${string}-${string}`;
 }
 
-// Option 1: React + CopilotKit. CopilotKit talks AG-UI straight to the Rust
-// coordinator through an HttpAgent (no CopilotKit runtime server in between).
-import { HttpAgent } from "@ag-ui/client";
+// Option 1: React + CopilotKit + Effect + one zustand store. See AGENTS.md for the rules.
 import { CopilotChat, CopilotKitProvider, useRenderTool } from "@copilotkit/react-core";
 import { Renderer } from "@openuidev/react-lang";
 import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
 import "@openuidev/react-ui/components.css";
 import { ThemeProvider } from "@openuidev/react-ui";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
 import { startDecisionCenter } from "../../shared/decisions";
-import { startFolderSidebar, syncThreadUrl } from "../../shared/folders";
+import { startFolderSidebar } from "../../shared/folders";
 import { startTranscripts } from "../../shared/transcript";
 import { setOpenUiRenderer, startPrototypes } from "../../shared/protos";
-import { onFeed, RESYNC } from "../../shared/feed";
 import { FactoryShell } from "./shared/FactoryShell";
 import { factoryMarkdownRenderer } from "./shared/CodeBlock";
 import { REPORT_REF, ReportViewer } from "./shared/ReportViewer";
-
-const coordinator = new HttpAgent({ url: "/api/agui", agentId: "coordinator" });
+import { ToolCard, ToolGroup } from "./chat/ToolCards";
+import { coordinator, freshThread, openThread } from "./state/chat";
+import { startHostEvents } from "./state/host-events";
+import { Action } from "./state/model";
+import { dispatch, startStore, useApp } from "./state/store";
 
 function ToolRenderers() {
   // Generative UI pushed by the backend: the coordinator's render_ui tool carries OpenUI Lang.
@@ -43,106 +43,38 @@ function ToolRenderers() {
         </div>
       ) : null,
   });
-  useRenderTool({
-    name: "spawn_worker",
-    parameters: z.object({ name: z.string(), task: z.string() }),
-    render: ({ parameters, status, result }) => (
-      <div className="ck-card">
-        <b>🏭 spawn_worker</b> {parameters?.name} — {status}
-        <div className="ck-sub">{parameters?.task}</div>
-        {result && <div className="ck-sub">pid {safe(result)?.pid} · {safe(result)?.id}</div>}
-      </div>
-    ),
-  });
-  useRenderTool({
-    name: "*",
-    render: ({ name, status }: { name: string; status: string }) => (
-      <div className="ck-card">
-        <b>🔧 {name}</b> — {status}
-      </div>
-    ),
-  });
+  // Every other tool: affectUI's Tool Call Card. `group` lets the chat fold calls in a row into ToolGroup.
+  useRenderTool({ name: "*", group: true, render: ToolCard });
   return null;
 }
 
-const safe = (s: string) => {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-};
-
-type Thread = { id: string; title: string };
-
-/**
- * Saved threads (shared with Foldkit and the sf CLI). Picking one loads its messages
- * into the agent; a thread that changes elsewhere reloads live.
- */
-function useThreads() {
-  const [threads, setThreads] = useState<Thread[]>([]);
-  const [current, setCurrent] = useState<string>(() => crypto.randomUUID());
-  const loadList = () => fetch("/api/threads/get").then((r) => r.json()).then((v) => setThreads(v.threads));
-  const open = async (id: string) => {
-    const msgs = await fetch(`/api/threads/get/${encodeURIComponent(id)}`).then((r) => r.json());
-    coordinator.threadId = id;
-    coordinator.setMessages(msgs);
-    setCurrent(id);
-    syncThreadUrl(id);
-  };
-  useEffect(() => {
-    loadList();
-    return onFeed((ev) => {
-      if (ev.type !== "factory.thread_updated" && ev.type !== RESYNC) return;
-      loadList();
-      // Reload the open thread when another client wrote it (or after a feed gap); our own runs stream in already.
-      const id = ev.type === RESYNC ? coordinator.threadId : ev.data.threadId;
-      if (id && id === coordinator.threadId && !coordinator.isRunning) open(id).catch(() => {});
-    });
-  }, []);
-  const fresh = () => {
-    const id = crypto.randomUUID();
-    coordinator.threadId = id;
-    coordinator.setMessages([]);
-    setCurrent(id);
-    syncThreadUrl(null);
-  };
-  return { threads, current, open, fresh };
-}
-
+/** Saved threads (shared with Foldkit and the sf CLI). The store holds the list and the open id. */
 function ThreadPicker() {
-  const t = useThreads();
-  // Opening a decision (deep link) opens its conversation behind the card.
-  useEffect(() => {
-    const onOpen = (e: Event) => t.open((e as CustomEvent<string>).detail);
-    window.addEventListener("sf:open-thread", onOpen);
-    window.addEventListener("sf:new-thread", t.fresh);
-    // The sidebar announces ?thread= on load, which can be before this listener exists: open it here too.
-    const linked = new URL(window.location.href).searchParams.get("thread");
-    if (linked) t.open(linked).catch(() => {});
-    return () => (window.removeEventListener("sf:open-thread", onOpen), window.removeEventListener("sf:new-thread", t.fresh));
-  }, []);
-  return (<>
+  const threads = useApp((s) => s.threads);
+  const current = useApp((s) => s.threadId);
+  return (
     <div className="ck-threads">
-      <select value={t.threads.some((x) => x.id === t.current) ? t.current : ""} onChange={(e) => (e.target.value ? t.open(e.target.value) : t.fresh())}>
+      <select value={threads.some((x) => x.id === current) ? current : ""} onChange={(e) => (e.target.value ? void openThread(e.target.value) : freshThread())}>
         <option value="">New thread</option>
-        {t.threads.map((x) => (
+        {threads.map((x) => (
           <option key={x.id} value={x.id}>{x.title}</option>
         ))}
       </select>
     </div>
-  </>);
+  );
 }
+
+const refOf = (e: Element) => {
+  const text = (e.textContent ?? "").trim();
+  const href = e.getAttribute("href") ?? "";
+  return REPORT_REF.test(text) ? text : REPORT_REF.test(href) ? href : null;
+};
 
 /** Report paths (`reports/x.md`) anywhere on the page open the report viewer. */
 function ReportLinks() {
-  const [open, setOpen] = useState<{ ref: string; agent?: string } | null>(null);
+  const report = useApp((s) => s.report);
   useEffect(() => {
-    const refOf = (e: Element) => {
-      const text = (e.textContent ?? "").trim();
-      const href = e.getAttribute("href") ?? "";
-      return REPORT_REF.test(text) ? text : REPORT_REF.test(href) ? href : null;
-    };
+    // Shared DOM modules render report paths too, so links are found in the page, not in React output.
     const tag = () => {
       for (const e of document.querySelectorAll("code:not(.sf-report-link), a:not(.sf-report-link)"))
         if (!e.closest("pre, .rv-modal") && refOf(e)) e.classList.add("sf-report-link");
@@ -155,17 +87,16 @@ function ReportLinks() {
       ev.stopPropagation();
       // The agent that wrote the text decides which conversation worktree a relative path means.
       const host = e.closest<HTMLElement>("[data-agent], [data-transcript]");
-      setOpen({ ref, agent: host?.dataset.agent ?? host?.dataset.transcript ?? undefined });
+      const agent = host?.dataset.agent ?? host?.dataset.transcript;
+      dispatch(Action.ReportOpened(agent ? { ref, agent } : { ref }));
     };
     const mo = new MutationObserver(tag);
     mo.observe(document.body, { subtree: true, childList: true, characterData: true });
     tag();
     document.addEventListener("click", onClick, true);
-    const onOpen = (e: Event) => setOpen({ ref: (e as CustomEvent<string>).detail });
-    window.addEventListener("sf:open-report", onOpen);
-    return () => (mo.disconnect(), document.removeEventListener("click", onClick, true), window.removeEventListener("sf:open-report", onOpen));
+    return () => (mo.disconnect(), document.removeEventListener("click", onClick, true));
   }, []);
-  return open ? <ReportViewer refPath={open.ref} agent={open.agent} onClose={() => setOpen(null)} /> : null;
+  return report ? <ReportViewer refPath={report.ref} agent={report.agent} onClose={() => dispatch(Action.ReportClosed())} /> : null;
 }
 
 function App() {
@@ -175,16 +106,24 @@ function App() {
       <ReportLinks />
       <FactoryShell
         title="Factory · CopilotKit"
-        chat={<><ThreadPicker /><CopilotChat agentId="coordinator" labels={{ chatInputPlaceholder: "Ask the coordinator to build something… (try: switch to the nord theme)" }} /></>}
+        chat={<>
+          <ThreadPicker />
+          <CopilotChat
+            agentId="coordinator"
+            labels={{ chatInputPlaceholder: "Ask the coordinator to build something… (try: switch to the nord theme)" }}
+            chatView={{ messageView: { assistantMessage: { toolCallsView: { group: ToolGroup } } } }}
+          />
+        </>}
       />
-      <style>{`.ck-card{border:1px solid var(--sf-border);border-radius:8px;padding:6px 10px;margin:6px 0;font-size:13px}
-        .ck-sub{color:var(--sf-muted);font-size:12px;margin-top:2px}
-        .ck-threads{padding:6px 12px;border-bottom:1px solid var(--sf-border)}
-        .ck-threads select{max-width:100%;background:var(--sf-surface);color:var(--sf-text);border:1px solid var(--sf-border);border-radius:6px;padding:3px 6px}`}</style>
+      <style>{`.ck-threads{padding:6px 12px;border-bottom:1px solid var(--sf-border)}
+        .ck-threads select{max-width:100%;background:var(--sf-surface);color:var(--sf-text);border:1px solid var(--sf-border);border-radius:6px;padding:3px 6px}
+        .sf-chat .ui-tcc, .sf-chat .ui-tcc-group{margin:6px 0}`}</style>
     </CopilotKitProvider>
   );
 }
 
+startStore();
+startHostEvents();
 createRoot(document.getElementById("root")!).render(<App />);
 startDecisionCenter();
 startFolderSidebar();

@@ -1,0 +1,98 @@
+// The zustand store that holds the one Model, and the Effect programs that feed it.
+// Components read with `useApp(selector)` and change state only through `dispatch` or the `actions` below.
+import { Effect, Fiber, Queue, Schema, Stream } from "effect"
+import { create } from "zustand"
+import { onFeed, RESYNC, type FeedEvent } from "../../../shared/feed"
+import { json, send, type HttpError } from "../../../shared/http"
+import { currentProto, onProto } from "../../../shared/protos"
+import { SettingsDocument, Steps, StoredEvent, Threads, Worker, type Thread } from "../../../shared/schemas"
+import { Action, feedActions, initial, reduce, type Model } from "./model"
+
+type Store = Model & { readonly dispatch: (a: Action) => void }
+
+// The page layout is read when the store starts (startStore), so importing this module touches no DOM.
+export const useApp = create<Store>()((set) => ({
+  ...initial(crypto.randomUUID(), 0),
+  dispatch: (a) => set((s) => reduce(s, a)),
+}))
+
+export const dispatch = (a: Action): void => useApp.getState().dispatch(a)
+
+/** Run an HTTP Effect; a failure is logged and the state stays as it was. */
+const load = <A>(effect: Effect.Effect<A, HttpError>, toAction: (a: A) => Action): Effect.Effect<void> =>
+  effect.pipe(
+    Effect.map((a) => dispatch(toAction(a))),
+    Effect.catch((e: HttpError) => Effect.logWarning(`${e.url}: ${e.reason}`)),
+  )
+
+export const loadWorkers = load(json("/api/workers", Schema.Array(Worker)), (workers) => Action.WorkersLoaded({ workers }))
+export const loadSettings = load(json("/api/settings", SettingsDocument), (document) => Action.SettingsLoaded({ document }))
+export const loadReviews = load(json("/api/steps", Steps), (d) => Action.SecurityReviewsLoaded({ reviews: d.securityReviews }))
+export const loadThreads = load(json("/api/threads/get", Threads), (d) => Action.ThreadsLoaded({ threads: d.threads }))
+/** The agent that runs a thread's chat (same rule as the coordinator: sub- for repo threads, gen- for general). */
+export const agentOfThread = (t: Thread | undefined): string =>
+  !t || t.desk ? "coordinator" : t.worktree ? `sub-${t.id.slice(0, 8)}` : `gen-${t.id.slice(0, 8)}`
+
+/** Start and end times of one agent's recent tool calls, so a reopened chat shows durations. Live calls come from the feed. */
+export const loadToolTimes = (agentId: string): Effect.Effect<void> =>
+  json(
+    `/api/events?workers=${encodeURIComponent(agentId)}&types=tool.execution_start,tool.execution_complete&perWorker=1000`,
+    Schema.Array(StoredEvent),
+  ).pipe(
+    Effect.map((events) => events.flatMap(feedActions).forEach(dispatch)),
+    Effect.catch((e: HttpError) => Effect.logWarning(`${e.url}: ${e.reason}`)),
+  )
+
+const reloadAll = Effect.all([loadWorkers, loadSettings, loadReviews, loadThreads], { concurrency: "unbounded", discard: true })
+
+/** The factory feed as a Stream (one shared EventSource, see shared/feed.ts). */
+export const feed: Stream.Stream<FeedEvent> = Stream.callback<FeedEvent>((queue) =>
+  Effect.acquireRelease(
+    Effect.sync(() => onFeed((ev) => void Queue.offerUnsafe(queue, ev))),
+    (off) => Effect.sync(off),
+  ),
+)
+
+/** Feed events that need a refetch rather than a patch. */
+const reloadFor = (type: string): Effect.Effect<void> | null =>
+  type === RESYNC ? reloadAll : type === "factory.security_review" ? loadReviews : type === "factory.thread_updated" ? loadThreads : null
+
+/** One program: initial load, then every feed event becomes actions or a reload. */
+export const bridge: Effect.Effect<void> = Effect.gen(function* () {
+  yield* reloadAll
+  yield* Effect.forkChild(loadToolTimes("coordinator"))
+  yield* feed.pipe(
+    Stream.runForEach((ev) => {
+      for (const a of feedActions(ev)) dispatch(a)
+      return reloadFor(ev.type) ?? Effect.void
+    }),
+  )
+})
+
+/** Start the bridge once per page, plus the layout switcher listener. Returns a stop function. */
+export const startStore = (): (() => void) => {
+  dispatch(Action.ProtoChanged({ proto: currentProto() }))
+  const fiber = Effect.runFork(bridge)
+  const offProto = onProto((proto) => dispatch(Action.ProtoChanged({ proto })))
+  return () => (offProto(), void Effect.runFork(Fiber.interrupt(fiber)))
+}
+
+/** Settings PATCH (RFC 7386 merge). The new settings arrive through the feed; only the error is stored. */
+export const patchSettings = (patch: unknown): void =>
+  void Effect.runPromise(
+    send("/api/settings", "PATCH", patch).pipe(
+      Effect.as(null),
+      Effect.catch((e: HttpError) => Effect.succeed(e.reason)),
+      Effect.map((error) => dispatch(Action.SettingsPatchFinished({ error }))),
+    ),
+  )
+
+const fire = (effect: Effect.Effect<void, HttpError>) =>
+  void Effect.runPromise(effect.pipe(Effect.catch((e: HttpError) => Effect.logWarning(`${e.url}: ${e.reason}`))))
+
+/** Worker commands. Results come back through the feed. */
+export const workerApi = {
+  stop: (id: string) => fire(send(`/api/workers/${encodeURIComponent(id)}`, "DELETE")),
+  message: (id: string, prompt: string) => fire(send(`/api/workers/${encodeURIComponent(id)}/message`, "POST", { prompt })),
+  abort: (id: string) => fire(send(`/api/workers/${encodeURIComponent(id)}/abort`, "POST")),
+}

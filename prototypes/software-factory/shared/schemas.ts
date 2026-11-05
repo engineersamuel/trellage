@@ -110,3 +110,55 @@ export const StoredEvent = Schema.Struct({
 
 /** GET /api/search */
 export const SearchHit = Schema.Struct({ seq: Schema.Number, workerId: Schema.String, type: Schema.String, timestamp: Schema.String, snippet: Schema.String })
+
+// Factory settings: the same document the coordinator agent edits with update_settings.
+const Palette = Schema.Struct({
+  bg: Schema.String,
+  surface: Schema.String,
+  border: Schema.String,
+  text: Schema.String,
+  muted: Schema.String,
+  accent: Schema.String,
+})
+const Cron = Schema.Struct({ everySeconds: Schema.Number, prompt: Schema.String, enabled: Schema.Boolean })
+const Extension = Schema.Struct({
+  slot: Schema.String,
+  js: Schema.String,
+  css: Schema.String,
+  enabled: Schema.Boolean,
+  description: Schema.String,
+})
+
+export const Settings = Schema.Struct({
+  theme: Schema.String,
+  themes: Schema.Record(Schema.String, Palette),
+  layout: Schema.Struct({ panel: Schema.String, panelWidth: Schema.Number }),
+  navbar: Schema.Array(Schema.String),
+  animations: Schema.Boolean,
+  hotkeys: Schema.Record(Schema.String, Schema.String),
+  focus: Schema.String,
+  banner: Schema.NullOr(Schema.String),
+  agent: Schema.Struct({
+    model: Schema.String,
+    reasoningEffort: Schema.String,
+    disabledTools: Schema.Array(Schema.String),
+    instructions: Schema.String,
+  }),
+  crons: Schema.Record(Schema.String, Cron),
+  extensions: Schema.Record(Schema.String, Extension),
+  repo: Schema.String,
+})
+export type Settings = typeof Settings.Type
+
+export const SettingsOptions = Schema.Struct({
+  navbarItems: Schema.Array(Schema.String),
+  panelPositions: Schema.Array(Schema.String),
+  efforts: Schema.Array(Schema.String),
+  toolKinds: Schema.Array(Schema.String),
+  models: Schema.Array(Schema.String),
+})
+export type SettingsOptions = typeof SettingsOptions.Type
+
+/** GET /api/settings: the document, its generated theme CSS, and the choices the controls offer. */
+export const SettingsDocument = Schema.Struct({ settings: Settings, css: Schema.String, options: SettingsOptions })
+export type SettingsDocument = typeof SettingsDocument.Type

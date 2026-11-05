@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { findings, toMdx, type Finding } from "./report-model"
+import { openThread } from "../state/chat"
 import "./report-viewer.css"
 
 export type Report = { threadId: string; folderId: string; title: string; path: string; file: string; content: string }
@@ -33,7 +34,7 @@ function StartButton({ report, finding }: { report: Report; finding: Finding }) 
       if (!r.ok) throw new Error(await r.text())
       const t = await r.json()
       setState({ branch: t.branch })
-      window.dispatchEvent(new CustomEvent("sf:open-thread", { detail: t.threadId }))
+      void openThread(t.threadId)
     } catch (e) {
       setState({ error: e instanceof Error ? e.message : String(e) })
     }

@@ -1,80 +1,65 @@
-import { useEffect, useMemo, useState } from "react";
-import { onFeed, RESYNC } from "../../../shared/feed";
-import { Effect, Schema } from "effect";
-import { fire, json, runOr, send } from "../../../shared/http";
-import { Steps, StoredEvent, Worker as WorkerSchema, type SecurityReview as Review } from "../../../shared/schemas";
+// Worker events for the raw-event view, and the event text helper. App-wide state lives in ../state/store.
+import { Effect, Fiber, Schema, Stream } from "effect";
+import { useEffect, useState } from "react";
+import { RESYNC, type FeedEvent } from "../../../shared/feed";
+import { json, type HttpError } from "../../../shared/http";
+import { StoredEvent, type Settings as SettingsT, type SettingsOptions as SettingsOptionsT, type Worker as WorkerT } from "../../../shared/schemas";
+import { feed } from "../state/store";
 
-export type Worker = typeof WorkerSchema.Type;
+export type { FeedEvent };
+export type Worker = WorkerT;
+export type Settings = SettingsT;
+export type SettingsOptions = SettingsOptionsT;
 
-export type FeedEvent = {
-  seq: number;
-  workerId: string;
-  type: string;
-  agentId: string | null;
-  timestamp: string;
-  data: any;
-};
+const MAX_EVENTS = 2000;
 
-/** Live worker list: initial fetch + factory.* events from the raw feed. */
-export function useWorkers(): Worker[] {
-  const [workers, setWorkers] = useState<Record<string, Worker>>({});
-  useEffect(() => {
-    const load = () =>
-      // A failed or malformed response keeps the last good list.
-      void runOr(json("/api/workers", Schema.Array(WorkerSchema)), null).then((ws) => ws && setWorkers(Object.fromEntries(ws.map((w) => [w.id, w]))));
-    load();
-    return onFeed((ev) => {
-      if (ev.type === RESYNC) load();
-      else if (ev.type === "factory.worker_started" || ev.type === "factory.worker_updated") {
-        setWorkers((ws) => ({ ...ws, [ev.data.id]: ev.data }));
-      } else if (ev.type === "factory.worker_stopped") {
-        setWorkers(({ [ev.data.id]: _, ...rest }) => rest);
-      }
-    });
-  }, []);
-  return useMemo(
-    () => Object.values(workers).sort((a, b) => (a.role === "coordinator" ? -1 : b.role === "coordinator" ? 1 : a.name.localeCompare(b.name))),
-    [workers],
-  );
-}
-
-/** Raw Copilot SDK events for one worker: backlog + live tail. */
+/**
+ * Raw Copilot SDK events for one worker: backlog + live tail. Local to the open panel (not app state),
+ * run as one Effect fiber that stops when the panel closes or the worker changes.
+ */
 export function useWorkerEvents(id: string | null): FeedEvent[] {
   const [events, setEvents] = useState<FeedEvent[]>([]);
   useEffect(() => {
     setEvents([]);
     if (!id) return;
+    const backlog = json(`/api/workers/${encodeURIComponent(id)}/events`, Schema.Array(StoredEvent)).pipe(
+      Effect.map((log) => log as readonly FeedEvent[]),
+      Effect.catch((e: HttpError) => Effect.logWarning(`${e.url}: ${e.reason}`).pipe(Effect.as(null))),
+    );
     let backlogMax = -1;
-    const pending: FeedEvent[] = [];
     let loaded = false;
-    const load = () => {
-      loaded = false;
-      pending.length = 0;
-      void runOr(json(`/api/workers/${encodeURIComponent(id)}/events`, Schema.Array(StoredEvent)), null)
-        .then((log) => {
-          if (!log) return;
-          backlogMax = log.at(-1)?.seq ?? -1;
-          loaded = true;
-          setEvents([...log, ...pending.filter((e) => e.seq > backlogMax)]);
-        });
-    };
-    const off = onFeed((ev) => {
-      if (ev.type === RESYNC) return load();
-      if (ev.workerId !== id) return;
-      if (!loaded) pending.push(ev);
-      else if (ev.seq > backlogMax || ev.seq < backlogMax - 1e9) setEvents((es) => [...es.slice(-1999), ev]);
+    const pending: FeedEvent[] = [];
+    const load = backlog.pipe(
+      Effect.map((log) => {
+        if (!log) return;
+        backlogMax = log.at(-1)?.seq ?? -1;
+        loaded = true;
+        setEvents([...log, ...pending.filter((e) => e.seq > backlogMax)].slice(-MAX_EVENTS));
+        pending.length = 0;
+      }),
+    );
+    const program = Effect.gen(function* () {
+      // Subscribe first, so nothing between the backlog and the live tail is lost.
+      const live = yield* feed.pipe(
+        Stream.runForEach((ev) =>
+          Effect.sync(() => {
+            if (ev.type === RESYNC) return void ((loaded = false), Effect.runFork(load));
+            if (ev.workerId !== id) return;
+            if (!loaded) pending.push(ev);
+            // A restarted coordinator numbers events from a lower start; take them anyway.
+            else if (ev.seq > backlogMax || ev.seq < backlogMax - 1e9) setEvents((es) => [...es.slice(-(MAX_EVENTS - 1)), ev]);
+          }),
+        ),
+        Effect.forkChild,
+      );
+      yield* load;
+      yield* Fiber.join(live);
     });
-    load();
-    return off;
+    const fiber = Effect.runFork(program);
+    return () => void Effect.runFork(Fiber.interrupt(fiber));
   }, [id]);
   return events;
 }
-
-export const api = {
-  stop: (id: string) => fire(send(`/api/workers/${encodeURIComponent(id)}`, "DELETE")),
-  message: (id: string, prompt: string) => fire(send(`/api/workers/${encodeURIComponent(id)}/message`, "POST", { prompt })),
-  abort: (id: string) => fire(send(`/api/workers/${encodeURIComponent(id)}/abort`, "POST")),
-};
 
 /** One-line summary of a raw Copilot SDK event for the peer view. */
 export function describe(ev: FeedEvent): string {
@@ -97,66 +82,4 @@ export function describe(ev: FeedEvent): string {
     default:
       return JSON.stringify(d).slice(0, 160);
   }
-}
-
-// ---------- Security review (runs after every implement step) ----------
-
-export type SecurityReview = Review;
-
-/** Security reviews from /api/steps, refetched on every factory.security_review event. */
-export function useSecurityReviews(): readonly SecurityReview[] {
-  const [reviews, setReviews] = useState<readonly SecurityReview[]>([]);
-  useEffect(() => {
-    const load = () => void runOr(json("/api/steps", Steps), null).then((d) => d && setReviews(d.securityReviews));
-    load();
-    return onFeed((ev) => {
-      if (ev.type === "factory.security_review") load();
-    });
-  }, []);
-  return reviews;
-}
-
-// ---------- Settings (agent access parity) ----------
-
-export type Palette = { bg: string; surface: string; border: string; text: string; muted: string; accent: string };
-export type Cron = { everySeconds: number; prompt: string; enabled: boolean };
-export type Settings = {
-  theme: string;
-  themes: Record<string, Palette>;
-  layout: { panel: "right" | "left" | "hidden"; panelWidth: number };
-  navbar: string[];
-  animations: boolean;
-  hotkeys: Record<string, string>;
-  focus: string;
-  banner: string | null;
-  agent: { model: string; reasoningEffort: string; disabledTools: string[]; instructions: string };
-  crons: Record<string, Cron>;
-  extensions: Record<string, { slot: string; js: string; css: string; enabled: boolean; description: string }>;
-  repo: string;
-};
-export type SettingsOptions = {
-  navbarItems: string[];
-  panelPositions: string[];
-  hotkeyActions: string[];
-  efforts: string[];
-  toolKinds: string[];
-  models: string[];
-};
-
-/** Factory settings shared with the coordinator agent. Updates live from the feed. */
-export function useSettings() {
-  const [state, setState] = useState<{ settings: Settings; css: string; options: SettingsOptions } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const load = () => void runOr(json("/api/settings", Schema.Unknown), null).then((v) => v && setState(v as never));
-    load();
-    return onFeed((ev) => {
-      if (ev.type === RESYNC) load();
-      else if (ev.type === "factory.settings_updated") setState((s) => s && { ...s, settings: ev.data.settings, css: ev.data.css });
-    });
-  }, []);
-  const patch = async (p: unknown) => {
-    setError(await Effect.runPromise(send("/api/settings", "PATCH", p).pipe(Effect.as(null), Effect.catch((e) => Effect.succeed(e.reason)))));
-  };
-  return { ...state, error, patch };
 }

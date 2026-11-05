@@ -1,44 +1,39 @@
-import { useEffect, useState } from "react";
-import { api, type Settings, type SettingsOptions, type Worker, useSecurityReviews, useSettings, useWorkers } from "./factory";
+import { useEffect, useMemo, useState } from "react";
+import { type Settings, type SettingsOptions, type Worker } from "./factory";
 import { WorkerPanel } from "./WorkerPanel";
 import { setExtensionWorkers, syncExtensions } from "../../../shared/extensions";
-import { currentProto, onProto } from "../../../shared/protos";
+import { Action, sortedWorkers } from "../state/model";
+import { dispatch, patchSettings, useApp, workerApi } from "../state/store";
 
 /** Empty mount point for agent-written extensions. React never renders children into it. */
 const Slot = ({ name, className }: { name: string; className?: string }) => <div data-slot={name} className={className} />;
 
-type S = ReturnType<typeof useSettings>;
-
 /** Shell shared by the factory UI: live theme, navbar, settings drawer, hotkeys, worker panel. */
 export function FactoryShell({ title, chat }: { title: string; chat: React.ReactNode }) {
-  const s = useSettings();
-  const workers = useWorkers();
-  const [open, setOpen] = useState(false);
-  const [proto, setProto] = useState(currentProto);
-  useEffect(() => onProto(setProto), []);
-  useHotkeys(s, () => setOpen((o) => !o));
+  const doc = useApp((m) => m.settings);
+  const error = useApp((m) => m.settingsError);
+  const open = useApp((m) => m.settingsOpen);
+  const proto = useApp((m) => m.proto);
+  const workerMap = useApp((m) => m.workers);
+  const workers = useMemo(() => sortedWorkers(workerMap), [workerMap]);
+  useHotkeys(doc?.settings ?? null);
   useEffect(() => {
-    if (s.settings) syncExtensions(s.settings, "copilotkit");
-  });
+    if (doc) syncExtensions(doc.settings, "copilotkit");
+  }, [doc]);
   useEffect(() => setExtensionWorkers(workers), [workers]);
-  // Worker links in the transcript select that worker.
-  useEffect(() => {
-    const on = (e: Event) => s.patch({ focus: (e as CustomEvent<string>).detail });
-    window.addEventListener("sf:select-worker", on);
-    return () => window.removeEventListener("sf:select-worker", on);
-  }, [s.patch]);
-  if (!s.settings) return null;
-  const { layout } = s.settings;
+  if (!doc) return null;
+  const s = doc.settings;
+  const { layout } = s;
   const cols = layout.panel === "hidden" ? "1fr" : layout.panel === "left" ? `${layout.panelWidth}% 1fr` : `1fr ${layout.panelWidth}%`;
   const panel = (
-    <WorkerPanel workers={workers} selected={s.settings.focus} onSelect={(id) => s.patch({ focus: id })} />
+    <WorkerPanel workers={workers} selected={s.focus} onSelect={(id) => patchSettings({ focus: id })} />
   );
   return (
     <div className="sf-root">
-      <style>{s.css}</style>
+      <style>{doc.css}</style>
       <Slot name="page-background" className="sf-slot-bg" />
-      <Navbar title={title} s={s.settings} workers={workers} onSettings={() => setOpen(true)} />
-      {s.settings.banner && <div className="sf-banner">{s.settings.banner}</div>}
+      <Navbar title={title} s={s} workers={workers} onSettings={() => dispatch(Action.SettingsToggled({ open: true }))} />
+      {s.banner && <div className="sf-banner">{s.banner}</div>}
       <Slot name="banner" />
       {proto > 0 ? (
         // Prototype layout: shared/protos owns .sfp-host and places the chat cell.
@@ -57,32 +52,32 @@ export function FactoryShell({ title, chat }: { title: string; chat: React.React
         </div>
       )}
       <Slot name="overlay" className="sf-slot-overlay" />
-      {open && s.options && <SettingsDrawer s={s.settings} options={s.options} patch={s.patch} error={s.error} onClose={() => setOpen(false)} />}
+      {open && <SettingsDrawer s={s} options={doc.options} patch={patchSettings} error={error} onClose={() => dispatch(Action.SettingsToggled({ open: false }))} />}
     </div>
   );
 }
 
-function useHotkeys(s: S, toggleSettings: () => void) {
+function useHotkeys(s: Settings | null) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (!s.settings || e.metaKey || e.ctrlKey || e.altKey || t.closest("input,textarea,select,[contenteditable]")) return;
-      const action = s.settings.hotkeys[e.key];
+      if (!s || e.metaKey || e.ctrlKey || e.altKey || t.closest("input,textarea,select,[contenteditable]")) return;
+      const action = s.hotkeys[e.key];
       if (!action) return;
       e.preventDefault();
-      const names = Object.keys(s.settings.themes);
+      const names = Object.keys(s.themes);
       const actions: Record<string, () => unknown> = {
-        toggleSettings,
-        togglePanel: () => s.patch({ layout: { panel: s.settings!.layout.panel === "hidden" ? "right" : "hidden" } }),
-        cycleTheme: () => s.patch({ theme: names[(names.indexOf(s.settings!.theme) + 1) % names.length] }),
-        focusCoordinator: () => s.patch({ focus: "coordinator" }),
-        abortCoordinator: () => api.abort("coordinator"),
+        toggleSettings: () => dispatch(Action.SettingsToggled({})),
+        togglePanel: () => patchSettings({ layout: { panel: s.layout.panel === "hidden" ? "right" : "hidden" } }),
+        cycleTheme: () => patchSettings({ theme: names[(names.indexOf(s.theme) + 1) % names.length] }),
+        focusCoordinator: () => patchSettings({ focus: "coordinator" }),
+        abortCoordinator: () => workerApi.abort("coordinator"),
       };
       actions[action]?.();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [s.settings, toggleSettings]);
+  }, [s]);
 }
 
 function Navbar({ title, s, workers, onSettings }: { title: string; s: Settings; workers: Worker[]; onSettings: () => void }) {
@@ -121,7 +116,7 @@ function Navbar({ title, s, workers, onSettings }: { title: string; s: Settings;
 
 function SettingsDrawer({ s, options, patch, error, onClose }: { s: Settings; options: SettingsOptions; patch: (p: unknown) => void; error: string | null; onClose: () => void }) {
   const [cron, setCron] = useState({ name: "", every: "60", prompt: "" });
-  const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+  const toggle = (list: readonly string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   return (
     <aside className="sf-drawer">
       <header><b>Settings</b><span className="sf-muted"> · the agent can change all of this too</span><button onClick={onClose}>✕</button></header>
@@ -181,7 +176,7 @@ function SettingsDrawer({ s, options, patch, error, onClose }: { s: Settings; op
 }
 
 function SecurityReviews() {
-  const reviews = useSecurityReviews();
+  const reviews = useApp((m) => m.securityReviews);
   return (
     <section><h4>Security review</h4>
       {reviews.length === 0 && <div className="sf-muted">runs automatically after every implement step</div>}
