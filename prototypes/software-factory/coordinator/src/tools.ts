@@ -114,6 +114,12 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       return json({ stopped: true })
     },
   }),
+  defineTool("show_worker_board", {
+    description:
+      "Show the human a live board of the worker fleet in the chat (counts, status, model, memory, context use). Use it instead of render_ui whenever the answer is the fleet's status. It takes no arguments and updates live.",
+    parameters: obj({}),
+    handler: () => json({ workers: f.summaries(), at: Date.now() }),
+  }),
   defineTool("render_ui", {
     description:
       "Show generative UI inline in the chat. `program` is an OpenUI Lang program (see the OpenUI Lang section of your instructions).",

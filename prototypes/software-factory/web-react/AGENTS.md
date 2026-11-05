@@ -52,7 +52,7 @@ CopilotKit owns the chat and every UI whose layout we know in advance. OpenUI dr
 10. **Known layout → CopilotKit; agent layout → OpenUI.** Before adding a card, ask: do we know its layout? If yes,
     add a backend tool with typed arguments and a `useRenderTool` renderer. Only `render_ui` carries OpenUI Lang.
     Do not teach the agent a second UI language (CopilotKit `standardUI`, A2UI, Open Generative UI) while OpenUI is in use.
-11. **OpenUI goes through one module.** Only `src/genui/OpenUi.tsx` imports `@openuidev/*`. The chat (`OpenUiCard`) and the
+11. **OpenUI goes through `src/genui/`.** Only `src/genui/` imports `@openuidev/*`; the renderer and theme live in `OpenUi.tsx`. The chat (`OpenUiCard`) and the
     shared stream and canvas (`renderOpenUiInto`, via `setOpenUiRenderer`) use it, so every agent card looks the same.
     OpenUI buttons are actions: `continue_conversation` sends the text as the next user message of the open thread
     (`openUiChatAction`), `open_url` opens a tab. A card with buttons that do nothing is a bug.
@@ -60,7 +60,9 @@ CopilotKit owns the chat and every UI whose layout we know in advance. OpenUI dr
     the affectUI card by overriding its `--ui-tcc-*` variables from our CSS, our own cards with `var(--sf-*)`.
     No hard-coded surface, text or accent colours in our components (status colours such as red for errors are fine).
 13. **Reuse, don't wrap twice.** A known card may use OpenUI's React components directly (for example a chart inside a
-    typed card) through `src/genui/`; it still renders through `useRenderTool`, not `render_ui`.
+    typed card) through `src/genui/`, wrapped in `OpenUiTheme`; it still renders through `useRenderTool`, not `render_ui`.
+    Example: `show_worker_board` → `src/genui/WorkerBoard.tsx` (a pure `toBoard` view model, tested in `test/workerboard.test.ts`;
+    live workers from the store, the tool result as the fallback snapshot).
 14. **A gap is a typed tool, not a new library.** When neither catalog has a component (map, video, HTML), add a tool
     with typed arguments and a renderer. Add a component library only verbatim under `src/components/ui/` (rule 8).
 15. **Generative UI is data, not state.** A renderer reads its tool arguments and the store; it never writes app state

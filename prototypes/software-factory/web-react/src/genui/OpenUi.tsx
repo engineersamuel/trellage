@@ -6,6 +6,7 @@ import { Renderer } from "@openuidev/react-lang"
 import { ThemeProvider } from "@openuidev/react-ui"
 import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib"
 import "@openuidev/react-ui/components.css"
+import type { ReactNode } from "react"
 import { createRoot } from "react-dom/client"
 import type { OpenUiAction } from "../../../shared/protos/core"
 import type { Palette as PaletteSchema } from "../../../shared/schemas"
@@ -34,13 +35,22 @@ const usePalette = (): Palette | undefined => useApp((s) => (s.settings ? s.sett
 
 type Props = { program: string; streaming: boolean; onAction: (a: OpenUiAction) => void }
 
-/** One OpenUI program, themed from the factory palette. */
-export function OpenUiCard({ program, streaming, onAction }: Props) {
+/** OpenUI's theme context, mapped from the factory palette. Typed cards that use OpenUI components wrap in it. */
+export function OpenUiTheme({ children }: { children: ReactNode }) {
   const palette = usePalette()
   return (
     <ThemeProvider mode="dark" {...(palette ? { darkTheme: openUiTheme(palette) } : {})}>
-      <Renderer response={program} library={openuiChatLibrary} isStreaming={streaming} onAction={(e) => onAction(e as OpenUiAction)} />
+      {children}
     </ThemeProvider>
+  )
+}
+
+/** One OpenUI program, themed from the factory palette. */
+export function OpenUiCard({ program, streaming, onAction }: Props) {
+  return (
+    <OpenUiTheme>
+      <Renderer response={program} library={openuiChatLibrary} isStreaming={streaming} onAction={(e) => onAction(e as OpenUiAction)} />
+    </OpenUiTheme>
   )
 }
 

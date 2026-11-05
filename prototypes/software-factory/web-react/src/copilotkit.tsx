@@ -3,6 +3,7 @@ import "./secure-context";
 // Option 1: React + CopilotKit + Effect + one zustand store. See AGENTS.md for the rules.
 import { CopilotChat, CopilotKitProvider, useCopilotKit, useRenderTool } from "@copilotkit/react-core";
 import { OpenUiCard, renderOpenUiInto } from "./genui/OpenUi";
+import { WorkerBoard } from "./genui/WorkerBoard";
 import { useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
@@ -34,6 +35,8 @@ function ToolRenderers() {
         </div>
       ) : null,
   }, [onAction]);
+  // Known layout (rule 13): the live worker board, drawn with OpenUI components.
+  useRenderTool({ name: "show_worker_board", parameters: z.object({}), render: (p) => <WorkerBoard result={p.result} /> });
   // Decisions render as an answerable card in the chat (own row, not grouped).
   const decision = z.object({ title: z.string(), summary: z.string().optional(), options: z.array(z.string()).optional() });
   useRenderTool({ name: "request_approval", parameters: decision, render: (p) => <DecisionCard name={p.name} toolCallId={p.toolCallId} args={p.parameters} result={p.result} /> });
@@ -131,7 +134,8 @@ function App() {
       />
       <style>{`.ck-threads{padding:6px 12px;border-bottom:1px solid var(--sf-border)}
         .ck-threads select{max-width:100%;background:var(--sf-surface);color:var(--sf-text);border:1px solid var(--sf-border);border-radius:6px;padding:3px 6px}
-        .sf-chat .ui-tcc, .sf-chat .ui-tcc-group, .sf-openui{margin:6px 0}
+        .sf-chat .ui-tcc, .sf-chat .ui-tcc-group, .sf-openui, .sf-board{margin:6px 0}
+        .sf-board{background:var(--sf-surface);border-radius:10px;padding:12px 14px;box-shadow:0 0 0 0.5px var(--sf-border)}.sf-board-metrics{display:flex;gap:24px;padding:4px 0 8px}.sf-board-row{cursor:pointer}.sf-board small{color:var(--sf-muted);margin-left:4px}.sf-board-wait{color:var(--sf-muted)}
         /* affectUI card stays verbatim; its variables follow the factory palette from outside (rule 12). */
         :root .sf-chat .ui-tcc, :root .sf-chat .ui-tcc-group{--ui-tcc-card:var(--sf-surface);--ui-tcc-code:var(--sf-bg);--ui-tcc-accent:var(--sf-accent);--ui-tcc-strong:var(--sf-text);--ui-tcc-ink:var(--sf-text);--ui-tcc-text:var(--sf-muted);--ui-tcc-focus:var(--sf-accent)}`}</style>
     </CopilotKitProvider>
