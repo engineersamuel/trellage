@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { draftNodeId, makeDrafts, type DraftDeps } from "../src/drafts.ts"
+import { draftNodeId, isUnstartedDraft, makeDrafts, type DraftDeps } from "../src/drafts.ts"
 import { Threads, type Candidate } from "../src/threads.ts"
 
 const candidates: Candidate[] = [
@@ -222,6 +222,36 @@ test("a failed delivery unlocks the draft", async () => {
   fail = false
   await drafts.run(t.id)
   expect(delivered).toHaveLength(1)
+})
+
+test("a failed delivery stops the spawned sub; a failing stop keeps the delivery error", async () => {
+  const stopped: string[] = []
+  const { drafts, threads } = setup({
+    deliver: async () => {
+      throw new Error("sub down")
+    },
+    stopSub: async (id) => {
+      stopped.push(id)
+      throw new Error("stop failed")
+    },
+  })
+  const t = drafts.create("repo", "build x")
+  await expect(drafts.run(t.id)).rejects.toThrow("sub down")
+  expect(stopped).toEqual([t.id])
+  expect(threads.get(t.id)!.draft!.startedAt).toBeUndefined()
+})
+
+test("isUnstartedDraft: only a draft without startedAt", async () => {
+  const { drafts, threads } = setup({
+    // deliver sees the saved thread: Run marks it started before it delivers.
+    deliver: async (id) => expect(isUnstartedDraft(threads.get(id))).toBe(false),
+  })
+  const t = drafts.create("repo", "build x")
+  expect(isUnstartedDraft(threads.get(t.id))).toBe(true)
+  expect(isUnstartedDraft(threads.create("hi"))).toBe(false)
+  expect(isUnstartedDraft(undefined)).toBe(false)
+  await drafts.run(t.id)
+  expect(isUnstartedDraft(threads.get(t.id))).toBe(false)
 })
 
 test("pick makes the candidate the current version", async () => {

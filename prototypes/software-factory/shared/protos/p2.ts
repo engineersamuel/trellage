@@ -489,6 +489,25 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     })
   }
 
+  /** Discard a draft (DELETE /api/drafts/:id); a failure shows on its card. */
+  const discardDraft = (t: Thread) => {
+    const b = el("button", "p2-gact delete", "✕")
+    b.title = "Delete draft, its worktree, and branch"
+    b.setAttribute("aria-label", `Delete draft ${t.title}`)
+    b.onclick = (e) => {
+      e.stopPropagation()
+      if (!confirm(`Delete draft "${t.title}"?\n\nThis removes the draft, its worktree ${t.worktree ?? ""} (reports too), and the local branch ${t.branch ?? ""}. It cannot be undone.`)) return
+      errs.delete(t.id)
+      void Effect.runPromise(send(`/api/drafts/${t.id}`, "DELETE").pipe(
+        Effect.match({ onFailure: (err) => errorText(err.reason).split("\n")[0]!, onSuccess: () => null }),
+      )).then((err) => {
+        if (err) errs.set(t.id, `Delete failed: ${err}`)
+        if (alive) sync()
+      })
+    }
+    return b
+  }
+
   const renderRing = () => {
     const n = ring ? nodes.get(ring) : undefined
     if (n?.kind !== "draft") ring = null
@@ -649,7 +668,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const badge = el("button", "p2-badge", `v${d.versions.findIndex((v) => v.id === d.current) + 1}`)
     badge.title = "Versions and reports"
     badge.onclick = (e) => (e.stopPropagation(), (ring = null), (overId = t.id), sync())
-    head.append(el("i", "p2-dot"), el("span", "p2-tag", n.tag), badge)
+    head.append(el("i", "p2-dot"), el("span", "p2-tag", n.tag), badge, discardDraft(t))
     const chips = el("div", "p2-n-act p2-chips")
     for (const r of d.reports) {
       const running = s!.agents.some((a) => a.id === r.workerId && a.status === "running")

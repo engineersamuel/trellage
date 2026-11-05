@@ -169,3 +169,36 @@ test("draft: enhance error shows on the node", async ({ page }) => {
   await expect(page.locator(".p2-cand")).toHaveCount(0)
   expect(agui).toEqual([])
 })
+
+test("draft: ✕ deletes the draft after confirm, shows a failure, and does not open the ring", async ({ page }) => {
+  const s: Stub = {
+    thread: draftThread({ versions: [v1], current: "v1", reports: [] }),
+    workers: [],
+    posts: [],
+    post: () => ({ status: 500, json: { error: "unexpected" } }),
+  }
+  const agui = await stub(page, s)
+  const deletes: string[] = []
+  // Registered after stub(), so it runs first. The first DELETE fails, the second succeeds.
+  await page.route("**/api/drafts/*", async (route) => {
+    const req = route.request()
+    if (req.method() !== "DELETE") return route.fallback()
+    deletes.push(new URL(req.url()).pathname)
+    if (deletes.length === 1) return route.fulfill({ status: 409, json: { error: "worktree is busy" } })
+    s.thread = null
+    return route.fulfill({ status: 204 })
+  })
+  page.on("dialog", (d) => void d.accept())
+  await page.goto(`${PAGE}?proto=2`)
+  const del = node(page).getByRole("button", { name: "Delete draft Add retries" })
+
+  await del.click()
+  await expect(node(page).getByText("Delete failed: worktree is busy")).toBeVisible()
+  await expect(page.getByRole("menu")).toHaveCount(0)
+
+  await del.click()
+  await expect(node(page)).toHaveCount(0)
+  expect(deletes).toEqual([`/api/drafts/${ID}`, `/api/drafts/${ID}`])
+  expect(s.posts).toEqual([])
+  expect(agui).toEqual([])
+})

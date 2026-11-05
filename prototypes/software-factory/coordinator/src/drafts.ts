@@ -14,6 +14,12 @@ export class DraftError extends Error {
 /** Owner id of a draft's pre-work workers. */
 export const draftNodeId = (threadId: string) => `draft-${threadId.slice(0, 8)}`
 
+/** A draft not yet Run: nothing may start its sub-coordinator or message it. */
+export const isUnstartedDraft = (t: Pick<Thread, "draft"> | undefined): boolean => !!t?.draft && !t.draft.startedAt
+
+/** Note for coordinators that list an unstarted draft. */
+export const DRAFT_NOTE = "draft: do not message; the human runs it from the canvas"
+
 export const ACTION_WORKFLOW: Record<DraftAction, "council" | "six-hats" | "hyperresearch"> = {
   council: "council",
   debate: "six-hats",
@@ -31,6 +37,8 @@ export type DraftDeps = {
   /** Stop the sub, discard the worktree and delete the thread. */
   discard: (t: Thread) => Promise<void>
   deliver: (threadId: string, text: string) => Promise<void>
+  /** Stop the draft's sub-coordinator, if one was spawned. */
+  stopSub?: (threadId: string) => Promise<void>
   enhance: (prompt: string) => Promise<Candidate[]>
   /** Publishes factory.thread_updated. */
   changed: (threadId: string) => void
@@ -165,7 +173,8 @@ export const makeDrafts = (d: DraftDeps) => {
       try {
         await d.deliver(id, runMessage(started))
       } catch (e) {
-        // Not delivered: unlock the draft so the user can try again.
+        // Not delivered: stop a sub that did start, and unlock the draft so the user can try again.
+        await d.stopSub?.(id).catch(console.error)
         const t = d.threads.get(id)
         if (t?.draft) {
           const { startedAt: _, ...rest } = t.draft

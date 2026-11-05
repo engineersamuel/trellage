@@ -20,7 +20,7 @@ import { pendingReview } from "./security.ts"
 import type { SessionEvent } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
 import { coordinatorTools, globalTools, spawnHealing } from "./tools.ts"
-import { DraftError, makeDrafts } from "./drafts.ts"
+import { DRAFT_NOTE, DraftError, draftNodeId, isUnstartedDraft, makeDrafts } from "./drafts.ts"
 import { enhanceWith } from "./enhance.ts"
 import { Schema } from "effect"
 
@@ -51,6 +51,7 @@ const globalScopeTools = (id: string, chat: string | null) => [
         folder: threads.folder(t.folderId)?.name,
         status: statusOf(t.id),
         pending: factory.approvals.pending().filter((a) => a.threadId === t.id).length,
+        ...(isUnstartedDraft(t) ? { note: DRAFT_NOTE } : {}),
       })),
     folders: () => threads.folders(),
     start: (folder, task) => startConversation(folder, task, chat),
@@ -243,6 +244,8 @@ const starting = new Map<string, Promise<Worker>>()
 const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
   if (!t) return Promise.resolve(coord)
   if (!t.worktree) return chatCoordinator(t)
+  if (isUnstartedDraft(t))
+    return Promise.reject(new Error(`conversation ${t.id} is an unstarted draft; only Run on its draft node starts it`))
   const id = subId(t.id)
   const live = factory.workers.get(id)
   if (live) return Promise.resolve(live)
@@ -378,7 +381,8 @@ const conversationBusy = (threadId: string): boolean =>
   )
 
 const stopConversationWorkers = async (threadId: string): Promise<void> => {
-  for (const w of [...factory.workers.values()]) if (w.owner === subId(threadId)) await factory.stop(w.id)
+  for (const w of [...factory.workers.values()])
+    if (w.owner === subId(threadId) || w.owner === draftNodeId(threadId)) await factory.stop(w.id)
   if (factory.workers.has(subId(threadId))) await factory.stop(subId(threadId))
 }
 
@@ -672,7 +676,10 @@ loop("supervisor", "5 seconds", supervise)
 
 const drafts = makeDrafts({
   threads,
-  createThread: (prompt, folderId) => createThread(prompt, folderId),
+  createThread: (prompt, folderId) => {
+    if (!threads.folder(folderId)) throw new DraftError(400, "unknown folder")
+    return createThread(prompt, folderId)
+  },
   spawn: (spec) =>
     spawnHealing(
       factory,
@@ -687,6 +694,9 @@ const drafts = makeDrafts({
   // Awaits the hand-off, so a failed delivery rejects and run() unlocks the draft.
   deliver: async (id, text) => {
     await (await deliverToThread(id, text)).sent
+  },
+  stopSub: async (id) => {
+    if (factory.workers.has(subId(id))) await factory.stop(subId(id))
   },
   enhance: enhanceWith(factory),
   changed: (threadId) => factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId }),

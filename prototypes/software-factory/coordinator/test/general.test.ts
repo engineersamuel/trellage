@@ -4,6 +4,13 @@ import { conversationStatus, deletedNotice, factorySnapshot, genId, reportTarget
 const repo = (id: string, extra: object = {}) => ({ id, title: `t-${id}`, createdAt: 0, folderId: "trellage", worktree: `/wt/${id}`, branch: `factory/${id}`, ...extra })
 const sub = (id: string) => `sub-${id.slice(0, 8)}`
 
+test("snapshot notes an unstarted draft, not a started one", () => {
+  const draft = { versions: [], current: "v", reports: [] }
+  const s = factorySnapshot([repo("aaaaaaaa1", { draft }), repo("bbbbbbbb2", { draft: { ...draft, startedAt: 1 } })], [], [], () => null, sub)
+  expect(s.conversations[0]!.note).toBe("draft: do not message; the human runs it from the canvas")
+  expect(s.conversations[1]!.note).toBeUndefined()
+})
+
 test("a run with a task but no live sub-coordinator is stopped, not pending", () => {
   expect(conversationStatus(undefined, undefined, 0)).toBe("deleted")
   expect(conversationStatus(repo("a", { cleanedAt: 1 }), undefined, 3)).toBe("merged")
