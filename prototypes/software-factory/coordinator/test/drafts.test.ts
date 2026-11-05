@@ -110,6 +110,7 @@ test("Research runs hve-core RPI research in agent-owned mode", async () => {
   expect(spawned[0]!.step).toBe("rpi-research")
   expect(spawned[0]!.task).toContain("reports/draft-rpi-research.md")
   expect(spawned[0]!.task).toContain("agent-owned")
+  expect(spawned[0]!.task).toContain("Stop after Research")
   expect(spawned[0]!.task).toContain(".copilot-tracking/research/")
 })
 

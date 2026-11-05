@@ -32,7 +32,7 @@ const LABEL: Record<DraftAction, string> = { council: "Council", debate: "Debate
 /** Extra task text per action, after the shared research instructions. */
 const ACTION_NOTE: Partial<Record<DraftAction, string>> = {
   research:
-    "Use the rpi-research skill in agent-owned decision mode: ask no questions. Use posture balanced. Write the skill's research artifact under .copilot-tracking/research/ as the skill specifies. Also save a summary with key findings, alternatives, open questions and the artifact path to reports/draft-rpi-research.md.",
+    "Use the rpi-research skill in agent-owned decision mode: ask no questions. Use posture balanced. Write the skill's research artifact under .copilot-tracking/research/ as the skill specifies. Also save a summary with key findings, alternatives, open questions and the artifact path to reports/draft-rpi-research.md. Stop after Research: do not start Plan, Implement or Review, and do not look for other RPI skills or instruction files.",
 }
 
 export type DraftDeps = {
