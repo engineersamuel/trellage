@@ -68,8 +68,10 @@ const jevSelect = <C extends Choice>(catalog: ReadonlyArray<C>, request: string,
 export const OPTIMIZE_SKILLS = guideOptimizeSkills
 
 /** Task for one research or deliberation workflow: write its own report only. */
-export const researchTask = (id: string, request: string): string =>
-  `${request}\n\nSave your own result to reports/${id}.md. Write only your own report and workflow-owned research artifacts; do not edit application code or other workers' reports. Clearly separate verified facts from judgments. Include source URLs, dates, risks and dissent. This is research, not implementation. Return the saved report path.`
+export const researchTask = (id: string, request: string, report?: string): string => {
+  const reportName = report ?? id
+  return `${request}\n\nSave your own result to reports/${reportName}.md. Write only your own report and workflow-owned research artifacts; do not edit application code or other workers' reports. Clearly separate verified facts from judgments. Include source URLs, dates, risks and dissent. This is research, not implementation. Return the saved report path.`
+}
 
 /** One fan-out option. `step` decides harness and skills; the worker saves reports/<step>.md. */
 export type FanoutEntry = { id: string; kind: "research" | "optimize"; description: string; step: string; task: (request: string) => string }

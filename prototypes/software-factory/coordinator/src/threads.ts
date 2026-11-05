@@ -4,8 +4,19 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { addFolder, GENERAL, type Folder, type Worktree } from "./folders.ts"
 
+export type DraftAction = "council" | "debate" | "research"
+export type DraftVersion = { id: string; prompt: string; source: "human" | "enhance"; title?: string; notes?: string; at: number }
+export type Candidate = { title: string; prompt: string; notes: string }
+export type Draft = {
+  versions: DraftVersion[]
+  current: string
+  pending?: { kind: "enhance"; candidates: Candidate[]; at: number }
+  reports: { action: DraftAction; workerId: string; path: string; versionId: string }[]
+  startedAt?: number
+}
+
 /** folderId is "general" or a repo folder id; repo conversations also have their own worktree. */
-export type Thread = { id: string; title: string; createdAt: number; folderId: string; /** Set when the merged worktree was removed. */ cleanedAt?: number; /** Set when hidden from the org canvas. */ archivedAt?: number; /** General chat that started this repo conversation; its report goes back there. */ parentThreadId?: string; /** The Factory desk thread. */ desk?: boolean } & Partial<Worktree>
+export type Thread = { id: string; title: string; createdAt: number; folderId: string; /** Set when the merged worktree was removed. */ cleanedAt?: number; /** Set when hidden from the org canvas. */ archivedAt?: number; /** General chat that started this repo conversation; its report goes back there. */ parentThreadId?: string; /** The Factory desk thread. */ desk?: boolean; draft?: Draft } & Partial<Worktree>
 export type ChatMessage =
   | { id: string; role: "user"; content: string }
   | { id: string; role: "assistant"; content: string | null; toolCalls?: { id: string; type: "function"; function: { name: string; arguments: string } }[] }
@@ -86,6 +97,11 @@ export class Threads {
   setMeta(id: string, meta: Pick<Thread, "parentThreadId" | "desk">): void {
     const t = this.doc.threads.find((x) => x.id === id)
     if (t) Object.assign(t, meta), this.save()
+  }
+
+  setDraft(id: string, draft: Draft): void {
+    const t = this.doc.threads.find((x) => x.id === id)
+    if (t) Object.assign(t, { draft }), this.save()
   }
 
   delete(id: string): void {
