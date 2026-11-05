@@ -18,8 +18,11 @@ import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, REPORT_NUDGE, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
 import type { SessionEvent } from "@github/copilot-sdk"
-import { messageThread, RunRecorder, subId, Threads, type Thread } from "./threads.ts"
-import { coordinatorTools, globalTools } from "./tools.ts"
+import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
+import { coordinatorTools, globalTools, spawnHealing } from "./tools.ts"
+import { DraftError, makeDrafts } from "./drafts.ts"
+import { enhanceWith } from "./enhance.ts"
+import { Schema } from "effect"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
 const landing = asset("landing.html")
@@ -379,6 +382,23 @@ const stopConversationWorkers = async (threadId: string): Promise<void> => {
   if (factory.workers.has(subId(threadId))) await factory.stop(subId(threadId))
 }
 
+/** Delete a conversation: stop its workers, discard its worktree, and tell the chat that started it. */
+const deleteThread = async (id: string): Promise<void> => {
+  const t = threads.get(id)
+  const repo = t && threads.folder(t.folderId)?.path
+  if (t?.worktree && !t.cleanedAt && repo) {
+    await stopConversationWorkers(t.id)
+    discardWorktree(repo, t as Worktree)
+  }
+  threads.delete(id)
+  factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: id })
+  if (t?.worktree) {
+    // The chat that started it forgets it; a repeat of the same request starts a new run.
+    const parent = t.parentThreadId && threads.get(t.parentThreadId)
+    if (parent) deliverAndLog(parent.id, deletedNotice(t))
+  } else if (t && factory.workers.has(genId(t.id))) await factory.stop(genId(t.id))
+}
+
 const publishWorktreeCleanup = (t: Thread): void => {
   factory.publish("coordinator", "factory.worktree_cleaned", null, now(), {
     threadId: t.id,
@@ -647,6 +667,61 @@ const supervise = async () => {
   sendSupervisionIssues(fresh, coordinator)
 }
 loop("supervisor", "5 seconds", supervise)
+
+// ---------- drafts ----------
+
+const drafts = makeDrafts({
+  threads,
+  createThread: (prompt, folderId) => createThread(prompt, folderId),
+  spawn: (spec) =>
+    spawnHealing(
+      factory,
+      { id: spec.owner, threadId: threads.list().find((t) => t.worktree === spec.workdir)?.id ?? null, workdir: spec.workdir },
+      { ...spec, role: "worker", auth: factory.defaultAuth },
+    ),
+  isRunning: (workerId) => factory.workers.get(workerId)?.status === "running",
+  stopOwned: async (owner) => {
+    for (const w of [...factory.workers.values()]) if (w.owner === owner) await factory.stop(w.id)
+  },
+  discard: (t) => deleteThread(t.id),
+  // Awaits the hand-off, so a failed delivery rejects and run() unlocks the draft.
+  deliver: async (id, text) => {
+    await (await deliverToThread(id, text)).sent
+  },
+  enhance: enhanceWith(factory),
+  changed: (threadId) => factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId }),
+})
+
+const CreateBody = Schema.Struct({ folderId: Schema.String, prompt: Schema.String })
+const VersionBody = Schema.Struct({ prompt: Schema.String })
+const CurrentBody = Schema.Struct({ versionId: Schema.String })
+const PickBody = Schema.Struct({ index: Schema.Int })
+
+/** Decode a draft request body; bad JSON or a bad shape is a 400. */
+const draftBody = async <A>(req: Request, schema: Schema.Codec<A, unknown>): Promise<A> => {
+  let raw: unknown
+  try {
+    raw = await req.json()
+  } catch {
+    throw new DraftError(400, "body is not JSON")
+  }
+  try {
+    return Schema.decodeUnknownSync(schema)(raw)
+  } catch (e) {
+    throw new DraftError(400, e instanceof Error ? e.message : String(e))
+  }
+}
+
+/** JSON reply for a draft route: no value is 204, DraftError keeps its status, anything else is 500. */
+const draftReply = async (run: () => unknown): Promise<Response> => {
+  try {
+    const v = await run()
+    return v === undefined ? empty(204) : json(v)
+  } catch (e) {
+    if (e instanceof DraftError) return json({ error: e.message }, e.status)
+    return json({ error: e instanceof Error ? e.message : String(e) }, 500)
+  }
+}
 
 // ---------- routes ----------
 
@@ -955,22 +1030,21 @@ const routes: [string, RegExp, Handler][] = [
     "DELETE",
     /^\/api\/threads\/delete\/([^/]+)$/,
     async (_req, _url, [id]) => {
-      const t = threads.get(id!)
-      const repo = t && threads.folder(t.folderId)?.path
-      if (t?.worktree && !t.cleanedAt && repo) {
-        await stopConversationWorkers(t.id)
-        discardWorktree(repo, t as Worktree)
-      }
-      threads.delete(id!)
-      factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: id })
-      if (t?.worktree) {
-        // The chat that started it forgets it; a repeat of the same request starts a new run.
-        const parent = t.parentThreadId && threads.get(t.parentThreadId)
-        if (parent) deliverAndLog(parent.id, deletedNotice(t))
-      } else if (t && factory.workers.has(genId(t.id))) await factory.stop(genId(t.id))
+      await deleteThread(id!)
       return empty(204)
     },
   ],
+  ["POST", /^\/api\/drafts$/, (req) => draftReply(async () => {
+    const b = await draftBody(req, CreateBody)
+    return drafts.create(b.folderId, b.prompt)
+  })],
+  ["POST", /^\/api\/drafts\/([^/]+)\/versions$/, (req, _url, [id]) => draftReply(async () => drafts.addVersion(id!, (await draftBody(req, VersionBody)).prompt))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/current$/, (req, _url, [id]) => draftReply(async () => drafts.setCurrent(id!, (await draftBody(req, CurrentBody)).versionId))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/enhance$/, (_req, _url, [id]) => draftReply(() => drafts.enhance(id!))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/pick$/, (req, _url, [id]) => draftReply(async () => drafts.pick(id!, (await draftBody(req, PickBody)).index))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/(council|debate|research)$/, (_req, _url, [id, action]) => draftReply(() => drafts.act(id!, action as DraftAction))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => draftReply(() => drafts.run(id!))],
+  ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => draftReply(() => drafts.remove(id!))],
   ["GET", /^\/api\/artifacts$/, () => json({ artifacts: [] })],
 ]
 
