@@ -1,0 +1,209 @@
+import { expect, test } from "bun:test"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import { draftNodeId, makeDrafts, type DraftDeps } from "../src/drafts.ts"
+import { Threads, type Candidate } from "../src/threads.ts"
+
+const candidates: Candidate[] = [
+  { title: "A", prompt: "build x well", notes: "clearer" },
+  { title: "B", prompt: "build x fast", notes: "shorter" },
+  { title: "C", prompt: "build x safe", notes: "safer" },
+]
+
+const setup = (over: Partial<DraftDeps> = {}) => {
+  const threads = new Threads(mkdtempSync(path.join(tmpdir(), "sf-drafts-")))
+  const spawned: (Parameters<DraftDeps["spawn"]>[0] & { id: string })[] = []
+  const running = new Set<string>()
+  const delivered: { threadId: string; text: string }[] = []
+  const calls: string[] = []
+  const changed: string[] = []
+  const deps: DraftDeps = {
+    threads,
+    // The test Threads has only the General folder; "repo" gets a worktree, "general" does not.
+    createThread: (prompt, folderId) =>
+      threads.create(prompt, "general", folderId === "general" ? undefined : () => ({ worktree: "/wt", branch: "b", base: "main" })),
+    spawn: async (spec) => {
+      const id = `w${spawned.length + 1}`
+      spawned.push({ ...spec, id })
+      return { id }
+    },
+    isRunning: (id) => running.has(id),
+    stopOwned: async (owner) => void calls.push(`stopOwned ${owner}`),
+    discard: async (t) => (calls.push(`discard ${t.id}`), threads.delete(t.id)),
+    deliver: async (threadId, text) => void delivered.push({ threadId, text }),
+    enhance: async () => candidates,
+    changed: (id) => void changed.push(id),
+    ...over,
+  }
+  return { drafts: makeDrafts(deps), threads, spawned, running, delivered, calls, changed }
+}
+
+test("create makes one human version and no reports", () => {
+  const { drafts, changed } = setup()
+  const t = drafts.create("repo", "  build x ")
+  expect(t.worktree).toBe("/wt")
+  expect(t.draft).toMatchObject({ versions: [{ prompt: "build x", source: "human" }], reports: [] })
+  expect(t.draft!.current).toBe(t.draft!.versions[0]!.id)
+  expect(changed).toEqual([t.id])
+})
+
+test("empty prompt is refused", () => {
+  const { drafts, threads } = setup()
+  expect(() => drafts.create("repo", "  ")).toThrow(expect.objectContaining({ status: 400 }))
+  expect(threads.list()).toEqual([])
+})
+
+test("General folder is refused and leaves no thread", async () => {
+  const { drafts, threads, calls } = setup()
+  expect(() => drafts.create("general", "build x")).toThrow(expect.objectContaining({ status: 400, message: "drafts need a repo folder" }))
+  await Promise.resolve()
+  expect(calls).toEqual([expect.stringMatching(/^discard /)])
+  expect(threads.list()).toEqual([])
+})
+
+test("unknown thread or thread without a draft is 404", async () => {
+  const { drafts, threads } = setup()
+  const plain = threads.create("hi")
+  expect(() => drafts.addVersion("nope", "x")).toThrow(expect.objectContaining({ status: 404 }))
+  expect(() => drafts.addVersion(plain.id, "x")).toThrow(expect.objectContaining({ status: 404 }))
+  await expect(drafts.run(plain.id)).rejects.toMatchObject({ status: 404 })
+})
+
+test("addVersion and setCurrent switch the current version", () => {
+  const { drafts } = setup()
+  const t = drafts.create("repo", "build x")
+  const v1 = t.draft!.current
+  const d = drafts.addVersion(t.id, "build y")
+  expect(d.versions).toHaveLength(2)
+  expect(d.versions[1]).toMatchObject({ prompt: "build y", source: "human" })
+  expect(d.current).toBe(d.versions[1]!.id)
+  expect(drafts.setCurrent(t.id, v1).current).toBe(v1)
+  expect(() => drafts.setCurrent(t.id, "nope")).toThrow(expect.objectContaining({ status: 400 }))
+})
+
+test("Council twice while the first runs spawns once", async () => {
+  const { drafts, spawned, running } = setup()
+  const t = drafts.create("repo", "build x")
+  await drafts.act(t.id, "council")
+  running.add(spawned[0]!.id)
+  await expect(drafts.act(t.id, "council")).rejects.toMatchObject({ status: 409 })
+  expect(spawned).toHaveLength(1)
+  expect(spawned[0]).toMatchObject({ step: "council", owner: draftNodeId(t.id), task: expect.stringContaining("reports/draft-council.md") })
+})
+
+test("a finished action runs again and replaces its report entry", async () => {
+  const { drafts, spawned } = setup()
+  const t = drafts.create("repo", "build x")
+  await drafts.act(t.id, "research")
+  const d = await drafts.act(t.id, "research")
+  expect(spawned).toHaveLength(2)
+  expect(spawned[1]).toMatchObject({ name: "draft-research", step: "hyperresearch", workdir: "/wt" })
+  expect(d.reports).toEqual([{ action: "research", workerId: "w2", path: "reports/draft-hyperresearch.md", versionId: d.current }])
+})
+
+test("Run waits for draft workers, then delivers the prompt with reports", async () => {
+  const { drafts, spawned, running, delivered } = setup()
+  const t = drafts.create("repo", "build x")
+  await drafts.act(t.id, "debate")
+  running.add(spawned[0]!.id)
+  await expect(drafts.run(t.id)).rejects.toMatchObject({ status: 409, message: "wait for debate to finish" })
+  expect(delivered).toEqual([])
+  running.clear()
+  const d = await drafts.run(t.id)
+  expect(d.startedAt).toEqual(expect.any(Number))
+  expect(delivered[0]!.text).toBe("[from a guided draft] build x\n\nPre-work reports in this worktree (read before planning):\n- reports/draft-six-hats.md (Debate, on prompt version 1)")
+})
+
+test("Run without reports delivers only the prompt", async () => {
+  const { drafts, delivered } = setup()
+  const t = drafts.create("repo", "build x")
+  await drafts.run(t.id)
+  expect(delivered).toEqual([{ threadId: t.id, text: "[from a guided draft] build x" }])
+})
+
+test("after Run every edit is refused", async () => {
+  const { drafts } = setup()
+  const t = drafts.create("repo", "build x")
+  await drafts.run(t.id)
+  expect(() => drafts.addVersion(t.id, "y")).toThrow(expect.objectContaining({ status: 409 }))
+  expect(() => drafts.setCurrent(t.id, t.draft!.current)).toThrow(expect.objectContaining({ status: 409 }))
+  expect(() => drafts.pick(t.id, 0)).toThrow(expect.objectContaining({ status: 409 }))
+  await expect(drafts.act(t.id, "council")).rejects.toMatchObject({ status: 409 })
+  await expect(drafts.enhance(t.id)).rejects.toMatchObject({ status: 409 })
+  await expect(drafts.run(t.id)).rejects.toMatchObject({ status: 409, message: "already started" })
+})
+
+test("enhance sets pending candidates", async () => {
+  const { drafts } = setup()
+  const t = drafts.create("repo", "build x")
+  const d = await drafts.enhance(t.id)
+  expect(d.pending).toMatchObject({ kind: "enhance", candidates })
+})
+
+test("enhance while one is in flight is refused", async () => {
+  let release!: (c: Candidate[]) => void
+  const { drafts } = setup({ enhance: () => new Promise((r) => (release = r)) })
+  const t = drafts.create("repo", "build x")
+  const first = drafts.enhance(t.id)
+  await expect(drafts.enhance(t.id)).rejects.toMatchObject({ status: 409 })
+  release(candidates)
+  await first
+  const again = drafts.enhance(t.id)
+  release(candidates)
+  await expect(again).resolves.toBeDefined()
+})
+
+test("enhance failure leaves the draft unchanged", async () => {
+  const { drafts, threads } = setup({ enhance: async () => Promise.reject(new Error("model down")) })
+  const t = drafts.create("repo", "build x")
+  const before = structuredClone(threads.get(t.id)!.draft)
+  await expect(drafts.enhance(t.id)).rejects.toMatchObject({ status: 502, message: "model down" })
+  expect(threads.get(t.id)!.draft).toEqual(before)
+})
+
+test("enhance does not clobber a version added while it waited", async () => {
+  let release!: (c: Candidate[]) => void
+  const { drafts } = setup({ enhance: () => new Promise((r) => (release = r)) })
+  const t = drafts.create("repo", "build x")
+  const p = drafts.enhance(t.id)
+  drafts.addVersion(t.id, "build y")
+  release(candidates)
+  const d = await p
+  expect(d.versions.map((v) => v.prompt)).toEqual(["build x", "build y"])
+  expect(d.pending?.candidates).toEqual(candidates)
+})
+
+test("pick makes the candidate the current version", async () => {
+  const { drafts } = setup()
+  const t = drafts.create("repo", "build x")
+  expect(() => drafts.pick(t.id, 0)).toThrow(expect.objectContaining({ status: 400 }))
+  await drafts.enhance(t.id)
+  expect(() => drafts.pick(t.id, 3)).toThrow(expect.objectContaining({ status: 400 }))
+  const d = drafts.pick(t.id, 1)
+  expect(d.versions[1]).toMatchObject({ prompt: "build x fast", source: "enhance", title: "B", notes: "shorter" })
+  expect(d.current).toBe(d.versions[1]!.id)
+  expect(d.pending).toBeUndefined()
+})
+
+test("remove stops draft workers before discard", async () => {
+  const { drafts, threads, calls } = setup()
+  const t = drafts.create("repo", "build x")
+  await drafts.run(t.id)
+  await drafts.remove(t.id)
+  expect(calls).toEqual([`stopOwned ${draftNodeId(t.id)}`, `discard ${t.id}`])
+  expect(threads.get(t.id)).toBeUndefined()
+})
+
+test("every mutation calls changed", async () => {
+  const { drafts, changed } = setup()
+  const t = drafts.create("repo", "build x")
+  drafts.addVersion(t.id, "y")
+  drafts.setCurrent(t.id, t.draft!.versions[0]!.id)
+  await drafts.enhance(t.id)
+  drafts.pick(t.id, 0)
+  await drafts.act(t.id, "council")
+  await drafts.run(t.id)
+  await drafts.remove(t.id)
+  expect(changed).toEqual(Array(8).fill(t.id))
+})
