@@ -1679,6 +1679,9 @@ npx playwright install chromium
 cd ../..
 ```
 
+The comparison tests use Playwright 1.64.1 and explicitly enable the Chromium
+sandbox. Keep the sandbox enabled when you run these tests.
+
 Run the complete comparison:
 
 ```bash

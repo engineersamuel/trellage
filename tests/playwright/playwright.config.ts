@@ -76,6 +76,9 @@ export default defineConfig({
   reporter: "line",
   projects: harnessProjects(),
   use: {
+    launchOptions: {
+      chromiumSandbox: true,
+    },
     trace: "retain-on-failure",
   },
 });
