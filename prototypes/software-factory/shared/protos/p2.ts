@@ -9,7 +9,7 @@ import { harnessBadge } from "../harness"
 import { markdown } from "../decisions"
 import { Effect, Schema } from "effect"
 import { fire, json, runOr, send } from "../http"
-import { SearchHit, StoredEvent } from "../schemas"
+import { Draft, SearchHit, StoredEvent } from "../schemas"
 import {
   agentLabel, agentOfThread, el, newThread, isOpenUi, messageAgent, mountTranscript, openAgentChat, openDecision, openThread, register, renderOpenUi, statusColor, subscribe, threadOf,
   type Agent, type Ctx, type Decision, type Review, type State, type Thread,
@@ -59,6 +59,30 @@ const placeNode = (n: Node, x: number, depth: number): number => {
 /** A draft that has not started yet: it shows as a draft node, not as a ghost or a sub-coordinator. */
 const isDraft = (t: Thread) => !!t.draft && !t.draft.startedAt
 const draftPrompt = (t: Thread) => t.draft?.versions.find((v) => v.id === t.draft!.current)?.prompt ?? ""
+
+/** The ring around a draft node, in clockwise order from the top. */
+const RING = [["enhance", "✨", "Enhance"], ["council", "🏛", "Council"], ["debate", "⚖", "Debate"], ["research", "🔎", "Research"], ["run", "▶", "Run"]] as const
+type RingAction = (typeof RING)[number][0]
+const LABEL: Record<string, string> = Object.fromEntries(RING.map(([a, , l]) => [a, l]))
+
+/** An API error body is `{ error }`; its text, else the raw reason. */
+const errorText = (reason: string) => {
+  try { return String(JSON.parse(reason).error ?? reason) } catch { return reason }
+}
+
+/** Line diff of two prompts (LCS): unchanged lines " ", removed "-", added "+". */
+const lineDiff = (a: string[], b: string[]): [" " | "-" | "+", string][] => {
+  const L = a.map(() => b.map(() => 0).concat(0)).concat([b.map(() => 0).concat(0)])
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) L[i]![j] = a[i] === b[j] ? L[i + 1]![j + 1]! + 1 : Math.max(L[i + 1]![j]!, L[i]![j + 1]!)
+  const out: [" " | "-" | "+", string][] = []
+  let i = 0, j = 0
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) out.push([" ", a[i++]!]), j++
+    else if (j < b.length && (i === a.length || L[i]![j + 1]! >= L[i + 1]![j]!)) out.push(["+", b[j++]!])
+    else out.push(["-", a[i++]!])
+  }
+  return out
+}
 
 /** Build the org tree: agents by owner, unstarted drafts under their General chat (else the global node), and dormant repo conversations (no live sub-coordinator) as ghosts under the global node. */
 const buildTree = (s: State): Map<string, Node> => {
@@ -206,10 +230,6 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     if (!prompt || !draftFolder.value) return
     draftCreate.disabled = true
     draftErr.textContent = ""
-    // The error body is `{ error }`; show its text, else the raw reason.
-    const errorText = (reason: string) => {
-      try { return String(JSON.parse(reason).error ?? reason) } catch { return reason }
-    }
     void Effect.runPromise(send("/api/drafts", "POST", { folderId: draftFolder.value, prompt }).pipe(
       Effect.match({ onFailure: (err) => errorText(err.reason), onSuccess: () => null }),
     )).then((error) => {
@@ -382,16 +402,211 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   searchInput.addEventListener("search", runSearch)
 
   const select = (id: string | null) => {
-    // A draft node has no chat to open; Task 6 gives it an action ring instead.
-    if (id && nodes.get(id)?.kind === "draft") return
+    // A draft node has no chat: a click toggles its action ring and never opens a conversation.
+    if (id && nodes.get(id)?.kind === "draft") {
+      ring = ring === id ? null : id
+      sel = null
+      sync(true)
+      if (ring) ringBtns.find((b) => !b.disabled)?.focus({ preventScroll: true })
+      return
+    }
+    if (id) overId = null
     sel = id && nodes.has(id) ? id : null
     sync(true)
+  }
+
+  // ---------- draft node: action ring and slide-over ----------
+  let ring: string | null = null
+  /** Thread id of the draft open in the slide-over. */
+  let overId: string | null = null
+  let overSig = ""
+  /** Draft actions waiting for the server, and the last error per draft (first line only). */
+  const busy = new Map<string, RingAction>()
+  const errs = new Map<string, string>()
+  const DOCK_BOX = { right: "21px", bottom: "57px", width: "518px", height: "calc(70% - 40px)" }
+  const ringEl = el("div", "p2-ring")
+  ringEl.setAttribute("role", "menu")
+  /** Ellipse radii: the buttons sit just outside the 236×132 card. */
+  const RX = 170, RY = 118
+  const ringBtns = RING.map(([a, icon, label], i) => {
+    const b = el("button", "p2-ring-btn", icon)
+    b.setAttribute("role", "menuitem")
+    b.setAttribute("aria-label", label)
+    b.append(el("span", "", label))
+    const ang = (i / RING.length) * 2 * Math.PI - Math.PI / 2
+    b.style.transform = `translate(${Math.round(Math.cos(ang) * RX)}px, ${Math.round(Math.sin(ang) * RY)}px)`
+    b.onclick = (e) => {
+      e.stopPropagation()
+      const n = ring ? nodes.get(ring) : undefined
+      if (n) act(n.thread!.id, a)
+    }
+    return b
+  })
+  ringEl.append(...ringBtns)
+  const over = el("aside", "p2-draftover")
+  over.setAttribute("aria-label", "Draft versions and reports")
+  root.append(over)
+
+  const running = (id: string) => !!s?.agents.some((a) => a.id === id && a.status === "running")
+  /** Why a ring action cannot start now, or null. */
+  const blocked = (n: Node, a: RingAction): string | null => {
+    const t = n.thread!, d = t.draft!, b = busy.get(t.id)
+    if (b) return b === "enhance" ? "Enhancing…" : `${LABEL[b]} is starting…`
+    if (a === "enhance") return null
+    if (a === "run") {
+      const r = d.reports.find((r) => running(r.workerId))
+      return r ? `${LABEL[r.action]} is running` : s!.agents.some((x) => x.owner === n.id && x.status === "running") ? "A draft worker is running" : null
+    }
+    return d.reports.some((r) => r.action === a && running(r.workerId)) ? `${LABEL[a]} is running` : null
+  }
+
+  /** POST a draft endpoint; the reply is the new Draft. Resolves to the error text, or null. */
+  const post = (id: string, path: string, body?: unknown) =>
+    Effect.runPromise(json(`/api/drafts/${id}/${path}`, Draft, {
+      method: "POST",
+      ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+    }).pipe(Effect.match({ onFailure: (e) => errorText(e.reason).split("\n")[0]!, onSuccess: () => null })))
+
+  const act = (id: string, a: RingAction) => {
+    ring = null
+    busy.set(id, a)
+    errs.delete(id)
+    sync()
+    void post(id, a).then((err) => {
+      busy.delete(id)
+      if (err) errs.set(id, err)
+      else if (a === "enhance") overId = id
+      else if (a === "run") overId = null
+      if (alive) sync()
+    })
+  }
+  /** Pick a candidate or switch the current version from the slide-over. */
+  const change = (id: string, path: string, body: unknown) => {
+    errs.delete(id)
+    void post(id, path, body).then((err) => {
+      if (err) errs.set(id, err)
+      if (alive) sync()
+    })
+  }
+
+  const renderRing = () => {
+    const n = ring ? nodes.get(ring) : undefined
+    if (n?.kind !== "draft") ring = null
+    if (!n || !ring) return void ringEl.remove()
+    ringEl.style.left = `${n.x + PAD + W / 2}px`
+    ringEl.style.top = `${n.y + PAD + H / 2}px`
+    ringEl.setAttribute("aria-label", `Draft actions: ${n.name}`)
+    RING.forEach(([a, , label], i) => {
+      const why = blocked(n, a)
+      ringBtns[i]!.disabled = !!why
+      ringBtns[i]!.title = why ?? label
+    })
+    if (!ringEl.isConnected) world.append(ringEl)
+  }
+
+  /** Read-only report from the draft's worktree, in a dialog. Esc, ✕ or a click outside closes it. */
+  const openReport = (threadId: string, path: string) => {
+    const back = el("div", "sfs-backdrop")
+    const box = el("div", "sfs-modal p2-history")
+    box.setAttribute("role", "dialog")
+    box.setAttribute("aria-label", `Report ${path}`)
+    const head = el("div", "sfs-head")
+    const close = el("button", "sfs-x", "✕")
+    close.setAttribute("aria-label", "Close")
+    head.append(el("b", "", path), close)
+    const body = el("div", "sfs-body p2-report full", "Loading…")
+    box.append(head, body)
+    back.append(box)
+    const done = () => (back.remove(), window.removeEventListener("keydown", onKey, true))
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (e.stopPropagation(), done())
+    close.onclick = done
+    back.onclick = (e) => e.target === back && done()
+    window.addEventListener("keydown", onKey, true)
+    document.body.append(back)
+    close.focus()
+    const q = new URLSearchParams({ path, thread: threadId })
+    void Effect.runPromise(json(`/api/reports?${q}`, Schema.Struct({ content: Schema.String })).pipe(
+      Effect.match({ onFailure: (e) => void (body.textContent = `Report not available: ${e.reason}`), onSuccess: (r) => void (body.innerHTML = markdown(r.content)) }),
+    ))
+  }
+
+  const versionRow = (t: Thread, i: number) => {
+    const d = t.draft!, v = d.versions[i]!
+    const row = el("div", "p2-ver")
+    const head = el("div", "p2-ver-head")
+    head.append(el("b", "", `v${i + 1}`), el("span", "p2-ph-tag", v.source), el("span", "p2-ver-title", v.title ?? ""))
+    if (v.id === d.current) head.append(el("span", "p2-badge ok", "current"))
+    else {
+      const use = el("button", "p2-newchat", "Use")
+      use.title = `Make v${i + 1} the current prompt`
+      use.onclick = () => change(t.id, "current", { versionId: v.id })
+      head.append(use)
+    }
+    row.append(head)
+    if (v.notes) row.append(el("div", "p2-ver-notes", v.notes))
+    if (!i) return row.append(el("div", "p2-ver-prompt", v.prompt)), row
+    const diff = el("div", "p2-diff")
+    diff.setAttribute("aria-label", `Changes from v${i} to v${i + 1}`)
+    for (const [op, line] of lineDiff(d.versions[i - 1]!.prompt.split("\n"), v.prompt.split("\n")))
+      diff.append(el("div", op === "-" ? "del" : op === "+" ? "add" : "same", `${op} ${line}`))
+    return row.append(diff), row
+  }
+
+  /** Slide-over of one draft: enhance candidates, versions (newest first, diff to the previous), and reports. */
+  const renderOver = () => {
+    const t = overId ? s?.threads.find((t) => t.id === overId && isDraft(t)) : undefined
+    if (!t) overId = null
+    if (root.classList.contains("drafting") !== !!t) {
+      root.classList.toggle("drafting", !!t)
+      // The slide-over takes the docked chat's place.
+      if (!sel) placeChat(t ? null : DOCK_BOX)
+    }
+    const sig = t ? JSON.stringify([t.draft, errs.get(t.id)]) : ""
+    if (sig === overSig) return
+    overSig = sig
+    if (!t) return void over.replaceChildren()
+    const d = t.draft!
+    const close = el("button", "p2-close", "✕")
+    close.title = "Close (Esc)"
+    close.setAttribute("aria-label", "Close draft")
+    close.onclick = () => ((overId = null), sync())
+    const head = el("div", "p2-ph-row p2-over-head")
+    head.append(el("span", "p2-ph-tag", `Draft · ${t.folderId}`), el("span", "p2-ph-act", draftPrompt(t).split("\n")[0]!), close)
+    const body = el("div", "p2-over-body")
+    const err = errs.get(t.id)
+    if (err) body.append(el("div", "p2-err", err))
+    if (d.pending) {
+      body.append(el("h4", "", "Pick a rewrite"))
+      const row = el("div", "p2-cands")
+      d.pending.candidates.forEach((c, i) => {
+        const card = el("div", "p2-cand")
+        const pick = el("button", "p2-newchat", "Pick")
+        pick.onclick = () => change(t.id, "pick", { index: i })
+        card.append(el("b", "", c.title), el("div", "p2-cand-prompt", c.prompt), el("div", "p2-ver-notes", c.notes), pick)
+        row.append(card)
+      })
+      body.append(row)
+    }
+    body.append(el("h4", "", "Versions"))
+    for (let i = d.versions.length - 1; i >= 0; i--) body.append(versionRow(t, i))
+    if (d.reports.length) {
+      body.append(el("h4", "", "Reports"))
+      const chips = el("div", "p2-chips")
+      for (const r of d.reports) {
+        const b = el("button", "p2-chip", `${LABEL[r.action]} · v${d.versions.findIndex((v) => v.id === r.versionId) + 1}`)
+        b.title = r.path
+        b.onclick = () => openReport(t.id, r.path)
+        chips.append(b)
+      }
+      body.append(chips)
+    }
+    over.replaceChildren(head, body)
   }
 
   const fit = () => {
     const cw = Math.max(...[...nodes.values()].map((n) => n.x + W), W) + PAD * 2
     const ch = Math.max(...[...nodes.values()].map((n) => n.y + H), H) + PAD * 2
-    const aw = canvas.clientWidth - (sel ? 0 : DOCK_W), ah = canvas.clientHeight - HEAD - (sel ? 50 : 40)
+    const aw = canvas.clientWidth - (sel || overId ? 0 : DOCK_W), ah = canvas.clientHeight - HEAD - (sel ? 50 : 40)
     const k = Math.min(1, aw / cw, ah / ch)
     world.style.width = `${cw}px`
     world.style.height = `${ch}px`
@@ -429,15 +644,20 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
 
   /** Draft card: version badge, one chip per report (dimmed while its worker runs). */
   const renderDraftCard = (n: Node, card: HTMLElement) => {
-    const d = n.thread!.draft!
+    const t = n.thread!, d = t.draft!
     const head = el("div", "p2-n-head")
-    head.append(el("i", "p2-dot"), el("span", "p2-tag", n.tag), el("span", "p2-badge", `v${d.versions.findIndex((v) => v.id === d.current) + 1}`))
+    const badge = el("button", "p2-badge", `v${d.versions.findIndex((v) => v.id === d.current) + 1}`)
+    badge.title = "Versions and reports"
+    badge.onclick = (e) => (e.stopPropagation(), (ring = null), (overId = t.id), sync())
+    head.append(el("i", "p2-dot"), el("span", "p2-tag", n.tag), badge)
     const chips = el("div", "p2-n-act p2-chips")
     for (const r of d.reports) {
       const running = s!.agents.some((a) => a.id === r.workerId && a.status === "running")
       chips.append(el("span", `p2-chip${running ? " run" : ""}`, r.action[0]!.toUpperCase() + r.action.slice(1)))
     }
-    card.replaceChildren(head, el("div", "p2-n-name", n.name), el("div", "p2-n-wt", n.thread!.folderId), chips, el("div", "p2-n-foot", "draft · click for actions"))
+    const err = errs.get(t.id), b = busy.get(t.id)
+    card.replaceChildren(head, el("div", "p2-n-name", n.name), el("div", "p2-n-wt", t.folderId), chips, ...(err ? [el("div", "p2-err p2-n-err", err)] : []),
+      el("div", "p2-n-foot", b ? (b === "enhance" ? "Enhancing…" : `${LABEL[b]} is starting…`) : "draft · click for actions"))
   }
 
   const renderCard = (n: Node, card: HTMLElement) => {
@@ -624,7 +844,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   }
 
   const dockChat = () => {
-    placeChat({ right: "21px", bottom: "57px", width: "518px", height: "calc(70% - 40px)" })
+    placeChat(overId ? null : DOCK_BOX)
     if (!new URL(window.location.href).searchParams.has("thread")) openAgentChat("general")
     panelBody.replaceChildren()
   }
@@ -908,6 +1128,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     if (!s) return
     if (sel && !nodes.has(sel)) sel = null
     renderGraph()
+    renderRing()
+    renderOver()
     renderStats()
     syncPanel()
     renderStream()
@@ -929,8 +1151,21 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   ro.observe(canvas)
   canvas.addEventListener("click", () => sel && select(null))
   canvas.addEventListener("transitionend", () => fit())
-  const onKey = (e: KeyboardEvent) => e.key === "Escape" && sel && !(e.target as HTMLElement)?.closest?.(".p2-compose") && select(null)
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key !== "Escape") return
+    // A report dialog takes Escape first.
+    const dialog = !!document.querySelector(".sfs-backdrop")
+    if (ring && !dialog) return void ((ring = null), sync())
+    if (overId && !sel && !dialog) return void ((overId = null), sync())
+    if (sel && !(e.target as HTMLElement)?.closest?.(".p2-compose")) select(null)
+  }
   window.addEventListener("keydown", onKey, true)
+  /** A press outside the ring and its node closes the ring. */
+  const onDown = (e: PointerEvent) => {
+    const t = e.target as Element
+    if (ring && !ringEl.contains(t) && !cards.get(ring)?.contains(t)) (ring = null), sync()
+  }
+  document.addEventListener("pointerdown", onDown, true)
 
   return () => {
     alive = false
@@ -938,10 +1173,11 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     ro.disconnect()
     window.removeEventListener("keydown", onKey, true)
     window.removeEventListener("keydown", onSearchKey, true)
+    document.removeEventListener("pointerdown", onDown, true)
     clearTimeout(searchTimer)
     mounted?.stop()
     for (const g of genui.values()) g.stop()
-    root.classList.remove("sfp-p2", "open")
+    root.classList.remove("sfp-p2", "open", "drafting")
     root.replaceChildren()
   }
 }
