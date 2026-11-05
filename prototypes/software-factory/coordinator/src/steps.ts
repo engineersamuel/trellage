@@ -113,6 +113,15 @@ export const STEPS: Step[] = [
     gateTools: false,
     factoryOnly: true,
   },
+  {
+    id: "enhance-prompt",
+    description: "Rewrite a draft prompt with the prompt-master skill into exactly 3 candidates.",
+    bestFor: ["The factory's draft Enhance action"],
+    avoidFor: ["Manual selection"],
+    skills: ["prompt-master"],
+    gateTools: false,
+    factoryOnly: true,
+  },
 ]
 
 /** Skill directories (under the skills directory) for the GitHub repos Optimize skills come from. */
@@ -143,6 +152,7 @@ export const SKILL_REPOS: Record<string, string> = {
   "ub-mode": "https://github.com/unclebob/ub-mode.git",
   "security-audit-skill": "https://github.com/cloudflare/security-audit-skill.git",
   "mattpocock-skills": "https://github.com/mattpocock/skills.git",
+  "prompt-master": "https://github.com/nidhinjs/prompt-master.git",
 }
 export const TOOL_REPOS: Record<string, string> = {
   crapper: "https://github.com/unclebob/crapper.git",
