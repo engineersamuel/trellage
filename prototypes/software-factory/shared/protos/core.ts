@@ -147,7 +147,9 @@ export const openDecision = (id: string) => (location.hash = `decision=${id}`)
 /** Live readable transcript of any agent in `el` (same renderer as the classic panel). Returns cleanup. */
 export const mountTranscript = (el: HTMLElement, agentId: string, opts?: MountOptions): (() => void) => {
   el.setAttribute("data-transcript-scroll", "")
+  // Same layout as a [data-transcript] host (gaps between items), without the attribute: that would mount it twice.
   const inner = document.createElement("div")
+  inner.className = "sft-root"
   el.replaceChildren(inner)
   return mountTranscriptRaw(inner, agentId, opts)
 }
