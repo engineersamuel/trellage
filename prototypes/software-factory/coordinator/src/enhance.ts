@@ -1,4 +1,6 @@
 // Enhance: one prompt-master worker rewrites a draft prompt into exactly 3 candidates.
+import path from "node:path"
+import type { PermissionHandler } from "@github/copilot-sdk"
 import { Schema } from "effect"
 import type { Factory } from "./factory.ts"
 import type { Candidate } from "./threads.ts"
@@ -33,10 +35,25 @@ export const decodeCandidates = (reply: string): Candidate[] => {
   }
 }
 
+/** The enhance worker gets no tools: it may only read, so it can open the skill's files. */
+export const enhancePermissions: PermissionHandler = (request) =>
+  request.kind === "read"
+    ? { kind: "approve-once" }
+    : { kind: "reject", feedback: "Enhance has no tools. Reply with the JSON array only." }
+
+/** Spawn on the coordinator's model, tool-less, in a scratch folder outside any repository run. */
 export const enhanceWith =
   (f: Factory, timeoutMs = 180_000) =>
   async (prompt: string): Promise<Candidate[]> => {
-    const w = await f.spawn({ name: "enhance", role: "worker", step: "enhance-prompt", task: enhanceTask(prompt) })
+    const w = await f.spawn({
+      name: "enhance",
+      role: "worker",
+      step: "enhance-prompt",
+      task: enhanceTask(prompt),
+      model: f.settings.agent.model,
+      workdir: path.join(f.root, "enhance"),
+      permissions: enhancePermissions,
+    })
     try {
       if (!(await w.waitIdle(timeoutMs))) throw new Error("enhance timed out")
       return decodeCandidates(w.lastMessage ?? "")
