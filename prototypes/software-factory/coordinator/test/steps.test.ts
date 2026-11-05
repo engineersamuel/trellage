@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
-import { stepById, stepSetup } from "../src/steps.ts"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import { ensureClones, stepById, stepSetup } from "../src/steps.ts"
 
 test("implement loads the whole skills root, the gate tools on PATH, and says so", () => {
   const s = stepSetup(stepById("implement"), "/s", "/t")
@@ -19,4 +22,9 @@ test("a step without skills, or no step, gets no setup", () => {
   const none = { skillDirectories: [], extraPath: [], prefix: "" }
   expect(stepSetup(stepById("verify"), "/s", "/t")).toEqual(none)
   expect(stepSetup(null, "/s", "/t")).toEqual(none)
+})
+
+test("a failed clone reports git's own error", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "sf-clone-"))
+  expect(() => ensureClones(dir, { nope: path.join(dir, "missing-repo") })).toThrow(/clone nope failed: .*(does not exist|not a git repository|repository)/i)
 })

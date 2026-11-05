@@ -153,7 +153,7 @@ test("draft: Run disabled while Council runs", async ({ page }) => {
   expect(agui).toEqual([])
 })
 
-test("draft: enhance error shows on the node", async ({ page }) => {
+test("draft: enhance error shows its first line on the node and the full text in the slide-over", async ({ page }) => {
   const s: Stub = {
     thread: draftThread({ versions: [v1], current: "v1", reports: [] }),
     workers: [],
@@ -164,8 +164,11 @@ test("draft: enhance error shows on the node", async ({ page }) => {
   await page.goto(`${PAGE}?proto=2`)
   await openRing(page)
   await page.getByRole("menuitem", { name: "Enhance" }).click()
-  await expect(node(page).getByText("model returned prose", { exact: true })).toBeVisible()
-  await expect(page.getByText("raw reply: hello")).toHaveCount(0)
+  const line = node(page).getByText("model returned prose", { exact: true })
+  await expect(line).toBeVisible()
+  await expect(line).toHaveAttribute("title", "model returned prose\nraw reply: hello")
+  await expect(node(page).getByText("raw reply: hello")).toHaveCount(0)
+  await expect(page.locator(".p2-err-full")).toHaveText("model returned prose\nraw reply: hello")
   await expect(page.locator(".p2-cand")).toHaveCount(0)
   expect(agui).toEqual([])
 })

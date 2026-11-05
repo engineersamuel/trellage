@@ -41,23 +41,33 @@ export const enhancePermissions: PermissionHandler = (request) =>
     ? { kind: "approve-once" }
     : { kind: "reject", feedback: "Enhance has no tools. Reply with the JSON array only." }
 
-/** Spawn on the coordinator's model, tool-less, in a scratch folder outside any repository run. */
+/**
+ * Spawn on the coordinator's model, tool-less, in a scratch folder outside any repository run.
+ * The worker sits under its draft node (`owner`) and stays after it answers, so its turns can be read;
+ * the next enhance of the same draft replaces it. Only a timeout stops it here.
+ */
 export const enhanceWith =
   (f: Factory, timeoutMs = 180_000) =>
-  async (prompt: string): Promise<Candidate[]> => {
+  async (prompt: string, owner: string): Promise<Candidate[]> => {
+    await stopEnhance(f, owner)
     const w = await f.spawn({
       name: "enhance",
       role: "worker",
+      owner,
       step: "enhance-prompt",
       task: enhanceTask(prompt),
       model: f.settings.agent.model,
       workdir: path.join(f.root, "enhance"),
       permissions: enhancePermissions,
     })
-    try {
-      if (!(await w.waitIdle(timeoutMs))) throw new Error("enhance timed out")
-      return decodeCandidates(w.lastMessage ?? "")
-    } finally {
+    if (!(await w.waitIdle(timeoutMs))) {
       await f.stop(w.id).catch(() => {})
+      throw new Error("enhance timed out")
     }
+    return decodeCandidates(w.lastMessage ?? "")
   }
+
+/** Stop the enhance worker under this draft node, if one is left. */
+export const stopEnhance = async (f: Factory, owner: string): Promise<void> => {
+  for (const w of [...f.workers.values()]) if (w.owner === owner && w.name === "enhance") await f.stop(w.id).catch(() => {})
+}

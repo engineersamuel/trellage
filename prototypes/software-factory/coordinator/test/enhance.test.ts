@@ -35,10 +35,11 @@ test("enhance-prompt is factory-only and loads only prompt-master", () => {
   })
 })
 
-const fakeFactory = (opts: { idle: boolean; reply: string | null; stopFails?: boolean }) => {
+const fakeFactory = (opts: { idle: boolean; reply: string | null; stopFails?: boolean; workers?: { id: string; name: string; owner: string }[] }) => {
   const calls = { spawned: [] as any[], stopped: [] as string[] }
   const f = {
     root: "/state",
+    workers: new Map((opts.workers ?? []).map((w) => [w.id, w])),
     settings: { agent: { model: "coord-model" } },
     spawn: async (spec: any) => {
       calls.spawned.push(spec)
@@ -52,11 +53,12 @@ const fakeFactory = (opts: { idle: boolean; reply: string | null; stopFails?: bo
   return { f, calls }
 }
 
-test("enhanceWith spawns the enhance-prompt worker, decodes, and stops it", async () => {
+test("enhanceWith spawns the enhance-prompt worker under the draft, decodes, and keeps it for its transcript", async () => {
   const { f, calls } = fakeFactory({ idle: true, reply: three })
-  expect(await enhanceWith(f)("make it faster")).toHaveLength(3)
+  expect(await enhanceWith(f)("make it faster", "draft-abc")).toHaveLength(3)
   expect(calls.spawned[0]).toMatchObject({
     name: "enhance",
+    owner: "draft-abc",
     role: "worker",
     step: "enhance-prompt",
     model: "coord-model",
@@ -64,24 +66,35 @@ test("enhanceWith spawns the enhance-prompt worker, decodes, and stops it", asyn
     permissions: enhancePermissions,
   })
   expect(calls.spawned[0].task).toContain(JSON.stringify("make it faster"))
-  expect(calls.stopped).toEqual(["w1"])
+  expect(calls.stopped).toEqual([])
+})
+
+test("a new enhance stops the draft's previous enhance worker only", async () => {
+  const workers = [
+    { id: "old", name: "enhance", owner: "draft-abc" },
+    { id: "other", name: "enhance", owner: "draft-xyz" },
+    { id: "council", name: "draft-council", owner: "draft-abc" },
+  ]
+  const { f, calls } = fakeFactory({ idle: true, reply: three, workers })
+  await enhanceWith(f)("p", "draft-abc")
+  expect(calls.stopped).toEqual(["old"])
 })
 
 test("enhanceWith timeout is an error and still stops the worker", async () => {
   const { f, calls } = fakeFactory({ idle: false, reply: three })
-  await expect(enhanceWith(f, 5)("p")).rejects.toThrow("enhance timed out")
+  await expect(enhanceWith(f, 5)("p", "draft-abc")).rejects.toThrow("enhance timed out")
   expect(calls.stopped).toEqual(["w1"])
 })
 
-test("enhanceWith bad reply is an error and still stops the worker", async () => {
+test("enhanceWith bad reply is an error and keeps the worker so its turns show why", async () => {
   const { f, calls } = fakeFactory({ idle: true, reply: "Here are some ideas" })
-  await expect(enhanceWith(f)("p")).rejects.toThrow("not JSON")
-  expect(calls.stopped).toEqual(["w1"])
+  await expect(enhanceWith(f)("p", "draft-abc")).rejects.toThrow("not JSON")
+  expect(calls.stopped).toEqual([])
 })
 
 test("a stop failure does not mask the original error", async () => {
   const { f } = fakeFactory({ idle: false, reply: null, stopFails: true })
-  await expect(enhanceWith(f, 5)("p")).rejects.toThrow("enhance timed out")
+  await expect(enhanceWith(f, 5)("p", "draft-abc")).rejects.toThrow("enhance timed out")
 })
 
 test("enhance permissions reject shell, write, url and mcp; allow read", async () => {

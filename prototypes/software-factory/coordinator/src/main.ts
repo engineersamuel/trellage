@@ -21,7 +21,7 @@ import type { SessionEvent } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
 import { coordinatorTools, globalTools, spawnHealing } from "./tools.ts"
 import { DRAFT_NOTE, DraftError, draftNodeId, isUnstartedDraft, makeDrafts } from "./drafts.ts"
-import { enhanceWith } from "./enhance.ts"
+import { enhanceWith, stopEnhance } from "./enhance.ts"
 import { Schema } from "effect"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
@@ -699,6 +699,7 @@ const drafts = makeDrafts({
     if (factory.workers.has(subId(id))) await factory.stop(subId(id))
   },
   enhance: enhanceWith(factory),
+  stopEnhance: (id) => stopEnhance(factory, draftNodeId(id)),
   changed: (threadId) => factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId }),
 })
 

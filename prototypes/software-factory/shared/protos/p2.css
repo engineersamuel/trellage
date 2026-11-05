@@ -241,6 +241,7 @@
 .sfp-p2 .p2-sev.high, .sfp-p2 .p2-sev.critical { background: #ef444440; color: #fca5a5; }
 .sfp-p2 .p2-verdict { margin-left: auto; color: var(--sf-muted); }
 .sfp-p2 .p2-err { color: #fca5a5; font-size: 12px; margin-top: 6px; }
+.sfp-p2 .p2-err-full { white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; font-family: ui-monospace, monospace; }
 .sfp-p2 .p2-card.decision.done { padding: 5px 12px; background: none; box-shadow: none; }
 .sfp-p2 .p2-card.done .p2-card-head { align-items: center; }
 .sfp-p2 .p2-done-q { color: var(--sf-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }

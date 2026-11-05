@@ -420,7 +420,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   /** Thread id of the draft open in the slide-over. */
   let overId: string | null = null
   let overSig = ""
-  /** Draft actions waiting for the server, and the last error per draft (first line only). */
+  /** Draft actions waiting for the server, and the last error per draft (full text; the card shows its first line). */
   const busy = new Map<string, RingAction>()
   const errs = new Map<string, string>()
   const DOCK_BOX = { right: "21px", bottom: "57px", width: "518px", height: "calc(70% - 40px)" }
@@ -465,7 +465,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     Effect.runPromise(json(`/api/drafts/${id}/${path}`, Draft, {
       method: "POST",
       ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-    }).pipe(Effect.match({ onFailure: (e) => errorText(e.reason).split("\n")[0]!, onSuccess: () => null })))
+    }).pipe(Effect.match({ onFailure: (e) => errorText(e.reason), onSuccess: () => null })))
 
   const act = (id: string, a: RingAction) => {
     ring = null
@@ -475,7 +475,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     void post(id, a).then((err) => {
       busy.delete(id)
       if (err) errs.set(id, err)
-      else if (a === "enhance") overId = id
+      // Enhance opens the slide-over either way: candidates, or the full error.
+      if (a === "enhance") overId = id
       else if (a === "run") overId = null
       if (alive) sync()
     })
@@ -499,7 +500,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       if (!confirm(`Delete draft "${t.title}"?\n\nThis removes the draft, its worktree ${t.worktree ?? ""} (reports too), and the local branch ${t.branch ?? ""}. It cannot be undone.`)) return
       errs.delete(t.id)
       void Effect.runPromise(send(`/api/drafts/${t.id}`, "DELETE").pipe(
-        Effect.match({ onFailure: (err) => errorText(err.reason).split("\n")[0]!, onSuccess: () => null }),
+        Effect.match({ onFailure: (err) => errorText(err.reason), onSuccess: () => null }),
       )).then((err) => {
         if (err) errs.set(t.id, `Delete failed: ${err}`)
         if (alive) sync()
@@ -593,7 +594,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     head.append(el("span", "p2-ph-tag", `Draft · ${t.folderId}`), el("span", "p2-ph-act", draftPrompt(t).split("\n")[0]!), close)
     const body = el("div", "p2-over-body")
     const err = errs.get(t.id)
-    if (err) body.append(el("div", "p2-err", err))
+    if (err) body.append(el("div", "p2-err p2-err-full", err))
     if (d.pending) {
       body.append(el("h4", "", "Pick a rewrite"))
       const row = el("div", "p2-cands")
@@ -675,8 +676,15 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       chips.append(el("span", `p2-chip${running ? " run" : ""}`, r.action[0]!.toUpperCase() + r.action.slice(1)))
     }
     const err = errs.get(t.id), b = busy.get(t.id)
-    card.replaceChildren(head, el("div", "p2-n-name", n.name), el("div", "p2-n-wt", t.folderId), chips, ...(err ? [el("div", "p2-err p2-n-err", err)] : []),
+    card.replaceChildren(head, el("div", "p2-n-name", n.name), el("div", "p2-n-wt", t.folderId), chips, ...(err ? [errLine(err)] : []),
       el("div", "p2-n-foot", b ? (b === "enhance" ? "Enhancing…" : `${LABEL[b]} is starting…`) : "draft · click for actions"))
+  }
+
+  /** One clipped error line on the card; the full text is in the tooltip and the slide-over. */
+  const errLine = (err: string) => {
+    const e = el("div", "p2-err p2-n-err", err.split("\n")[0]!)
+    e.title = err
+    return e
   }
 
   const renderCard = (n: Node, card: HTMLElement) => {

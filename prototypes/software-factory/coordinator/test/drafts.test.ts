@@ -33,6 +33,7 @@ const setup = (over: Partial<DraftDeps> = {}) => {
     discard: async (t) => (calls.push(`discard ${t.id}`), threads.delete(t.id)),
     deliver: async (threadId, text) => void delivered.push({ threadId, text }),
     enhance: async () => candidates,
+    stopEnhance: async (id) => void calls.push(`stopEnhance ${id}`),
     changed: (id) => void changed.push(id),
     ...over,
   }
@@ -270,6 +271,7 @@ test("remove stops draft workers before discard", async () => {
   const { drafts, threads, calls } = setup()
   const t = drafts.create("repo", "build x")
   await drafts.run(t.id)
+  calls.length = 0
   await drafts.remove(t.id)
   expect(calls).toEqual([`stopOwned ${draftNodeId(t.id)}`, `discard ${t.id}`])
   expect(threads.get(t.id)).toBeUndefined()
@@ -286,4 +288,18 @@ test("every mutation calls changed", async () => {
   await drafts.run(t.id)
   await drafts.remove(t.id)
   expect(changed).toEqual(Array(8).fill(t.id))
+})
+
+test("enhance passes the draft node as owner; Pick and Run stop the enhance worker", async () => {
+  const owners: string[] = []
+  const { drafts, calls } = setup({ enhance: async (_p, owner) => (owners.push(owner), candidates) })
+  const t = drafts.create("repo", "build x")
+  await drafts.enhance(t.id)
+  expect(owners).toEqual([draftNodeId(t.id)])
+  drafts.pick(t.id, 0)
+  await Promise.resolve()
+  expect(calls).toContain(`stopEnhance ${t.id}`)
+  calls.length = 0
+  await drafts.run(t.id)
+  expect(calls).toContain(`stopEnhance ${t.id}`)
 })

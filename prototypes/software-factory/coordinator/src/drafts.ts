@@ -39,7 +39,10 @@ export type DraftDeps = {
   deliver: (threadId: string, text: string) => Promise<void>
   /** Stop the draft's sub-coordinator, if one was spawned. */
   stopSub?: (threadId: string) => Promise<void>
-  enhance: (prompt: string) => Promise<Candidate[]>
+  /** Rewrite the prompt; `owner` is the draft node the enhance worker sits under. */
+  enhance: (prompt: string, owner: string) => Promise<Candidate[]>
+  /** Stop the draft's enhance worker, if one is left. */
+  stopEnhance?: (threadId: string) => Promise<void>
   /** Publishes factory.thread_updated. */
   changed: (threadId: string) => void
   now?: () => number
@@ -114,7 +117,7 @@ export const makeDrafts = (d: DraftDeps) => {
       try {
         let candidates: Candidate[]
         try {
-          candidates = await d.enhance(currentPrompt(draft))
+          candidates = await d.enhance(currentPrompt(draft), draftNodeId(id))
         } catch (e) {
           throw new DraftError(502, e instanceof Error ? e.message : String(e))
         }
@@ -132,6 +135,7 @@ export const makeDrafts = (d: DraftDeps) => {
       if (!c || index > 2) throw new DraftError(400, "no such candidate")
       const v = version(c.prompt, { source: "enhance", title: c.title, notes: c.notes })
       const { pending: _, ...rest } = draft
+      void d.stopEnhance?.(id).catch(console.error)
       return save(id, { ...rest, versions: [...draft.versions, v], current: v.id })
     },
 
@@ -170,6 +174,7 @@ export const makeDrafts = (d: DraftDeps) => {
       const b = acting.get(id) ?? draft.reports.find((r) => d.isRunning(r.workerId))?.action
       if (b) throw new DraftError(409, `wait for ${b} to finish`)
       const started = save(id, { ...draft, startedAt: now() })
+      await d.stopEnhance?.(id).catch(console.error)
       try {
         await d.deliver(id, runMessage(started))
       } catch (e) {

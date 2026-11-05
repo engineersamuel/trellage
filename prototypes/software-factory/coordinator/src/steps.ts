@@ -165,7 +165,12 @@ export const ensureClones = (dir: string, repos: Record<string, string>): void =
   mkdirSync(dir, { recursive: true })
   for (const [name, url] of Object.entries(repos)) {
     if (existsSync(path.join(dir, name, ".git"))) continue
-    execFileSync("git", ["clone", "-q", "--depth", "1", url, path.join(dir, name)], { stdio: "ignore" })
+    try {
+      execFileSync("git", ["clone", "-q", "--depth", "1", url, path.join(dir, name)], { stdio: ["ignore", "ignore", "pipe"] })
+    } catch (e) {
+      const why = String((e as { stderr?: Buffer }).stderr ?? "").trim() || (e as Error).message
+      throw new Error(`clone ${name} failed: ${why}`)
+    }
   }
 }
 
