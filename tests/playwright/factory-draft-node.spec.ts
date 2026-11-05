@@ -180,8 +180,10 @@ test("draft: pending rewrites block Research until Keep current dismisses them",
   await page.keyboard.press("Escape")
 
   await expect(page.getByRole("menu")).toHaveCount(0)
-  await node(page).getByRole("button", { name: "v1" }).click()
+  // The card says rewrites are waiting and reopens them; no ring opens.
+  await node(page).getByRole("button", { name: "3 rewrites · pick one" }).click()
   await expect(page.locator(".p2-cand")).toHaveCount(3)
+  await expect(page.getByRole("menu")).toHaveCount(0)
   await page.getByRole("button", { name: "Keep current" }).click()
   await expect(page.locator(".p2-cand")).toHaveCount(0)
   expect(s.posts).toEqual([{ path: `/api/drafts/${ID}/dismiss`, body: undefined }])

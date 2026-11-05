@@ -416,6 +416,14 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   }
 
   // ---------- draft node: action ring and slide-over ----------
+
+  /** Show a draft's slide-over; it replaces an open agent panel, which would cover it. */
+  const openOver = (id: string) => {
+    ring = null
+    sel = null
+    overId = id
+    if (alive) sync(true)
+  }
   let ring: string | null = null
   /** Thread id of the draft open in the slide-over. */
   let overId: string | null = null
@@ -477,7 +485,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       busy.delete(id)
       if (err) errs.set(id, err)
       // Enhance opens the slide-over either way: candidates, or the full error.
-      if (a === "enhance") overId = id
+      if (a === "enhance") return void openOver(id)
       else if (a === "run") overId = null
       if (alive) sync()
     })
@@ -672,9 +680,15 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const head = el("div", "p2-n-head")
     const badge = el("button", "p2-badge", `v${d.versions.findIndex((v) => v.id === d.current) + 1}`)
     badge.title = "Versions and reports"
-    badge.onclick = (e) => (e.stopPropagation(), (ring = null), (overId = t.id), sync())
+    badge.onclick = (e) => (e.stopPropagation(), openOver(t.id))
     head.append(el("i", "p2-dot"), el("span", "p2-tag", n.tag), badge, discardDraft(t))
     const chips = el("div", "p2-n-act p2-chips")
+    if (d.pending) {
+      const pick = el("button", "p2-chip pend", `✨ ${d.pending.candidates.length} rewrites · pick one`)
+      pick.title = "Open the Enhance rewrites"
+      pick.onclick = (e) => (e.stopPropagation(), openOver(t.id))
+      chips.append(pick)
+    }
     for (const r of d.reports) {
       const running = s!.agents.some((a) => a.id === r.workerId && a.status === "running")
       chips.append(el("span", `p2-chip${running ? " run" : ""}`, LABEL[r.action]))

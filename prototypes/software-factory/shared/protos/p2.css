@@ -57,6 +57,7 @@
 .sfp-p2 .p2-chip { padding: 1px 7px; border-radius: 999px; border: 1px solid var(--sf-accent); color: var(--sf-text); font-size: 11px; }
 .sfp-p2 .p2-chip.run { opacity: .45; }
 .sfp-p2 .p2-chips button.p2-chip { background: none; }
+.sfp-p2 .p2-chips button.p2-chip.pend { background: color-mix(in srgb, var(--sf-accent) 30%, transparent); font-weight: 600; cursor: pointer; }
 .sfp-p2 .p2-chips button.p2-chip:hover { background: color-mix(in srgb, var(--sf-accent) 25%, transparent); }
 .sfp-p2 .p2-node.draft .p2-badge { cursor: pointer; }
 .sfp-p2 .p2-n-err { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
