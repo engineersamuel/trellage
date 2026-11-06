@@ -1194,6 +1194,8 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/threads\/update\/([^/]+)$/,
     async (req, _url, [id]) => {
       const t = threads.update(id!, (await req.json()) as any)
+      // Archiving a General chat stops its session; its next message starts it again.
+      if (t?.archivedAt && !t.worktree && !t.desk && factory.workers.has(genId(t.id))) await factory.stop(genId(t.id))
       if (t) factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
       return json(t ?? null)
     },

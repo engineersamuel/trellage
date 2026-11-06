@@ -86,7 +86,8 @@ const lineDiff = (a: string[], b: string[]): [" " | "-" | "+", string][] => {
 
 /** Build the org tree: agents by owner, unstarted drafts under their General chat (else the global node), and dormant repo conversations (no live sub-coordinator) as ghosts under the global node. */
 const buildTree = (s: State): Map<string, Node> => {
-  const nodes = new Map(s.agents.map((a) => [a.id, agentNode(a)]))
+  const archivedChat = (a: Agent) => a.id.startsWith("gen-") && s.threads.some((t) => !t.worktree && t.archivedAt && `gen-${t.id.slice(0, 8)}` === a.id)
+  const nodes = new Map(s.agents.filter((a) => !archivedChat(a)).map((a) => [a.id, agentNode(a)]))
   const live = new Set(s.agents.map((a) => a.id))
   for (const t of s.threads.filter((t) => isDraft(t) && !t.archivedAt)) {
     const id = `draft-${t.id.slice(0, 8)}`
@@ -170,15 +171,18 @@ const activityText = (s: State, n: Node) => {
   return n.agent?.status === "running" ? "Working…" : (n.agent?.lastMessage ?? "Idle").replace(/[`*#>\n]+/g, " ").trim()
 }
 
-/** Archive hides a dormant conversation from the canvas. Delete removes the conversation, its worktree, and its local branch. */
+/** Archive hides a dormant conversation or a General chat from the canvas. Delete removes the conversation (and a repo conversation's worktree and local branch). */
 const ghostAction = (t: Thread, kind: "archive" | "delete") => {
   const b = el("button", `p2-gact ${kind}`, kind === "archive" ? "⤓" : "✕")
-  b.title = kind === "archive" ? "Archive: hide from the canvas (stays in the sidebar)" : "Delete conversation, worktree, and branch"
+  b.title = kind === "archive" ? "Archive: hide from the canvas (stays in the sidebar)" : t.worktree ? "Delete conversation, worktree, and branch" : "Delete chat"
   b.setAttribute("aria-label", `${kind === "archive" ? "Archive" : "Delete"} ${t.title}`)
   b.onclick = (e) => {
     e.stopPropagation()
     if (kind === "archive") return fire(send(`/api/threads/update/${t.id}`, "PATCH", { archivedAt: Date.now() }))
-    if (!confirm(`Delete "${t.title}"?\n\nThis removes the conversation, the worktree ${t.worktree ?? ""} (uncommitted changes too), and the local branch ${t.branch ?? ""}. It cannot be undone.`)) return
+    const what = t.worktree
+      ? `the conversation, the worktree ${t.worktree} (uncommitted changes too), and the local branch ${t.branch ?? ""}`
+      : "the chat and its messages, and stops its session"
+    if (!confirm(`Delete "${t.title}"?\n\nThis removes ${what}. It cannot be undone.`)) return
     fire(send(`/api/threads/delete/${t.id}`, "DELETE"))
   }
   return b
@@ -670,7 +674,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       head.append(b)
     }
     if (rev) head.append(el("span", `p2-badge ${rev.findings.some((f) => f.verdict === "keep") ? "warn" : "ok"}`, rev.findings.length ? `🛡 ${rev.findings.length}` : "🛡 ✓"))
-    if (n.kind === "ghost") head.append(ghostAction(n.thread!, "archive"), ghostAction(n.thread!, "delete"))
+    const chat = n.id.startsWith("gen-") ? threadOf(n.id) : undefined
+    const t = n.kind === "ghost" ? n.thread! : chat
+    if (t) head.append(ghostAction(t, "archive"), ghostAction(t, "delete"))
     return head
   }
 
