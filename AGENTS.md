@@ -31,6 +31,7 @@ host through `trx run HARNESS [PROFILE...] [-- AGENT_ARGS]`.
   to avoid recursion. Commit manifest and lockfile changes together.
 - Run Oxlint with `bun run lint` from the root.
 - Check Oxfmt with `bun run format:check` from the root.
+- Run all static quality gates with `make quality-static`; CI runs the same target.
 - Run no-emit TypeScript checks with `bun run check` from the root.
 - Run first-party TypeScript and TSX source through the pinned Bun runtime;
   do not generate or commit application bundles, declarations, or `dist`.

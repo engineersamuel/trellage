@@ -28,7 +28,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
+          persist-credentials: false
       - name: Set up Node.js for external tooling
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -37,6 +38,16 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.2
+      - name: Set up pinned quality tools
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.10.24
+          install: false
+      - name: Install quality tools
+        run: mise install jactionlint betterleaks osv-scanner shellcheck typos rumdl
+      - name: Set quality-gate diff base
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        run: echo "QUALITY_BASE_SHA=${{ github.event.pull_request.base.sha || github.event.before }}" >> "$GITHUB_ENV"
       - name: Cache dependency downloads
         id: dependency-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -75,6 +86,8 @@ jobs:
       - name: Run fast PR regression checks
         if: github.event_name == 'pull_request'
         run: make test-pr
+      - name: Run software factory type check and tests
+        run: make factory-test
       - name: Run full source and contract suite after merge or on demand
         if: github.event_name != 'pull_request'
         run: make test
@@ -91,6 +104,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
+          persist-credentials: false
       - name: Set up Node.js for external tooling
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:

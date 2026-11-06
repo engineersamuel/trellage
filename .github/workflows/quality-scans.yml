@@ -1,0 +1,67 @@
+name: Quality scans
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-scans-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  current-content:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up mise
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.10.24
+          install: false
+      - name: Install scanners
+        run: mise install betterleaks osv-scanner
+      - name: Scan commits for secrets
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        env:
+          QUALITY_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "$QUALITY_BASE_SHA" || "$QUALITY_BASE_SHA" == 0000000000000000000000000000000000000000 ]]; then
+            betterleaks git . --log-opts=-1 --redact
+          else
+            betterleaks git . --log-opts="$QUALITY_BASE_SHA..HEAD" --redact
+          fi
+      - name: Check dependency vulnerability changes
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        env:
+          QUALITY_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "$QUALITY_BASE_SHA" || "$QUALITY_BASE_SHA" == 0000000000000000000000000000000000000000 ]]; then
+            bash scripts/check-osv-diff.sh
+          elif git diff --quiet "$QUALITY_BASE_SHA...HEAD" -- bun.lock; then
+            echo "bun.lock did not change; skipping dependency comparison."
+          else
+            bash scripts/check-osv-diff.sh
+          fi
+      - name: Scan all dependencies for known vulnerabilities
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        run: osv-scanner scan source -L bun.lock --format markdown --output-file "$RUNNER_TEMP/osv-scan.md"
+      - name: Publish scheduled vulnerability findings
+        if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: |
+          if [[ -f "$RUNNER_TEMP/osv-scan.md" ]]; then
+            cat "$RUNNER_TEMP/osv-scan.md" >> "$GITHUB_STEP_SUMMARY"
+          fi

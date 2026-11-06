@@ -714,7 +714,7 @@ published_runtime_identity() {
 resolve_installer() {
   local version="$1" install_dir expected installer
 
-  mise_env install "$mise_tool[asset_pattern=prime-agent-$version.tgz]@$version" \
+  mise_env install "${mise_tool}[asset_pattern=prime-agent-$version.tgz]@$version" \
     || die "mise could not install prime-agent $version"
   install_dir="$(mise_env where "$mise_tool@$version")" \
     || die "prime-agent $version is not installed; run prx repair"

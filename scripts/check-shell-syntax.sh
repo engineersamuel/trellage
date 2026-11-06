@@ -16,8 +16,14 @@ if ! git ls-files -z -- >"$files_tmp"; then
 fi
 
 checked=0
+if ! command -v shellcheck >/dev/null 2>&1; then
+  printf 'shell syntax: ShellCheck is required but not installed\n' >&2
+  exit 1
+fi
+
 while IFS= read -r -d '' file; do
   [[ -L "$file" || ! -f "$file" ]] && continue
+  [[ "$file" == prototypes/software-factory/web-foldkit/repos/foldkit/* ]] && continue
 
   shebang=''
   IFS= read -r shebang <"$file" || :
@@ -30,12 +36,12 @@ while IFS= read -r -d '' file; do
   case "${shebang_parts[0]:-}" in
     '#!/usr/bin/env')
       case "${shebang_parts[1]:-}" in
-        bash) shell=bash ;;
-        sh) shell=sh ;;
+        bash) shell='bash' ;;
+        sh) shell='sh' ;;
       esac
       ;;
-    '#!/bin/bash') shell=bash ;;
-    '#!/bin/sh') shell=sh ;;
+    '#!/bin/bash') shell='bash' ;;
+    '#!/bin/sh') shell='sh' ;;
   esac
   if [[ -z "$shell" && "$shebang" != '#!'* && "$file" == *.sh ]]; then
     shell=bash
@@ -46,7 +52,11 @@ while IFS= read -r -d '' file; do
     printf 'shell syntax error: %s\n' "$file" >&2
     exit 1
   fi
+  if ! shellcheck --severity=error --shell="$shell" -- "$file"; then
+    printf 'shellcheck error: %s\n' "$file" >&2
+    exit 1
+  fi
   checked=$((checked + 1))
 done <"$files_tmp"
 
-printf 'shell syntax: checked %d scripts\n' "$checked"
+printf 'shell syntax and critical ShellCheck rules: checked %d scripts\n' "$checked"

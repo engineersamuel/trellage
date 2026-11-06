@@ -1,0 +1,1559 @@
+[
+  {
+    "type": "cycle",
+    "from": "packages/trellage-conversation-source/src/conversation-capture.ts",
+    "to": "packages/trellage-conversation-source/src/conversation-validation.ts",
+    "unresolvedTo": "./conversation-validation.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-conversation-source/src/conversation-validation.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-conversation-source/src/conversation-capture.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-guide-core/src/index.ts",
+    "to": "packages/trellage-guide-core/src/profile-instructions.ts",
+    "unresolvedTo": "./profile-instructions.ts",
+    "dependencyTypes": [
+      "local",
+      "export"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-guide-core/src/profile-instructions.ts",
+        "dependencyTypes": [
+          "local",
+          "export"
+        ]
+      },
+      {
+        "name": "packages/trellage-guide-core/src/index.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-guide-core/src/index.ts",
+    "to": "packages/trellage-guide-core/src/shipped-guide.ts",
+    "unresolvedTo": "./shipped-guide.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-guide-core/src/shipped-guide.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-guide-core/src/index.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-guide-core/src/shipped-guide.ts",
+    "to": "packages/trellage-guide-core/src/profile-instructions.ts",
+    "unresolvedTo": "./profile-instructions.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-guide-core/src/profile-instructions.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-guide-core/src/index.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-guide-core/src/shipped-guide.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/copilot-review-provider.ts",
+    "to": "packages/trellage-launcher/src/review-artifacts.ts",
+    "unresolvedTo": "./review-artifacts.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-artifacts.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-contracts.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-evidence.ts",
+        "dependencyTypes": [
+          "local",
+          "export"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-run.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/copilot-review-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/copilot-review-provider.ts",
+    "to": "packages/trellage-launcher/src/review-contracts.ts",
+    "unresolvedTo": "./review-contracts.ts",
+    "dependencyTypes": [
+      "local",
+      "import",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-contracts.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-run.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/copilot-review-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/copilot-review-provider.ts",
+    "to": "packages/trellage-launcher/src/review-evidence.ts",
+    "unresolvedTo": "./review-evidence.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-evidence.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-run.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/copilot-review-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/copilot-review-provider.ts",
+    "to": "packages/trellage-launcher/src/review-run.ts",
+    "unresolvedTo": "./review-run.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-run.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/copilot-review-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/copilot-review-provider.ts",
+    "to": "packages/trellage-launcher/src/review-skills.ts",
+    "unresolvedTo": "./review-skills.ts",
+    "dependencyTypes": [
+      "local",
+      "import",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-skills.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/copilot-review-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-api.ts",
+    "to": "packages/trellage-launcher/src/guide-context.ts",
+    "unresolvedTo": "./guide-context.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-context.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-api.ts",
+    "to": "packages/trellage-launcher/src/guide-goal-augment.ts",
+    "unresolvedTo": "./guide-goal-augment.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-augment.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-api.ts",
+    "to": "packages/trellage-launcher/src/guide-goal-execution.ts",
+    "unresolvedTo": "./guide-goal-execution.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-execution.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-augment.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-api.ts",
+    "to": "packages/trellage-launcher/src/guide-goal-generation.ts",
+    "unresolvedTo": "./guide-goal-generation.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-generation.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-augment.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-api.ts",
+    "to": "packages/trellage-launcher/src/guide-goal-transport.ts",
+    "unresolvedTo": "./guide-goal-transport.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-transport.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-augment.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-api.ts",
+    "to": "packages/trellage-launcher/src/guide-launch.ts",
+    "unresolvedTo": "./guide-launch.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-launch.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-execution.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-augment.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-api.ts",
+    "to": "packages/trellage-launcher/src/guide-match-cache.ts",
+    "unresolvedTo": "./guide-match-cache.ts",
+    "dependencyTypes": [
+      "local",
+      "import",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-match-cache.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-context.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-api.ts",
+    "to": "packages/trellage-launcher/src/guide-provider.ts",
+    "unresolvedTo": "./guide-provider.ts",
+    "dependencyTypes": [
+      "local",
+      "export",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-api.ts",
+    "to": "packages/trellage-launcher/src/guide-workflow-prompt.ts",
+    "unresolvedTo": "./guide-workflow-prompt.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-workflow-prompt.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-context.ts",
+    "to": "packages/trellage-launcher/src/guide-provider.ts",
+    "unresolvedTo": "./guide-provider.ts",
+    "dependencyTypes": [
+      "local",
+      "import",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-context.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-context.ts",
+    "to": "packages/trellage-launcher/src/guide-workflow-prompt.ts",
+    "unresolvedTo": "./guide-workflow-prompt.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-workflow-prompt.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-context.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-goal-execution.ts",
+    "to": "packages/trellage-launcher/src/guide-provider.ts",
+    "unresolvedTo": "./guide-provider.ts",
+    "dependencyTypes": [
+      "local",
+      "import",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-execution.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-goal-execution.ts",
+    "to": "packages/trellage-launcher/src/guide-workflow-prompt.ts",
+    "unresolvedTo": "./guide-workflow-prompt.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-workflow-prompt.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-execution.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-goal-generation.ts",
+    "to": "packages/trellage-launcher/src/guide-goal-execution.ts",
+    "unresolvedTo": "./guide-goal-execution.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-execution.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-augment.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-generation.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-goal-generation.ts",
+    "to": "packages/trellage-launcher/src/guide-match-cache.ts",
+    "unresolvedTo": "./guide-match-cache.ts",
+    "dependencyTypes": [
+      "local",
+      "import",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-match-cache.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-context.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-generation.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-goal-generation.ts",
+    "to": "packages/trellage-launcher/src/guide-provider.ts",
+    "unresolvedTo": "./guide-provider.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-generation.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-goal-generation.ts",
+    "to": "packages/trellage-launcher/src/guide-workflow-prompt.ts",
+    "unresolvedTo": "./guide-workflow-prompt.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-workflow-prompt.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-generation.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-goal-transport.ts",
+    "to": "packages/trellage-launcher/src/guide-goal-execution.ts",
+    "unresolvedTo": "./guide-goal-execution.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-execution.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-augment.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-transport.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-goal-transport.ts",
+    "to": "packages/trellage-launcher/src/guide-launch.ts",
+    "unresolvedTo": "./guide-launch.ts",
+    "dependencyTypes": [
+      "local",
+      "import",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-launch.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-transport.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-match-cache.ts",
+    "to": "packages/trellage-launcher/src/guide-goal-execution.ts",
+    "unresolvedTo": "./guide-goal-execution.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-execution.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-goal-augment.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-match-cache.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-match-cache.ts",
+    "to": "packages/trellage-launcher/src/guide-provider.ts",
+    "unresolvedTo": "./guide-provider.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-match-cache.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/guide-match-cache.ts",
+    "to": "packages/trellage-launcher/src/guide-workflow-prompt.ts",
+    "unresolvedTo": "./guide-workflow-prompt.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/guide-workflow-prompt.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-api.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/guide-match-cache.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/review-contracts.ts",
+    "to": "packages/trellage-launcher/src/review-evidence.ts",
+    "unresolvedTo": "./review-evidence.ts",
+    "dependencyTypes": [
+      "local",
+      "export"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-evidence.ts",
+        "dependencyTypes": [
+          "local",
+          "export"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-contracts.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/review-contracts.ts",
+    "to": "packages/trellage-launcher/src/review-findings.ts",
+    "unresolvedTo": "./review-findings.ts",
+    "dependencyTypes": [
+      "local",
+      "import",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-findings.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-contracts.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/review-normalize.ts",
+    "to": "packages/trellage-launcher/src/copilot-review-provider.ts",
+    "unresolvedTo": "./copilot-review-provider.ts",
+    "dependencyTypes": [
+      "local",
+      "import",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/copilot-review-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-skills.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-normalize.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/review-normalize.ts",
+    "to": "packages/trellage-launcher/src/review-findings.ts",
+    "unresolvedTo": "./review-findings.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-findings.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-contracts.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-evidence.ts",
+        "dependencyTypes": [
+          "local",
+          "export"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-run.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/copilot-review-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-skills.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-normalize.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/review-run.ts",
+    "to": "packages/trellage-launcher/src/review-skills.ts",
+    "unresolvedTo": "./review-skills.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-skills.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/copilot-review-provider.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-run.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/review-skills.ts",
+    "to": "packages/trellage-launcher/src/review-contracts.ts",
+    "unresolvedTo": "./review-contracts.ts",
+    "dependencyTypes": [
+      "local",
+      "import",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-contracts.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-run.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-skills.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/review-skills.ts",
+    "to": "packages/trellage-launcher/src/review-evidence.ts",
+    "unresolvedTo": "./review-evidence.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-evidence.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-run.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-skills.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-launcher/src/review-skills.ts",
+    "to": "packages/trellage-launcher/src/review-findings.ts",
+    "unresolvedTo": "./review-findings.ts",
+    "dependencyTypes": [
+      "local",
+      "import",
+      "type-only"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-launcher/src/review-findings.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-contracts.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-evidence.ts",
+        "dependencyTypes": [
+          "local",
+          "export"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-run.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      },
+      {
+        "name": "packages/trellage-launcher/src/review-skills.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "packages/trellage-runtime/src/native-run/adapters.ts",
+    "to": "packages/trellage-runtime/src/native-run/child-settlement.ts",
+    "unresolvedTo": "./child-settlement.ts",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "packages/trellage-runtime/src/native-run/child-settlement.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "packages/trellage-runtime/src/native-run/adapters.ts",
+        "dependencyTypes": [
+          "local",
+          "import",
+          "type-only"
+        ]
+      }
+    ]
+  }
+]

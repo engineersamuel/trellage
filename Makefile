@@ -1,8 +1,8 @@
 .PHONY: native-harness-version test dependency-bootstrap development-resolution-contract publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation launcher conversation-source source-runtime trellage-identity trellage-session-bridge azure-fresh-install-contract agent-harness native-copilot-profiles native-agency-profile native-claude-profile native-jcode-profile native-omp-profile native-prime-profile native-profile-router manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test native-tui-matrix native-tui-matrix-live native-tui-matrix-test headless-matrix headless-matrix-live headless-matrix-test headless-matrix-static-test build compare compare-down clean trellage-statusline
 
 .PHONY: profile-compiler-fingerprint
-.PHONY: test-command
-.PHONY: test-pr shell-syntax
+.PHONY: test-command factory-test
+.PHONY: test-pr shell-syntax quality-static
 .PHONY: rebuild-profiles-bun-runtime
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
@@ -20,7 +20,7 @@ FINAL_TEST_TARGETS := native-profile-router
 PARALLEL_TEST_TARGETS += cli-matrix-contract
 PARALLEL_TEST_TARGETS += source-checks
 
-test:
+test: quality-static
 	+$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-llm-contract
 	+python3 scripts/test-offline.py -- $(MAKE) --no-print-directory test-offline-workload
 
@@ -64,14 +64,24 @@ test-offline-workload:
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 $(TIMING_SENSITIVE_TEST_TARGETS)
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j$(TEST_JOBS) $(FINAL_TEST_TARGETS)
 
-test-pr:
-	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-llm-contract shell-syntax test-command agent-harness trellage-identity manifest
-	bun run lint
-	bun run format:check
+test-pr: quality-static
+	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-llm-contract test-command agent-harness trellage-identity manifest
 	bun run check
 	bun run test
 	bash tests/source_startup_contract.sh
 	bun --no-install --no-env-file tests/profile_guides_contract.ts
+
+quality-static:
+	jactionlint --profile default --strict-exit
+	$(MAKE) --no-print-directory shell-syntax
+	bun run lint
+	bun run format:check
+	bun run check:changed-quality
+	bun run check:architecture
+	bun run check:unused
+
+factory-test:
+	cd prototypes/software-factory/coordinator && bun install --frozen-lockfile && bunx tsc --noEmit && bun test && bun test ../shared/test
 
 shell-syntax:
 	bash scripts/check-shell-syntax.sh

@@ -1,0 +1,5 @@
+[global]
+line-length = 120
+
+[MD013]
+line-length = 120
