@@ -27,6 +27,63 @@ index 7fd6656..a7f5c8a 100644
 +})), "@plana-solutions/agent-interface/client/flags.js#readFlags");
  //# sourceMappingURL=flags.js.map
 \ No newline at end of file
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/client/genui/rendered.js b/node_modules/@plana-solutions/agent-interface/dist/client/genui/rendered.js
+index fb1dd45..76d5a79 100644
+--- a/node_modules/@plana-solutions/agent-interface/dist/client/genui/rendered.js
++++ b/node_modules/@plana-solutions/agent-interface/dist/client/genui/rendered.js
+@@ -13,8 +13,19 @@ export const genUiAnswers = model => {
+     return __foldkitBrandViewResult(([]), "@plana-solutions/agent-interface/client/genui/rendered.js#genUiAnswers");
+   }
+   const running = isRunning(model);
+-  const maybeLastAssistantId = lastAssistantMessageId(model.messages);
+-  return __foldkitBrandViewResult((groupIntoTurns(model.messages).flatMap(turn => __foldkitBrandViewResult((Turn.$match(turn, {
++  // software-factory patch: one update calls this up to 6 times over the same messages; build the list once.
++  const cached = answersByMessages.get(model.messages);
++  if (cached !== undefined && cached.running === running) {
++    return cached.answers;
++  }
++  const answers = computeAnswers(model.messages, running);
++  answersByMessages.set(model.messages, { answers, running });
++  return answers;
++};
++const answersByMessages = new WeakMap();
++const computeAnswers = (messages, running) => {
++  const maybeLastAssistantId = lastAssistantMessageId(messages);
++  return __foldkitBrandViewResult((groupIntoTurns(messages).flatMap(turn => __foldkitBrandViewResult((Turn.$match(turn, {
+     Assistant: ({
+       segments
+     }) => {
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/client/timeline.js b/node_modules/@plana-solutions/agent-interface/dist/client/timeline.js
+index 714da87..75b7975 100644
+--- a/node_modules/@plana-solutions/agent-interface/dist/client/timeline.js
++++ b/node_modules/@plana-solutions/agent-interface/dist/client/timeline.js
+@@ -123,7 +123,26 @@ const buildSteps = (turn, activities) => {
+   }
+   return __foldkitBrandViewResult((steps), "@plana-solutions/agent-interface/client/timeline.js#buildSteps");
+ };
++// software-factory patch: the update (turnTimelines, matchedArtifacts) and the view each build every turn's
++// layout again. The layout depends only on the thread's messages and run facts, so reuse it while they are the same.
++const turnLayouts = new WeakMap();
+ export const assistantTurnLayout = (group, segments, facts) => {
++  const layoutKey = `${facts.isRunning}|${Option.getOrElse(facts.maybeLastAssistantId, () => "")}|${group[0].id}|${group.length}|${segments.length}`;
++  let byKey = turnLayouts.get(facts.messages);
++  if (byKey === undefined) {
++    byKey = new Map();
++    turnLayouts.set(facts.messages, byKey);
++  }
++  const cached = byKey.get(layoutKey);
++  // `executing` is a fresh [] on every call while idle, so compare its ids, not its reference.
++  if (cached !== undefined && cached.executing.join("\n") === facts.executing.join("\n")) {
++    return cached.layout;
++  }
++  const layout = computeTurnLayout(group, segments, facts);
++  byKey.set(layoutKey, { executing: facts.executing, layout });
++  return layout;
++};
++const computeTurnLayout = (group, segments, facts) => {
+   const turn = assistantTurnView(segments, facts.isRunning, facts.maybeLastAssistantId);
+   const [first] = turn.activeSegments;
+   const activities = pairToolActivity({
 diff --git a/node_modules/@plana-solutions/agent-interface/dist/features/timeline.js b/node_modules/@plana-solutions/agent-interface/dist/features/timeline.js
 index 3deb196..6220039 100644
 --- a/node_modules/@plana-solutions/agent-interface/dist/features/timeline.js
