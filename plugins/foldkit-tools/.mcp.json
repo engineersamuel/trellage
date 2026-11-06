@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp?client=claude-code-plugin"
+    },
+    "foldkit-devtools": {
+      "command": "npx",
+      "args": ["-y", "@foldkit/devtools-mcp@0.26.0"]
+    }
+  }
+}

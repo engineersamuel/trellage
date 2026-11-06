@@ -18,6 +18,14 @@
       "excludedProfiles": []
     },
     {
+      "id": "foldkit-program-generation",
+      "intent": "Build a new Foldkit app with the Model, Message, update, and view architecture. Generate a Foldkit program from this feature description.",
+      "expectedProfiles": ["native:claude/foldkit"],
+      "expectedWorkflows": {"native:claude/foldkit": "build-foldkit-program"},
+      "maxRank": 3,
+      "excludedProfiles": []
+    },
+    {
       "id": "bounded-private-local-edit",
       "intent": "Make a small bounded parser fix while keeping the code on a private local model. I do not need agents or a large workflow.",
       "expectedProfiles": ["native:omp/local"],

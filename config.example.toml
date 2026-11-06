@@ -212,6 +212,15 @@ repository = "JuliusBrussee/caveman"
 [native.sources.trellage]
 repository = "engineersamuel/trellage"
 
+[native.sources.foldkit]
+repository = "foldkit/foldkit"
+
+[native.sources.openui]
+repository = "thesysdev/skills"
+
+[native.instructions.claude-foldkit]
+file = "shipped:prototypes/trellage-claude-profiles/assets/foldkit.md"
+
 [native.sources.ecc]
 repository = "affaan-m/ECC"
 
@@ -485,6 +494,26 @@ source = "trellage"
 harness = "claude"
 path = "plugins/six-hats"
 name = "six-hats"
+
+[native.profiles.preset-claude-foldkit]
+label = "claude / foldkit"
+harnesses = [ "claude" ]
+instructions = [ "claude-foldkit" ]
+
+[[native.profiles.preset-claude-foldkit.skills]]
+source = "foldkit"
+names = [ "foldkit", "generate-program", "audit-program" ]
+
+[[native.profiles.preset-claude-foldkit.skills]]
+source = "openui"
+names = [ "openui" ]
+
+[[native.profiles.preset-claude-foldkit.plugins]]
+source = "trellage"
+harness = "claude"
+path = "plugins/foldkit-tools"
+name = "foldkit-tools"
+includeMcp = true
 
 [native.profiles.preset-claude-ecc]
 label = "claude / ecc"
@@ -1674,6 +1703,52 @@ examples = [ "Decide whether to replace this queue with a transactional outbox",
 [native.profiles.preset-claude-six-hats.guide.goal_execution]
 controller = "claude-goal"
 workflow_ids = [ "run-six-hats-deliberation" ]
+
+[native.profiles.preset-claude-foldkit.selection]
+description = "Claude Code with Foldkit and OpenUI skills, current OpenUI documentation, and optional live Foldkit DevTools inspection."
+strengths = [ "foldkit architecture and implementation", "foldkit program auditing", "openui documentation and skill", "live foldkit runtime inspection" ]
+weaknesses = [ "Projects that do not use Foldkit or OpenUI", "Runtime inspection without a running Foldkit development server and open browser tab", "Work that requires an OS-level sandbox; Native Claude runs on the host" ]
+best_for = [ "Building or auditing an application that uses Foldkit", "Using OpenUI in a project whose own architecture permits it", "Debugging a Foldkit app's live Model, Message history, or runtime behavior with test data" ]
+avoid_for = [ "Projects that do not use Foldkit or OpenUI", "Live runtime debugging before the Foldkit development app is running and open" ]
+capabilities = [ "foldkit-architecture", "foldkit-program-generation", "foldkit-program-audit", "openui-documentation", "foldkit-runtime-inspection" ]
+
+[native.profiles.preset-claude-foldkit.guide]
+document = "shipped:native/claude/foldkit.md"
+
+[[native.profiles.preset-claude-foldkit.guide.prerequisites]]
+id = "proxy"
+description = "Host Claude Code, curl, jq, and the local copilot-proxy-rs endpoint must be available."
+
+[[native.profiles.preset-claude-foldkit.guide.prerequisites]]
+id = "node"
+description = "Node.js 22.19 or later and npx are required for Foldkit DevTools MCP."
+
+[[native.profiles.preset-claude-foldkit.guide.workflows]]
+id = "build-foldkit-program"
+description = "Build a Foldkit program using the installed package APIs, project instructions, and Foldkit's architecture."
+skill = "generate-program"
+examples = [ "Build a Foldkit issue tracker from this feature description", "Add a settings screen using the existing Foldkit Model and Message patterns" ]
+
+[[native.profiles.preset-claude-foldkit.guide.workflows]]
+id = "audit-foldkit-program"
+description = "Audit an existing Foldkit app against its architecture and installed API without changing files."
+skill = "audit-program"
+examples = [ "Audit this Foldkit app for incorrect state ownership and side effects", "Check whether these changes follow the installed Foldkit APIs and project rules" ]
+
+[[native.profiles.preset-claude-foldkit.guide.workflows]]
+id = "debug-foldkit-runtime"
+description = "Inspect the intended running Foldkit app with DevTools MCP and test data."
+examples = [ "Inspect why this button Message did not update the current Model", "Compare the Model before and after the last submitted form Message" ]
+
+[[native.profiles.preset-claude-foldkit.guide.workflows]]
+id = "integrate-openui"
+description = "Check current OpenUI documentation and project-specific architecture rules before proposing a generative UI integration."
+skill = "openui"
+examples = [ "Find the current OpenUI Lang API for the custom component library in this project", "Plan an OpenUI integration that follows this app's explicit Foldkit and React-island rules" ]
+
+[native.profiles.preset-claude-foldkit.guide.goal_execution]
+controller = "claude-goal"
+workflow_ids = [ "build-foldkit-program", "audit-foldkit-program", "debug-foldkit-runtime", "integrate-openui" ]
 
 [native.profiles.preset-agency-azure.selection]
 description = "Agency's managed Copilot workflow for Azure engineering on the host. Inspecting Azure subscriptions, resource groups, ACR repositories, storage, and resource health while working in the Trellage repository."
