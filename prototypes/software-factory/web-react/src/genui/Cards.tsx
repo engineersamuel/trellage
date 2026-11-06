@@ -112,11 +112,17 @@ export const toRun = (branch: string | null, decisions: readonly StepDecision[])
   return { branch, moreWork: last?.moreWork ?? null, steps }
 }
 
+/** Pure: only the decisions of one coordinator. Untagged (older) ones belong to the Factory desk. */
+export const ownSteps = (all: readonly StepDecision[], scopeId: string | undefined): StepDecision[] =>
+  scopeId === undefined ? [...all] : all.filter((d) => (d.scopeId ?? "coordinator") === scopeId)
+
 export function DeliveryRunCard({ result }: { result: string | undefined }) {
-  const snap = parse<{ branch: string | null; decisions?: StepDecision[] }>(result)
-  const live = useApp((s) => s.stepDecisions)
+  const snap = parse<{ scopeId?: string; branch: string | null; decisions?: StepDecision[]; note?: string }>(result)
+  const all = useApp((s) => s.stepDecisions)
+  const live = useMemo(() => ownSteps(all, snap?.scopeId), [all, snap?.scopeId])
   if (result === undefined) return <Waiting what="delivery run" />
   const v = toRun(snap?.branch ?? null, live.length ? live : (snap?.decisions ?? []))
+  if (v.steps.length === 0) return <Frame title="Delivery run"><Callout variant="neutral" description={snap?.note ?? "No delivery run in this conversation yet."} /></Frame>
   const pct = v.moreWork === null ? null : Math.round((1 - v.moreWork) * 100)
   return (
     <Frame title="Delivery run" {...(v.branch ? { subtitle: `⎇ ${v.branch}` } : {})}>

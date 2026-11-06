@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { toReview, toRun } from "../src/genui/Cards"
+import { ownSteps, toReview, toRun } from "../src/genui/Cards"
 
 const finding = (title: string, severity: string, verdict: string) => ({ id: title, title, severity, file: "a.ts", verdict, reason: `${verdict} because` })
 
@@ -16,5 +16,11 @@ describe("genui/Cards view models", () => {
   })
   test("delivery run: no decisions", () => {
     expect(toRun(null, [])).toEqual({ branch: null, moreWork: null, steps: [] })
+  })
+  test("delivery run: only the card's own coordinator", () => {
+    const all = [{ step: "plan", request: "" }, { step: "implement", request: "", scopeId: "sub-1" }] as never
+    expect(ownSteps(all, "sub-1").map((d) => d.step)).toEqual(["implement"])
+    expect(ownSteps(all, "gen-2")).toEqual([])
+    expect(ownSteps(all, undefined).length).toBe(2)
   })
 })

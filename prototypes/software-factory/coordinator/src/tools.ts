@@ -67,7 +67,8 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       try {
         const d = await decideNext(state)
         if (scope.workdir) f.turn(scope.id).moreWork = d.moreWork
-        const entry = { ...d, request: state.request.slice(0, 200), at: Date.now() }
+        // Tagged with the deciding coordinator, so each conversation's delivery card shows only its own steps.
+        const entry = { ...d, request: state.request.slice(0, 200), at: Date.now(), scopeId: scope.id, threadId: scope.threadId }
         f.publish("coordinator", "factory.step_decided", null, String(Date.now()), entry)
         return json({ ...d, steps: SELECTABLE_STEPS.map(({ id, description }) => ({ id, description })) })
       } catch (e) {
@@ -141,12 +142,20 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
   }),
   defineTool("show_delivery_run", {
     description:
-      "Show the delivery run as a live card: branch, Jev's latest step decisions with confidence, and how much work is left (moreWork). Use it to answer 'where are we?' and after each next_step instead of a long text status.",
+      "Show this conversation's delivery run as a live card: branch, Jev's step decisions with confidence, and how much work is left (moreWork). Only in a conversation that runs the delivery loop (next_step); in a General chat use factory_status instead.",
     parameters: obj({}),
     handler: () => {
       const wt = scope.workdir
       const branch = wt ? currentBranch(wt) : (f.run?.branch ?? null)
-      return json({ branch, worktree: wt ?? f.run?.worktree ?? null, base: scope.base ?? f.run?.base ?? null, decisions: f.decisions.slice(-8) })
+      const decisions = ownDecisions(f.decisions, scope.id).slice(-8)
+      return json({
+        scopeId: scope.id,
+        branch,
+        worktree: wt ?? f.run?.worktree ?? null,
+        base: scope.base ?? f.run?.base ?? null,
+        decisions,
+        ...(decisions.length ? {} : { note: "No delivery run in this conversation yet. Answer from factory_status or your last step instead." }),
+      })
     },
   }),
   defineTool("show_diff_summary", {
@@ -681,3 +690,7 @@ const currentBranch = (wt: string): string | null => {
     return null
   }
 }
+
+/** Jev decisions made by one coordinator. Untagged (older) decisions belong to the Factory desk ("coordinator"). */
+export const ownDecisions = (all: readonly unknown[], scopeId: string): unknown[] =>
+  all.filter((d) => ((d as { scopeId?: unknown }).scopeId ?? "coordinator") === scopeId)

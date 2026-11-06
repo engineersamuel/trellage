@@ -103,6 +103,8 @@ export const StepDecision = Schema.Struct({
   confidence: Schema.optionalKey(Schema.Number),
   request: Schema.String.pipe(withDefault("")),
   at: Schema.optionalKey(Schema.Number),
+  /** Coordinator that asked Jev; missing on older decisions (the Factory desk). */
+  scopeId: Schema.optionalKey(Schema.String),
 })
 export type StepDecision = typeof StepDecision.Type
 
