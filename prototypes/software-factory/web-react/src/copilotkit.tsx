@@ -169,6 +169,7 @@ function App() {
       <style>{`.ck-threads{padding:6px 12px;border-bottom:1px solid var(--sf-border)}
         .ck-threads select{max-width:100%;background:var(--sf-surface);color:var(--sf-text);border:1px solid var(--sf-border);border-radius:6px;padding:3px 6px}
         .sf-chat .ui-tcc, .sf-chat .ui-tcc-group, .sf-openui, .sf-board{margin:6px 0}
+        .sf-chat-diffs{margin:2px 0 8px 12px}
         .sf-board{background:var(--sf-surface);border-radius:10px;padding:12px 14px;box-shadow:0 0 0 0.5px var(--sf-border)}.sf-board-metrics{display:flex;gap:24px;padding:4px 0 8px}.sf-board-row{cursor:pointer}.sf-board small{color:var(--sf-muted);margin-left:4px}.sf-board-wait{color:var(--sf-muted)}
         /* affectUI card stays verbatim; its variables follow the factory palette from outside (rule 12). */
         :root .sf-chat .ui-tcc, :root .sf-chat .ui-tcc-group{--ui-tcc-card:var(--sf-surface);--ui-tcc-code:var(--sf-bg);--ui-tcc-accent:var(--sf-accent);--ui-tcc-strong:var(--sf-text);--ui-tcc-ink:var(--sf-text);--ui-tcc-text:var(--sf-muted);--ui-tcc-focus:var(--sf-accent)}`}</style>

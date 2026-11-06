@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type Settings, type SettingsOptions, type Worker } from "./factory";
 import { WorkerPanel } from "./WorkerPanel";
 import { setExtensionWorkers, syncExtensions } from "../../../shared/extensions";
+import { DIFF_STYLES } from "../../../shared/diff";
+import { diffPreview, pickDiffStyle, setDiffStyle, STYLES } from "../../../shared/diffview";
 import { Action, sortedWorkers } from "../state/model";
 import { dispatch, patchSettings, useApp, workerApi } from "../state/store";
 
@@ -18,7 +20,7 @@ export function FactoryShell({ title, chat }: { title: string; chat: React.React
   const workers = useMemo(() => sortedWorkers(workerMap), [workerMap]);
   useHotkeys(doc?.settings ?? null);
   useEffect(() => {
-    if (doc) syncExtensions(doc.settings, "copilotkit");
+    if (doc) syncExtensions(doc.settings, "copilotkit"), setDiffStyle(doc.settings.diffStyle);
   }, [doc]);
   useEffect(() => setExtensionWorkers(workers), [workers]);
   if (!doc) return null;
@@ -129,6 +131,10 @@ function SettingsDrawer({ s, options, patch, error, onClose }: { s: Settings; op
         </div>
         <label><input type="checkbox" checked={s.animations} onChange={(e) => patch({ animations: e.target.checked })} /> animations</label>
       </section>
+      <section><h4>Code diffs</h4>
+        <div className="sf-chips">{DIFF_STYLES.map((d) => <button key={d} className={d === s.diffStyle ? "on" : ""} onClick={() => pickDiffStyle(d)}>{STYLES[d]}</button>)}</div>
+        <DiffPreview />
+      </section>
       <section><h4>Layout</h4>
         <div className="sf-chips">{options.panelPositions.map((p) => <button key={p} className={p === s.layout.panel ? "on" : ""} onClick={() => patch({ layout: { panel: p } })}>{p}</button>)}</div>
         <label>panel width {s.layout.panelWidth}% <input type="range" min={25} max={70} value={s.layout.panelWidth} onChange={(e) => patch({ layout: { panelWidth: Number(e.target.value) } })} /></label>
@@ -191,4 +197,16 @@ function SecurityReviews() {
       ))}
     </section>
   );
+}
+
+/** The sample diff from shared/diffview.ts; it redraws itself when the style changes. */
+function DiffPreview() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const host = ref.current;
+    if (!host) return;
+    host.replaceChildren(diffPreview());
+    return () => host.replaceChildren();
+  }, []);
+  return <div ref={ref} className="sf-diff-preview" />;
 }

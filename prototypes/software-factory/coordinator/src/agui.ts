@@ -1,5 +1,6 @@
 // Copilot SDK session events -> AG-UI events, for one run.
 import type { SessionEvent } from "@github/copilot-sdk"
+import { hasUnified } from "../../shared/diff.ts"
 
 /** AG-UI 1.0 token usage, one entry per model. */
 type TokenUsage = {
@@ -305,7 +306,10 @@ export class Translator {
       case "tool.execution_complete": {
         if (!top || this.clientCalls.has(s("toolCallId"))) break
         const content = d.result?.content ?? d.error?.message ?? ""
-        const text = typeof content === "string" ? content : JSON.stringify(content)
+        const short = typeof content === "string" ? content : JSON.stringify(content)
+        // The Copilot SDK (and Claude, see claude.ts) put an edit's unified diff in `detailedContent`; the chat draws it.
+        const diff = d.result?.detailedContent
+        const text = typeof diff === "string" && hasUnified(diff) && !short.includes(diff) ? `${short}\n${diff}` : short
         out.push({
           type: "TOOL_CALL_RESULT",
           messageId: `tr-${s("toolCallId")}`,

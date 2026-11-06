@@ -52,3 +52,6 @@ kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; ma
 .sf-root > .sf-nav, .sf-root > .sf-banner, .sf-root > .sf-layout { position: relative; z-index: 1; }
 .sf-slot-overlay { position: fixed; inset: 0; z-index: 900; pointer-events: none; }
 .sf-slot-overlay:empty, .sf-slot-bg:empty { display: none; }
+/* Diff style preview (shared/diffview.ts): the chips above pick the style, so the header picker is hidden. */
+.sf-diff-preview { margin-top: 8px; }
+.sf-diff-preview .dv-pick { display: none; }

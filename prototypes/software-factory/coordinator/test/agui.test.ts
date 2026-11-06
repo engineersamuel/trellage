@@ -21,6 +21,19 @@ describe("agui Translator", () => {
     expect("error" in results[1]).toBe(false)
   })
 
+  test("an edit's unified diff (detailedContent) goes after the short result, so the chat can draw it", () => {
+    const diff = "\ndiff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n"
+    const out = run([
+      ev("tool.execution_start", { toolCallId: "e", toolName: "edit", arguments: {} }),
+      ev("tool.execution_complete", { toolCallId: "e", success: true, result: { content: "File f updated.", detailedContent: diff } }),
+      ev("tool.execution_start", { toolCallId: "v", toolName: "view", arguments: {} }),
+      ev("tool.execution_complete", { toolCallId: "v", success: true, result: { content: "1. a", detailedContent: "1. a\n2. b" } }),
+    ])
+    const results = out.filter((e) => e.type === "TOOL_CALL_RESULT")
+    expect(results[0].content).toBe(`File f updated.\n${diff}`)
+    expect(results[1].content).toBe("1. a")
+  })
+
   test("streamed reasoning becomes one reasoning message, closed before the reply", () => {
     const out = run([
       ev("assistant.reasoning_delta", { reasoningId: "r1", deltaContent: "Let me " }),

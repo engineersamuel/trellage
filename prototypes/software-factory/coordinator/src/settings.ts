@@ -1,6 +1,7 @@
 // Factory settings: one JSON document shared by the UI and the coordinator agent.
 // The UI changes it with `PATCH /api/settings`; the agent changes it with the
 // `update_settings` tool. Both send the same JSON merge patch (agent access parity).
+import { DIFF_STYLES } from "../../shared/diff.ts"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { Effect, Schema } from "effect"
@@ -45,6 +46,8 @@ const SettingsSchema = Schema.Struct({
   layout: Schema.Struct({ panel: Schema.String, panelWidth: Schema.Number }),
   navbar: Schema.Array(Schema.String),
   animations: Schema.Boolean,
+  /** How tool calls show file changes in every chat and transcript. */
+  diffStyle: Schema.Literals(DIFF_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("terminal" as const))),
   hotkeys: Schema.Record(Schema.String, Schema.String),
   focus: Schema.String,
   banner: Schema.NullOr(Schema.String),
@@ -92,6 +95,7 @@ export const defaultSettings = (): Settings => ({
   layout: { panel: "right", panelWidth: 45 },
   navbar: ["status", "workers", "model", "context"],
   animations: true,
+  diffStyle: "terminal",
   hotkeys: { ",": "toggleSettings", p: "togglePanel", t: "cycleTheme", ".": "focusCoordinator" },
   focus: "coordinator",
   banner: null,

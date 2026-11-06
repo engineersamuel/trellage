@@ -1,4 +1,6 @@
 import "./toolcard.css"
+import type { FileDiff } from "./diff"
+import { renderDiffs } from "./diffview"
 import { path, toolGlyph, type Shape } from "./toolglyphs"
 // Tool Call Card and Tool Call Group, ported to plain DOM from affectUI
 // (MIT, https://www.affectui.com/components/tool-call-card). Same markup, classes and behavior,
@@ -21,6 +23,8 @@ export type CardInput = {
   endedAt?: number
   /** The worker or decision the call points to, shown as a link at the top of the body. */
   link?: HTMLElement
+  /** Files the call changed. Shown under the head, always visible, like a coding CLI. */
+  diffs?: readonly FileDiff[]
 }
 
 export type GroupInput = { id: string; label: string; cards: readonly CardInput[] }
@@ -196,6 +200,7 @@ export class ToolCard {
   private readonly announce = el("span", "ui-tcc-sr")
   private readonly sections = el("div", "ui-tcc__sections")
   private readonly body = el("div", "ui-tcc__body")
+  private readonly diffBox = el("div")
   private statusEl: HTMLElement | null = null
   private timeEl: HTMLElement | null = null
   private bodyKey = ""
@@ -222,7 +227,7 @@ export class ToolCard {
     const clip = el("div", "ui-tcc__clip")
     clip.append(this.sections)
     this.body.append(clip)
-    this.el.append(this.announce, this.head, this.body)
+    this.el.append(this.announce, this.head, this.diffBox, this.body)
     this.update(card)
   }
 
@@ -265,6 +270,12 @@ export class ToolCard {
     }
     this.tick()
     this.setOpen(this.isOpen())
+    if (prev?.diffs !== card.diffs || prev?.status !== status) {
+      const files = status === "error" ? [] : (card.diffs ?? [])
+      this.diffBox.hidden = !files.length
+      if (files.length) renderDiffs(this.diffBox, files), this.diffBox.classList.add("ui-tcc__diffs")
+      else this.diffBox.replaceChildren()
+    }
     const key = JSON.stringify([status, card.error, card.args, card.result, !!card.link])
     if (key === this.bodyKey) return
     this.bodyKey = key

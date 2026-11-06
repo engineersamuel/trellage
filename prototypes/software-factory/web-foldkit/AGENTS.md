@@ -20,3 +20,16 @@ React is allowed only as an island inside the Foldkit view. These rules apply to
 4. **Scene tests stub the island with `Mount.resolve`**, so the test story stays the same with or without React.
 5. **Use framework-free CopilotKit parts directly.** `@ag-ui/client` has no React dependency. For AG-UI features
    (tool calls, state events), use the protocol, not `@copilotkit/react-core`.
+
+## Patched packages
+
+`patches/` holds `patch-package` patches; `postinstall` applies them with `--error-on-fail`, so `npm install` fails
+when a patch no longer fits. `@plana-solutions/agent-interface` is patched twice: `client/flags.js` (Effect 4.1 Crypto)
+and `features/timeline.js` (a `[data-sf-tool]` slot per finished tool call; `shared/diffview.ts` `startToolDiffs`
+draws the file diffs in it). `src/agentInterfacePatch.test.ts` fails if the slot patch is missing.
+
+To upgrade agent-interface:
+1. Change the exact version in `package.json`, run `npm install`.
+2. If postinstall fails: make the same change by hand in `node_modules/@plana-solutions/agent-interface/dist/`.
+3. Delete the old patch file, run `npx patch-package @plana-solutions/agent-interface` (new file has the new version).
+4. Run the four checks, then delete `node_modules/.vite` and restart the dev server.

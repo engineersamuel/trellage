@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { ClaudeStream, toEvents } from "../src/claude.ts"
+import { ClaudeStream, patchOf, toEvents } from "../src/claude.ts"
 
 const at = "t"
 test("Claude SDK messages map to the Copilot event names the feed and UIs read", () => {
@@ -80,4 +80,13 @@ test("Claude text and thinking stream as deltas; the full message reuses their i
   expect(text.map((e) => [e.type, e.data])).toEqual([["assistant.message_delta", { messageId: "msg1:1", deltaContent: "hi" }]])
   const full: any = { type: "assistant", uuid: "u2", parent_tool_use_id: null, message: { id: "msg1", content: [{ type: "thinking", thinking: "hm" }, { type: "text", text: "hi" }] } }
   expect(s.map(full, at).map((e) => e.data)).toEqual([{ content: "hm", reasoningId: "msg1:0" }, { messageId: "msg1:1", content: "hi" }])
+})
+
+test("patchOf: Claude Edit/Write structuredPatch becomes a unified diff", () => {
+  const patch = patchOf({ type: "update", filePath: "/r/a.ts", structuredPatch: [{ oldStart: 3, oldLines: 2, newStart: 3, newLines: 2, lines: [" x", "-a", "+b"] }] })
+  expect(patch).toBe("--- a//r/a.ts\n+++ b//r/a.ts\n@@ -3,2 +3,2 @@\n x\n-a\n+b")
+  expect(patchOf({ type: "create", filePath: "/n", structuredPatch: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 1, lines: ["+1"] }] })).toStartWith("--- /dev/null\n")
+  expect(patchOf({ filePath: "/r", structuredPatch: [] })).toBeUndefined()
+  const msg = { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "c", content: "ok" }] }, tool_use_result: { filePath: "/r", structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ["-a", "+b"] }] } }
+  expect(toEvents(msg as any, "t")[0]!.data.result.detailedContent).toContain("@@ -1,1 +1,1 @@")
 })

@@ -27,3 +27,30 @@ index 7fd6656..a7f5c8a 100644
 +})), "@plana-solutions/agent-interface/client/flags.js#readFlags");
  //# sourceMappingURL=flags.js.map
 \ No newline at end of file
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/features/timeline.js b/node_modules/@plana-solutions/agent-interface/dist/features/timeline.js
+index 3deb196..6220039 100644
+--- a/node_modules/@plana-solutions/agent-interface/dist/features/timeline.js
++++ b/node_modules/@plana-solutions/agent-interface/dist/features/timeline.js
+@@ -102,6 +102,13 @@ const liveAnnouncement = (step, toolLabels) => __foldkitBrandViewResult((Timelin
+     text
+   }) => __foldkitBrandViewResult((text), "@plana-solutions/agent-interface/features/timeline.js#Text~3")
+ })), "@plana-solutions/agent-interface/features/timeline.js#liveAnnouncement");
++// software-factory patch: one empty slot per finished tool call, outside the collapsed timeline. The host
++// (shared/diffview.ts startToolDiffs) fills a slot with the call's file diffs, so edits stay visible.
++const toolSlots = (steps, h) => steps.flatMap(step => step._tag === "Activity" && step.activity.status === "complete" && step.activity.toolName ? [h.keyed("div")(`${stepKey(step)}-sf-tool`, [h.Class("sf-tool-slot"), h.DataAttribute("sf-tool", JSON.stringify({
++  name: step.activity.toolName,
++  args: step.activity.toolCall.function.arguments,
++  result: Option.getOrElse(step.activity.maybeResult, () => "")
++}))])] : []);
+ export const timelineView = (input, h) => {
+   const {
+     state,
+@@ -135,6 +142,6 @@ export const timelineView = (input, h) => {
+       toolLabels: input.toolLabels,
+       turnKey
+     }, h)])), "@plana-solutions/agent-interface/features/timeline.js#anonymous~2");
+-  }))])])])), "@plana-solutions/agent-interface/features/timeline.js#timelineView");
++  }))])]), ...toolSlots(header.revealedSteps, h)])), "@plana-solutions/agent-interface/features/timeline.js#timelineView");
+ };
+ //# sourceMappingURL=timeline.js.map
+\ No newline at end of file

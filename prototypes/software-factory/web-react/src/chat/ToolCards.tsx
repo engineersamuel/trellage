@@ -1,7 +1,9 @@
 // Tool calls in the coordinator chat, drawn with affectUI's Tool Call Card (src/components/ui).
 // AG-UI tool messages carry no times and no failure flag; both come from the store (factory feed).
 import { useAgent, UseAgentUpdate, type ToolCallEntry } from "@copilotkit/react-core"
-import { createElement, useState, type ReactNode } from "react"
+import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { toolDiffs, type FileDiff } from "../../../shared/diff"
+import { renderDiffs } from "../../../shared/diffview"
 import { toolGlyph } from "../../../shared/toolglyphs"
 import { toolLine } from "../../../shared/transcript"
 import { ToolCallCard, ToolCallGroup, type ToolCallCardProps } from "../components/ui/tool-call-card"
@@ -57,6 +59,16 @@ const entryCall = (e: ToolCallEntry) => {
   }
 }
 
+/** Files the calls changed, drawn by the shared plain-DOM diff view (same look as the worker transcripts). */
+export function Diffs({ files }: { files: readonly FileDiff[] }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => void (ref.current && renderDiffs(ref.current, files)), [files])
+  return files.length ? <div ref={ref} className="sf-chat-diffs" /> : null
+}
+
+const callDiffs = (c: { name: string; args: unknown; result: string | undefined; error?: string }): FileDiff[] =>
+  c.error === undefined ? toolDiffs(c.name, c.args, c.result) : []
+
 /** The `error` of a call's AG-UI tool message. Render props carry only the result text, so it is read from the agent. */
 const useToolError = (toolCallId: string): string | undefined => {
   const { agent } = useAgent({ agentId: "coordinator", updates: [UseAgentUpdate.OnMessagesChanged] })
@@ -69,7 +81,13 @@ export function ToolCard({ name, toolCallId, args, result }: { name: string; too
   const timing = useApp((s) => s.toolTimings[toolCallId])
   const error = useToolError(toolCallId)
   const { key, ...props } = cardProps({ id: toolCallId, name, args, result, ...(error !== undefined ? { error } : {}) }, timing)
-  return <ToolCallCard key={key} {...props} />
+  const diffs = useMemo(() => callDiffs({ name, args, result, ...(error !== undefined ? { error } : {}) }), [name, args, result, error])
+  return (
+    <>
+      <ToolCallCard key={key} {...props} />
+      <Diffs files={diffs} />
+    </>
+  )
 }
 
 /**
@@ -79,15 +97,27 @@ export function ToolCard({ name, toolCallId, args, result }: { name: string; too
 export function ToolGroup({ calls }: { calls: ToolCallEntry[]; renderCall?: (c: ToolCallEntry) => ReactNode; isActive?: boolean }) {
   const timings = useApp((s) => s.toolTimings)
   const [open, setOpen] = useState(false)
-  const cards = calls.map((e) => cardProps(entryCall(e), timings[e.toolCall.id]))
+  const entries = calls.map(entryCall)
+  const cards = entries.map((c) => cardProps(c, timings[c.id]))
+  // ToolCallGroup reads its children's props, so the diffs of all calls go after the group, not inside it.
+  const diffKey = entries.map((c) => `${c.id}:${c.result?.length ?? -1}:${c.error ?? ""}`).join()
+  const diffs = useMemo(() => entries.flatMap(callDiffs), [diffKey])
   // A single call needs no group line.
   if (cards.length === 1) {
     const { key, ...props } = cards[0]!
-    return <ToolCallCard key={key} {...props} />
+    return (
+      <>
+        <ToolCallCard key={key} {...props} />
+        <Diffs files={diffs} />
+      </>
+    )
   }
   return (
-    <ToolCallGroup open={open} onOpenChange={setOpen}>
-      {cards.map(({ key, ...props }) => <ToolCallCard key={key} {...props} />)}
-    </ToolCallGroup>
+    <>
+      <ToolCallGroup open={open} onOpenChange={setOpen}>
+        {cards.map(({ key, ...props }) => <ToolCallCard key={key} {...props} />)}
+      </ToolCallGroup>
+      <Diffs files={diffs} />
+    </>
   )
 }

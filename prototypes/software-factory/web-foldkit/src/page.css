@@ -54,7 +54,7 @@ kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; ma
 
 /* Native chat: match the CopilotKit dark chat (system font, dark bubbles, dark composer), driven by the theme variables. */
 .fk-chat .openui-agent-container, .fk-chat .openui-agent-container * { font-family: ui-sans-serif, system-ui, sans-serif !important; }
-.fk-chat .openui-agent-container code, .fk-chat .openui-agent-container code *, .fk-chat .openui-agent-container pre, .fk-chat .openui-agent-container kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; }
+.fk-chat .openui-agent-container code, .fk-chat .openui-agent-container code *, .fk-chat .openui-agent-container pre, .fk-chat .openui-agent-container kbd, .fk-chat .openui-agent-container .dv, .fk-chat .openui-agent-container .dv * { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; }
 .fk-chat .openui-shell-thread-message-user__content, .fk-chat .openui-agent-thread-message-user__content {
   background: var(--sf-surface) !important; color: var(--sf-text) !important; border: 1px solid var(--sf-border); border-radius: 18px !important; font-size: 14px; line-height: 1.55; }
 .fk-chat .openui-shell-thread-message-user__content *, .fk-chat .openui-agent-thread-message-user__content * { color: inherit !important; }
@@ -87,3 +87,8 @@ kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; ma
 .fk-slider-track { position: relative; flex: 1; height: 4px; border-radius: 2px; background: var(--sf-border); }
 .fk-slider-fill { border-radius: 2px; background: var(--sf-accent); }
 .fk-slider-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--sf-text); cursor: grab; }
+/* Diff style preview (shared/diffview.ts): the chips above pick the style, so the header picker is hidden. */
+.sf-diff-preview { margin-top: 8px; }
+.sf-diff-preview .dv-pick { display: none; }
+/* File diffs of the chat's tool calls (shared/diffview.ts startToolDiffs fills the slots). */
+.sf-tool-slot:not(:empty) { margin: 6px 0 4px; }

@@ -5,6 +5,7 @@ import "./secureContextPolyfill";
 import "@plana-solutions/agent-interface/styles.layered.css";
 import "./page.css";
 import "./openui-card";
+import "./diffHighlight";
 import { Option } from "effect";
 import { Runtime } from "foldkit";
 import {

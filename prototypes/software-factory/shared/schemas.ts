@@ -1,6 +1,7 @@
 // Schemas of the coordinator API payloads the UIs read. Decoding strips unknown keys, so each
 // Struct lists every field a UI uses. Fields older servers or stored rows may lack get defaults.
 import { Effect, Schema } from "effect"
+import { DIFF_STYLES } from "./diff"
 
 const withDefault = <S extends Schema.Top>(value: S["Encoded"]) => Schema.withDecodingDefaultKey<S>(Effect.succeed(value))
 const NullableNumber = Schema.NullOr(Schema.Number).pipe(withDefault(null))
@@ -135,6 +136,7 @@ export const Settings = Schema.Struct({
   layout: Schema.Struct({ panel: Schema.String, panelWidth: Schema.Number }),
   navbar: Schema.Array(Schema.String),
   animations: Schema.Boolean,
+  diffStyle: Schema.Literals(DIFF_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("terminal" as const))),
   hotkeys: Schema.Record(Schema.String, Schema.String),
   focus: Schema.String,
   banner: Schema.NullOr(Schema.String),

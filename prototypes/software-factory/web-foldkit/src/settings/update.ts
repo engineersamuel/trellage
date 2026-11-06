@@ -137,6 +137,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     GotPanelWidthSliderMessage: ({ message }) => foldPanelWidthSlider(model, message),
     ClickedTheme: ({ theme }) => patch({ theme })(model),
     ToggledAnimations: ({ isChecked }) => patch({ animations: isChecked })(model),
+    ClickedDiffStyle: ({ style }) => patch({ diffStyle: style })(model),
     ClickedPanelPosition: ({ position }) => patch({ layout: { panel: position } })(model),
     ToggledNavbarItem: ({ item }) => withSettings(model, (settings) => ({ navbar: toggleMember(settings.navbar, item) })),
     UpdatedBanner: ({ value }) => patch({ banner: String.isEmpty(value) ? null : value })(model),
@@ -159,6 +160,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     ToggledExtension: ({ name, isChecked }) => patch({ extensions: { [name]: { enabled: isChecked } } })(model),
     ClickedRemoveExtension: ({ name }) => patch({ extensions: { [name]: null } })(model),
     CompletedSyncExtensions: () => ({ model }),
+    CompletedMountDiffPreview: () => ({ model }),
   });
 
 const nextTheme = (settings: Settings): Option.Option<string> => {

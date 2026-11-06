@@ -3,6 +3,10 @@ import hljs from "highlight.js/lib/common"
 import { memo, useMemo } from "react"
 import "highlight.js/styles/github-dark.css"
 import "./code-block.css"
+import { setDiffHighlighter } from "../../../shared/diffview"
+
+// Diff lines in chat and worker transcripts use the same highlight.js colors as code blocks.
+setDiffHighlighter((code, language) => (hljs.getLanguage(language) ? hljs.highlight(code, { language, ignoreIllegals: true }).value : null))
 
 function highlightCode(code: string, info?: string) {
   const language = info?.trim().split(/\s+/)[0]?.toLowerCase()

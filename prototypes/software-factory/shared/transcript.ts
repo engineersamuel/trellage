@@ -1,6 +1,7 @@
 import "./transcript.css"
 import { markdown } from "./decisions"
 import { appendCompact, onFeed, RESYNC, type FeedEvent } from "./feed"
+import { toolDiffs, type FileDiff } from "./diff"
 import { groupTools, type Group } from "./toolgroups"
 import { reconcile, ToolCard, ToolGroup, toolIcon, type CardInput } from "./toolcard"
 import { Schema } from "effect"
@@ -15,7 +16,7 @@ import { StoredEvent } from "./schemas"
 export type Item = (
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string }
-  | { kind: "tool"; id: string; name: string; args: any; done: boolean; ok: boolean; result: string; startedAt?: number; endedAt?: number }
+  | { kind: "tool"; id: string; name: string; args: any; done: boolean; ok: boolean; result: string; detail?: string; startedAt?: number; endedAt?: number }
   | { kind: "error"; text: string }
   | { kind: "thinking"; text: string }
 ) & { seq?: number }
@@ -75,6 +76,8 @@ export const toTranscript = (events: readonly FeedEvent[]): Item[] => {
         if (!t) break
         const c = d.result?.content ?? d.error?.message ?? ""
         Object.assign(t, { done: true, ok: d.success !== false, result: typeof c === "string" ? c : JSON.stringify(c), endedAt: time(ev) })
+        // Edits carry their unified diff here (Copilot SDK; Claude via claude.ts).
+        if (typeof d.result?.detailedContent === "string") t.detail = d.result.detailedContent
         break
       }
       case "session.error":
@@ -250,7 +253,7 @@ const toCard = (t: Tool, stoppedAt: number | undefined): CardInput => {
 const toolViews = (open: Set<string>) => {
   const touched = new Set<string>()
   const opts = { isOpen: (id: string) => open.has(id), setOpen: (id: string, on: boolean) => void (on ? open.add(id) : open.delete(id)), touched }
-  const cards = new Map<string, { card: ToolCard; key: string }>()
+  const cards = new Map<string, { card: ToolCard; key: string; diffs: readonly FileDiff[] }>()
   const groups = new Map<string, ToolGroup>()
   const icons = new Map<string, SVGSVGElement>()
   let seen = new Set<string>()
@@ -261,12 +264,15 @@ const toolViews = (open: Set<string>) => {
     input.icon = icons.get(t.name) ?? (icons.set(t.name, input.icon), input.icon)
     const key = JSON.stringify([input.status, input.summary, input.result, input.error, input.endedAt, t.args])
     const got = cards.get(t.id)
+    // Diffs are parsed only when the call changed, not on every frame.
+    const diffs = () => toolDiffs(t.name, t.args, t.detail ?? (t.done ? t.result : undefined))
     if (!got) {
-      const c = new ToolCard(input, opts)
-      cards.set(t.id, { card: c, key })
+      const d = diffs()
+      const c = new ToolCard({ ...input, diffs: d }, opts)
+      cards.set(t.id, { card: c, key, diffs: d })
       return c
     }
-    if (got.key !== key) (got.key = key), got.card.update(input)
+    if (got.key !== key) (got.key = key), (got.diffs = diffs()), got.card.update({ ...input, diffs: got.diffs })
     return got.card
   }
   const group = (g: Group<Item>, stoppedAt: number | undefined): ToolGroup => {

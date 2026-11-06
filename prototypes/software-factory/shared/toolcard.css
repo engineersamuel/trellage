@@ -476,3 +476,6 @@
 .ui-tcc__link { all: unset; justify-self: start; color: var(--ui-tcc-accent); font-size: 12px; line-height: 16px; font-weight: 500; cursor: pointer; }
 .ui-tcc__link:hover { text-decoration: underline; }
 .ui-tcc__link:focus-visible { outline: 2px solid var(--ui-tcc-focus); outline-offset: 1px; border-radius: 4px; }
+
+/* Files a call changed (shared/diffview.ts), shown under the head even while the card is closed. */
+.ui-tcc__diffs { padding: 2px 12px 10px; }

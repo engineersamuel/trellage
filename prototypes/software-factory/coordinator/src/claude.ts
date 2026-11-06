@@ -59,6 +59,19 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
 const textOf = (c: unknown): string =>
   typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => (b?.type === "text" ? b.text : "")).join("") : ""
 
+/** Claude Edit/Write output (`tool_use_result.structuredPatch`) as a unified diff, like the Copilot SDK's `detailedContent`. */
+export const patchOf = (r: any): string | undefined => {
+  const hunks = r?.structuredPatch
+  if (!Array.isArray(hunks) || !hunks.length || typeof r.filePath !== "string") return undefined
+  const head = `--- ${r.type === "create" ? "/dev/null" : `a/${r.filePath}`}\n+++ b/${r.filePath}\n`
+  return head + hunks.map((h: any) => `@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@\n${h.lines.join("\n")}`).join("\n")
+}
+
+const detail = (m: SDKMessage) => {
+  const d = patchOf((m as { tool_use_result?: unknown }).tool_use_result)
+  return d === undefined ? {} : { detailedContent: d }
+}
+
 /** One SDK message as factory events. Subagent messages carry their parent tool call as agentId. */
 export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessEvent[] => {
   const agentId = "parent_tool_use_id" in m && m.parent_tool_use_id ? { agentId: m.parent_tool_use_id } : {}
@@ -78,7 +91,7 @@ export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessE
       return Array.isArray(m.message.content)
         ? m.message.content.flatMap((b: any) =>
             b.type === "tool_result"
-              ? [ev("tool.execution_complete", { toolCallId: b.tool_use_id, success: !b.is_error, result: { content: textOf(b.content) } })]
+              ? [ev("tool.execution_complete", { toolCallId: b.tool_use_id, success: !b.is_error, result: { content: textOf(b.content), ...detail(m) } })]
               : [],
           )
         : []

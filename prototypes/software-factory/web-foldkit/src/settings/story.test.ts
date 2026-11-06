@@ -19,6 +19,7 @@ const document: SettingsDocument = {
     layout: { panel: "right", panelWidth: 40 },
     navbar: ["status"],
     animations: true,
+    diffStyle: "terminal",
     hotkeys: { ",": "toggleSettings", t: "cycleTheme" },
     focus: "coordinator",
     banner: null,
@@ -105,6 +106,16 @@ describe("controls", () => {
       Command.resolve(PatchSettings, Message.FailedPatchSettings({ error: "HTTP 400: unknown theme" })),
       model((current) => expect(current.maybePatchError).toEqual(Option.some("HTTP 400: unknown theme"))),
     );
+  });
+
+  test("a diff style chip saves the style as a setting", () => {
+    story(
+      update,
+      given(loaded),
+      message(Message.ClickedDiffStyle({ style: "split" })),
+      Command.resolve(PatchSettings, Message.SucceededPatchSettings()),
+    );
+    expect(update(loaded, Message.ClickedDiffStyle({ style: "split" })).commands?.[0]?.args).toEqual({ patch: { diffStyle: "split" } });
   });
 
   test("the cycleTheme hotkey picks the next theme", () => {
