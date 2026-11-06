@@ -21,7 +21,7 @@ export type Item = (
 ) & { seq?: number }
 
 /** Wrappers the factory adds to prompts; hidden in the transcript. */
-const strip = (s: string) => s.replace(/<(ui-format|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim()
+const strip = (s: string) => s.replace(/<(ui-format|ui-context|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim()
 
 /** Event time in ms; undefined when the timestamp does not parse. */
 const time = (ev: FeedEvent): number | undefined => {

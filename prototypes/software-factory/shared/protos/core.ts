@@ -63,7 +63,7 @@ const describe = (ev: FeedEvent): string | null => {
   const d = ev.data ?? {}
   switch (ev.type) {
     case "user.message":
-      return `→ ${String(d.content ?? "").replace(/<(ui-format|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim().slice(0, 240)}`
+      return `→ ${String(d.content ?? "").replace(/<(ui-format|ui-context|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim().slice(0, 240)}`
     case "assistant.message":
       return d.content ? String(d.content).slice(0, 240) : null
     case "tool.execution_start":

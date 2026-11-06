@@ -22,6 +22,8 @@ export type ChatMessage =
   | { id: string; role: "assistant"; content: string | null; toolCalls?: { id: string; type: "function"; function: { name: string; arguments: string } }[] }
   | { id: string; role: "tool"; content: string; toolCallId: string; error?: string }
   | { id: string; role: "reasoning"; content: string }
+  /** AG-UI activity: a progress card (subagent, worker). One per id; a later snapshot replaces it in place. */
+  | { id: string; role: "activity"; activityType: string; content: Record<string, unknown> }
 
 type Doc = { threads: Thread[]; messages: Record<string, ChatMessage[]>; folders: Folder[] }
 
@@ -112,7 +114,12 @@ export class Threads {
   }
 
   append(id: string, ...msgs: ChatMessage[]): void {
-    ;(this.doc.messages[id] ??= []).push(...msgs)
+    const list = (this.doc.messages[id] ??= [])
+    for (const m of msgs) {
+      const at = m.role === "activity" ? list.findIndex((x) => x.id === m.id) : -1
+      if (at >= 0) list[at] = m
+      else list.push(m)
+    }
     this.save()
   }
 }
@@ -154,6 +161,13 @@ export class RunRecorder {
       case "TOOL_CALL_ARGS": {
         const call = this.current?.toolCalls?.find((c) => c.id === e.toolCallId)
         if (call) call.function.arguments += e.delta
+        break
+      }
+      case "ACTIVITY_SNAPSHOT": {
+        const m = { id: e.messageId, role: "activity" as const, activityType: e.activityType, content: e.content }
+        const at = this.out.findIndex((x) => x.id === e.messageId)
+        if (at >= 0) this.out[at] = m
+        else this.out.push(m)
         break
       }
       case "TOOL_CALL_RESULT":

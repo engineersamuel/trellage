@@ -64,3 +64,86 @@ describe("RunRecorder", () => {
     expect(msgs[2]).toMatchObject({ toolCallId: "a", error: "missing" })
   })
 })
+
+const sub = (type: string, agentId: string, data: Record<string, unknown>) => ({ type, agentId, data }) as never
+
+describe("agui Translator: AG-UI 1.0 features", () => {
+  test("a subagent is announced, shown as an activity card, and closed; its content stays out of the chat", () => {
+    const out = run([
+      sub("subagent.started", "s1", { toolCallId: "c1", agentName: "research", agentDisplayName: "Research", agentDescription: "finds", model: "m" }),
+      sub("tool.execution_start", "s1", { toolCallId: "x", toolName: "grep" }),
+      sub("assistant.message", "s1", { messageId: "m", content: "inner" }),
+      sub("subagent.completed", "s1", { toolCallId: "c1", agentName: "research", agentDisplayName: "Research", totalToolCalls: 4, durationMs: 9 }),
+    ])
+    expect(out.map((e) => e.type)).toEqual(["SUBAGENT_STARTED", "ACTIVITY_SNAPSHOT", "ACTIVITY_SNAPSHOT", "SUBAGENT_FINISHED", "ACTIVITY_SNAPSHOT"])
+    expect(out[0]).toMatchObject({ subagentRunId: "s1", name: "Research", description: "finds" })
+    expect(out.at(-1)).toMatchObject({ messageId: "subagent-s1", activityType: "subagent", content: { status: "done", toolCalls: 4, durationMs: 9 } })
+  })
+
+  test("a failed subagent sends SUBAGENT_ERROR, not RUN_ERROR; one still running is closed before RUN_FINISHED", () => {
+    const failed = run([
+      sub("subagent.started", "s1", { agentDisplayName: "A" }),
+      sub("subagent.failed", "s1", { agentDisplayName: "A", error: "boom" }),
+    ])
+    expect(failed.at(-2)).toMatchObject({ type: "SUBAGENT_ERROR", subagentRunId: "s1", message: "boom" })
+    const open = run([sub("subagent.started", "s2", { agentDisplayName: "B" }), ev("session.idle", {})])
+    expect(open.map((e) => e.type).slice(-3)).toEqual(["SUBAGENT_ERROR", "ACTIVITY_SNAPSHOT", "RUN_FINISHED"])
+  })
+
+  test("turns are steps, and RUN_FINISHED carries the run's token usage per model, subagents included", () => {
+    const out = run([
+      ev("assistant.turn_start", { turnId: "1" }),
+      ev("assistant.usage", { model: "a", inputTokens: 10, outputTokens: 2, cacheReadTokens: 4 }),
+      sub("assistant.usage", "s1", { model: "a", inputTokens: 5, outputTokens: 1 }),
+      ev("assistant.message", { messageId: "m", content: "hi" }),
+      ev("assistant.turn_end", { turnId: "1" }),
+      ev("session.idle", {}),
+    ])
+    expect(out.map((e) => e.type)).toEqual(["STEP_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "STEP_FINISHED", "RUN_FINISHED"])
+    expect(out.at(-1).usage).toEqual([{ model: "a", inputTokens: 15, outputTokens: 3, totalTokens: 18, cachedInputTokens: 4, cacheWriteInputTokens: 0, reasoningTokens: 0 }])
+    expect("outcome" in out.at(-1)).toBe(false)
+  })
+
+  test("an open decision ends the run with the interrupt outcome, only for a client that answers interrupts", () => {
+    const events = [
+      ev("tool.execution_start", { toolCallId: "c", toolName: "request_approval", arguments: { title: "Ship?", summary: "s", options: ["Yes", "No"] } }),
+      ev("tool.execution_complete", { toolCallId: "c", success: true, result: { content: JSON.stringify({ id: "d1", status: "pending" }) } }),
+      ev("session.idle", {}),
+    ] as never[]
+    const t = new Translator("t", "r", { interrupts: true, pending: () => true })
+    const end = events.flatMap((e) => t.translate(e)).at(-1) as any
+    expect(end.outcome).toMatchObject({ type: "interrupt", interrupts: [{ id: "d1", reason: "approval", message: "Ship?", toolCallId: "c", metadata: { options: ["Yes", "No"] } }] })
+    expect((run(events).at(-1) as any).outcome).toBeUndefined()
+    const answered = new Translator("t", "r", { interrupts: true, pending: () => false })
+    expect((events.flatMap((e) => answered.translate(e)).at(-1) as any).outcome).toBeUndefined()
+  })
+
+  test("a stop ends the run with the cancelled outcome and closes open messages", () => {
+    const out = run([ev("assistant.message_delta", { messageId: "m", deltaContent: "par" }), ev("abort", { reason: "user_initiated" }), ev("session.idle", {})])
+    expect(out.map((e) => e.type)).toEqual(["TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"])
+    expect(out.at(-1).outcome).toEqual({ type: "cancelled" })
+  })
+
+  test("a client tool call ends the run with it pending; its later completion is not sent again", () => {
+    const t = new Translator("t", "r", { clientTool: (n) => n === "focus_agent" })
+    const out = [ev("tool.execution_start", { toolCallId: "c", toolName: "focus_agent", arguments: { id: "w" } })].flatMap((e) => t.translate(e as never)) as any[]
+    expect(out.map((e) => e.type)).toEqual(["TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END", "RUN_FINISHED"])
+    expect(out.at(-1).outcome).toEqual({ type: "success", pendingToolCallIds: ["c"] })
+    const next = new Translator("t", "r2")
+    next.clientCalls.add("c")
+    expect(next.translate(ev("tool.execution_complete", { toolCallId: "c", success: true, result: { content: "ok" } }))).toEqual([])
+  })
+})
+
+describe("RunRecorder activity", () => {
+  test("an activity card is saved once, with its last content", () => {
+    const rec = new RunRecorder()
+    rec.add({ type: "ACTIVITY_SNAPSHOT", messageId: "w", activityType: "worker", content: { status: "running" } })
+    rec.add({ type: "TEXT_MESSAGE_CONTENT", delta: "hi" })
+    rec.add({ type: "ACTIVITY_SNAPSHOT", messageId: "w", activityType: "worker", content: { status: "idle" } })
+    expect(rec.messages()).toEqual([
+      { id: "w", role: "activity", activityType: "worker", content: { status: "idle" } },
+      expect.objectContaining({ role: "assistant", content: "hi" }),
+    ])
+  })
+})

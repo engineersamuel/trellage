@@ -1,8 +1,11 @@
 // request_approval / ask_user in the chat: the decision card with its options, answered in place.
-// The tool is a backend tool, so this is a renderer (useRenderTool), not useHumanInTheLoop: the answer goes
+// The tool is a backend tool, so this is a renderer (useRenderTool), not useHumanInTheLoop. When the last run
+// ended with this decision as an AG-UI interrupt, the answer resumes that run (`resume`); otherwise it goes
 // through the approvals API and comes back to the coordinator as an "[approval … answered]" turn.
+import { useCopilotKit } from "@copilotkit/react-core"
 import { useState } from "react"
 import { answer, runApprovals } from "../../../shared/approvals"
+import { answerInterrupt } from "../state/chat"
 import { useApp } from "../state/store"
 import { ToolCard } from "./ToolCards"
 import "./DecisionCard.css"
@@ -26,12 +29,15 @@ export function DecisionCard(props: Props) {
   const [note, setNote] = useState("")
   const [sending, setSending] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const { copilotkit } = useCopilotKit()
   // Still running, failed, or not loaded yet: the plain tool card.
   if (!d) return <ToolCard {...props} />
   const send = (choice: string) => {
     setSending(choice)
     setError(null)
-    runApprovals(answer(d.id, choice, note.trim() || null)).then(
+    const n = note.trim() || null
+    const resumed = answerInterrupt(copilotkit, d.id, choice, n)
+    ;(resumed === false ? runApprovals(answer(d.id, choice, n)) : resumed).then(
       () => setSending(null),
       (e: { reason?: string }) => (setSending(null), setError(e.reason ?? String(e))),
     )

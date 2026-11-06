@@ -48,16 +48,26 @@ const textOf = (c: unknown): string =>
 export const piEvents = (e: AgentSessionEvent, at = new Date().toISOString()): HarnessEvent[] => {
   const parent = (e as { parentToolCallId?: string }).parentToolCallId
   const ev = (type: string, data: any): HarnessEvent => ({ type, timestamp: at, ...(parent ? { agentId: parent } : {}), data })
+  // One id per content block, the same in the deltas and the final message, so the feed drops the deltas.
+  const blockId = (m: any, i: number) => `${m.timestamp ?? m.responseId}:${i}`
   switch (e.type) {
+    case "message_update": {
+      const m: any = e.message
+      const a: any = e.assistantMessageEvent
+      if (m.role !== "assistant" || !a.delta) return []
+      if (a.type === "text_delta") return [ev("assistant.message_delta", { messageId: blockId(m, a.contentIndex), deltaContent: a.delta })]
+      if (a.type === "thinking_delta") return [ev("assistant.reasoning_delta", { reasoningId: blockId(m, a.contentIndex), deltaContent: a.delta })]
+      return []
+    }
     case "message_end": {
       const m: any = e.message
       if (m.role !== "assistant") return []
       return [
         ...m.content.flatMap((b: any, i: number) =>
           b.type === "text" && b.text
-            ? [ev("assistant.message", { messageId: `${m.responseId ?? m.timestamp}:${i}`, content: b.text })]
+            ? [ev("assistant.message", { messageId: blockId(m, i), content: b.text })]
             : b.type === "thinking" && b.thinking
-              ? [ev("assistant.reasoning", { content: b.thinking })]
+              ? [ev("assistant.reasoning", { reasoningId: blockId(m, i), content: b.thinking })]
               : [],
         ),
         ...(m.stopReason === "error" ? [ev("session.error", { message: m.errorMessage ?? "model error" })] : []),

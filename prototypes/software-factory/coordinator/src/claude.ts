@@ -101,6 +101,75 @@ export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessE
   }
 }
 
+type Block = { kind: "text" | "thinking"; id: string; text: string; message: string }
+
+/**
+ * Streams Claude text and thinking as deltas (SDK option includePartialMessages). The full assistant message
+ * then reuses each block's delta id, so the feed drops the deltas and transcripts show the text once.
+ */
+export class ClaudeStream {
+  private message = ""
+  private open = new Map<number, Block>()
+  /** Streamed blocks whose full assistant message has not arrived yet. */
+  private finished: Block[] = []
+
+  map(m: SDKMessage, at = new Date().toISOString()): HarnessEvent[] {
+    if (m.type !== "stream_event") return m.type === "assistant" ? this.reuseIds(m, toEvents(m, at)) : toEvents(m, at)
+    const agentId = m.parent_tool_use_id ? { agentId: m.parent_tool_use_id } : {}
+    const ev = (type: string, data: any): HarnessEvent => ({ type, timestamp: at, ...agentId, data })
+    const e: any = m.event
+    switch (e.type) {
+      case "message_start":
+        this.message = String(e.message?.id ?? m.uuid)
+        this.open.clear()
+        return []
+      case "content_block_start": {
+        const kind = e.content_block?.type
+        if (kind === "text" || kind === "thinking") this.open.set(e.index, { kind, id: `${this.message}:${e.index}`, text: "", message: this.message })
+        return []
+      }
+      case "content_block_delta": {
+        const b = this.open.get(e.index)
+        if (!b) return []
+        if (e.delta?.type === "text_delta" && e.delta.text) {
+          b.text += e.delta.text
+          return [ev("assistant.message_delta", { messageId: b.id, deltaContent: e.delta.text })]
+        }
+        if (e.delta?.type === "thinking_delta" && e.delta.thinking) {
+          b.text += e.delta.thinking
+          return [ev("assistant.reasoning_delta", { reasoningId: b.id, deltaContent: e.delta.thinking })]
+        }
+        return []
+      }
+      case "content_block_stop": {
+        const b = this.open.get(e.index)
+        if (b) (this.open.delete(e.index), this.finished.push(b))
+        return []
+      }
+      default:
+        return []
+    }
+  }
+
+  /** Give each full text or thinking block the id its deltas used. */
+  private reuseIds(m: Extract<SDKMessage, { type: "assistant" }>, events: HarnessEvent[]): HarnessEvent[] {
+    const take = (kind: Block["kind"], text: string) => {
+      const i = this.finished.findIndex((b) => b.kind === kind && b.message === m.message.id && b.text === text)
+      return i < 0 ? undefined : this.finished.splice(i, 1)[0]!.id
+    }
+    for (const ev of events) {
+      if (ev.type === "assistant.message") ev.data.messageId = take("text", ev.data.content) ?? ev.data.messageId
+      if (ev.type === "assistant.reasoning") {
+        const id = take("thinking", ev.data.content)
+        if (id) ev.data.reasoningId = id
+      }
+    }
+    // Blocks of older messages that never matched are dropped, so the list stays small.
+    this.finished = this.finished.filter((b) => b.message === this.message)
+    return events
+  }
+}
+
 /**
  * Turn state across SDK messages. A Claude session can end a turn while background subagents
  * (the Agent tool, run in the background) still run, then resume by itself when they finish.
@@ -139,6 +208,7 @@ export class ClaudeSession {
   private readonly inbox = new Inbox()
   private readonly q: Query
   private readonly turns = new TurnTracker()
+  private readonly stream = new ClaudeStream()
 
   constructor(
     options: Options,
@@ -148,7 +218,7 @@ export class ClaudeSession {
     this.q = q
     void (async () => {
       try {
-        for await (const m of q) for (const ev of this.turns.map(m, toEvents(m))) this.emit(ev)
+        for await (const m of q) for (const ev of this.turns.map(m, this.stream.map(m))) this.emit(ev)
       } catch (e) {
         const at = new Date().toISOString()
         this.emit({ type: "session.error", timestamp: at, data: { message: e instanceof Error ? e.message : String(e) } })

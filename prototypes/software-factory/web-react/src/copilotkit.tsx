@@ -1,7 +1,9 @@
 // Must be the first import: ES modules run imports before this file, and the store calls randomUUID on load.
 import "./secure-context";
 // Option 1: React + CopilotKit + Effect + one zustand store. See AGENTS.md for the rules.
-import { CopilotChat, CopilotKitProvider, useCopilotKit, useRenderTool } from "@copilotkit/react-core";
+import { CopilotChat, CopilotKitProvider, useAgentContext, useCopilotKit, useFrontendTool, useRenderTool } from "@copilotkit/react-core";
+import { Effect } from "effect";
+import { activityRenderers } from "./chat/ActivityCards";
 import { OpenUiCard, renderOpenUiInto } from "./genui/OpenUi";
 import { WorkerBoard } from "./genui/WorkerBoard";
 import { useEffect, useMemo } from "react";
@@ -16,10 +18,10 @@ import { factoryMarkdownRenderer } from "./shared/CodeBlock";
 import { REPORT_REF, ReportViewer } from "./shared/ReportViewer";
 import { DecisionCard } from "./chat/DecisionCard";
 import { ToolCard, ToolGroup } from "./chat/ToolCards";
-import { coordinator, freshThread, openThread, openUiChatAction } from "./state/chat";
+import { coordinator, freshThread, loadCapabilities, openThread, openUiChatAction } from "./state/chat";
 import { startHostEvents } from "./state/host-events";
 import { Action } from "./state/model";
-import { dispatch, startStore, useApp } from "./state/store";
+import { dispatch, patchSettings, startStore, useApp } from "./state/store";
 
 function ToolRenderers() {
   // Agent-designed UI: render_ui carries an OpenUI Lang program (rule 10). Buttons continue the chat.
@@ -43,6 +45,30 @@ function ToolRenderers() {
   useRenderTool({ name: "ask_user", parameters: decision, render: (p) => <DecisionCard name={p.name} toolCallId={p.toolCallId} args={p.parameters} result={p.result} /> });
   // Every other tool: affectUI's Tool Call Card. `group` lets the chat fold calls in a row into ToolGroup.
   useRenderTool({ name: "*", group: true, render: ToolCard });
+  return null;
+}
+
+/** Sent as forwardedProps with every run. */
+const RUN_PROPERTIES = { interrupts: true };
+const FocusArgs = z.object({ id: z.string() });
+
+/** What the coordinator can do in this page (AG-UI frontend tools) and what the human is looking at (AG-UI context). */
+function UiBridge() {
+  // Runs in the browser: the coordinator's call ends its run, CopilotKit runs this and resumes with the result.
+  useFrontendTool({
+    name: "focus_agent",
+    description: "Show one agent (coordinator or worker id) in the human's side panel. Use it when you point the human at a worker.",
+    parameters: FocusArgs,
+    handler: async ({ id }) => {
+      if (!useApp.getState().workers[id]) return `unknown agent ${id}`;
+      patchSettings({ focus: id });
+      return `showing ${id}`;
+    },
+  });
+  const focus = useApp((s) => s.settings?.settings.focus ?? null);
+  const pending = useApp((s) => s.decisions.filter((d) => d.status === "pending").length);
+  useAgentContext({ description: "Agent shown in the human's side panel", value: focus ?? "none" });
+  useAgentContext({ description: "Decisions waiting for the human", value: pending });
   return null;
 }
 
@@ -122,8 +148,16 @@ function ReportLinks() {
 
 function App() {
   return (
-    <CopilotKitProvider selfManagedAgents={{ coordinator }} enableInspector={false} markdownRenderer={factoryMarkdownRenderer}>
+    <CopilotKitProvider
+      selfManagedAgents={{ coordinator }}
+      enableInspector={false}
+      markdownRenderer={factoryMarkdownRenderer}
+      renderActivityMessages={activityRenderers}
+      // This UI answers decisions as AG-UI interrupts (resume); Foldkit does not send it and gets plain runs.
+      properties={RUN_PROPERTIES}
+    >
       <ToolRenderers />
+      <UiBridge />
       <ReportLinks />
       <FactoryShell
         title="Factory · CopilotKit"
@@ -144,6 +178,7 @@ function App() {
 
 startStore();
 startHostEvents();
+void Effect.runPromise(loadCapabilities);
 createRoot(document.getElementById("root")!).render(<App />);
 startDecisionCenter();
 startFolderSidebar();

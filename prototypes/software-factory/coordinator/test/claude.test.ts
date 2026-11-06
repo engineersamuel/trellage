@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { toEvents } from "../src/claude.ts"
+import { ClaudeStream, toEvents } from "../src/claude.ts"
 
 const at = "t"
 test("Claude SDK messages map to the Copilot event names the feed and UIs read", () => {
@@ -64,4 +64,20 @@ test("a turn that ends with background subagents running stays busy until they f
   expect(t.busy).toBe(false)
   // A later self-resume from idle starts a new turn.
   expect(t.map({ type: "assistant" }, say("more"), "t").map((e: any) => e.type)).toEqual(["assistant.turn_start", "assistant.message"])
+})
+
+test("Claude text and thinking stream as deltas; the full message reuses their ids", () => {
+  const s = new ClaudeStream()
+  const se = (event: unknown): any => ({ type: "stream_event", event, parent_tool_use_id: null, uuid: "u" })
+  s.map(se({ type: "message_start", message: { id: "msg1" } }), at)
+  s.map(se({ type: "content_block_start", index: 0, content_block: { type: "thinking" } }), at)
+  const think = s.map(se({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "hm" } }), at)
+  s.map(se({ type: "content_block_stop", index: 0 }), at)
+  s.map(se({ type: "content_block_start", index: 1, content_block: { type: "text" } }), at)
+  const text = s.map(se({ type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "hi" } }), at)
+  s.map(se({ type: "content_block_stop", index: 1 }), at)
+  expect(think.map((e) => [e.type, e.data])).toEqual([["assistant.reasoning_delta", { reasoningId: "msg1:0", deltaContent: "hm" }]])
+  expect(text.map((e) => [e.type, e.data])).toEqual([["assistant.message_delta", { messageId: "msg1:1", deltaContent: "hi" }]])
+  const full: any = { type: "assistant", uuid: "u2", parent_tool_use_id: null, message: { id: "msg1", content: [{ type: "thinking", thinking: "hm" }, { type: "text", text: "hi" }] } }
+  expect(s.map(full, at).map((e) => e.data)).toEqual([{ content: "hm", reasoningId: "msg1:0" }, { messageId: "msg1:1", content: "hi" }])
 })

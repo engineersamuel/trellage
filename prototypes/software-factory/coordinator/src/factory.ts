@@ -36,6 +36,8 @@ export type Session = {
   abort(): Promise<void>
   disconnect(): Promise<void>
   setModel(model: string, options?: { reasoningEffort?: never }): Promise<void>
+  /** Replace the tools this client supplies (Copilot SDK, experimental). */
+  setTools?(tools: Tool<any>[]): Promise<void>
 }
 
 export type WorkerSummary = {
@@ -150,6 +152,10 @@ export class Worker {
   readonly events = new Channel<SessionEvent>()
   session!: Session
   harness: Harness = "copilot"
+  /** The session's own tools; AG-UI client tools are added to these for one run (Copilot sessions only). */
+  tools: Tool<any>[] = []
+  /** Names of the client tools the session has now; "" when it has only its own. */
+  clientToolKey = ""
 
   constructor(
     readonly id: string,
@@ -434,6 +440,8 @@ export class Factory {
         permissionMode: "default",
         canUseTool: claudeGate,
         disallowedTools: ["AskUserQuestion"],
+        // Text and thinking stream to the feed as deltas, like Copilot workers.
+        includePartialMessages: true,
       },
       emit,
     )
@@ -492,6 +500,7 @@ export class Factory {
 
   private configureWorker(worker: Worker, spec: SpawnSpec): void {
     if (spec.owner) worker.owner = spec.owner
+    worker.tools = spec.tools ?? []
     worker.log = this.store.load(worker.id, LOG_CAP, worker.home)
     if (spec.onDone) worker.onDone = spec.onDone
     if (spec.shareRuntimeOf) worker.sharedRuntime = true

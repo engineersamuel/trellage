@@ -31,6 +31,12 @@ If you change `../shared`, also run the Foldkit checks (`../web-foldkit/AGENTS.m
    `ThreadReloaded`. Tool calls render with `useRenderTool` (`src/copilotkit.tsx`): the affectUI card for every
    tool (`src/chat/ToolCards.tsx`), an answerable card for `request_approval` / `ask_user` (`src/chat/DecisionCard.tsx`).
    A failed call is the AG-UI tool message `error`; the feed timing is the fallback for old threads.
+   **AG-UI 1.0 in use:** Stop calls `/api/agui/stop` (`FactoryAgent.abortRun`; the run ends `cancelled` and is saved).
+   A run that ends with an open decision ends with the `interrupt` outcome; `DecisionCard` answers it with
+   `resume` (`answerInterrupt`), else through the approvals API. `FactoryAgent.runAgent` abandons interrupts that are
+   still open and drops ones answered elsewhere. Subagents and started workers arrive as activity messages
+   (`src/chat/ActivityCards.tsx`, `renderActivityMessages`). Frontend tools (`useFrontendTool`) and `useAgentContext`
+   reach the coordinator; keep frontend tools fast, the coordinator waits for their result.
 8. **Third-party components are installed verbatim** under `src/components/ui/` (shadcn registry files),
    with a source/licence header. Do not edit them; wrap them. Re-fetch to update.
 9. **Pin CopilotKit and AG-UI together.** `@ag-ui/client` must match the version `@copilotkit/react-core` depends on,

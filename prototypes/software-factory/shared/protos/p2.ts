@@ -116,7 +116,7 @@ const colorOf = (id: string) => {
 }
 /** Long messages and OpenUI programs stand alone as report cards. */
 const isReport = (t: string) => t.length > 220 || isOpenUi(t)
-const clean = (s: string) => s.replace(/<(ui-format|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim()
+const clean = (s: string) => s.replace(/<(ui-format|ui-context|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim()
 const hhmm = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 const day = (t: number) => new Date(t).toDateString()
 const standaloneItem = (it: Item) => it.kind === "report" || it.kind === "decision" || it.kind === "review"
