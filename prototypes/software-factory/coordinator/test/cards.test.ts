@@ -49,7 +49,7 @@ describe("cards as live OpenUI (Foldkit)", () => {
   test("a card is a live Query for its scope, with the tool result as default", () => {
     const p = cardOpenUi("show_worker_board", JSON.stringify({ workers: [{ id: "a", name: 'He said "hi"', role: "worker", status: "idle", model: "m", rssKb: null }], at: 0 }), "sub-1", {}, "k0")!
     expect(p.startsWith("ROOT = Card([k0head")).toBe(true)
-    expect(p).toMatch(/k0card = Query\("factory_card", \{"name":"show_worker_board","scope":"sub-1"\}, \{.*He said \\"hi\\".*\}, 5\)/)
+    expect(p).toMatch(/k0card = Query\("factory_card", \{"name":"show_worker_board","scope":"sub-1"\}, \{.*He said \\"hi\\".*\}, 60\)/)
     expect(cardOpenUi("bash", "{}")).toBeNull()
     expect(cardOpenUi("show_worker_board", "not json")).toBeNull()
   })

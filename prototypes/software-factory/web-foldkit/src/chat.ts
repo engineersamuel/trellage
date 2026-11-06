@@ -46,6 +46,27 @@ export const showReloadedThread =
       ? foldChat(model, chat.Message.SucceededLoadMessages({ threadId, messages }))
       : { model };
 
+/** The tool behind every live chat card (coordinator/src/cards.ts): an OpenUI Query("factory_card", …). */
+export const CARD_QUERY_TOOL = "factory_card";
+
+/** Every live card query in the chat: one per card per answer. */
+export const cardQueries = (chatModel: AppModel): ReadonlyArray<{ messageId: string; statementId: string; epoch: number }> =>
+  Object.entries(chatModel.genuiQueries.answers).flatMap(([messageId, answer]) =>
+    Object.entries(answer.manager.queries)
+      .filter(([, query]) => query.toolName === CARD_QUERY_TOOL)
+      .map(([statementId]) => ({ messageId, statementId, epoch: answer.manager.epoch })),
+  );
+
+/**
+ * Refresh every live card now. The chat refreshes a query when it gets TickedGenUiQueryRefresh (normally from its
+ * own timer); the root sends it when the factory feed reports a change, so cards update as soon as data changes.
+ */
+export const refreshCards: Step = (model) =>
+  Update.combine(
+    model,
+    cardQueries(model.chat).map((q) => foldChat(chat.Message.TickedGenUiQueryRefresh(q))),
+  );
+
 /** A fresh thread list (threads started elsewhere) as a root Message. */
 export const loadedThreads = (threads: ReadonlyArray<Thread>): GotChatMessage =>
   toGotChatMessage(chat.Message.SucceededLoadThreads({ maybeNextCursor: Option.none(), threads }));

@@ -27,6 +27,13 @@ export const feedEventToMessage = (raw: FeedEvent): Option.Option<Message> =>
     ),
   );
 
+/** Feed events that change what a chat card shows. Workers report often while busy, so changes are coalesced. */
+const CARD_EVENTS = /^factory\.(worker_(started|updated|stopped)|approval_|security_review|step_decided)/;
+/** One card refresh per burst of feed events (a busy worker sends several per second). */
+const CARD_REFRESH_DEBOUNCE = "150 millis";
+
+export const isCardEvent = (type: string): boolean => CARD_EVENTS.test(type);
+
 /** The string payload of an sf:* window event ("" when missing). */
 const eventDetail = (event: Event): string => (event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : "");
 
@@ -39,6 +46,14 @@ const isHotkey = (event: KeyboardEvent): boolean =>
 
 const appSubscriptions = Subscription.make<Model, Message>()(() => ({
   feed: Subscription.persistentEntry(feedEvents.pipe(Stream.filterMap(Filter.fromPredicateOption(feedEventToMessage)))),
+  // Live chat cards: a change in the factory refreshes them at once (no polling delay).
+  cardData: Subscription.persistentEntry(
+    feedEvents.pipe(
+      Stream.filter((event) => isCardEvent(event.type)),
+      Stream.debounce(CARD_REFRESH_DEBOUNCE),
+      Stream.map(() => Message.ReceivedCardDataChange()),
+    ),
+  ),
   keys: Subscription.persistentEntry(
     Stream.fromEventListener<KeyboardEvent>(window, "keydown").pipe(
       Stream.filter(isHotkey),

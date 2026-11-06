@@ -101,5 +101,30 @@ kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; ma
 .fk-confirm button { background: var(--sf-surface); color: var(--sf-text); border: 1px solid var(--sf-border); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
 .fk-confirm button.fk-danger { background: #dc2626; border-color: #dc2626; color: #fff; }
 
-/* Chat cards (OpenUI): a surface like the CopilotKit cards, so tables and metrics read on any chat background. */
-.openui-card.openui-card-card { background: var(--sf-surface); border-radius: 10px; box-shadow: 0 0 0 0.5px var(--sf-border); }
+/* Chat cards (OpenUI answers that start with a CardHeader, e.g. the live factory cards): the CopilotKit card look.
+   Plain text answers (no header) stay unboxed. */
+.openui-card.openui-card-card:has(> .openui-header:first-child) {
+  background: var(--sf-surface); border-radius: 12px; padding: 16px 16px 14px; box-shadow: 0 0 0 0.5px var(--sf-border);
+  gap: 10px !important; font-size: 13px;
+}
+.openui-card:has(> .openui-header:first-child) > .openui-header .openui-header-top-left { font-size: 16px; font-weight: 600; }
+.openui-card:has(> .openui-header:first-child) > .openui-header .openui-header-bottom { color: var(--sf-muted); font-size: 13px; }
+.openui-card:has(> .openui-header:first-child) .openui-text-content p { margin: 2px 0 4px; color: var(--sf-muted); }
+.openui-card:has(> .openui-header:first-child) .openui-text-content strong { color: var(--sf-text); }
+/* Tables fit the card: no overlay scroll arrows over the first column. */
+.openui-card:has(> .openui-header:first-child) .openui-scrollable-table-control { display: none; }
+.openui-card:has(> .openui-header:first-child) .openui-table { font-size: 13px; }
+.openui-card:has(> .openui-header:first-child) .openui-table-head { color: var(--sf-muted); font-weight: 500; }
+/* Name + role on one line, the role small and muted (as the CopilotKit card). */
+.openui-card:has(> .openui-header:first-child) .openui-table-cell .openui-text-block--text-subtext {
+  flex-direction: row; align-items: baseline; gap: 6px; text-align: left; max-width: 340px;
+}
+.openui-card:has(> .openui-header:first-child) .openui-table-cell .openui-text-block__primary {
+  font: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.openui-card:has(> .openui-header:first-child) .openui-table-cell .openui-text-block__secondary { font-size: 11.5px; color: var(--sf-muted); flex: none; }
+/* Number columns of the worker board (Memory, Context) right-aligned, as in the CopilotKit card. */
+.openui-card:has(> .openui-header:first-child) .openui-table:has(.openui-tag) :is(th, td):nth-child(4),
+.openui-card:has(> .openui-header:first-child) .openui-table:has(.openui-tag) :is(th, td):nth-child(5) { text-align: right; }
+.openui-card:has(> .openui-header:first-child) .openui-table:has(.openui-tag) th:nth-child(4) .openui-table-head-content,
+.openui-card:has(> .openui-header:first-child) .openui-table:has(.openui-tag) th:nth-child(5) .openui-table-head-content { justify-content: flex-end; }

@@ -3,7 +3,7 @@ import { AsyncData, Command, Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
 import type { ChatBackend, Flags } from "@plana-solutions/agent-interface";
 import { currentProto } from "../../shared/protos";
-import { foldChat, newThread, openThread, showReloadedThread, toGotChatMessage } from "./chat";
+import { foldChat, newThread, openThread, refreshCards, showReloadedThread, toGotChatMessage } from "./chat";
 import { chat } from "./chatProgram";
 import { RefreshThreads, ReloadThread, SyncExtensionWorkers, SyncThreadUrl } from "./command";
 import { COORDINATOR_ID } from "./domain";
@@ -77,7 +77,8 @@ const handleMessage = (model: Model, message: Message) =>
     GotSettingsMessage: ({ message }) => foldSettings(model, message),
     ReceivedThreadUpdate: ({ threadId }) => Update.combine(model, [refreshThreads, reloadOpenThread(Option.fromNullishOr(threadId))]),
     // After a feed gap the open thread and the thread list may be stale. The panel and settings reload their own data.
-    ReceivedFeedGap: () => Update.combine(model, [refreshThreads, reloadOpenThread(Option.none())]),
+    ReceivedFeedGap: () => Update.combine(model, [refreshThreads, reloadOpenThread(Option.none()), refreshCards]),
+    ReceivedCardDataChange: () => refreshCards(model),
     RequestedOpenThread: ({ threadId }) => openThread(threadId)(model),
     RequestedNewThread: () => newThread(model),
     RequestedSelectWorker: ({ workerId }) => requestFocus(workerId)(model),

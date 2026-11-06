@@ -37,3 +37,14 @@ To upgrade agent-interface:
 2. If postinstall fails: make the same change by hand in `node_modules/@plana-solutions/agent-interface/dist/`.
 3. Delete the old patch file, run `npx patch-package @plana-solutions/agent-interface` (new file has the new version).
 4. Run the four checks, then delete `node_modules/.vite` and restart the dev server.
+
+## Live chat cards
+
+The coordinator's `show_*` tools answer Foldkit turns with an OpenUI card whose data is an OpenUI
+`Query("factory_card", …)` (built in `coordinator/src/cards.ts`, rows from `shared/cardviews.ts`). The card tools
+(`factory_card`, `focus_agent`, `answer_decision`, `start_finding`) are `genui.tools` in `src/chatProgram.ts`.
+
+Cards are refreshed by Messages, not timers: the `cardData` Subscription turns factory feed events that change card
+data into `ReceivedCardDataChange`, and update sends the chat one `TickedGenUiQueryRefresh` per live card query
+(`refreshCards` in `src/chat.ts`). The query's 60 s interval is only a safety net. A new card data source needs its
+feed event in `CARD_EVENTS` (`src/subscription.ts`).

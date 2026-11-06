@@ -143,7 +143,8 @@ const view = (title: string, subtitle: string, metrics: Metric[], rows: Record<s
   rows,
   note,
   noteVariant,
-  metricsText: metrics.map((m) => `**${m.value}** ${m.label}`).join(" · "),
+  // Wide spaces, as the CopilotKit card spaces its metrics (no separators).
+  metricsText: metrics.map((m) => `**${m.value}**\u00a0${m.label}`).join("\u2003\u2003"),
 })
 
 /** A show_* tool's data → the card's view. Same rows as the CopilotKit React cards. */
@@ -152,8 +153,7 @@ export const cardView = (name: string, data: any): CardView => {
   switch (name) {
     case "show_worker_board": {
       const b = toBoard(d.workers ?? [])
-      const at = typeof d.at === "number" ? new Date(d.at).toISOString().slice(11, 19) : ""
-      return view("Worker board", `Live · ${at} UTC`, [{ value: String(b.total), label: "agents" }, { value: String(b.running), label: "running" }, { value: String(b.errors), label: "errors" }], b.rows, b.rows.length ? null : "No agents are running.")
+      return view("Worker board", "Live", [{ value: String(b.total), label: "agents" }, { value: String(b.running), label: "running" }, { value: String(b.errors), label: "errors" }], b.rows, b.rows.length ? null : "No agents are running.")
     }
     case "show_delivery_run": {
       const r = toRun(d.branch ?? null, d.decisions ?? [])

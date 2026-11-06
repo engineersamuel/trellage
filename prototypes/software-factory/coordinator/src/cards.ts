@@ -53,8 +53,11 @@ export const reportFindings = (md: string): { rank: number; title: string; body:
 // Rows, labels and metrics come from shared/cardviews.ts, the same view the React cards use.
 import { cardView } from "../../shared/cardviews.ts"
 
-/** Seconds between refreshes of a live card. */
-export const CARD_REFRESH_SECONDS = 5
+/**
+ * Seconds between timed refreshes of a live card: only a safety net. Foldkit refreshes cards at once when the
+ * factory feed reports a change (web-foldkit/src/subscription.ts `cardData`).
+ */
+export const CARD_REFRESH_SECONDS = 60
 
 const q = (s: unknown): string => JSON.stringify(String(s ?? ""))
 /** A JSON value as an OpenUI Lang literal (OpenUI accepts JSON objects and arrays). */
