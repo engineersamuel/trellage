@@ -82,7 +82,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const renderInbox = () => {
     const list = items(m, view)
     // sel is the open conversation (a root); cur is the node shown in the detail column.
-    if (!sel || !list.some((x) => x.root.id === rootOf(m, sel!))) (sel = list[0]?.root.id ?? null), (cur = list[0]?.focus.id ?? null)
+    // The desk is no inbox row in most views, but stays open once picked.
+    const isDesk = sel === "coordinator" && m.nodes.has(sel)
+    if (!isDesk && (!sel || !list.some((x) => x.root.id === rootOf(m, sel!)))) (sel = list[0]?.root.id ?? null), (cur = list[0]?.focus.id ?? null)
     if (!cur || !m.nodes.has(cur)) cur = sel
     const bar = el("div", "p3-bar")
     bar.append(el("span", "p3-n", `${list.length} ${list.length === 1 ? "conversation" : "conversations"}`))
@@ -259,13 +261,21 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     // Until you pick a view, it follows: Needs me if anything needs you, else All conversations
     // (decisions can arrive after the threads, so this is checked on every update, the same in every host).
     if (autoView) view = count(build(st.agents, st.threads, st.decisions), "needs") ? "needs" : "chats"
-    // The conversation the host already shows (?thread=) is selected when it is in that view.
+    // The conversation the host already shows (?thread=) stays selected: the desk opens as the desk,
+    // an archived conversation opens in "Marked done", any other in the view that lists it.
     if (first) {
-      const live = build(st.agents, st.threads, st.decisions)
       const t = new URL(location.href).searchParams.get("thread")
-      const hit = t ? [...live.nodes.values()].find((n) => n.thread?.id === t) : undefined
-      const r = hit && items(live, view).find((x) => x.root.id === rootOf(live, hit.id))
-      if (r) (sel = r.root.id), (cur = r.focus.id)
+      const thread = t ? st.threads.find((x) => x.id === t) : undefined
+      if (thread?.desk) (autoView = false), (sel = cur = "coordinator")
+      else if (thread) {
+        if (thread.archivedAt) (autoView = false), (view = "archived")
+        const shown = build(st.agents, st.threads, st.decisions, view === "archived")
+        const hit = [...shown.nodes.values()].find((n) => n.thread?.id === t)
+        const inView = hit && items(shown, view).find((x) => x.root.id === rootOf(shown, hit.id))
+        if (hit && !inView && view !== "archived") (autoView = false), (view = "chats")
+        const r = hit && items(shown, view).find((x) => x.root.id === rootOf(shown, hit.id))
+        if (r) (sel = r.root.id), (cur = hit.id)
+      }
     }
     render()
   })
