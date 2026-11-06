@@ -501,7 +501,7 @@ try {
                 ]
               : []
             const interactive = resolved.some((name) =>
-              ["blog", "council", "ecc", "frontend-design", "research", "social-media"].some(
+              ["blog", "council", "ecc", "foldkit", "frontend-design", "research", "social-media"].some(
                 (preset) => name === `preset-claude-${preset}`,
               ),
             )

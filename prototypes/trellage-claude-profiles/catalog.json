@@ -44,6 +44,12 @@
       "plugin": "ecc@ecc",
       "standaloneMcps": []
     },
+    "foldkit": {
+      "description": "Claude Code with Foldkit and OpenUI skills, current OpenUI documentation, and optional live Foldkit DevTools inspection.",
+      "headless": null,
+      "plugin": "foldkit-tools",
+      "standaloneMcps": []
+    },
     "frontend-design": {
       "description": "Native Claude Code with UI UX Pro Max, Taste, and GSAP design plugins.",
       "headless": null,

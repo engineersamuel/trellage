@@ -1,6 +1,6 @@
 export const nativeHarnessPresets = {
   agency: ["azure"],
-  claude: ["blog", "council", "default", "ecc", "frontend-design", "office", "office-charts", "research", "six-hats", "social-media"],
+  claude: ["blog", "council", "default", "ecc", "foldkit", "frontend-design", "office", "office-charts", "research", "six-hats", "social-media"],
   codex: ["pstack", "superpowers", "youtube"],
   copilot: ["awesome", "compound-engineering", "hve", "plannotator", "superpowers", "tufte-vdqi"],
   fx: ["default"],

@@ -1532,6 +1532,119 @@ plugins = [{
   expect(prepared.plan.plugins[0]?.digest).toMatch(/^[a-f0-9]{64}$/)
 })
 
+test("Claude Foldkit stages its skills, instructions and MCPs without changing project or personal configuration", async () => {
+  const fixture = await world("[native]\n")
+  const foldkit = await createSourceRepo(fixture.root, "foldkit")
+  const openui = await createSourceRepo(fixture.root, "openui")
+  const trellage = await createSourceRepo(fixture.root, "trellage")
+  const commits = {
+    foldkit: await foldkit.write({
+      "skills/foldkit/SKILL.md": skillMarkdown("foldkit"),
+      "skills/generate-program/SKILL.md": skillMarkdown("generate-program"),
+      "skills/audit-program/SKILL.md": skillMarkdown("audit-program"),
+    }),
+    openui: await openui.write({ "skills/openui/SKILL.md": skillMarkdown("openui") }),
+    trellage: await trellage.write({
+      "plugins/foldkit-tools/.claude-plugin/plugin.json": JSON.stringify({ name: "foldkit-tools" }),
+      "plugins/foldkit-tools/.mcp.json": JSON.stringify({
+        mcpServers: {
+          context7: { type: "http", url: "https://mcp.context7.com/mcp?client=claude-code-plugin" },
+          "foldkit-devtools": {
+            command: "npx",
+            args: ["-y", "@foldkit/devtools-mcp@0.26.0"],
+          },
+        },
+      }),
+    }),
+  }
+  await writeFile(
+    path.join(fixture.root, "config.toml"),
+    `[native]
+[native.sources.foldkit]
+repository = "foldkit/foldkit"
+commit = "${commits.foldkit}"
+[native.sources.openui]
+repository = "thesysdev/skills"
+commit = "${commits.openui}"
+[native.sources.trellage]
+repository = "engineersamuel/trellage"
+commit = "${commits.trellage}"
+`,
+    { mode: 0o600 },
+  )
+  const projectFiles = {
+    "AGENTS.md": "# Project rules\n",
+    "CLAUDE.md": "# Local Claude rules\n",
+    "FOLDKIT.md": "# Existing Foldkit reference\n",
+    ".mcp.json": '{"mcpServers":{"project":{"command":"project-server"}}}\n',
+    "package.json": '{"name":"test-app"}\n',
+    "bun.lock": "unchanged lockfile\n",
+  }
+  for (const [file, contents] of Object.entries(projectFiles)) {
+    await mkdir(path.dirname(path.join(fixture.work, file)), { recursive: true })
+    await writeFile(path.join(fixture.work, file), contents)
+  }
+  await git(fixture.work, "add", "-A")
+  await git(fixture.work, "commit", "-q", "-m", "initial project")
+  const projectHead = await git(fixture.work, "rev-parse", "HEAD")
+  const userConfig = await readFile(path.join(fixture.root, "config.toml"), "utf8")
+  const deps = fixture.dependencies()
+  const transport = gitSourceTransport(
+    (repository) =>
+      ({
+        "foldkit/foldkit": foldkit.directory,
+        "thesysdev/skills": openui.directory,
+        "engineersamuel/trellage": trellage.directory,
+      })[repository]!,
+  )
+  const prepared = await prepareRun(
+    { ...base, harness: "claude", profiles: ["foldkit"], dryRun: true, allowUnprovenIsolation: true },
+    { ...deps, transport },
+  )
+
+  expect(prepared.plan.profiles).toEqual(["preset-claude-foldkit"])
+  expect(prepared.plan.skills.map(({ name }) => name)).toEqual([
+    "audit-program",
+    "foldkit",
+    "generate-program",
+    "openui",
+  ])
+  expect(prepared.plan.sources.map(({ sourceId, commit }) => [sourceId, commit])).toEqual([
+    ["foldkit", commits.foldkit],
+    ["openui", commits.openui],
+    ["trellage", commits.trellage],
+  ])
+  expect(prepared.plan.instructions.map(({ id }) => id)).toEqual(["claude-foldkit"])
+  const instructions = await readFile(path.join(prepared.layout.generationPath, "CLAUDE.md"), "utf8")
+  expect(instructions).toContain("do not assume OpenUI is a native Foldkit renderer")
+  expect(instructions).toContain("Before reading runtime data")
+  const pluginDirectory = path.join(prepared.layout.generationPath, "plugins", "foldkit-tools")
+  const mcp = JSON.parse(await readFile(path.join(pluginDirectory, ".mcp.json"), "utf8"))
+  expect(mcp.mcpServers.context7.url).toBe("https://mcp.context7.com/mcp?client=claude-code-plugin")
+  expect(mcp.mcpServers["foldkit-devtools"].args).toEqual(["-y", "@foldkit/devtools-mcp@0.26.0"])
+  expect(prepared.launch.args).toContain(pluginDirectory)
+  expect(prepared.launch.args).not.toContain("--disallowedTools")
+  expect(prepared.workspace).toBe(fixture.work)
+  expect(await readFile(path.join(fixture.root, "config.toml"), "utf8")).toBe(userConfig)
+  for (const [file, contents] of Object.entries(projectFiles))
+    expect(await readFile(path.join(fixture.work, file), "utf8")).toBe(contents)
+  expect(await git(fixture.work, "rev-parse", "HEAD")).toBe(projectHead)
+  expect(existsSync(path.join(fixture.root, ".claude"))).toBe(false)
+
+  const defaultRun = await prepareRun(
+    { ...base, harness: "claude", profiles: ["default"], dryRun: true, allowUnprovenIsolation: true },
+    { ...deps, transport },
+  )
+  expect(defaultRun.plan.skills).toEqual([])
+  expect(defaultRun.plan.plugins).toEqual([])
+  expect(defaultRun.plan.instructions).toEqual([])
+  const cleanRun = await prepareRun(
+    { ...base, harness: "claude", profiles: ["clean"], dryRun: true, allowUnprovenIsolation: true },
+    { ...deps, transport },
+  )
+  expect(cleanRun.clean).toBe(true)
+})
+
 test("shipped Claude research stages the bootstrap and automatically installs its missing CLI at launch", async () => {
   const { dependencies, office, root } = await world("[native]\n")
   const bin = path.join(root, "bin")

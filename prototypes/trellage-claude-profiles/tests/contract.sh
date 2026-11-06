@@ -301,7 +301,7 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "cldx"
   and .harness == "claude"
-  and [.profiles[].name] == ["blog", "council", "default", "ecc", "frontend-design", "office", "office-charts", "research", "six-hats", "social-media"]
+  and [.profiles[].name] == ["blog", "council", "default", "ecc", "foldkit", "frontend-design", "office", "office-charts", "research", "six-hats", "social-media"]
   and ([.profiles[] | select(.name == "office")][0].marketplace.source == "anthropics/skills")
   and ([.profiles[] | select(.name == "office")][0].skillBundles == ["native-common", "claude-office"])
   and ([.profiles[] | select(.name == "office-charts")][0].skillBundles == ["native-common", "claude-office-charts"])

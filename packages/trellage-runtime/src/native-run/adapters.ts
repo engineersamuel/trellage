@@ -195,6 +195,9 @@ const FX_PROVIDER_DEFINITION = {
 
 const sameJson = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right)
 
+const isJsonObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
 /** Reads a host-owned JSON settings object; `label` names the file in errors. */
 const readHostSettings = async (file: string, label: string): Promise<Record<string, unknown>> => {
   const fileStatus = await lstat(file).catch((error: NodeJS.ErrnoException) => {
@@ -207,8 +210,8 @@ const readHostSettings = async (file: string, label: string): Promise<Record<str
   if (fileStatus) {
     try {
       const parsed: unknown = JSON.parse(await readFile(file, "utf8"))
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("expected an object")
-      settings = parsed as Record<string, unknown>
+      if (!isJsonObject(parsed)) throw new Error("expected an object")
+      settings = parsed
     } catch (error) {
       throw new NativeRunError(
         "launch",
@@ -2119,6 +2122,7 @@ const claudeInteractiveProfiles = new Set([
   "preset-claude-blog",
   "preset-claude-council",
   "preset-claude-ecc",
+  "preset-claude-foldkit",
   "preset-claude-frontend-design",
   "preset-claude-research",
   "preset-claude-social-media",
@@ -2661,6 +2665,58 @@ const empryoModel = (model: string | undefined): string => {
   return selection.includes("/") ? selection : `${EMPRYO_PROVIDER}/${selection}`
 }
 
+const ensureEmpryoConfigDirectory = async (directory: string): Promise<void> => {
+  const status = await lstat(directory).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined
+    throw error
+  })
+  if (status && (!status.isDirectory() || status.isSymbolicLink()))
+    throw new NativeRunError("launch", `unsafe Empryo config directory: ${directory}`)
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+}
+
+const empryoProviders = (settings: Record<string, unknown>): { values: unknown[]; current: unknown } => {
+  const values = settings.providers ?? []
+  if (!Array.isArray(values)) throw new NativeRunError("launch", "invalid Empryo providers configuration")
+  const current = values.find(
+    (provider: unknown) =>
+      typeof provider === "object" && provider !== null && "id" in provider && provider.id === EMPRYO_PROVIDER,
+  )
+  const baseURL =
+    typeof current === "object" && current !== null && "baseURL" in current ? current.baseURL : undefined
+  if (current !== undefined && baseURL !== EMPRYO_PROVIDER_DEFINITION.baseURL)
+    throw new NativeRunError("launch", `Empryo provider ${EMPRYO_PROVIDER} already exists with a different baseURL`)
+  return { values, current }
+}
+
+const empryoPerformance = (settings: Record<string, unknown>): Record<string, unknown> => {
+  const value = settings.performance ?? {}
+  if (!isJsonObject(value))
+    throw new NativeRunError("launch", "invalid Empryo performance configuration")
+  return value
+}
+
+const writeEmpryoConfig = async (
+  directory: string,
+  file: string,
+  settings: Record<string, unknown>,
+  model: string | undefined,
+  effort: string | undefined,
+): Promise<void> => {
+  const { values: providers, current } = empryoProviders(settings)
+  const performance = empryoPerformance(settings)
+  const next = {
+    ...settings,
+    providers: current === undefined ? [...providers, EMPRYO_PROVIDER_DEFINITION] : providers,
+    defaultModel: empryoModel(model),
+    ...(effort === undefined ? {} : { performance: { ...performance, effort } }),
+  }
+  if (sameJson(next, settings)) return
+  const temporary = path.join(directory, `.config-${randomUUID()}.json`)
+  await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { flag: "wx", mode: 0o600 })
+  await rename(temporary, file)
+}
+
 /**
  * Empryo reads only ~/.empryo/config.json and its TUI ignores --model, so trx
  * registers the proxy provider there and sets defaultModel and effort per launch.
@@ -2672,37 +2728,9 @@ export const ensureEmpryoConfig = async (
 ): Promise<void> => {
   const directory = path.join(environment.HOME ?? os.homedir(), ".empryo")
   const file = path.join(directory, "config.json")
-  const directoryStatus = await lstat(directory).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined
-    throw error
-  })
-  if (directoryStatus && (!directoryStatus.isDirectory() || directoryStatus.isSymbolicLink()))
-    throw new NativeRunError("launch", `unsafe Empryo config directory: ${directory}`)
-  await mkdir(directory, { recursive: true, mode: 0o700 })
+  await ensureEmpryoConfigDirectory(directory)
   const settings = await readHostSettings(file, "Empryo config")
-  const providers = settings.providers ?? []
-  if (!Array.isArray(providers)) throw new NativeRunError("launch", "invalid Empryo providers configuration")
-  const current: unknown = providers.find(
-    (provider: unknown) =>
-      typeof provider === "object" && provider !== null && "id" in provider && provider.id === EMPRYO_PROVIDER,
-  )
-  const currentBaseUrl =
-    typeof current === "object" && current !== null && "baseURL" in current ? current.baseURL : undefined
-  if (current !== undefined && currentBaseUrl !== EMPRYO_PROVIDER_DEFINITION.baseURL)
-    throw new NativeRunError("launch", `Empryo provider ${EMPRYO_PROVIDER} already exists with a different baseURL`)
-  const performance = settings.performance ?? {}
-  if (!performance || typeof performance !== "object" || Array.isArray(performance))
-    throw new NativeRunError("launch", "invalid Empryo performance configuration")
-  const next = {
-    ...settings,
-    providers: current === undefined ? [...providers, EMPRYO_PROVIDER_DEFINITION] : providers,
-    defaultModel: empryoModel(model),
-    ...(effort === undefined ? {} : { performance: { ...performance, effort } }),
-  }
-  if (sameJson(next, settings)) return
-  const temporary = path.join(directory, `.config-${randomUUID()}.json`)
-  await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { flag: "wx", mode: 0o600 })
-  await rename(temporary, file)
+  await writeEmpryoConfig(directory, file, settings, model, effort)
 }
 
 export const empryoAdapter: NativeAdapter = {

@@ -90,6 +90,35 @@ Updater output and failure status pass through unchanged.
 In `trx admin`, select `claude / default`, then press `U` and confirm with `y`.
 Native Claude updates remain separate from Claude container updates.
 
+## Foldkit and OpenUI
+
+```bash
+trx setup claude foldkit
+trx run claude foldkit
+```
+
+The profile stages the Foldkit `foldkit`, `generate-program`, and
+`audit-program` skills, the OpenUI `openui` skill, and a generated
+profile-specific `CLAUDE.md`. It also enables Context7 and Foldkit DevTools
+MCP for this profile only. These resources do not install Foldkit or OpenUI
+packages in the project, edit project instructions or `.mcp.json`, or change
+Git history. The `openui` skill does not mean OpenUI is a native Foldkit
+renderer; follow the project's own integration rules.
+
+Use Context7's normal Claude MCP sign-in when Claude requests it. For OpenUI,
+query library `/thesysdev/openui`. Context7 documentation lookup can work
+without changing global Claude MCP settings.
+
+Foldkit DevTools MCP runs `@foldkit/devtools-mcp@0.26.0` with `npx` and
+requires Node.js 22.19 or later. A server can start before an app is connected;
+runtime inspection needs a compatible Foldkit development server and an open
+browser tab. Start the server and open the tab yourself. Select the intended
+runtime before inspecting it, and use test data.
+
+The profile does not vendor Foldkit automatically. If you need source context,
+vendor a subtree pinned to the installed Foldkit release and treat it as
+read-only. Keep the upstream `FOLDKIT.md` separate from your own `AGENTS.md`.
+
 `trx upgrade claude default --skills-only` copies and verifies only managed `native-common`
 skills after `trx skills update` refreshes the shared cache. It requires an
 existing owned profile. It preserves custom skills, authentication, settings,

@@ -212,7 +212,7 @@ const claudeCleanPrefix = (model: string | undefined) => [
   }),
 ]
 
-const claudeInteractivePresets = ["blog", "council", "ecc", "frontend-design", "research", "social-media"]
+const claudeInteractivePresets = ["blog", "council", "ecc", "foldkit", "frontend-design", "research", "social-media"]
 
 const checkClaude = (c: Check) => {
   const interactive = c.manifest.profiles.some((name) =>
