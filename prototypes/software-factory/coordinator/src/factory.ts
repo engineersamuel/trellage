@@ -58,6 +58,8 @@ export type WorkerSummary = {
   contextLimit: number | null
   /** Coordinator that started this agent. */
   owner: string
+  /** SDLC step this agent runs, if any. */
+  step: string | null
 }
 
 /** One event in the factory feed. `seq` is global so a client can resume. */
@@ -193,6 +195,7 @@ export class Worker {
       contextTokens: this.context?.[0] ?? null,
       contextLimit: this.context?.[1] ?? null,
       owner: this.owner,
+      step: this.spec?.step ?? null,
     }
   }
 

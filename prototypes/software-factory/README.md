@@ -28,6 +28,14 @@ The tasks are in the repository `mise.toml`. The services run detached under [pr
 | 2 Foldkit + agent-interface | http://localhost:5174/ |
 | Coordinator API | http://127.0.0.1:7700/ |
 
+## Run record and goal loop
+
+- `GET /api/runs/<thread>` (`sf run THREAD`): every agent started under the conversation's sub-coordinator (with its `step` and harness), the steps that ran, its decisions, security reviews, newest `report_up`, and the branch's PR (state and check rollup, from `gh`).
+- `sf verify THREAD EXPECT.json [SECS]`: polls the record every 15 s until it meets `{"steps":[...],"pr":{"state":"OPEN","checks":"SUCCESS"}}`. Exit 0 met, 1 unmet at timeout, 2 a decision is pending, 3 the run reported blocked.
+- `sf -f FOLDER -b BRANCH`: the worktree branches from BRANCH and the finish worker opens the PR against it.
+- `make factory-test` (also in CI): coordinator type check and the coordinator and shared tests.
+- `docs/goals/factory-self-improve.md`: goal-loop file. An outer agent sends a feature prompt for another repo, checks the run with `sf verify`, and when it fails fixes this factory, restarts it, and runs again, until the feature PR is open and green. A human merges.
+
 ## Model routing
 
 - `SF_AUTH=native`: each runtime gets the host GitHub token (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token`). Model calls go to the Copilot subscription (`isByok:false`).

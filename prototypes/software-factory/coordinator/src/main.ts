@@ -19,6 +19,7 @@ import { loop, stopLoops } from "./loops.ts"
 import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, REPORT_NUDGE, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
+import { branchPr, runWorkers, type Run } from "./run.ts"
 import { defineTool, type SessionEvent, type Tool } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
 import { cardData, coordinatorTools, globalTools, spawnHealing, type Scope } from "./tools.ts"
@@ -268,7 +269,7 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
         name: `${folder.name} · ${t.title}`.slice(0, 60),
         role: "coordinator",
         ...(t.parentThreadId ? { owner: genId(t.parentThreadId) } : {}),
-        system: `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!)}\n\n${RESEARCH_PROMPT}\n\n# OpenUI Lang\n${openuiPrompt}`,
+        system: `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!, t.prBase)}\n\n${RESEARCH_PROMPT}\n\n# OpenUI Lang\n${openuiPrompt}`,
         tools: coordinatorTools(factory, {
           id,
           threadId: t.id,
@@ -914,6 +915,37 @@ const cardScope = (id: string): Scope => {
   return { id, threadId: t?.id ?? null }
 }
 
+/** Newest report_up of a conversation, from the event store. */
+const latestReport = (threadId: string): Run["report"] => {
+  const all = factory.store.latest("factory.report_up", 500) as { threadId: string | null; report: Report }[]
+  const r = all.filter((e) => e.threadId === threadId).at(-1)?.report
+  return r ? { status: r.status, summary: r.summary, gaps: r.gaps } : null
+}
+
+/** The delivery record of a repo conversation; null when the thread does not exist. */
+const runRecord = async (threadId: string): Promise<Run | null> => {
+  const t = threads.get(threadId)
+  if (!t) return null
+  const started = factory.store.latest("factory.worker_started", 100_000) as Parameters<typeof runWorkers>[0]
+  const workers = runWorkers(started, subId(t.id), (id) => factory.workers.get(id)?.status)
+  const repo = threads.folders().find((f) => f.id === t.folderId)?.path
+  return {
+    threadId: t.id,
+    status: statusOf(t.id),
+    branch: t.branch ?? null,
+    base: t.base ?? null,
+    workers,
+    steps: [...new Set(workers.flatMap((w) => (w.step ? [w.step] : [])))],
+    approvals: factory.approvals
+      .list()
+      .filter((a) => a.threadId === t.id || a.reportThreadId === t.id)
+      .map((a) => ({ id: a.id, title: a.title, status: a.status, answer: a.answer })),
+    securityReviews: [...factory.securityReviews.values()].filter((r) => r.threadId === t.id).map((r) => ({ id: r.id, status: r.status })),
+    report: latestReport(t.id),
+    pr: repo && t.branch ? await branchPr(repo, t.branch) : null,
+  }
+}
+
 const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/$/, () => new Response(landing, { headers: { "content-type": "text/html" } })],
   [
@@ -1210,6 +1242,10 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/agui\/capabilities$/, () => json(CAPABILITIES)],
   ["POST", /^\/api\/agui$/, (req, url) => aguiRun(null, url, req)],
   ["POST", /^\/api\/agui\/([^/]+)$/, (req, url, [id]) => aguiRun(id!, url, req)],
+  ["GET", /^\/api\/runs\/([^/]+)$/, async (_req, _url, [id]) => {
+    const run = await runRecord(id!)
+    return run ? json(run) : json({ error: `no thread ${id}` }, 404)
+  }],
   ["GET", /^\/api\/threads\/get$/, () => json({ threads: threads.list(), folders: threads.folders() })],
   ["GET", /^\/api\/threads\/get\/([^/]+)$/, (_req, _url, [id]) => json(threads.messages(id!))],
   [
