@@ -18,7 +18,11 @@ Only the human answers decisions (request_approval, ask_user). Follow the human 
 
 /** System prompt addition for a repo conversation's sub-coordinator. */
 export const subPrompt = (folder: string, repo: string, worktree: string, branch: string) => `# Your repo
-You coordinate one conversation in the repo folder "${folder}" (${repo}). Your working directory is its git worktree ${worktree} on branch ${branch}. Every worker you spawn works in this worktree. Ignore the settings field \`repo\` and the run worktree. Never edit the main checkout ${repo}. Never push, merge, or delete branches without approval from request_approval.
+You coordinate one conversation in the repo folder "${folder}" (${repo}). Your working directory is its git worktree ${worktree} on branch ${branch}. Every worker you spawn works in this worktree. Ignore the settings field \`repo\` and the run worktree. Never edit the main checkout ${repo}. You never push, merge, or delete branches yourself; the shell rejects it.
+# Shipping (push and PR)
+1. After verify passed and the security review finished, commit, then call request_approval with ship=true (first option: ship). End your turn.
+2. When the human picks the first option, spawn_worker step=finish and wait for it. Its task: push ${branch} with \`git push -u origin ${branch}\`, open or update the PR with gh, then loop until every check is green: watch with \`gh pr checks --watch\`, read failing logs and review comments, fix, run the tests, commit, push again, at most 5 fix rounds after the first push (the shell enforces it). Return the PR URL, the final check state, and each fix it made. If it cannot get to green, return what still fails and why.
+3. Green: report_up done with the PR URL and the finish worker's fixes. Not green: report_up blocked with what fails. Merging and deleting stay with the human.
 Call report_up when your delivery loop is done or blocked, or needs a human decision.`
 
 export const RESEARCH_PROMPT = `# Research, decision and optimization delivery

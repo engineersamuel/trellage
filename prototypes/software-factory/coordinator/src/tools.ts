@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process"
 import { statSync } from "node:fs"
 import path from "node:path"
 import { defineTool, type Tool } from "@github/copilot-sdk"
-import { now, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
+import { finishPermissions, MAX_FIX_ROUNDS, now, type ShipGrant, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
 import { SETTINGS_TOOL_DOC } from "./prompts.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
 import { briefProblem } from "./reports.ts"
@@ -320,6 +320,21 @@ export const synthesisBlocked = (f: Factory, scope: Scope): string | null => {
   return batch.workers.map((worker) => researchWorkerBlocked(f, workdir, worker)).find(Boolean) ?? null
 }
 
+/** The branch an accepted ship approval lets this conversation's finish worker push, or why there is none. */
+export const shipGrant = (f: Factory, scope: Scope): ShipGrant | string => {
+  if (!scope.workdir) return "step=finish runs only in a repo conversation"
+  const branch = gitOr(scope.workdir, "--abbrev-ref", "HEAD")
+  const granted = [...f.shipRequests].find(([id, r]) => {
+    const a = f.approvals.get(id)
+    return r.scopeId === scope.id && r.branch === branch && a?.status === "answered" && a.answer === a.options[0]
+  })?.[1]
+  if (granted && granted.pushes > MAX_FIX_ROUNDS)
+    return `Fix round limit reached for ${branch} (${MAX_FIX_ROUNDS} after the first push). report_up blocked, or ask for a new ship approval.`
+  return granted
+    ? granted
+    : `No accepted ship approval for branch ${branch}. Call request_approval with ship=true, end your turn, and spawn step=finish after the human picks the first option.`
+}
+
 /** Start a worker; every step waits while a security review is unfinished in the same worktree. */
 const spawnWorker = (f: Factory, scope: Scope) =>
   defineTool("spawn_worker", {
@@ -355,6 +370,8 @@ const spawnWorker = (f: Factory, scope: Scope) =>
     handler: async (a: any) => {
       const blocked = spawnBlocked(f, scope) ?? (a.step === "synthesis" ? synthesisBlocked(f, scope) : null)
       if (blocked) return json({ error: blocked })
+      const ship = a.step === "finish" ? shipGrant(f, scope) : null
+      if (typeof ship === "string") return json({ error: ship })
       const scopeAuth = f.workers.get(scope.id)?.auth
       const auth = scopeAuth ?? "native"
       const w = await spawnHealing(f, scope, {
@@ -364,7 +381,8 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         ...(typeof a.model === "string" ? { model: a.model } : {}),
         task: str(a, "task"),
         ...(typeof a.step === "string" ? { step: a.step } : {}),
-        ...(a.harness === "claude" || a.harness === "pi"
+        ...(ship ? { permissions: finishPermissions(ship) } : {}),
+        ...(!ship && (a.harness === "claude" || a.harness === "pi")
           ? { harness: { kind: a.harness, profiles: Array.isArray(a.profiles) ? a.profiles.map(String) : [] } }
           : {}),
         owner: scope.id,
@@ -382,6 +400,8 @@ const spawnWorker = (f: Factory, scope: Scope) =>
 const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_user") => {
   // Only the global coordinator's approvals answer a report and relay the answer.
   const relays = name === "request_approval" && !scope.workdir
+  // Only a sub-coordinator asks to ship its own branch.
+  const ships = name === "request_approval" && !!scope.workdir
   return defineTool(name, {
     description:
       name === "request_approval"
@@ -406,6 +426,15 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
           description: "Optional, one per option: what happens next if the human picks it, in under 12 words.",
         },
         context: { type: "string", description: "Who asks and about what, e.g. 'coordinator · review of b39040eb'." },
+        ...(ships
+          ? {
+              ship: {
+                type: "boolean",
+                description:
+                  "Ask to push this worktree's branch and open a PR. The first option means ship; when the human picks it, spawn_worker step=finish may push. Ask only after verify passed and the security review finished.",
+              },
+            }
+          : {}),
         ...(relays
           ? {
               reportThreadId: {
@@ -424,6 +453,9 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
         return json({
           error: `unknown or cleaned-up conversation ${JSON.stringify(reportThreadId)}; use an id from list_conversations`,
         })
+      const shipBranch = ships && a.ship === true ? gitOr(scope.workdir!, "--abbrev-ref", "HEAD") : null
+      if (shipBranch !== null && !shipBranch.startsWith("factory/"))
+        return json({ error: `Only factory/* branches ship; this worktree is on ${shipBranch}` })
       const item = f.approvals.open({
         kind: name === "ask_user" ? "question" : "approval",
         threadId: scope.threadId ?? f.currentThread,
@@ -439,6 +471,7 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
         ...(Array.isArray(a.optionDetails) ? { optionDetails: a.optionDetails.map(String) } : {}),
         ...(reportThreadId !== undefined ? { reportThreadId } : {}),
       })
+      if (shipBranch) f.shipRequests.set(item.id, { scopeId: scope.id, branch: shipBranch, pushes: 0 })
       f.publish("coordinator", "factory.approval_requested", null, String(Date.now()), item)
       return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
     },

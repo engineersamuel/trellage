@@ -289,3 +289,41 @@ test("spawn_worker passes a named harness and its trx profiles; copilot is the d
   await spawn({ name: "c", task: "x", harness: "copilot" })
   expect(f.spawned.map((s: SpawnSpec) => s.harness)).toEqual([undefined, { kind: "pi", profiles: ["research"] }, undefined])
 })
+
+test("step=finish needs an accepted ship approval for this conversation's factory branch; it gets the finish gate", async () => {
+  const repo = mkdtempSync(path.join(tmpdir(), "sf-ship-"))
+  const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { stdio: "ignore" })
+  git("init", "-q", "-b", "factory/x")
+  git("-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "x")
+  const items: any[] = []
+  const f = fakeFactory()
+  f.shipRequests = new Map()
+  f.approvals = {
+    open: (a: any) => (items.push({ id: `a${items.length}`, status: "pending", answer: null, ...a }), items.at(-1)),
+    get: (id: string) => items.find((x) => x.id === id),
+  }
+  const tools = coordinatorTools(f, { id: "sub-1", threadId: "t", workdir: repo })
+  const finish = () => tool(tools, "spawn_worker")({ name: "finish", task: "ship", step: "finish", harness: "claude" })
+  expect(JSON.parse(await finish()).error).toContain("No accepted ship approval")
+  await tool(tools, "request_approval")({ title: "Ship?", summary: "s", options: ["Ship", "Hold"], ship: true })
+  expect(JSON.parse(await finish()).error).toContain("No accepted ship approval")
+  Object.assign(items[0], { status: "answered", answer: "Hold" })
+  expect(JSON.parse(await finish()).error).toContain("No accepted ship approval")
+  items[0].answer = "Ship"
+  expect(JSON.parse(await finish()).error).toBeUndefined()
+  expect(f.spawned).toHaveLength(1)
+  expect(f.spawned[0].harness).toBeUndefined()
+  const gate = f.spawned[0].permissions
+  expect(gate({ kind: "shell", fullCommandText: "git push -u origin factory/x" }, {})).toEqual({ kind: "approve-once" })
+  expect(gate({ kind: "shell", fullCommandText: "git push origin main" }, {}).kind).toBe("reject")
+  // A new finish worker shares the grant's push count; once spent, step=finish is refused.
+  f.shipRequests.get("a0").pushes = 6
+  expect(JSON.parse(await finish()).error).toContain("limit")
+  f.shipRequests.get("a0").pushes = 1
+  // Another conversation's approval does not count; a non-factory branch cannot ask.
+  const other = coordinatorTools(f, { id: "sub-2", threadId: "u", workdir: repo })
+  expect(JSON.parse(await tool(other, "spawn_worker")({ name: "finish", task: "ship", step: "finish" })).error).toContain("No accepted ship approval")
+  git("checkout", "-q", "-b", "main")
+  expect(JSON.parse(await tool(tools, "request_approval")({ title: "Ship?", summary: "s", options: ["Ship"], ship: true })).error).toContain("factory/*")
+  expect(items).toHaveLength(1)
+})

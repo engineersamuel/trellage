@@ -306,6 +306,8 @@ export class Factory {
   readonly extensionErrors = new Map<string, unknown>()
   run: Run | null = null
   approvals!: Approvals
+  /** Ship approvals by approval id: the conversation and branch a finish worker may push once the human picks option 1. */
+  readonly shipRequests = new Map<string, ShipGrant>()
   /** Thread of the coordinator's current turn; approvals opened in that turn belong to it. */
   currentThread: string | null = null
   /** Latest Jev step decisions, newest last, from the event store, so they survive a restart. */
@@ -695,7 +697,7 @@ export class Factory {
       ? {
           kind: "reject",
           feedback:
-            "Sub-coordinators never merge, push, or delete branches or worktrees. Ask the human with request_approval, then report_up.",
+            "Sub-coordinators never merge, push, or delete branches or worktrees. To push and open a PR: request_approval with ship=true, then spawn_worker step=finish. Merging and deleting stay with the human.",
         }
       : this.settingsPermissions(request, invocation)
 
@@ -709,6 +711,37 @@ export class Factory {
         }
       : this.settingsPermissions(request, invocation)
 }
+
+/** An accepted ship approval: the branch a finish worker may push, and the pushes made under it so far. */
+export type ShipGrant = { scopeId: string; branch: string; pushes: number }
+
+/** The first push plus this many fix rounds per ship approval; then the human decides. */
+export const MAX_FIX_ROUNDS = 5
+
+/**
+ * Gate for a finish worker: it fixes, commits, and pushes only its approved branch (no force); it never merges or deletes.
+ * Pushes count against the grant, so a new finish worker for the same approval does not reset the limit.
+ */
+export const finishPermissions =
+  (grant: ShipGrant): PermissionHandler =>
+  (request, invocation) => {
+    if (request.kind !== "shell") return approveAll(request, invocation)
+    const cmd = request.fullCommandText
+    if (forbiddenCommand(cmd, grant.branch))
+      return {
+        kind: "reject",
+        feedback: `Finish workers push only with \`git push -u origin ${grant.branch}\` (no force) and never merge or delete. Report it to the coordinator.`,
+      }
+    if (!forbiddenCommand(cmd)) return approveAll(request, invocation)
+    // An allowed push of the granted branch.
+    if (grant.pushes > MAX_FIX_ROUNDS)
+      return {
+        kind: "reject",
+        feedback: `Fix round limit reached (${MAX_FIX_ROUNDS} after the first push). Stop and return what still fails and why.`,
+      }
+    grant.pushes++
+    return approveAll(request, invocation)
+  }
 
 /** Default gate for Copilot workers: never merge, push, or delete branches or worktrees; approve the rest. */
 export const workerPermissions: PermissionHandler = (request, invocation) =>

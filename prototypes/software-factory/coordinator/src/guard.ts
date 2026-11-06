@@ -1,4 +1,4 @@
-// Shell commands the global coordinator may never run: the human merges, pushes, and deletes.
+// Shell commands agents may never run: the human merges and deletes; only an approved finish worker pushes its branch.
 
 const GIT_OPTS_WITH_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace"])
 
@@ -9,12 +9,24 @@ const gitArgs = (words: string[]): string[] => {
   return words.slice(i)
 }
 
-const forbiddenGit = ([sub, ...rest]: string[]): boolean =>
+/** `git push [-u] origin <branch>`: the only push a finish worker may run, to its own branch. No force, delete, or other ref. */
+const pushesOnly = (args: string[], branch: string): boolean => {
+  const pos = args.filter((a) => a !== "-u" && a !== "--set-upstream")
+  return pos.length === 2 && pos[0] === "origin" && [branch, `HEAD:${branch}`, `HEAD:refs/heads/${branch}`].includes(pos[1]!)
+}
+
+const forbiddenGit = ([sub, ...rest]: string[], pushBranch?: string): boolean =>
   sub === "merge" ||
-  sub === "push" ||
+  (sub === "push" && !(pushBranch && pushesOnly(rest, pushBranch))) ||
   (sub === "branch" && rest.some((x) => x === "--delete" || /^-[a-zA-Z]*[dD]/.test(x))) ||
   (sub === "worktree" && rest[0] === "remove") ||
   (sub === "reset" && rest.includes("--hard"))
+
+/** gh commands that merge or delete. `gh api` stays open for agents that need it. */
+const forbiddenGh = ([sub, action, ...rest]: string[]): boolean =>
+  (sub === "pr" && action === "merge") ||
+  (sub === "pr" && action === "close" && rest.some((x) => x === "-d" || x === "--delete-branch")) ||
+  (sub === "repo" && action === "delete")
 
 const flags = (words: string[]) => words.filter((x) => x.startsWith("-"))
 const recursiveForce = (words: string[]): boolean => {
@@ -69,11 +81,19 @@ const parse = (line: string): string[][] => {
 /** A word that is itself a shell line, such as the script of `bash -c "git status; git push"`. */
 const isLine = (w: string) => /[\s;&|()`$]/.test(w)
 
-const forbiddenAfter = (command: string, rest: string[]): boolean =>
-  (command === "git" && forbiddenGit(gitArgs(rest))) || (command === "rm" && recursiveForce(rest))
+const forbiddenAfter = (command: string, rest: string[], pushBranch?: string): boolean =>
+  (command === "git" && forbiddenGit(gitArgs(rest), pushBranch)) ||
+  (command === "gh" && forbiddenGh(rest)) ||
+  (command === "rm" && recursiveForce(rest))
 
-const forbiddenWords = (words: string[]): boolean => words.some((w, i) => forbiddenAfter(basename(w), words.slice(i + 1)))
+const forbiddenWords = (words: string[], pushBranch?: string): boolean =>
+  words.some((w, i) => forbiddenAfter(basename(w), words.slice(i + 1), pushBranch))
 
-/** True when the shell line merges, pushes, deletes a branch or worktree, hard-resets, or force-removes recursively. */
-export const forbiddenCommand = (cmd: string): boolean =>
-  parse(cmd).some((words) => forbiddenWords(words) || words.some((w) => isLine(w) && forbiddenCommand(w)))
+/**
+ * True when the shell line merges, pushes, deletes a branch or worktree, hard-resets, force-removes recursively,
+ * or merges or deletes through gh. With `pushBranch`, a plain `git push [-u] origin <pushBranch>` is allowed.
+ */
+export const forbiddenCommand = (cmd: string, pushBranch?: string): boolean =>
+  parse(cmd).some(
+    (words) => forbiddenWords(words, pushBranch) || words.some((w) => isLine(w) && forbiddenCommand(w, pushBranch)),
+  )

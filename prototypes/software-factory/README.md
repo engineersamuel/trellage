@@ -69,7 +69,9 @@ The sub-coordinator collects every worker, then starts `step=synthesis` to write
 
 A sub-coordinator calls `report_up` (`src/report.ts`) when its delivery loop is `done`, `blocked`, or `needs-decision`: summary, checks with evidence, gaps, and next steps; branch and commit always come from `git rev-parse` in its worktree (`unknown` outside git); the model cannot set them. `report_up` succeeds only once the report was handed to the global coordinator; a failed delivery returns an error and can be retried. The report becomes a `[report from <folder> · <title>]` turn in the newest General conversation (else a new "Reports" one) for the global coordinator, which proposes the next step with `request_approval` (`reportThreadId` set) and relays the human's answer with `message_conversation`. A repeat for the same commit and status is dropped; each publishes `factory.report_up`.
 
-When a sub-coordinator goes idle without reporting, and Jev's last `moreWork` was below 0.3, a worker or review failed, or its session errored, the factory nudges it once per turn to call `report_up`. Never while workers run, a review is pending, or a decision is open. Merges, pushes, and deletes stay human decisions.
+When a sub-coordinator goes idle without reporting, and Jev's last `moreWork` was below 0.3, a worker or review failed, or its session errored, the factory nudges it once per turn to call `report_up`. Never while workers run, a review is pending, or a decision is open. Merges and deletes stay human decisions.
+
+Shipping: a sub-coordinator calls `request_approval` with `ship=true` (its branch must be `factory/*`). When the human picks the first option, `spawn_worker step=finish` starts a finish worker whose gate allows only `git push [-u] origin <that branch>` (no force). It opens or updates the PR and loops until every check is green: read failures, fix, test, commit, push, at most 5 fix rounds after the first push per approval (the gate rejects the next push; a new approval resets it). It never merges. All agents are refused `gh pr merge`, `gh pr close -d`, and `gh repo delete`; `gh api` stays open.
 
 ## Notes
 
