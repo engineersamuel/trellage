@@ -24,11 +24,13 @@ React is allowed only as an island inside the Foldkit view. These rules apply to
 ## Patched packages
 
 `patches/` holds `patch-package` patches; `postinstall` applies them with `--error-on-fail`, so `npm install` fails
-when a patch no longer fits. `@plana-solutions/agent-interface` is patched in four files: `client/flags.js` (Effect 4.1 Crypto),
+when a patch no longer fits. `@plana-solutions/agent-interface` is patched in five files: `client/flags.js` (Effect 4.1 Crypto),
 `features/timeline.js` (a `[data-sf-tool]` slot per finished tool call; `shared/diffview.ts` `startToolDiffs`
 draws the file diffs in it), and `client/timeline.js` + `client/genui/rendered.js` (cache each turn layout and
-the answer list per messages array, so one chat Message does not rebuild them 4-6 times).
-`src/agentInterfacePatch.test.ts` fails if the slot or cache patches are missing.
+the answer list per messages array, so one chat Message does not rebuild them 4-6 times), and
+`client/thread-scroll-dom.js` (`WatchUserBubble` does not read layout on mount; one forced layout per bubble made
+every thread switch a slow Patch, and the ResizeObserver's first report gives the same value).
+`src/agentInterfacePatch.test.ts` fails if any of these patches is missing.
 
 To upgrade agent-interface:
 1. Change the exact version in `package.json`, run `npm install`.

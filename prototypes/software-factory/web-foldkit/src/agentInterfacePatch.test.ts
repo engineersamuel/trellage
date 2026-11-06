@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import timeline from "../node_modules/@plana-solutions/agent-interface/dist/features/timeline.js?raw";
 import turnLayout from "../node_modules/@plana-solutions/agent-interface/dist/client/timeline.js?raw";
 import rendered from "../node_modules/@plana-solutions/agent-interface/dist/client/genui/rendered.js?raw";
+import threadScrollDom from "../node_modules/@plana-solutions/agent-interface/dist/client/thread-scroll-dom.js?raw";
 
 describe("agent-interface patch", () => {
   test("the chat timeline renders a diff slot per tool call", () => {
@@ -14,5 +15,9 @@ describe("agent-interface patch", () => {
   test("each turn layout and the answer list are built once per messages array", () => {
     expect(turnLayout).toContain("const turnLayouts = new WeakMap();");
     expect(rendered).toContain("const answersByMessages = new WeakMap();");
+  });
+
+  test("a user bubble does not read its layout on mount", () => {
+    expect(threadScrollDom).toContain("software-factory patch: no read on mount");
   });
 });

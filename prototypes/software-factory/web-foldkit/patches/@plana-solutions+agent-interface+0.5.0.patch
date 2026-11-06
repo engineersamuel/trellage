@@ -53,6 +53,21 @@ index fb1dd45..76d5a79 100644
      Assistant: ({
        segments
      }) => {
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/client/thread-scroll-dom.js b/node_modules/@plana-solutions/agent-interface/dist/client/thread-scroll-dom.js
+index f8a5cf4..86c86f9 100644
+--- a/node_modules/@plana-solutions/agent-interface/dist/client/thread-scroll-dom.js
++++ b/node_modules/@plana-solutions/agent-interface/dist/client/thread-scroll-dom.js
+@@ -212,8 +212,9 @@ export const WatchUserBubble = /*#__PURE__*/Mount.defineStream("WatchUserBubble"
+     const observer = new ResizeObserver(() => {
+       Queue.offerUnsafe(queue, readBubbleMultiline(element));
+     });
++    // software-factory patch: no read on mount. Reading layout here forced one page layout per bubble while the
++    // thread was being patched in. ResizeObserver reports once after observe(), after layout, for all bubbles at once.
+     observer.observe(element);
+-    Queue.offerUnsafe(queue, readBubbleMultiline(element));
+     return __foldkitBrandViewResult((observer), "@plana-solutions/agent-interface/client/thread-scroll-dom.js#anonymous~27");
+   }), observer => __foldkitBrandViewResult((Effect.sync(() => {
+     observer.disconnect();
 diff --git a/node_modules/@plana-solutions/agent-interface/dist/client/timeline.js b/node_modules/@plana-solutions/agent-interface/dist/client/timeline.js
 index 714da87..75b7975 100644
 --- a/node_modules/@plana-solutions/agent-interface/dist/client/timeline.js
