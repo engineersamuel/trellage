@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { MAX_DIFF_FILES, parseNumstat, reportFindings } from "../src/cards.ts"
+import { cardOpenUi, plainLine, MAX_DIFF_FILES, parseNumstat, reportFindings } from "../src/cards.ts"
+import { Translator } from "../src/agui.ts"
+import { RunRecorder } from "../src/threads.ts"
 import { CARDS_PROMPT } from "../src/prompts.ts"
 import { coordinatorTools, ownDecisions } from "../src/tools.ts"
 
@@ -40,4 +42,42 @@ describe("cards", () => {
     expect(CARDS_PROMPT).toContain("Foldkit")
     expect(CARDS_PROMPT).toContain("never show_delivery_run there")
   })
+})
+
+describe("cards as OpenUI (Foldkit)", () => {
+  test("strings are escaped and every card starts with root = Card", () => {
+    const p = cardOpenUi("show_worker_board", JSON.stringify({ workers: [{ id: "a", name: 'He said "hi"\n', status: "idle", model: "m", rssKb: null, contextTokens: null, contextLimit: null }], at: 0 }))!
+    expect(p.startsWith("root = Card([")).toBe(true)
+    expect(p).toContain('He said \\"hi\\"\\n')
+    expect(cardOpenUi("bash", "{}")).toBeNull()
+    expect(cardOpenUi("show_worker_board", "not json")).toBeNull()
+  })
+  test("the translator sends a card message after a card tool, only when asked", () => {
+    const ev = (type: string, data: Record<string, unknown>) => ({ type, data }) as never
+    const events = [
+      ev("tool.execution_start", { toolCallId: "c1", toolName: "show_decisions", arguments: {} }),
+      ev("tool.execution_complete", { toolCallId: "c1", success: true, result: { content: JSON.stringify({ pending: [] }) } }),
+    ]
+    const run = (card?: typeof cardOpenUi) => { const t = new Translator("t", "r", card ? { card } : {}); return events.flatMap((e) => t.translate(e)) as any[] }
+    const answer = ev("assistant.message", { messageId: "m1", content: "root = Card([t])\nt = TextContent(\"x\")" })
+    const idle = ev("session.idle", {})
+    const run2 = (card?: typeof cardOpenUi) => { const t = new Translator("t", "r", card ? { card } : {}); return [...events, ...events, answer, idle].flatMap((e) => t.translate(e)) as any[] }
+    const out = run2(cardOpenUi)
+    const texts = out.filter((e) => e.type === "TEXT_MESSAGE_CONTENT").map((e) => e.delta)
+    // The agent's answer first, then one merged card as the run's last message, before RUN_FINISHED.
+    expect(texts.length).toBe(2)
+    expect(texts[1]).toContain('k0head = CardHeader("Waiting for you"')
+    expect(texts[1]).toContain("k1head")
+    expect(out.findIndex((e) => e.type === "RUN_FINISHED")).toBeGreaterThan(out.findLastIndex((e) => e.type === "TEXT_MESSAGE_END"))
+    expect(run2().filter((e) => e.type === "TEXT_MESSAGE_CONTENT").length).toBe(1)
+    // Saved as two messages, not glued together.
+    const rec = new RunRecorder()
+    for (const e of out) rec.add(e)
+    expect(rec.messages().filter((m) => m.role === "assistant" && m.content).length).toBe(2)
+  })
+})
+
+test("finding subtitle: first prose line without markdown", () => {
+  expect(plainLine("**File:line:** `a.rs:3`\n**Problem:** the `x` is slow")).toBe("Problem: the x is slow")
+  expect(plainLine("")).toBe("")
 })

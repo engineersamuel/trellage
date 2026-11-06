@@ -8,6 +8,7 @@ import { createWorktree, discardWorktree, fullyMerged, GENERAL, removeWorktree, 
 import { CARDS_PROMPT, COORDINATOR_PROMPT, DESK_PROMPT, GLOBAL_PROMPT, RESEARCH_PROMPT, subPrompt } from "./prompts.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
 import { findingTask, findReport } from "./reports.ts"
+import { cardOpenUi } from "./cards.ts"
 import { conversationStatus, deletedNotice, DESK_ID, factorySnapshot, genId, reportTarget, STATUS_NOTE } from "./general.ts"
 import { specView } from "./spec.ts"
 import { onTrack, STEPS } from "./steps.ts"
@@ -224,7 +225,7 @@ const uiContext = (context: unknown): string => {
 // current UI renders. Without this the agent copies the format of earlier turns.
 const uiFormat = (p: string, answer: string | null) =>
   answer === "openui"
-    ? `${p}\n\n<ui-format>This UI renders your final message as OpenUI Lang. Write your final answer for this turn as an OpenUI Lang program only (root = Card(...)), no prose. Do not call render_ui.</ui-format>`
+    ? `${p}\n\n<ui-format>This UI renders your final message as OpenUI Lang. Write your final answer for this turn as an OpenUI Lang program only (root = Card(...)), no prose. Do not call render_ui. After a show_* tool, write no final message: the factory shows that tool's card as your answer, and text you write before it moves to "Behind the scenes".</ui-format>`
     : `${p}\n\n<ui-format>This UI renders your final message as markdown. Never write OpenUI Lang (root = ...) in a message; use the render_ui tool for cards.</ui-format>`
 
 // ---------- conversations ----------
@@ -545,6 +546,8 @@ type RunOptions = {
   clientTools: Set<string>
   /** Client tool calls whose results this run delivers; their completion is not sent again. */
   delivered: string[]
+  /** The UI draws OpenUI Lang only: card tools also send their card as an OpenUI program. */
+  openUi?: boolean
 }
 
 /**
@@ -556,6 +559,7 @@ const streamAguiRun = (worker: Worker, threadId: string, runId: string, o: RunOp
     interrupts: o.interrupts,
     pending: (id) => factory.approvals.get(id)?.status === "pending",
     clientTool: (name) => o.clientTools.has(name),
+    ...(o.openUi ? { card: cardOpenUi } : {}),
   })
   for (const id of o.delivered) tr.clientCalls.add(id)
   const rec = new RunRecorder()
@@ -665,6 +669,7 @@ const aguiRun = async (id: string | null, url: URL, req: Request): Promise<Respo
     interrupts: props.interrupts === true,
     clientTools,
     delivered: results.map((m: any) => String(m.toolCallId)),
+    openUi: format === "openui",
   })
 }
 

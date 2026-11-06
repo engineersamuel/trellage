@@ -140,6 +140,10 @@ export class RunRecorder {
 
   add(e: any): void {
     switch (e.type) {
+      case "TEXT_MESSAGE_START":
+        // A new text message after text is its own saved message (e.g. the run's card after the answer).
+        if (this.current?.content) this.current = null
+        break
       case "TEXT_MESSAGE_CONTENT":
         this.assistant().content += e.delta
         break

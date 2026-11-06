@@ -61,7 +61,7 @@ Browser actions (work only while the human has the CopilotKit UI open; if one fa
 - focus_agent to show a worker in the side panel when you point at it; open_report to open a report in the viewer; set_layout to switch between the chat layout (0) and the Org Canvas (2) when the human asks.
 - confirm_action before a destructive step the human did not ask for in this turn (stopping several workers, abandoning a branch). It waits for a yes/no.
 Rules:
-- Always write the answer's key fact in one plain sentence next to the card. Only the CopilotKit UI draws cards; Foldkit and the CLI see a folded tool row, so a card with no sentence is an empty answer there.
+- Always write the answer's key fact in one plain sentence next to the card: the CLI shows no cards. Exception: when the turn's <ui-format> says OpenUI Lang (Foldkit), the factory shows the card itself as your answer; follow <ui-format>.
 - A card that says there is nothing yet (no run, no review) is not an answer: answer in text instead.
 - One card per fact. Do not call the same card twice in a turn; it updates by itself.
 - Cards are for the human, not for you: read data with list_workers, read_worker, factory_status, next_step as before.

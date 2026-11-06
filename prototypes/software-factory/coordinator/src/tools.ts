@@ -127,7 +127,13 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
     description:
       "Show every decision waiting for the human (approvals and questions from all conversations) as one card the human can answer in place. Use it when the human asks what needs them or several decisions are open.",
     parameters: obj({}),
-    handler: () => json({ pending: f.approvals.list().filter((a) => a.status === "pending").length }),
+    handler: () =>
+      json({
+        pending: f.approvals
+          .list()
+          .filter((a) => a.status === "pending")
+          .map((a) => ({ id: a.id, title: a.title, kind: a.kind ?? "approval", context: a.context ?? "coordinator", options: a.options })),
+      }),
   }),
   defineTool("show_security_review", {
     description:
@@ -137,7 +143,9 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       const all = [...f.securityReviews.values()]
       const mine = all.filter((r) => r.scopeId === scope.id || (scope.threadId !== null && r.threadId === scope.threadId))
       const r = (mine.length ? mine : all).at(-1)
-      return json(r ? { reviewId: r.id, status: r.status, findings: r.findings.length } : { reviewId: null, note: "No security review yet." })
+      if (!r) return json({ reviewId: null, note: "No security review yet." })
+      const findings = r.findings.map((x) => ({ title: x.title, severity: x.severity, file: x.file, verdict: x.verdict ?? "", reason: x.reason ?? "" }))
+      return json({ reviewId: r.id, status: r.status, model: r.model, ...(r.error ? { error: r.error } : {}), findings })
     },
   }),
   defineTool("show_delivery_run", {
