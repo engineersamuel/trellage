@@ -199,9 +199,9 @@ export const prototypes = () => [...registry.values()].sort((a, b) => a.id - b.i
 const KEY = "sf_proto"
 export const currentProto = (): number => {
   const q = new URLSearchParams(location.search).get("proto")
-  // Org Canvas (2) is the default layout; 0 is the classic layout.
-  const n = Number(q ?? localStorage.getItem(KEY) ?? 2)
-  return n === 0 || registry.has(n) ? n : 2
+  // Inbox (3) is the default layout; 0 is the classic layout.
+  const n = Number(q ?? localStorage.getItem(KEY) ?? 3)
+  return n === 0 || registry.has(n) ? n : 3
 }
 /** Switch layout live. Hosts listen for window event "sf:proto" (detail = number). */
 export const setProto = (n: number) => {
