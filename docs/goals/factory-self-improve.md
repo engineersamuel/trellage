@@ -52,21 +52,22 @@ LIMITS:
 - Never merge, close, or delete a PR, branch, or worktree.
 
 SCOREBOARD (overwrite this block after every VERIFY; do not append):
-Status: ITERATING
-Runs used: 0/5
+Status: FINAL
+Runs used: 1/5
 Scores:
-- Delivery: _
-- Feature proof: _
-- No merge: _
-- Factory fixes: _
-- Evidence: _
-Weakest: _
-Threads / PR: _
-Last change: Created.
+- Delivery: 9 (`sf verify` exit 0: steps implement, security, verify, finish; PR #52 OPEN, base main, checks rust:SUCCESS)
+- Feature proof: 9 (diff: mise.toml with 5 proxy:* tasks using `-U`, process-compose.yaml with /health probe, scripts/bootstrap.sh, README; body has the 18080 proof)
+- No merge: 10 (mergedAt null; live 8080 proxy still pid 71197)
+- Factory fixes: 8 (no factory defect seen in this run; nothing to fix)
+- Evidence: 9 (this block; /tmp/sf-v1b.out)
+Weakest: Factory fixes (untested: no failure occurred, so the fix-and-retry path did not run)
+Threads / PR: c54ed427-f68d-4395-8590-bff79ed77d0a / https://github.com/engineersamuel/copilot-proxy-rs/pull/52
+Last change: Run 1 passed first time; two human-style approvals answered (plan, ship).
 
 LEARNINGS (at most 8 bullets; replace stale ones; no narrative):
 - Runs started before the `step` field existed show `step: null`; only new runs count.
-- A past run blocked because its sub-coordinator ran `git push` itself instead of asking for ship approval and spawning step=finish.
+- The sub-coordinator asks a plan approval before implement; `sf verify` exits 2 there too.
+- report_up arrives after the finish worker ends; `sf verify` can PASS before it.
 
 LOOP PROTOCOL, repeat every turn:
 1. READ   - read this file. SCOREBOARD and LEARNINGS are hints only.
