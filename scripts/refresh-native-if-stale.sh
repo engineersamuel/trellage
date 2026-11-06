@@ -19,6 +19,40 @@ freshness_receipt="$runtime_parent/.native-stack-sources"
 
 "$prepare"
 
+# One native refresh at a time across all worktrees: two at once overwrite the
+# shared runtime under each other and both fail. A waiter rechecks freshness
+# after it gets the lock, so it skips work the other refresh already did.
+refresh_lock="$runtime_parent/.native-refresh.lock"
+lock_wait_seconds=900
+mkdir -p -m 0700 "$runtime_parent"
+[[ -d "$runtime_parent" && ! -L "$runtime_parent" ]] || fail "unsafe runtime parent: $runtime_parent"
+
+release_lock() {
+  rm -f -- "$refresh_lock/pid"
+  rmdir -- "$refresh_lock" 2>/dev/null || true
+}
+
+acquire_lock() {
+  local waited=0 holder
+  until mkdir -m 0700 "$refresh_lock" 2>/dev/null; do
+    holder="$(cat "$refresh_lock/pid" 2>/dev/null || true)"
+    if [[ -n "$holder" ]] && ! kill -0 "$holder" 2>/dev/null; then
+      printf 'refresh-native-if-stale: removing lock of exited refresh %s\n' "$holder" >&2
+      release_lock
+      continue
+    fi
+    ((waited > 0)) || printf 'refresh-native-if-stale: waiting for another native refresh (%s)\n' "$refresh_lock" >&2
+    ((waited < lock_wait_seconds)) || fail "another native refresh held $refresh_lock for ${lock_wait_seconds}s"
+    sleep 1
+    waited=$((waited + 1))
+  done
+  printf '%s\n' "$$" >"$refresh_lock/pid"
+}
+
+acquire_lock
+trap release_lock EXIT
+trap 'exit 1' HUP INT TERM
+
 read_sources() {
   local receipt="$1"
   [[ -f "$receipt" && ! -L "$receipt" ]] || return 1
@@ -53,9 +87,9 @@ if [[ -e "$freshness_receipt" || -L "$freshness_receipt" ]]; then
 fi
 temporary_receipt="$(mktemp "$runtime_parent/.native-stack-sources.XXXXXX")" \
   || fail "cannot stage Native freshness receipt in: $runtime_parent"
-trap 'rm -f -- "$temporary_receipt"' EXIT HUP INT TERM
+trap 'rm -f -- "$temporary_receipt"; release_lock' EXIT
 chmod 0644 "$temporary_receipt"
 printf '%s\n' "$current_sources" >"$temporary_receipt"
 mv -f -- "$temporary_receipt" "$freshness_receipt"
-trap - EXIT HUP INT TERM
+trap release_lock EXIT
 printf 'refresh-native-if-stale: Native runtime refresh complete\n' >&2

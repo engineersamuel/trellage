@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
 import { syncExtensions } from "../../../shared/extensions";
-import { Command } from "foldkit";
+import { Command, Mount } from "foldkit";
+import { diffPreview, setDiffStyle } from "../../../shared/diffview";
 import { getJson, send } from "../api";
 import { Delivery, Settings, SettingsDocument } from "../domain";
 import { Message } from "./message";
@@ -42,9 +43,20 @@ export const AddCron = Command.define("AddCron", {
     ),
 });
 
-/** Hand the new settings to the extension host (shared/extensions.ts): it mounts, remounts and notifies extensions. */
+/** Hand the new settings to the extension host (shared/extensions.ts), which mounts, remounts and notifies extensions,
+ *  and to the diff view (shared/diffview.ts), which redraws every diff in the chosen style. */
 export const SyncExtensions = Command.define("SyncExtensions", {
   args: { settings: Settings },
   messages: [Message.CompletedSyncExtensions],
-  execute: ({ settings }) => Effect.sync(() => syncExtensions(settings, "foldkit")).pipe(Effect.as(Message.CompletedSyncExtensions())),
+  execute: ({ settings }) => Effect.sync(() => (syncExtensions(settings, "foldkit"), setDiffStyle(settings.diffStyle))).pipe(Effect.as(Message.CompletedSyncExtensions())),
+});
+
+/** shared/diffview.ts draws a sample diff in the element; it redraws itself when the style changes. */
+export const MountDiffPreview = Mount.define("MountDiffPreview", {
+  messages: [Message.CompletedMountDiffPreview],
+  execute: ({ element }) =>
+    Effect.acquireRelease(
+      Effect.sync(() => element.replaceChildren(diffPreview())),
+      () => Effect.sync(() => element.replaceChildren()),
+    ).pipe(Effect.as(Message.CompletedMountDiffPreview())),
 });

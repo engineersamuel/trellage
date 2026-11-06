@@ -1,0 +1,481 @@
+/* Tool Call Card styles, copied from affectUI (MIT, https://www.affectui.com/components/tool-call-card).
+ * Changes: dark tokens also apply inside a .ui-tcc-dark host (every transcript; the factory UIs are dark);
+ * .ui-tcc__link is new, for the worker or decision a call points to. */
+/* Colors and motion as variables – override them on .ui-tcc / .ui-tcc-group */
+.ui-tcc,
+.ui-tcc-group {
+  --ui-tcc-card: #ffffff;
+  --ui-tcc-strong: #000000;
+  --ui-tcc-ink: rgba(0, 0, 0, 0.88);
+  --ui-tcc-text: rgba(0, 0, 0, 0.61);
+  --ui-tcc-muted: rgba(0, 0, 0, 0.45);
+  --ui-tcc-faint: rgba(0, 0, 0, 0.27);
+  --ui-tcc-icon: rgba(0, 0, 0, 0.447);
+  --ui-tcc-line: rgba(0, 0, 0, 0.06);
+  --ui-tcc-wash: rgba(0, 0, 0, 0.03);
+  --ui-tcc-wash-big: rgba(0, 0, 0, 0.015);
+  /* The code panel: a 2% black frame, kept opaque so the fade of capped blocks can end on it */
+  --ui-tcc-code: #fafafa;
+  --ui-tcc-accent: rgba(0, 96, 226, 0.765);
+  --ui-tcc-red: #d93a2b;
+  --ui-tcc-red-bg: rgba(217, 58, 43, 0.04);
+  --ui-tcc-red-line: rgba(217, 58, 43, 0.14);
+  --ui-tcc-key: rgba(0, 0, 0, 0.88);
+  --ui-tcc-str: rgba(0, 123, 172, 0.9);
+  --ui-tcc-num: #b25b0c;
+  --ui-tcc-lit: #5b5bd6;
+  --ui-tcc-shine: rgba(255, 255, 255, 0.82);
+  /* Strokes are shadows: a 0.5px hairline plus a soft lift */
+  --ui-tcc-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 1px -1px rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --ui-tcc-focus: rgba(0, 96, 226, 0.35);
+  --ui-tcc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ui-tcc-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  box-sizing: border-box;
+  container-type: inline-size;
+  min-width: 0;
+  color: var(--ui-tcc-ink);
+  font-family: "Inter", "InterVariable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+}
+.ui-tcc *,
+.ui-tcc-group * { box-sizing: border-box; }
+
+.ui-tcc {
+  position: relative;
+  border-radius: 10px;
+  background: var(--ui-tcc-card);
+  box-shadow: var(--ui-tcc-shadow);
+}
+.ui-tcc-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Header row: icon, name + summary, status, chevron – everything truncates before it overflows */
+.ui-tcc__head {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-radius 0ms linear 380ms;
+}
+.ui-tcc[data-open] .ui-tcc__head {
+  border-radius: 10px 10px 0 0;
+  transition: background-color 160ms ease;
+}
+.ui-tcc__head:focus-visible,
+.ui-tcc-group__head:focus-visible,
+.ui-tcc__copy:focus-visible,
+.ui-tcc__more:focus-visible,
+.ui-tcc__retry:focus-visible {
+  outline: 2px solid var(--ui-tcc-focus);
+  outline-offset: 1px;
+}
+@media (hover: hover) {
+  .ui-tcc__head:hover { background: var(--ui-tcc-wash-big); }
+  .ui-tcc__head:hover .ui-tcc__chevron { stroke: var(--ui-tcc-ink); }
+  .ui-tcc-group__head:hover { background: var(--ui-tcc-wash); color: var(--ui-tcc-ink); }
+  .ui-tcc__copy:hover { background: var(--ui-tcc-wash-big); color: var(--ui-tcc-ink); }
+  .ui-tcc__more:hover { color: var(--ui-tcc-ink); }
+  .ui-tcc__retry:hover { background: var(--ui-tcc-wash-big); }
+}
+
+/* The tool's icon: a plain 16px glyph, no tile */
+.ui-tcc__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--ui-tcc-icon);
+}
+.ui-tcc__icon > svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+.ui-tcc__main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.ui-tcc__name {
+  flex: 0 1 auto;
+  max-width: 55%;
+  overflow: hidden;
+  color: var(--ui-tcc-strong);
+  font-family: var(--ui-tcc-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-tcc__summary {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-tcc-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-tcc__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--ui-tcc-muted);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  animation: ui-tcc-in 360ms var(--ui-tcc-ease) both;
+}
+.ui-tcc[data-status="error"] .ui-tcc__status { color: var(--ui-tcc-red); font-weight: 500; }
+.ui-tcc__status > svg { width: 14px; height: 14px; flex: none; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.ui-tcc__spinner circle { stroke: var(--ui-tcc-line); stroke-width: 1.6; }
+.ui-tcc__spinner path { stroke: var(--ui-tcc-accent); stroke-width: 1.6; }
+.ui-tcc__spinner { animation: ui-tcc-spin 800ms linear infinite; }
+/* Done: a solid blue dot whose white check draws itself */
+.ui-tcc__ok { animation: ui-tcc-pop 460ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.ui-tcc__ok circle { fill: var(--ui-tcc-accent); }
+.ui-tcc__ok path { stroke: #fff; stroke-width: 1.5; stroke-dasharray: 1; stroke-dashoffset: 1; animation: ui-tcc-draw 360ms var(--ui-tcc-ease) 160ms forwards; }
+.ui-tcc__err circle { fill: var(--ui-tcc-red); }
+.ui-tcc__err path { stroke: #fff; stroke-width: 1.6; stroke-linecap: round; }
+
+.ui-tcc__chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--ui-tcc-icon);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 360ms var(--ui-tcc-ease), stroke 160ms ease;
+}
+.ui-tcc[data-open] > .ui-tcc__head .ui-tcc__chevron,
+.ui-tcc-group[data-open] > .ui-tcc-group__head .ui-tcc__chevron { transform: rotate(180deg); }
+
+/* Body: grows from 0fr to 1fr, so the height animates without measuring */
+.ui-tcc__body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 380ms var(--ui-tcc-ease), opacity 240ms ease;
+}
+.ui-tcc[data-open] > .ui-tcc__body,
+.ui-tcc-group[data-open] > .ui-tcc__body {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.ui-tcc__clip { min-height: 0; overflow: hidden; }
+.ui-tcc__sections {
+  display: grid;
+  gap: 14px;
+  padding: 12px 14px 14px;
+  border-top: 0.5px solid var(--ui-tcc-line);
+}
+
+.ui-tcc__section { display: grid; gap: 6px; min-width: 0; }
+.ui-tcc__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+}
+/* Tiny uppercase labels: "ARGUMENTS", "RESULT" */
+.ui-tcc__label {
+  color: var(--ui-tcc-muted);
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.ui-tcc__pending { margin: 0; color: var(--ui-tcc-muted); font-size: 12px; line-height: 16px; }
+
+/* Copy: a small white icon button with the card's hairline */
+.ui-tcc__copy {
+  all: unset;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--ui-tcc-card);
+  box-shadow: var(--ui-tcc-shadow);
+  color: var(--ui-tcc-icon);
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.ui-tcc__copy svg {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: opacity 200ms ease, transform 320ms var(--ui-tcc-ease), filter 200ms ease;
+}
+.ui-tcc__copy-icon rect { fill: currentColor; stroke: none; }
+.ui-tcc__copy-done { opacity: 0; transform: scale(0.6); filter: blur(2px); stroke-width: 1.7; }
+.ui-tcc__copy[data-copied] { color: var(--ui-tcc-accent); }
+.ui-tcc__copy[data-copied] .ui-tcc__copy-icon { opacity: 0; transform: scale(0.6); filter: blur(2px); }
+.ui-tcc__copy[data-copied] .ui-tcc__copy-done { opacity: 1; transform: none; filter: none; }
+
+/* Code: a faint panel with a 0.5px frame; wraps instead of scrolling sideways, capped blocks fade out */
+.ui-tcc__code {
+  position: relative;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--ui-tcc-code);
+  box-shadow: inset 0 0 0 0.5px var(--ui-tcc-line);
+  color: var(--ui-tcc-muted);
+  font-family: var(--ui-tcc-mono);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+  transition: max-height 420ms var(--ui-tcc-ease);
+}
+.ui-tcc__code code { display: block; font: inherit; }
+.ui-tcc__code::after {
+  content: "";
+  position: absolute;
+  left: 0.5px;
+  right: 0.5px;
+  bottom: 0.5px;
+  height: 56px;
+  border-radius: 0 0 7.5px 7.5px;
+  background: linear-gradient(to bottom, transparent, var(--ui-tcc-code));
+  opacity: 0;
+  transition: opacity 240ms ease;
+  pointer-events: none;
+}
+.ui-tcc__code[data-capped]::after { opacity: 1; }
+.ui-tcc__code[data-scroll] { overflow-y: auto; overscroll-behavior: contain; }
+.ui-tcc__t-key { color: var(--ui-tcc-key); }
+.ui-tcc__t-str { color: var(--ui-tcc-str); }
+.ui-tcc__t-num { color: var(--ui-tcc-num); }
+.ui-tcc__t-lit { color: var(--ui-tcc-lit); }
+
+.ui-tcc__more {
+  all: unset;
+  justify-self: start;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border-radius: 6px;
+  color: var(--ui-tcc-text);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+/* Error: the message on a faint red panel and an optional white Retry button */
+.ui-tcc__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 8px;
+  background: var(--ui-tcc-red-bg);
+  box-shadow: inset 0 0 0 0.5px var(--ui-tcc-red-line);
+}
+.ui-tcc__error > .ui-tcc__err { flex: none; align-self: flex-start; width: 16px; height: 16px; margin-top: 6px; }
+.ui-tcc__error-text {
+  flex: 1;
+  min-width: 0;
+  /* A stack trace stops at 10 lines and scrolls, so Retry and the arguments stay close */
+  max-height: 200px;
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: pre-line;
+  color: var(--ui-tcc-red);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.ui-tcc__retry {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 28px;
+  padding: 0 10px 0 6px;
+  border-radius: 6px;
+  background: var(--ui-tcc-card);
+  box-shadow: var(--ui-tcc-shadow);
+  color: var(--ui-tcc-strong);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+.ui-tcc__retry svg { width: 16px; height: 16px; fill: none; stroke: var(--ui-tcc-icon); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.ui-tcc__retry:active svg { transform: rotate(-60deg); transition: transform 200ms var(--ui-tcc-ease); }
+
+/* Group: one quiet line with the tool icons stacked on small white tiles, the cards below */
+.ui-tcc-group { display: grid; }
+.ui-tcc-group__head {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: start;
+  max-width: 100%;
+  min-height: 32px;
+  margin-left: -6px;
+  padding: 4px 10px 4px 6px;
+  border-radius: 8px;
+  color: var(--ui-tcc-ink);
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.ui-tcc-group__stack { display: flex; flex: none; padding: 0.5px; }
+.ui-tcc-group__stack .ui-tcc__icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--ui-tcc-card);
+  box-shadow: var(--ui-tcc-shadow);
+  animation: ui-tcc-pop 420ms var(--ui-tcc-ease) both;
+}
+.ui-tcc-group__stack .ui-tcc__icon + .ui-tcc__icon { margin-left: -4px; }
+.ui-tcc-group__stack .ui-tcc__icon > svg { width: 12px; height: 12px; stroke-width: 1.5; }
+.ui-tcc-group__title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+  animation: ui-tcc-in 360ms var(--ui-tcc-ease) both;
+}
+.ui-tcc-group__label {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: inherit;
+  font-weight: 500;
+}
+.ui-tcc-group__label.ui-tcc__shine { color: var(--ui-tcc-muted); }
+.ui-tcc-group__failed { flex: none; color: var(--ui-tcc-red); }
+.ui-tcc-group__time { flex: none; color: var(--ui-tcc-faint); font-variant-numeric: tabular-nums; }
+.ui-tcc-group__list { display: grid; gap: 8px; padding: 6px 0 2px; }
+
+/* A soft light sweeping over "Using tools…" */
+.ui-tcc__shine::after {
+  content: attr(data-text);
+  content: attr(data-text) / "";
+  position: absolute;
+  inset: 0;
+  white-space: nowrap;
+  color: transparent;
+  background: linear-gradient(90deg, transparent 38%, var(--ui-tcc-shine) 50%, transparent 62%) 100% 0 / 300% 100% no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: ui-tcc-sweep 1.8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes ui-tcc-in {
+  from { opacity: 0; transform: translateY(3px); filter: blur(2px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes ui-tcc-pop {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ui-tcc-spin { to { transform: rotate(360deg); } }
+@keyframes ui-tcc-draw { to { stroke-dashoffset: 0; } }
+@keyframes ui-tcc-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
+}
+
+/* Narrow (phones): a little less padding, the summary gives way first */
+@container (max-width: 360px) {
+  .ui-tcc__head { gap: 8px; padding: 0 12px; }
+  .ui-tcc__sections { padding: 12px 12px 12px; }
+}
+/* Touch screens: bigger tap targets */
+@media (pointer: coarse) {
+  .ui-tcc__head { min-height: 52px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-tcc *,
+  .ui-tcc-group *,
+  .ui-tcc *::after,
+  .ui-tcc-group *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  .ui-tcc__shine::after { display: none; }
+  .ui-tcc__ok path { stroke-dashoffset: 0; }
+}
+
+/* Dark mode: follows a .dark class or data-theme="dark" on any ancestor, e.g. <html> */
+:where(.dark, [data-theme="dark"], .ui-tcc-dark) .ui-tcc,
+:where(.dark, [data-theme="dark"], .ui-tcc-dark) .ui-tcc-group {
+  --ui-tcc-card: #1c1c1e;
+  --ui-tcc-strong: #ffffff;
+  --ui-tcc-ink: rgba(255, 255, 255, 0.9);
+  --ui-tcc-text: rgba(255, 255, 255, 0.62);
+  --ui-tcc-muted: rgba(255, 255, 255, 0.46);
+  --ui-tcc-faint: rgba(255, 255, 255, 0.3);
+  --ui-tcc-icon: rgba(255, 255, 255, 0.5);
+  --ui-tcc-line: rgba(255, 255, 255, 0.08);
+  --ui-tcc-wash: rgba(255, 255, 255, 0.04);
+  --ui-tcc-wash-big: rgba(255, 255, 255, 0.025);
+  --ui-tcc-code: #212123;
+  --ui-tcc-accent: #4d8dff;
+  --ui-tcc-red: #ff7b72;
+  --ui-tcc-red-bg: rgba(255, 110, 100, 0.07);
+  --ui-tcc-red-line: rgba(255, 110, 100, 0.18);
+  --ui-tcc-key: rgba(255, 255, 255, 0.9);
+  --ui-tcc-str: #5fc8e8;
+  --ui-tcc-num: #f2a65a;
+  --ui-tcc-lit: #a5a5ff;
+  --ui-tcc-shine: #ffffff;
+  --ui-tcc-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --ui-tcc-focus: rgba(77, 141, 255, 0.5);
+}
+
+/* Factory addition: the worker or decision the call points to */
+.ui-tcc__link { all: unset; justify-self: start; color: var(--ui-tcc-accent); font-size: 12px; line-height: 16px; font-weight: 500; cursor: pointer; }
+.ui-tcc__link:hover { text-decoration: underline; }
+.ui-tcc__link:focus-visible { outline: 2px solid var(--ui-tcc-focus); outline-offset: 1px; border-radius: 4px; }
+
+/* Files a call changed (shared/diffview.ts), shown under the head even while the card is closed. */
+.ui-tcc__diffs { padding: 2px 12px 10px; }

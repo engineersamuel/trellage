@@ -1,7 +1,9 @@
 import "./transcript.css"
 import { markdown } from "./decisions"
 import { appendCompact, onFeed, RESYNC, type FeedEvent } from "./feed"
+import { toolDiffs, type FileDiff } from "./diff"
 import { groupTools, type Group } from "./toolgroups"
+import { reconcile, ToolCard, ToolGroup, toolIcon, type CardInput } from "./toolcard"
 import { Schema } from "effect"
 import { json, runOr } from "./http"
 import { StoredEvent } from "./schemas"
@@ -14,13 +16,19 @@ import { StoredEvent } from "./schemas"
 export type Item = (
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string }
-  | { kind: "tool"; id: string; name: string; args: any; done: boolean; ok: boolean; result: string }
+  | { kind: "tool"; id: string; name: string; args: any; done: boolean; ok: boolean; result: string; detail?: string; startedAt?: number; endedAt?: number }
   | { kind: "error"; text: string }
   | { kind: "thinking"; text: string }
 ) & { seq?: number }
 
 /** Wrappers the factory adds to prompts; hidden in the transcript. */
-const strip = (s: string) => s.replace(/<(ui-format|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim()
+const strip = (s: string) => s.replace(/<(ui-format|ui-context|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim()
+
+/** Event time in ms; undefined when the timestamp does not parse. */
+const time = (ev: FeedEvent): number | undefined => {
+  const t = Date.parse(ev.timestamp)
+  return Number.isNaN(t) ? undefined : t
+}
 
 /** Fold raw Copilot SDK events into transcript items. Sub-agent and nested tool events are skipped. */
 export const toTranscript = (events: readonly FeedEvent[]): Item[] => {
@@ -50,7 +58,7 @@ export const toTranscript = (events: readonly FeedEvent[]): Item[] => {
         break
       }
       case "tool.execution_start": {
-        const t = { kind: "tool" as const, id: d.toolCallId, name: d.toolName, args: d.arguments ?? {}, done: false, ok: true, result: "" }
+        const t = { kind: "tool" as const, id: d.toolCallId, name: d.toolName, args: d.arguments ?? {}, done: false, ok: true, result: "", startedAt: time(ev) }
         tools.set(t.id, t)
         out.push(t)
         break
@@ -67,7 +75,9 @@ export const toTranscript = (events: readonly FeedEvent[]): Item[] => {
         const t = tools.get(d.toolCallId)
         if (!t) break
         const c = d.result?.content ?? d.error?.message ?? ""
-        Object.assign(t, { done: true, ok: d.success !== false, result: typeof c === "string" ? c : JSON.stringify(c) })
+        Object.assign(t, { done: true, ok: d.success !== false, result: typeof c === "string" ? c : JSON.stringify(c), endedAt: time(ev) })
+        // Edits carry their unified diff here (Copilot SDK; Claude via claude.ts).
+        if (typeof d.result?.detailedContent === "string") t.detail = d.result.detailedContent
         break
       }
       case "session.error":
@@ -167,7 +177,7 @@ export const toolLine = (t: Extract<Item, { kind: "tool" }>): { icon: string; te
       return { icon: "◆", text: r?.step ? `Jev: next step ${r.step} (${Math.round((r.confidence ?? 0) * 100)}%)` : "Asking Jev for the next step" }
     default: {
       const first = a.command ?? a.path ?? a.pattern ?? a.query ?? a.url ?? Object.values(a).find((v) => typeof v === "string") ?? ""
-      return { icon: "⚙", text: `${t.name}${first ? ` · ${String(first).split("\n")[0]!.slice(0, 140)}` : ""}` }
+      return { icon: "⚙", text: String(first).split("\n")[0]!.slice(0, 140) }
     }
   }
 }
@@ -179,13 +189,18 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""):
   return e
 }
 
-const renderItem = (i: Item, open: Set<string>): HTMLElement => {
-  const e = renderItemBody(i, open)
+const seqOf = (e: HTMLElement, seq: number | undefined): HTMLElement => {
+  if (seq !== undefined) e.dataset.seq = String(seq)
+  return e
+}
+
+const renderItem = (i: Item): HTMLElement => {
+  const e = renderItemBody(i)
   if (i.seq !== undefined) e.dataset.seq = String(i.seq)
   return e
 }
 
-const renderItemBody = (i: Item, open: Set<string>): HTMLElement => {
+const renderItemBody = (i: Item): HTMLElement => {
   if (i.kind === "user" || i.kind === "assistant") {
     const b = el("div", `sft-msg sft-${i.kind}`)
     b.innerHTML = markdown(i.text)
@@ -197,40 +212,93 @@ const renderItemBody = (i: Item, open: Set<string>): HTMLElement => {
     t.append(el("summary", "", `💭 ${i.text.split("\n")[0]!.slice(0, 160)}`), el("div", "sft-thought", i.text))
     return t
   }
-  const line = toolLine(i)
-  const card = el("details", `sft-tool${i.done ? (i.ok ? "" : " sft-failed") : " sft-running"}`)
-  card.open = open.has(i.id)
-  card.ontoggle = () => (card.open ? open.add(i.id) : open.delete(i.id))
-  const sum = el("summary")
-  sum.append(el("span", "sft-icon", line.icon), el("span", "sft-line", line.text))
-  if (line.link) {
-    const a = el("a", "sft-link", line.link.label)
-    if (line.link.decision) a.href = `#decision=${line.link.decision}`
-    else if (line.link.worker) {
-      a.href = "#"
-      const id = line.link.worker
-      a.onclick = (e) => (e.preventDefault(), e.stopPropagation(), window.dispatchEvent(new CustomEvent("sf:select-worker", { detail: id })))
-    }
-    sum.append(a)
-  }
-  sum.append(el("span", "sft-state", i.done ? (i.ok ? "✓" : "✗") : "…"))
-  card.append(sum)
-  card.append(el("pre", "sft-pre", JSON.stringify(i.args, null, 2)))
-  if (i.done) card.append(el("pre", "sft-pre sft-result", i.result.length > 6000 ? `${i.result.slice(0, 6000)}\n… (${i.result.length} chars)` : i.result))
-  return card
+  // Tool calls are ToolCards (see toolViews); this branch is never reached.
+  return el("div")
 }
 
-/** A folded run of read-only calls: one row with a count; open it to see each call. */
-const renderGroup = (g: Group<Item>, open: Set<string>): HTMLElement => {
-  const box = el("details", `sft-tool sft-group${g.done ? "" : " sft-running"}`)
-  box.open = open.has(g.id)
-  box.ontoggle = () => (box.open ? open.add(g.id) : open.delete(g.id))
-  const sum = el("summary")
-  sum.append(el("span", "sft-icon sft-chev", "▸"), el("span", "sft-line", g.label), el("span", "sft-count", String(g.items.length)), el("span", "sft-state", g.done ? "✓" : "…"))
-  const list = el("div", "sft-group-items")
-  list.append(...g.items.map((i) => renderItem(i, open)))
-  box.append(sum, list)
-  return box
+/** A worker or decision link inside a tool card. */
+const linkEl = (link: NonNullable<ReturnType<typeof toolLine>["link"]>): HTMLElement => {
+  const a = el("a", "ui-tcc__link", `Open ${link.worker ? "worker" : "decision"}: ${link.label}`)
+  if (link.decision) a.href = `#decision=${link.decision}`
+  else if (link.worker) {
+    a.href = "#"
+    const id = link.worker
+    a.onclick = (e) => (e.preventDefault(), window.dispatchEvent(new CustomEvent("sf:select-worker", { detail: id })))
+  }
+  return a
+}
+
+type Tool = Extract<Item, { kind: "tool" }>
+
+/** A tool item as card input. `stoppedAt`: the agent stopped, so a call that never finished stops its timer there. */
+const toCard = (t: Tool, stoppedAt: number | undefined): CardInput => {
+  const line = toolLine(t)
+  const status = !t.done ? "running" : t.ok ? "success" : "error"
+  return {
+    id: t.id,
+    name: t.name,
+    summary: line.text,
+    icon: toolIcon(t.name),
+    status,
+    args: t.args,
+    result: status === "success" ? (t.result.length > 6000 ? `${t.result.slice(0, 6000)}\n… (${t.result.length} chars)` : t.result) : undefined,
+    error: status === "error" ? t.result : undefined,
+    startedAt: t.startedAt,
+    endedAt: t.endedAt ?? (t.done ? t.startedAt : stoppedAt),
+    link: line.link?.worker || line.link?.decision ? linkEl(line.link) : undefined,
+  }
+}
+
+/** Tool cards and groups that stay in the page between renders, so they keep their open state and animations. */
+const toolViews = (open: Set<string>) => {
+  const touched = new Set<string>()
+  const opts = { isOpen: (id: string) => open.has(id), setOpen: (id: string, on: boolean) => void (on ? open.add(id) : open.delete(id)), touched }
+  const cards = new Map<string, { card: ToolCard; key: string; diffs: readonly FileDiff[] }>()
+  const groups = new Map<string, ToolGroup>()
+  const icons = new Map<string, SVGSVGElement>()
+  let seen = new Set<string>()
+  const card = (t: Tool, stoppedAt: number | undefined): ToolCard => {
+    seen.add(t.id)
+    const input = toCard(t, stoppedAt)
+    // One icon element per tool name, so an unchanged card is not repainted.
+    input.icon = icons.get(t.name) ?? (icons.set(t.name, input.icon), input.icon)
+    const key = JSON.stringify([input.status, input.summary, input.result, input.error, input.endedAt, t.args])
+    const got = cards.get(t.id)
+    // Diffs are parsed only when the call changed, not on every frame.
+    const diffs = () => toolDiffs(t.name, t.args, t.detail ?? (t.done ? t.result : undefined))
+    if (!got) {
+      const d = diffs()
+      const c = new ToolCard({ ...input, diffs: d }, opts)
+      cards.set(t.id, { card: c, key, diffs: d })
+      return c
+    }
+    if (got.key !== key) (got.key = key), (got.diffs = diffs()), got.card.update({ ...input, diffs: got.diffs })
+    return got.card
+  }
+  const group = (g: Group<Item>, stoppedAt: number | undefined): ToolGroup => {
+    seen.add(g.id)
+    const tools = g.items as Tool[]
+    const views = tools.map((t) => card(t, stoppedAt))
+    let v = groups.get(g.id)
+    if (!v) groups.set(g.id, (v = new ToolGroup({ id: g.id, label: g.label, cards: [] }, opts)))
+    v.update({ id: g.id, label: g.label, cards: views.map((c) => c.card) }, views)
+    reconcile(v.list, views.map((c) => c.el))
+    return v
+  }
+  /** Drop views whose items are gone (trimmed from the log). */
+  const sweep = () => {
+    for (const id of cards.keys()) if (!seen.has(id)) cards.delete(id)
+    for (const id of groups.keys()) if (!seen.has(id)) groups.delete(id)
+    seen = new Set()
+  }
+  const tick = () => {
+    const now = Date.now()
+    let live = false
+    for (const { card: c } of cards.values()) if (c.card.status === "running" && c.card.endedAt === undefined) (c.tick(now), (live = true))
+    for (const g of groups.values()) g.tick(now)
+    return live
+  }
+  return { card, group, sweep, tick }
 }
 
 /** Scroll to the item started by event `seq` (or the last one before it), open its group, and mark it. */
@@ -238,7 +306,10 @@ const reveal = (host: HTMLElement, seq: number): void => {
   let best: HTMLElement | null = null
   for (const e of host.querySelectorAll<HTMLElement>("[data-seq]")) if (Number(e.dataset.seq) <= seq) best = e
   if (!best) return
-  for (let p = best.parentElement; p && p !== host; p = p.parentElement) if (p instanceof HTMLDetailsElement) p.open = true
+  for (let p = best.parentElement; p && p !== host; p = p.parentElement) {
+    if (p instanceof HTMLDetailsElement) p.open = true
+    if (p.matches(".ui-tcc-group:not([data-open])")) p.querySelector<HTMLElement>(":scope > .ui-tcc-group__head")?.click()
+  }
   best.classList.add("sft-focus")
   best.scrollIntoView({ block: "center" })
 }
@@ -252,13 +323,21 @@ export type MountOptions = {
 
 /** Fill `host` with the live transcript of one worker. Returns a cleanup function. */
 export const mount = (host: HTMLElement, id: string, opts: MountOptions = {}): (() => void) => {
+  host.classList.add("ui-tcc-dark")
   let focus = opts.focus
   let events: FeedEvent[] = []
   let loaded = false
   let backlogMax = -1
   const pending: FeedEvent[] = []
   const open = new Set<string>()
+  const tools = toolViews(open)
   let frame = 0
+  let timer = 0
+  const ticking = () => {
+    const live = tools.tick()
+    if (!live && timer) (clearInterval(timer), (timer = 0))
+    return live
+  }
   const render = () => {
     frame = 0
     const scroller = host.closest<HTMLElement>("[data-transcript-scroll]") ?? host
@@ -271,7 +350,16 @@ export const mount = (host: HTMLElement, id: string, opts: MountOptions = {}): (
       if (now.detail) a.append(el("span", "sft-detail", now.detail))
       live.push(a)
     }
-    host.replaceChildren(...groupTools(toTranscript(events)).map((i) => (i.kind === "group" ? renderGroup(i, open) : renderItem(i, open))), ...live)
+    const stoppedAt = opts.stopped ? Date.parse(events.at(-1)?.timestamp ?? "") || undefined : undefined
+    const nodes = groupTools(toTranscript(events)).map((i): HTMLElement => {
+      if (i.kind === "group") return seqOf(tools.group(i, stoppedAt).el, i.items[0]?.seq)
+      if (i.kind === "tool") return seqOf(tools.card(i, stoppedAt).el, i.seq)
+      return renderItem(i)
+    })
+    tools.sweep()
+    reconcile(host, [...nodes, ...live])
+    // A 100ms timer keeps the live durations moving while any call runs.
+    if (ticking() && !timer) timer = window.setInterval(ticking, 100)
     if (focus !== undefined && ready) reveal(host, focus), (focus = undefined)
     else if (atEnd) scroller.scrollTop = scroller.scrollHeight
   }
@@ -314,7 +402,7 @@ export const mount = (host: HTMLElement, id: string, opts: MountOptions = {}): (
     if (ev.seq > backlogMax || ev.seq < backlogMax - 1e9) appendCompact(events, ev, cap), schedule()
   })
   load()
-  return () => (off(), cancelAnimationFrame(frame))
+  return () => (off(), cancelAnimationFrame(frame), clearInterval(timer))
 }
 
 /** Watch the page for [data-transcript] hosts and keep each one mounted. Call once per page. */

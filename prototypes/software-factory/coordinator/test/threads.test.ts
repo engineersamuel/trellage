@@ -29,6 +29,15 @@ test("a run's AG-UI events become saved chat messages that a new process can rea
   ])
 })
 
+test("a draft survives a restart", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "sf-threads-"))
+  const t = new Threads(root)
+  const th = t.create("idea")
+  const draft = { versions: [{ id: "v1", prompt: "idea", source: "human" as const, at: 1 }], current: "v1", reports: [] }
+  t.setDraft(th.id, draft)
+  expect(new Threads(root).get(th.id)?.draft).toEqual(draft)
+})
+
 test("archivedAt is set and cleared by update, and survives a reload", () => {
   const root = mkdtempSync(path.join(tmpdir(), "sf-threads-"))
   const t = new Threads(root)

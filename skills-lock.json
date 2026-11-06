@@ -1,6 +1,18 @@
 {
   "version": 1,
   "skills": {
+    "copilotkit": {
+      "source": "CopilotKit/CopilotKit",
+      "sourceType": "github",
+      "skillPath": "skills/copilotkit/SKILL.md",
+      "computedHash": "797dab664dc25520e5b38baf91fa50be23aa5888b168b9a05a9417ddf3a05b6a"
+    },
+    "copilotkit-cli": {
+      "source": "CopilotKit/CopilotKit",
+      "sourceType": "github",
+      "skillPath": "skills/copilotkit-cli/SKILL.md",
+      "computedHash": "222ab18ca9e1e61c923b60f489a31149de76f7259f8965ed5fc2d696d34376d6"
+    },
     "traits": {
       "source": "./node_modules/traits",
       "sourceType": "local",

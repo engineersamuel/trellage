@@ -5,9 +5,11 @@ import path from "node:path"
 import { Translator } from "./agui.ts"
 import { Factory, now, type FeedEvent, type Worker } from "./factory.ts"
 import { createWorktree, discardWorktree, fullyMerged, GENERAL, removeWorktree, worktreeRoot, type Worktree } from "./folders.ts"
-import { COORDINATOR_PROMPT, DESK_PROMPT, GLOBAL_PROMPT, RESEARCH_PROMPT, subPrompt } from "./prompts.ts"
+import { CARDS_PROMPT, COORDINATOR_PROMPT, DESK_PROMPT, GLOBAL_PROMPT, RESEARCH_PROMPT, subPrompt } from "./prompts.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
 import { findingTask, findReport } from "./reports.ts"
+import { CARD_TOOLS, cardOpenUi, reportFindings } from "./cards.ts"
+import { cardView } from "../../shared/cardviews.ts"
 import { conversationStatus, deletedNotice, DESK_ID, factorySnapshot, genId, reportTarget, STATUS_NOTE } from "./general.ts"
 import { specView } from "./spec.ts"
 import { onTrack, STEPS } from "./steps.ts"
@@ -17,9 +19,12 @@ import { loop, stopLoops } from "./loops.ts"
 import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, REPORT_NUDGE, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
-import type { SessionEvent } from "@github/copilot-sdk"
-import { messageThread, RunRecorder, subId, Threads, type Thread } from "./threads.ts"
-import { coordinatorTools, globalTools } from "./tools.ts"
+import { defineTool, type SessionEvent, type Tool } from "@github/copilot-sdk"
+import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
+import { cardData, coordinatorTools, globalTools, spawnHealing, type Scope } from "./tools.ts"
+import { DRAFT_NOTE, DraftError, draftNodeId, isUnstartedDraft, makeDrafts } from "./drafts.ts"
+import { enhanceWith, stopEnhance } from "./enhance.ts"
+import { Schema } from "effect"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
 const landing = asset("landing.html")
@@ -48,6 +53,7 @@ const globalScopeTools = (id: string, chat: string | null) => [
         folder: threads.folder(t.folderId)?.name,
         status: statusOf(t.id),
         pending: factory.approvals.pending().filter((a) => a.threadId === t.id).length,
+        ...(isUnstartedDraft(t) ? { note: DRAFT_NOTE } : {}),
       })),
     folders: () => threads.folders(),
     start: (folder, task) => startConversation(folder, task, chat),
@@ -67,7 +73,7 @@ const statusOf = (threadId: string) =>
 
 const lastText = (threadId: string): string | null =>
   factory.workers.get(subId(threadId))?.lastMessage ??
-  [...threads.messages(threadId)].reverse().find((m) => m.role === "assistant" && m.content)?.content ??
+  [...threads.messages(threadId)].reverse().flatMap((m) => (m.role === "assistant" && m.content ? [m.content] : []))[0] ??
   null
 
 const snapshot = () =>
@@ -80,7 +86,7 @@ const snapshot = () =>
   )
 
 const globalSystem = (extra: string) =>
-  `${COORDINATOR_PROMPT}\n\n${GLOBAL_PROMPT}${extra}${instructions ? `\n\n<human-instructions>\n${instructions}\n</human-instructions>` : ""}\n\n# OpenUI Lang\n${openuiPrompt}`
+  `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${GLOBAL_PROMPT}${extra}${instructions ? `\n\n<human-instructions>\n${instructions}\n</human-instructions>` : ""}\n\n# OpenUI Lang\n${openuiPrompt}`
 
 // The Factory desk keeps the id "coordinator" and its runtime process; General chats open their own sessions on it.
 const coord = await factory.spawn({
@@ -195,9 +201,10 @@ const sse = (start: (send: (v: unknown) => boolean, close: () => void) => () => 
   })
 }
 
-const lastUserText = (input: any): string | null => {
-  const msg = [...(input?.messages ?? [])].reverse().find((m: any) => m?.role === "user")
-  if (!msg) return null
+/** The text of the run's new user message: the last message, when it is a user message. A resume or a tool-result run has none. */
+const newUserText = (input: any): string | null => {
+  const msg = (input?.messages ?? []).at(-1)
+  if (msg?.role !== "user") return null
   if (typeof msg.content === "string") return msg.content
   if (Array.isArray(msg.content))
     return msg.content
@@ -207,11 +214,19 @@ const lastUserText = (input: any): string | null => {
   return null
 }
 
+/** AG-UI run input `context` (useAgentContext in CopilotKit) as a block the coordinator reads with the prompt. */
+const uiContext = (context: unknown): string => {
+  const items = (Array.isArray(context) ? context : []).filter((c: any) => typeof c?.description === "string" && c.value !== undefined)
+  if (!items.length) return ""
+  const line = (c: any) => `- ${c.description}: ${typeof c.value === "string" ? c.value : JSON.stringify(c.value)}`
+  return `\n\n<ui-context>\n${items.map(line).join("\n")}\n</ui-context>`
+}
+
 // Both UIs share one coordinator session, so every turn says which format the
 // current UI renders. Without this the agent copies the format of earlier turns.
 const uiFormat = (p: string, answer: string | null) =>
   answer === "openui"
-    ? `${p}\n\n<ui-format>This UI renders your final message as OpenUI Lang. Write your final answer for this turn as an OpenUI Lang program only (root = Card(...)), no prose. Do not call render_ui.</ui-format>`
+    ? `${p}\n\n<ui-format>This UI renders your final message as OpenUI Lang. Write your final answer for this turn as an OpenUI Lang program only (root = Card(...)), no prose. Do not call render_ui. After a show_* tool, write no final message: the factory shows that tool's card as your answer, and text you write before it moves to "Behind the scenes".</ui-format>`
     : `${p}\n\n<ui-format>This UI renders your final message as markdown. Never write OpenUI Lang (root = ...) in a message; use the render_ui tool for cards.</ui-format>`
 
 // ---------- conversations ----------
@@ -240,6 +255,8 @@ const starting = new Map<string, Promise<Worker>>()
 const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
   if (!t) return Promise.resolve(coord)
   if (!t.worktree) return chatCoordinator(t)
+  if (isUnstartedDraft(t))
+    return Promise.reject(new Error(`conversation ${t.id} is an unstarted draft; only Run on its draft node starts it`))
   const id = subId(t.id)
   const live = factory.workers.get(id)
   if (live) return Promise.resolve(live)
@@ -251,7 +268,7 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
         name: `${folder.name} · ${t.title}`.slice(0, 60),
         role: "coordinator",
         ...(t.parentThreadId ? { owner: genId(t.parentThreadId) } : {}),
-        system: `${COORDINATOR_PROMPT}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!)}\n\n${RESEARCH_PROMPT}\n\n# OpenUI Lang\n${openuiPrompt}`,
+        system: `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!)}\n\n${RESEARCH_PROMPT}\n\n# OpenUI Lang\n${openuiPrompt}`,
         tools: coordinatorTools(factory, {
           id,
           threadId: t.id,
@@ -296,7 +313,7 @@ const recordTurn = (t: Thread, c: Worker, text: string) => {
   const tr = new Translator(t.id, crypto.randomUUID())
   const rec = new RunRecorder()
   const off = c.events.subscribe((ev) => {
-    for (const e of tr.translate(ev, () => ({ workers: factory.summaries() }))) rec.add(e)
+    for (const e of tr.translate(ev)) rec.add(e)
     if (tr.done) {
       off()
       threads.append(t.id, ...rec.messages())
@@ -375,8 +392,26 @@ const conversationBusy = (threadId: string): boolean =>
   )
 
 const stopConversationWorkers = async (threadId: string): Promise<void> => {
-  for (const w of [...factory.workers.values()]) if (w.owner === subId(threadId)) await factory.stop(w.id)
+  for (const w of [...factory.workers.values()])
+    if (w.owner === subId(threadId) || w.owner === draftNodeId(threadId)) await factory.stop(w.id)
   if (factory.workers.has(subId(threadId))) await factory.stop(subId(threadId))
+}
+
+/** Delete a conversation: stop its workers, discard its worktree, and tell the chat that started it. */
+const deleteThread = async (id: string): Promise<void> => {
+  const t = threads.get(id)
+  const repo = t && threads.folder(t.folderId)?.path
+  if (t?.worktree && !t.cleanedAt && repo) {
+    await stopConversationWorkers(t.id)
+    discardWorktree(repo, t as Worktree)
+  }
+  threads.delete(id)
+  factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: id })
+  if (t?.worktree) {
+    // The chat that started it forgets it; a repeat of the same request starts a new run.
+    const parent = t.parentThreadId && threads.get(t.parentThreadId)
+    if (parent) deliverAndLog(parent.id, deletedNotice(t))
+  } else if (t && factory.workers.has(genId(t.id))) await factory.stop(genId(t.id))
 }
 
 const publishWorktreeCleanup = (t: Thread): void => {
@@ -435,41 +470,175 @@ const recordAguiPrompt = (worker: Worker, threadId: string, prompt: string): voi
   factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId })
 }
 
-const streamAguiRun = (worker: Worker, threadId: string, runId: string, url: URL, prompt: string | null): Response => {
-  const tr = new Translator(threadId, runId)
+/** A run that is still recording, by thread, so a stop request reaches it after the browser closed its stream. */
+const activeRuns = new Map<string, { worker: Worker; tr: Translator; finish: () => void }>()
+
+/** Client tool calls (AG-UI frontend tools) waiting for the browser's result, by tool call id. */
+const clientCalls = new Map<string, (content: string) => void>()
+
+/** How long a client tool call waits for the browser before the coordinator gets an error result. */
+const CLIENT_TOOL_TIMEOUT_MS = 120_000
+
+/** An AG-UI client tool as a session tool: the handler waits until the next run carries the browser's result. */
+const clientTool = (t: { name: string; description?: unknown; parameters?: unknown }): Tool<any> =>
+  defineTool(t.name, {
+    description: String(t.description ?? ""),
+    parameters: (t.parameters ?? { type: "object", properties: {} }) as Record<string, unknown>,
+    handler: (_args: unknown, inv: { toolCallId: string }) =>
+      new Promise<string>((resolve) => {
+        const timer = setTimeout(() => (clientCalls.delete(inv.toolCallId), resolve("The UI did not run this tool in time.")), CLIENT_TOOL_TIMEOUT_MS)
+        clientCalls.set(inv.toolCallId, (content) => (clearTimeout(timer), clientCalls.delete(inv.toolCallId), resolve(content)))
+      }),
+  })
+
+/**
+ * Give the session the run's client tools (AG-UI `tools`) next to its own. Only Copilot sessions can change
+ * tools; a run without client tools (Foldkit) puts the session back to its own. Returns the client tool names.
+ */
+const syncClientTools = async (w: Worker, tools: unknown): Promise<Set<string>> => {
+  if (!w.session.setTools) return new Set()
+  const own = new Set(w.tools.map((t) => t.name))
+  const list = (Array.isArray(tools) ? tools : []).filter((t: any) => typeof t?.name === "string" && !own.has(t.name))
+  const key = list.map((t: any) => t.name).sort().join(",")
+  if (key !== w.clientToolKey) {
+    try {
+      await w.session.setTools([...w.tools, ...list.map(clientTool)])
+      w.clientToolKey = key
+    } catch (e) {
+      console.error(`client tools not set on ${w.id}: ${e instanceof Error ? e.message : e}`)
+      return new Set()
+    }
+  }
+  return new Set(list.map((t: any) => t.name))
+}
+
+/**
+ * Answer the decisions a resuming run answers (AG-UI `resume`, from CopilotKit's decision cards).
+ * A resolved entry answers the decision; a cancelled one leaves it open in the decision center.
+ * Returns the answer prompts for the coordinator.
+ */
+const resumeAnswers = (resume: unknown): string[] =>
+  (Array.isArray(resume) ? resume : []).flatMap((r: any) => {
+    if (r?.status !== "resolved" || typeof r.payload?.answer !== "string") return []
+    try {
+      const note = typeof r.payload.note === "string" && r.payload.note.trim() ? r.payload.note.trim() : null
+      const a = factory.approvals.answer(String(r.interruptId), r.payload.answer, note)
+      factory.publish("coordinator", "factory.approval_answered", null, now(), a)
+      return [answerPrompt(a)]
+    } catch (e) {
+      // Answered elsewhere first, or an unknown id: the coordinator already got that answer.
+      console.error(`resume ${r.interruptId}: ${e instanceof Error ? e.message : e}`)
+      return []
+    }
+  })
+
+/** The card of a worker this run started: an AG-UI activity message, updated as the worker changes. */
+const workerCard = (ev: FeedEvent): Record<string, unknown> => {
+  if (ev.type === "factory.worker_stopped") return { id: ev.workerId, status: "stopped" }
+  const w = ev.data as Record<string, unknown>
+  const pick = ["id", "name", "status", "harness", "model", "task", "lastMessage"] as const
+  return Object.fromEntries(pick.flatMap((k) => (w[k] === undefined || w[k] === null ? [] : [[k, k === "lastMessage" || k === "task" ? String(w[k]).slice(0, 300) : w[k]]])))
+}
+
+type RunOptions = {
+  /** Starts the run's work after the stream subscribed; null: nothing to do, the run finishes at once. */
+  start: (() => Promise<unknown>) | null
+  interrupts: boolean
+  clientTools: Set<string>
+  /** Client tool calls whose results this run delivers; their completion is not sent again. */
+  delivered: string[]
+  /** The UI draws OpenUI Lang only: card tools also send their card as an OpenUI program. */
+  openUi?: boolean
+}
+
+/**
+ * Stream one AG-UI run from the worker's session events until it is idle. The run is saved when it ends,
+ * also when the browser left early (a reload, a closed tab): only a stop request (/api/agui/stop) aborts it.
+ */
+const streamAguiRun = (worker: Worker, threadId: string, runId: string, o: RunOptions): Response => {
+  const tr = new Translator(threadId, runId, {
+    interrupts: o.interrupts,
+    pending: (id) => factory.approvals.get(id)?.status === "pending",
+    clientTool: (name) => o.clientTools.has(name),
+    ...(o.openUi ? { card: (name: string, result: string, args: Record<string, unknown>, prefix: string) => cardOpenUi(name, result, worker.id, args, prefix) } : {}),
+  })
+  for (const id of o.delivered) tr.clientCalls.add(id)
   const rec = new RunRecorder()
-  const snapshot = () => ({ workers: factory.summaries() })
   return sse((send, close) => {
-    for (const e of tr.started(snapshot())) send(e)
-    if (prompt === null) {
+    for (const e of tr.started()) send(e)
+    if (o.start === null) {
       send(tr.finished())
       close()
       return () => {}
     }
-    const off = worker.events.subscribe((ev) => {
-      for (const e of tr.translate(ev, snapshot)) {
-        rec.add(e)
-        send(e)
-      }
-      if (tr.done) {
-        threads.append(threadId, ...rec.messages())
-        factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId })
-        queueMicrotask(close)
-      }
+    const mine = new Set<string>()
+    let offEvents = () => {}
+    let offFeed = () => {}
+    const handle = (events: unknown[]) => {
+      for (const e of events) (rec.add(e), send(e))
+      if (!tr.done) return
+      offEvents()
+      offFeed()
+      if (activeRuns.get(threadId)?.tr === tr) activeRuns.delete(threadId)
+      threads.append(threadId, ...rec.messages())
+      factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId })
+      queueMicrotask(close)
+    }
+    offEvents = worker.events.subscribe((ev) => handle(tr.translate(ev)))
+    offFeed = factory.feed.subscribe((ev) => {
+      if (ev.type === "factory.worker_started" && ev.data?.owner === worker.id) mine.add(ev.workerId)
+      if (!mine.has(ev.workerId) || !/^factory\.worker_(started|updated|stopped)$/.test(ev.type)) return
+      handle(tr.activity(`worker-${ev.workerId}`, "worker", workerCard(ev)))
     })
-    worker.send(uiFormat(prompt, url.searchParams.get("answer"))).catch((e) => {
-      send({ type: "RUN_ERROR", message: String(e?.message ?? e) })
-      close()
+    const finish = () => {
+      if (tr.done) return
+      const out: unknown[] = []
+      tr.finish(out, { type: "cancelled" })
+      handle(out)
+    }
+    activeRuns.set(threadId, { worker, tr, finish })
+    o.start().catch((e) => {
+      handle([{ type: "RUN_ERROR", message: String(e?.message ?? e) }])
+      tr.done = true
+      handle([])
     })
-    return off
+    // The browser left: keep recording so the run is saved; send() is a no-op from now on.
+    return () => {}
   })
 }
 
-/** AG-UI run: send the latest user message to the conversation's coordinator (or a worker) and stream AG-UI events until idle. */
+/** AG-UI stop: abort the thread's running coordinator. Its run ends with the cancelled outcome and is saved. */
+const aguiStop = async (req: Request): Promise<Response> => {
+  const { threadId } = ((await req.json().catch(() => ({}))) ?? {}) as { threadId?: string }
+  const run = threadId ? activeRuns.get(threadId) : undefined
+  if (!run) return json({ stopped: false })
+  run.tr.cancelled = true
+  await run.worker.session.abort().catch((e) => console.error(`abort ${run.worker.id}: ${e}`))
+  // A session that sends no idle after the abort still ends the run.
+  setTimeout(run.finish, 10_000)
+  return json({ stopped: true })
+}
+
+/** AG-UI capabilities of the coordinator agent (AgentCapabilities, AG-UI 1.0). */
+const CAPABILITIES = {
+  identity: { name: "Software factory coordinator", type: "copilot-sdk", provider: "github" },
+  transport: { streaming: true, resumable: false },
+  tools: { supported: true, clientProvided: true, parallelCalls: true },
+  state: { snapshots: false, deltas: false, persistentState: true, memory: true },
+  multiAgent: { supported: true, delegation: true },
+  reasoning: { supported: true, streaming: true },
+  humanInTheLoop: { supported: true, approvals: true, interrupts: true },
+  custom: { activityTypes: ["subagent", "worker"], tokenUsage: true },
+}
+
+/**
+ * AG-UI run on a conversation's coordinator (or a worker). A run brings one of: a new user message, `resume`
+ * answers to the decisions the last run ended with, or results of client tools the last run ended at.
+ */
 const aguiRun = async (id: string | null, url: URL, req: Request): Promise<Response> => {
   const input = (await req.json().catch(() => ({}))) as any
   const threadId: string = input.threadId ?? "default"
-  const prompt = lastUserText(input)
+  const prompt = newUserText(input)
   const ensureError = ensureAguiThread(threadId, prompt, req)
   if (ensureError) return ensureError
   if (!id && threads.get(threadId)?.cleanedAt)
@@ -479,10 +648,30 @@ const aguiRun = async (id: string | null, url: URL, req: Request): Promise<Respo
   const worker = await findAguiWorker(id, threadId)
   if (worker instanceof Response) return worker
   const runId = input.runId ?? crypto.randomUUID()
-  if (prompt === null) return streamAguiRun(worker, threadId, runId, url, null)
-  recordAguiPrompt(worker, threadId, prompt)
-  const fullPrompt = worker.role === "coordinator" ? factory.coordinatorPrompt(prompt) : prompt
-  return streamAguiRun(worker, threadId, runId, url, fullPrompt)
+  const props = (input.forwardedProps ?? {}) as { answer?: unknown; interrupts?: unknown }
+  const format = typeof props.answer === "string" ? props.answer : url.searchParams.get("answer")
+  const clientTools = await syncClientTools(worker, input.tools)
+  const results = (input.messages ?? []).filter((m: any) => m?.role === "tool" && clientCalls.has(m.toolCallId))
+  const answers = resumeAnswers(input.resume)
+  const text = [...answers, ...(prompt === null ? [] : [prompt])].join("\n\n")
+  const start = (): (() => Promise<unknown>) | null => {
+    if (results.length) {
+      // The browser ran the client tools: save their results and let the waiting session continue.
+      threads.append(threadId, ...results.map((m: any) => ({ id: String(m.id ?? crypto.randomUUID()), role: "tool" as const, toolCallId: m.toolCallId, content: String(m.content ?? "") })))
+      return async () => results.forEach((m: any) => clientCalls.get(m.toolCallId)?.(typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
+    }
+    if (!text) return null
+    recordAguiPrompt(worker, threadId, text)
+    const full = (worker.role === "coordinator" ? factory.coordinatorPrompt(text) : text) + uiContext(input.context)
+    return () => worker.send(uiFormat(full, format))
+  }
+  return streamAguiRun(worker, threadId, runId, {
+    start: start(),
+    interrupts: props.interrupts === true,
+    clientTools,
+    delivered: results.map((m: any) => String(m.toolCallId)),
+    openUi: format === "openui",
+  })
 }
 
 /** Most events a reconnecting feed client gets replayed; past this it reloads instead. */
@@ -648,12 +837,82 @@ const supervise = async () => {
 }
 loop("supervisor", "5 seconds", supervise)
 
+// ---------- drafts ----------
+
+const drafts = makeDrafts({
+  threads,
+  createThread: (prompt, folderId) => {
+    if (!threads.folder(folderId)) throw new DraftError(400, "unknown folder")
+    return createThread(prompt, folderId)
+  },
+  spawn: (spec) =>
+    spawnHealing(
+      factory,
+      { id: spec.owner, threadId: threads.list().find((t) => t.worktree === spec.workdir)?.id ?? null, workdir: spec.workdir },
+      { ...spec, role: "worker", auth: factory.defaultAuth },
+    ),
+  isRunning: (workerId) => factory.workers.get(workerId)?.status === "running",
+  stopOwned: async (owner) => {
+    for (const w of [...factory.workers.values()]) if (w.owner === owner) await factory.stop(w.id)
+  },
+  discard: (t) => deleteThread(t.id),
+  // Awaits the hand-off, so a failed delivery rejects and run() unlocks the draft.
+  deliver: async (id, text) => {
+    await (await deliverToThread(id, text)).sent
+  },
+  stopSub: async (id) => {
+    if (factory.workers.has(subId(id))) await factory.stop(subId(id))
+  },
+  enhance: enhanceWith(factory),
+  stopEnhance: (id) => stopEnhance(factory, draftNodeId(id)),
+  changed: (threadId) => factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId }),
+})
+
+const CreateBody = Schema.Struct({ folderId: Schema.String, prompt: Schema.String })
+const VersionBody = Schema.Struct({ prompt: Schema.String })
+const CurrentBody = Schema.Struct({ versionId: Schema.String })
+const PickBody = Schema.Struct({ index: Schema.Int })
+
+/** Decode a draft request body; bad JSON or a bad shape is a 400. */
+const draftBody = async <A>(req: Request, schema: Schema.Codec<A, unknown>): Promise<A> => {
+  let raw: unknown
+  try {
+    raw = await req.json()
+  } catch {
+    throw new DraftError(400, "body is not JSON")
+  }
+  try {
+    return Schema.decodeUnknownSync(schema)(raw)
+  } catch (e) {
+    throw new DraftError(400, e instanceof Error ? e.message : String(e))
+  }
+}
+
+/** JSON reply for a draft route: no value is 204, DraftError keeps its status, anything else is 500. */
+const draftReply = async (run: () => unknown): Promise<Response> => {
+  try {
+    const v = await run()
+    return v === undefined ? empty(204) : json(v)
+  } catch (e) {
+    if (e instanceof DraftError) return json({ error: e.message }, e.status)
+    return json({ error: e instanceof Error ? e.message : String(e) }, 500)
+  }
+}
+
 // ---------- routes ----------
 
 type Handler = (req: Request, url: URL, params: string[]) => Response | Promise<Response>
 /** The repo conversation an agent works in: its own (sub-coordinator), its owner's, or the one whose worktree it uses. */
 const threadOfAgent = (w: Worker): Thread | undefined =>
   threads.list().find((t) => t.worktree && (t.worktree === w.spec?.workdir || subId(t.id) === w.id || subId(t.id) === w.owner))
+
+/** The tool scope of a coordinator by worker id: a repo sub-coordinator's worktree, a General chat's thread, the desk. */
+const cardScope = (id: string): Scope => {
+  const w = factory.workers.get(id)
+  const t = w ? threadOfAgent(w) : threads.list().find((x) => subId(x.id) === id || genId(x.id) === id)
+  if (t?.worktree) return { id, threadId: t.id, workdir: t.worktree, ...(t.base ? { base: t.base } : {}) }
+  return { id, threadId: t?.id ?? null }
+}
 
 const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/$/, () => new Response(landing, { headers: { "content-type": "text/html" } })],
@@ -692,6 +951,36 @@ const routes: [string, RegExp, Handler][] = [
       }),
   ],
   ["GET", /^\/api\/approvals$/, () => json(factory.approvals.list().slice(-50))],
+  [
+    // "Start" on a report finding card: a new conversation in the report's repo runs that finding (same as the viewer).
+    "POST",
+    /^\/api\/cards\/start-finding$/,
+    async (req) => {
+      try {
+        const b = (await req.json()) as any
+        const scope = cardScope(String(b?.scope ?? DESK_ID))
+        const r = findReport(threads.list(), String(b?.path ?? ""), scope.threadId)
+        if (!r) return bad("report not found")
+        const f = reportFindings(r.content).find((x) => x.rank === Number(b?.rank))
+        if (!f) return bad(`finding ${b?.rank} not found`)
+        return json(await startConversation(r.folderId, findingTask(r, { title: `${f.rank}. ${f.title}`, body: f.body })))
+      } catch (e) {
+        return bad(e)
+      }
+    },
+  ],
+  [
+    // A live card's current view (OpenUI Query "factory_card"): the same data its show_* tool returns, for that
+    // coordinator's scope, as the view shared/cardviews.ts builds. Read-only.
+    "GET",
+    /^\/api\/cards$/,
+    (_req, url) => {
+      const name = url.searchParams.get("name") ?? ""
+      if (!CARD_TOOLS.has(name)) return bad(`unknown card ${name}`)
+      const path = url.searchParams.get("path")
+      return json(cardView(name, cardData(factory, cardScope(url.searchParams.get("scope") ?? DESK_ID), name, path ? { path } : {})))
+    },
+  ],
   [
     "GET",
     /^\/api\/shadow$/,
@@ -917,6 +1206,8 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/feed$/, (req, url) => feed(req, url)],
+  ["POST", /^\/api\/agui\/stop$/, (req) => aguiStop(req)],
+  ["GET", /^\/api\/agui\/capabilities$/, () => json(CAPABILITIES)],
   ["POST", /^\/api\/agui$/, (req, url) => aguiRun(null, url, req)],
   ["POST", /^\/api\/agui\/([^/]+)$/, (req, url, [id]) => aguiRun(id!, url, req)],
   ["GET", /^\/api\/threads\/get$/, () => json({ threads: threads.list(), folders: threads.folders() })],
@@ -947,6 +1238,8 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/threads\/update\/([^/]+)$/,
     async (req, _url, [id]) => {
       const t = threads.update(id!, (await req.json()) as any)
+      // Archiving a General chat stops its session; its next message starts it again.
+      if (t?.archivedAt && !t.worktree && !t.desk && factory.workers.has(genId(t.id))) await factory.stop(genId(t.id))
       if (t) factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
       return json(t ?? null)
     },
@@ -955,22 +1248,22 @@ const routes: [string, RegExp, Handler][] = [
     "DELETE",
     /^\/api\/threads\/delete\/([^/]+)$/,
     async (_req, _url, [id]) => {
-      const t = threads.get(id!)
-      const repo = t && threads.folder(t.folderId)?.path
-      if (t?.worktree && !t.cleanedAt && repo) {
-        await stopConversationWorkers(t.id)
-        discardWorktree(repo, t as Worktree)
-      }
-      threads.delete(id!)
-      factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: id })
-      if (t?.worktree) {
-        // The chat that started it forgets it; a repeat of the same request starts a new run.
-        const parent = t.parentThreadId && threads.get(t.parentThreadId)
-        if (parent) deliverAndLog(parent.id, deletedNotice(t))
-      } else if (t && factory.workers.has(genId(t.id))) await factory.stop(genId(t.id))
+      await deleteThread(id!)
       return empty(204)
     },
   ],
+  ["POST", /^\/api\/drafts$/, (req) => draftReply(async () => {
+    const b = await draftBody(req, CreateBody)
+    return drafts.create(b.folderId, b.prompt)
+  })],
+  ["POST", /^\/api\/drafts\/([^/]+)\/versions$/, (req, _url, [id]) => draftReply(async () => drafts.addVersion(id!, (await draftBody(req, VersionBody)).prompt))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/current$/, (req, _url, [id]) => draftReply(async () => drafts.setCurrent(id!, (await draftBody(req, CurrentBody)).versionId))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/enhance$/, (_req, _url, [id]) => draftReply(() => drafts.enhance(id!))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/pick$/, (req, _url, [id]) => draftReply(async () => drafts.pick(id!, (await draftBody(req, PickBody)).index))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/dismiss$/, (_req, _url, [id]) => draftReply(async () => drafts.dismiss(id!))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/(council|debate|research|hyperresearch)$/, (_req, _url, [id, action]) => draftReply(() => drafts.act(id!, action as DraftAction))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => draftReply(() => drafts.run(id!))],
+  ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => draftReply(() => drafts.remove(id!))],
   ["GET", /^\/api\/artifacts$/, () => json({ artifacts: [] })],
 ]
 

@@ -13,7 +13,7 @@
 .rv-body th, .rv-body td { border: 1px solid var(--sf-border, #2a2a33); padding: 6px 8px; text-align: left; vertical-align: top; }
 .rv-body th { background: #ffffff08; }
 .rv-body code { background: #ffffff10; padding: 1px 5px; border-radius: 4px; font-size: .9em; }
-.rv-body pre { background: #0b0b0f; padding: 12px; border-radius: 8px; overflow: auto; }
+.rv-body pre { background: var(--sf-bg, #0b0b0f); padding: 12px; border-radius: 8px; overflow: auto; }
 .rv-body pre code { background: none; padding: 0; }
 .rv-body a { color: var(--sf-accent, #818cf8); }
 .rv-h2 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--sf-border, #2a2a33); padding-bottom: 6px; }

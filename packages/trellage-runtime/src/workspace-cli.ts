@@ -16,6 +16,7 @@ import { promisify, stripVTControlCharacters } from "node:util"
 import path from "node:path"
 import { bunExecutable } from "./index.ts"
 import { acquirePreparationLock } from "./preparation-lock.ts"
+import { swapPaths } from "./swap.ts"
 import { withRegistryTransport } from "./lock-transport.ts"
 import {
   copySources,
@@ -424,6 +425,11 @@ try {
       process.stdout.write(`${directory}\n`)
       break
     }
+    case "swap":
+      if (suppliedDestination === undefined || !path.isAbsolute(suppliedDestination))
+        throw new Error("swap destination must be absolute")
+      swapPaths(root, safeDirectory(suppliedDestination))
+      break
     case "dependency":
       if (suppliedDestination === undefined) throw new Error("dependency name is required")
       process.stdout.write(`${dependencyDirectory(root, suppliedDestination)}\n`)

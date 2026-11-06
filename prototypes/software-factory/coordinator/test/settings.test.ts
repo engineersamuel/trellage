@@ -30,3 +30,12 @@ test("extensions validate slot", () => {
   expect(off.extensions.rain?.enabled).toBe(false)
   expect(patched(off, { extensions: { rain: null } }).extensions).toEqual({})
 })
+
+test("diffStyle defaults to terminal, takes the four styles, rejects others", () => {
+  const s = defaultSettings()
+  expect(s.diffStyle).toBe("terminal")
+  expect(patched(s, { diffStyle: "split" }).diffStyle).toBe("split")
+  expect(() => patched(s, { diffStyle: "fancy" })).toThrow()
+  const { diffStyle: _, ...old } = s
+  expect(patched(old as never, {}).diffStyle).toBe("terminal")
+})

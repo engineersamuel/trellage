@@ -71,6 +71,14 @@ export const STEPS: Step[] = [
     skills: [],
   },
   {
+    id: "finish",
+    description:
+      "Push the approved branch, open or update its PR, and loop until every check is green: read failing checks and review comments, fix, run the tests, commit, push again, at most 5 fix rounds. Never merges. Needs a ship approval the human accepted.",
+    bestFor: ["Verified, reviewed changes the human approved to ship"],
+    avoidFor: ["Before a ship approval", "New features or large changes"],
+    skills: [],
+  },
+  {
     id: "council",
     description: "Run the Claude Council profile to pressure-test a product or architecture decision.",
     bestFor: ["Comparative design decisions and conflicting tradeoffs"],
@@ -113,6 +121,26 @@ export const STEPS: Step[] = [
     gateTools: false,
     factoryOnly: true,
   },
+  {
+    id: "enhance-prompt",
+    description: "Rewrite a draft prompt with the prompt-master skill into exactly 3 candidates.",
+    bestFor: ["The factory's draft Enhance action"],
+    avoidFor: ["Manual selection"],
+    skills: ["prompt-master"],
+    gateTools: false,
+    factoryOnly: true,
+  },
+  {
+    id: "rpi-research",
+    description:
+      "HVE Core RPI Research: evidence-backed task research with wider, deeper and contrarian waves; writes a research artifact and a report. Read-only for code.",
+    bestFor: ["The factory's draft Research action"],
+    avoidFor: ["Manual selection"],
+    skills: ["rpi-research"],
+    skillDirs: ["hve-core/.github/skills/rpi"],
+    gateTools: false,
+    factoryOnly: true,
+  },
 ]
 
 /** Skill directories (under the skills directory) for the GitHub repos Optimize skills come from. */
@@ -143,6 +171,8 @@ export const SKILL_REPOS: Record<string, string> = {
   "ub-mode": "https://github.com/unclebob/ub-mode.git",
   "security-audit-skill": "https://github.com/cloudflare/security-audit-skill.git",
   "mattpocock-skills": "https://github.com/mattpocock/skills.git",
+  "prompt-master": "https://github.com/nidhinjs/prompt-master.git",
+  "hve-core": "https://github.com/microsoft/hve-core.git",
 }
 export const TOOL_REPOS: Record<string, string> = {
   crapper: "https://github.com/unclebob/crapper.git",
@@ -155,7 +185,12 @@ export const ensureClones = (dir: string, repos: Record<string, string>): void =
   mkdirSync(dir, { recursive: true })
   for (const [name, url] of Object.entries(repos)) {
     if (existsSync(path.join(dir, name, ".git"))) continue
-    execFileSync("git", ["clone", "-q", "--depth", "1", url, path.join(dir, name)], { stdio: "ignore" })
+    try {
+      execFileSync("git", ["clone", "-q", "--depth", "1", url, path.join(dir, name)], { stdio: ["ignore", "ignore", "pipe"] })
+    } catch (e) {
+      const why = String((e as { stderr?: Buffer }).stderr ?? "").trim() || (e as Error).message
+      throw new Error(`clone ${name} failed: ${why}`)
+    }
   }
 }
 

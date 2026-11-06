@@ -3,6 +3,9 @@ import { AsyncData, Submodel } from "foldkit";
 import type { Html, HtmlBuilder } from "foldkit/html";
 import { Button, Checkbox, Dialog, Input, Select, Slider, Textarea } from "@foldkit/ui";
 import type { Delivery, JevDecision, SecurityReview, Settings, SettingsOptions } from "../domain";
+import { DIFF_STYLES } from "../../../shared/diff";
+import { STYLES } from "../../../shared/diffview";
+import { MountDiffPreview } from "./command";
 import { Message } from "./message";
 import type { Model } from "./model";
 
@@ -98,6 +101,22 @@ const themeSection = (settings: Settings, h: HtmlBuilder<Message>): Html =>
         ),
       ),
       checkbox("animations", "animations", settings.animations, (isChecked) => Message.ToggledAnimations({ isChecked }), h),
+    ],
+    h,
+  );
+
+/** Diff style chips and a sample diff drawn in the chosen style. */
+const diffSection = (settings: Settings, h: HtmlBuilder<Message>): Html =>
+  section(
+    "Code diffs",
+    [
+      h.div(
+        [h.Class("fk-chips")],
+        Array.map(DIFF_STYLES, (style) =>
+          h.keyed("span")(style, [], [chip(STYLES[style], style === settings.diffStyle, Message.ClickedDiffStyle({ style }), h)]),
+        ),
+      ),
+      h.keyed("div")("diff-preview", [h.Class("sf-diff-preview"), h.OnMount(MountDiffPreview())]),
     ],
     h,
   );
@@ -342,6 +361,7 @@ const drawerContent = (model: Model, render: Dialog.RenderInfo, h: HtmlBuilder<M
       ]),
       errorLine(model.maybePatchError, h),
       themeSection(settings, h),
+      diffSection(settings, h),
       layoutSection(model, settings, options, h),
       navbarSection(settings, options, h),
       deliverySection(model, settings, h),

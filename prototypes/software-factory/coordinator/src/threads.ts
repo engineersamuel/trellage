@@ -4,12 +4,26 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { addFolder, GENERAL, type Folder, type Worktree } from "./folders.ts"
 
+export type DraftAction = "council" | "debate" | "research" | "hyperresearch"
+export type DraftVersion = { id: string; prompt: string; source: "human" | "enhance"; title?: string; notes?: string; at: number }
+export type Candidate = { title: string; prompt: string; notes: string }
+export type Draft = {
+  versions: DraftVersion[]
+  current: string
+  pending?: { kind: "enhance"; candidates: Candidate[]; at: number }
+  reports: { action: DraftAction; workerId: string; path: string; versionId: string }[]
+  startedAt?: number
+}
+
 /** folderId is "general" or a repo folder id; repo conversations also have their own worktree. */
-export type Thread = { id: string; title: string; createdAt: number; folderId: string; /** Set when the merged worktree was removed. */ cleanedAt?: number; /** Set when hidden from the org canvas. */ archivedAt?: number; /** General chat that started this repo conversation; its report goes back there. */ parentThreadId?: string; /** The Factory desk thread. */ desk?: boolean } & Partial<Worktree>
+export type Thread = { id: string; title: string; createdAt: number; folderId: string; /** Set when the merged worktree was removed. */ cleanedAt?: number; /** Set when hidden from the org canvas. */ archivedAt?: number; /** General chat that started this repo conversation; its report goes back there. */ parentThreadId?: string; /** The Factory desk thread. */ desk?: boolean; draft?: Draft } & Partial<Worktree>
 export type ChatMessage =
   | { id: string; role: "user"; content: string }
   | { id: string; role: "assistant"; content: string | null; toolCalls?: { id: string; type: "function"; function: { name: string; arguments: string } }[] }
-  | { id: string; role: "tool"; content: string; toolCallId: string }
+  | { id: string; role: "tool"; content: string; toolCallId: string; error?: string }
+  | { id: string; role: "reasoning"; content: string }
+  /** AG-UI activity: a progress card (subagent, worker). One per id; a later snapshot replaces it in place. */
+  | { id: string; role: "activity"; activityType: string; content: Record<string, unknown> }
 
 type Doc = { threads: Thread[]; messages: Record<string, ChatMessage[]>; folders: Folder[] }
 
@@ -88,6 +102,11 @@ export class Threads {
     if (t) Object.assign(t, meta), this.save()
   }
 
+  setDraft(id: string, draft: Draft): void {
+    const t = this.doc.threads.find((x) => x.id === id)
+    if (t) Object.assign(t, { draft }), this.save()
+  }
+
   delete(id: string): void {
     this.doc.threads = this.doc.threads.filter((t) => t.id !== id)
     delete this.doc.messages[id]
@@ -95,7 +114,12 @@ export class Threads {
   }
 
   append(id: string, ...msgs: ChatMessage[]): void {
-    ;(this.doc.messages[id] ??= []).push(...msgs)
+    const list = (this.doc.messages[id] ??= [])
+    for (const m of msgs) {
+      const at = m.role === "activity" ? list.findIndex((x) => x.id === m.id) : -1
+      if (at >= 0) list[at] = m
+      else list.push(m)
+    }
     this.save()
   }
 }
@@ -104,6 +128,7 @@ export class Threads {
 export class RunRecorder {
   private readonly out: ChatMessage[] = []
   private current: Extract<ChatMessage, { role: "assistant" }> | null = null
+  private thinking: Extract<ChatMessage, { role: "reasoning" }> | null = null
 
   private assistant() {
     if (!this.current) {
@@ -115,8 +140,24 @@ export class RunRecorder {
 
   add(e: any): void {
     switch (e.type) {
+      case "TEXT_MESSAGE_START":
+        // A new text message after text is its own saved message (e.g. the run's card after the answer).
+        if (this.current?.content) this.current = null
+        break
       case "TEXT_MESSAGE_CONTENT":
         this.assistant().content += e.delta
+        break
+      case "REASONING_MESSAGE_START":
+        // Thinking comes before the reply or the tool calls it leads to.
+        this.thinking = { id: e.messageId, role: "reasoning", content: "" }
+        this.out.push(this.thinking)
+        this.current = null
+        break
+      case "REASONING_MESSAGE_CONTENT":
+        if (this.thinking) this.thinking.content += e.delta
+        break
+      case "REASONING_MESSAGE_END":
+        this.thinking = null
         break
       case "TOOL_CALL_START":
         ;(this.assistant().toolCalls ??= []).push({ id: e.toolCallId, type: "function", function: { name: e.toolCallName, arguments: "" } })
@@ -126,15 +167,22 @@ export class RunRecorder {
         if (call) call.function.arguments += e.delta
         break
       }
+      case "ACTIVITY_SNAPSHOT": {
+        const m = { id: e.messageId, role: "activity" as const, activityType: e.activityType, content: e.content }
+        const at = this.out.findIndex((x) => x.id === e.messageId)
+        if (at >= 0) this.out[at] = m
+        else this.out.push(m)
+        break
+      }
       case "TOOL_CALL_RESULT":
-        this.out.push({ id: e.messageId, role: "tool", content: e.content, toolCallId: e.toolCallId })
+        this.out.push({ id: e.messageId, role: "tool", content: e.content, toolCallId: e.toolCallId, ...(e.error ? { error: e.error } : {}) })
         this.current = null
         break
     }
   }
 
   messages(): ChatMessage[] {
-    return this.out.filter((m) => m.role !== "assistant" || m.content || m.toolCalls?.length)
+    return this.out.filter((m) => (m.role === "assistant" ? m.content || m.toolCalls?.length : m.role === "reasoning" ? m.content.trim() : true))
   }
 }
 

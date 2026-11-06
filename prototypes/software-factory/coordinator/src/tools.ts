@@ -1,12 +1,14 @@
 // Tools the coordinator session uses to run the factory.
 import { execFileSync } from "node:child_process"
-import { statSync } from "node:fs"
+import { readFileSync, statSync } from "node:fs"
 import path from "node:path"
 import { defineTool, type Tool } from "@github/copilot-sdk"
-import { now, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
+import { finishPermissions, MAX_FIX_ROUNDS, now, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
 import { SETTINGS_TOOL_DOC } from "./prompts.ts"
+import type { ShipGrant } from "./approvals.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
 import { briefProblem } from "./reports.ts"
+import { diffSummary, reportFindings } from "./cards.ts"
 import { pendingReview, reviewIn, securityReview } from "./security.ts"
 import { decideNext, SELECTABLE_STEPS, SkillPreflightError } from "./steps.ts"
 import { FANOUT_CATALOG, MAX_FANOUT, routeFanout, type FanoutSelection } from "./workflows.ts"
@@ -65,7 +67,8 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       try {
         const d = await decideNext(state)
         if (scope.workdir) f.turn(scope.id).moreWork = d.moreWork
-        const entry = { ...d, request: state.request.slice(0, 200), at: Date.now() }
+        // Tagged with the deciding coordinator, so each conversation's delivery card shows only its own steps.
+        const entry = { ...d, request: state.request.slice(0, 200), at: Date.now(), scopeId: scope.id, threadId: scope.threadId }
         f.publish("coordinator", "factory.step_decided", null, String(Date.now()), entry)
         return json({ ...d, steps: SELECTABLE_STEPS.map(({ id, description }) => ({ id, description })) })
       } catch (e) {
@@ -113,6 +116,42 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       await f.stop(str(a, "id"))
       return json({ stopped: true })
     },
+  }),
+  defineTool("show_worker_board", {
+    description:
+      "Show the human a live board of the worker fleet in the chat (counts, status, model, memory, context use). Use it instead of render_ui whenever the answer is the fleet's status. It takes no arguments and updates live.",
+    parameters: obj({}),
+    handler: (a: any) => json(cardData(f, scope, "show_worker_board", a ?? {})),
+  }),
+  defineTool("show_decisions", {
+    description:
+      "Show every decision waiting for the human (approvals and questions from all conversations) as one card the human can answer in place. Use it when the human asks what needs them or several decisions are open.",
+    parameters: obj({}),
+    handler: (a: any) => json(cardData(f, scope, "show_decisions", a ?? {})),
+  }),
+  defineTool("show_security_review", {
+    description:
+      "Show the security review of this conversation as a live card: status, each finding with severity and Jev's keep/discard verdict and reason, and the fix/verify progress. Use it when the human asks about security or when a review finishes, instead of listing findings in text.",
+    parameters: obj({}),
+    handler: (a: any) => json(cardData(f, scope, "show_security_review", a ?? {})),
+  }),
+  defineTool("show_delivery_run", {
+    description:
+      "Show this conversation's delivery run as a live card: branch, Jev's step decisions with confidence, and how much work is left (moreWork). Only in a conversation that runs the delivery loop (next_step); in a General chat use factory_status instead.",
+    parameters: obj({}),
+    handler: (a: any) => json(cardData(f, scope, "show_delivery_run", a ?? {})),
+  }),
+  defineTool("show_diff_summary", {
+    description:
+      "Show the files changed in this conversation's worktree (against its base commit) as a card with +/- per file. Use it before asking for approval to ship, and when the human asks what changed.",
+    parameters: obj({}),
+    handler: (a: any) => json(cardData(f, scope, "show_diff_summary", a ?? {})),
+  }),
+  defineTool("show_report_findings", {
+    description:
+      "Show a saved report's ranked findings (## 1. Title sections) as a card with a 'Start in Factory' button per finding. `path` is the report path, e.g. reports/synthesis.md. Use it to present a synthesis or optimization report instead of pasting it.",
+    parameters: obj({ path: { type: "string", description: "Report path, e.g. reports/synthesis.md" } }, ["path"]),
+    handler: (a: any) => json(cardData(f, scope, "show_report_findings", a ?? {})),
   }),
   defineTool("render_ui", {
     description:
@@ -314,6 +353,18 @@ export const synthesisBlocked = (f: Factory, scope: Scope): string | null => {
   return batch.workers.map((worker) => researchWorkerBlocked(f, workdir, worker)).find(Boolean) ?? null
 }
 
+/** The branch an accepted ship approval lets this conversation's finish worker push, or why there is none. */
+export const shipGrant = (f: Factory, scope: Scope): ShipGrant | string => {
+  if (!scope.workdir) return "step=finish runs only in a repo conversation"
+  const branch = gitOr(scope.workdir, "--abbrev-ref", "HEAD")
+  const accepted = f.approvals.acceptedShips(scope.id, branch)
+  const open = accepted.find((g) => g.pushes <= MAX_FIX_ROUNDS)
+  if (open) return open
+  return accepted.length
+    ? `Fix round limit reached for ${branch} (${MAX_FIX_ROUNDS} after the first push). report_up blocked, or ask for a new ship approval.`
+    : `No accepted ship approval for branch ${branch}. Call request_approval with ship=true, end your turn, and spawn step=finish after the human picks the first option.`
+}
+
 /** Start a worker; every step waits while a security review is unfinished in the same worktree. */
 const spawnWorker = (f: Factory, scope: Scope) =>
   defineTool("spawn_worker", {
@@ -349,6 +400,8 @@ const spawnWorker = (f: Factory, scope: Scope) =>
     handler: async (a: any) => {
       const blocked = spawnBlocked(f, scope) ?? (a.step === "synthesis" ? synthesisBlocked(f, scope) : null)
       if (blocked) return json({ error: blocked })
+      const ship = a.step === "finish" ? shipGrant(f, scope) : null
+      if (typeof ship === "string") return json({ error: ship })
       const scopeAuth = f.workers.get(scope.id)?.auth
       const auth = scopeAuth ?? "native"
       const w = await spawnHealing(f, scope, {
@@ -358,7 +411,8 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         ...(typeof a.model === "string" ? { model: a.model } : {}),
         task: str(a, "task"),
         ...(typeof a.step === "string" ? { step: a.step } : {}),
-        ...(a.harness === "claude" || a.harness === "pi"
+        ...(ship ? { permissions: finishPermissions(ship, (g) => f.approvals.setPushes(g)) } : {}),
+        ...(!ship && (a.harness === "claude" || a.harness === "pi")
           ? { harness: { kind: a.harness, profiles: Array.isArray(a.profiles) ? a.profiles.map(String) : [] } }
           : {}),
         owner: scope.id,
@@ -376,6 +430,8 @@ const spawnWorker = (f: Factory, scope: Scope) =>
 const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_user") => {
   // Only the global coordinator's approvals answer a report and relay the answer.
   const relays = name === "request_approval" && !scope.workdir
+  // Only a sub-coordinator asks to ship its own branch.
+  const ships = name === "request_approval" && !!scope.workdir
   return defineTool(name, {
     description:
       name === "request_approval"
@@ -400,6 +456,15 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
           description: "Optional, one per option: what happens next if the human picks it, in under 12 words.",
         },
         context: { type: "string", description: "Who asks and about what, e.g. 'coordinator · review of b39040eb'." },
+        ...(ships
+          ? {
+              ship: {
+                type: "boolean",
+                description:
+                  "Ask to push this worktree's branch and open a PR. The first option means ship; when the human picks it, spawn_worker step=finish may push. Ask only after verify passed and the security review finished.",
+              },
+            }
+          : {}),
         ...(relays
           ? {
               reportThreadId: {
@@ -418,6 +483,9 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
         return json({
           error: `unknown or cleaned-up conversation ${JSON.stringify(reportThreadId)}; use an id from list_conversations`,
         })
+      const shipBranch = ships && a.ship === true ? gitOr(scope.workdir!, "--abbrev-ref", "HEAD") : null
+      if (shipBranch !== null && !shipBranch.startsWith("factory/"))
+        return json({ error: `Only factory/* branches ship; this worktree is on ${shipBranch}` })
       const item = f.approvals.open({
         kind: name === "ask_user" ? "question" : "approval",
         threadId: scope.threadId ?? f.currentThread,
@@ -433,6 +501,7 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
         ...(Array.isArray(a.optionDetails) ? { optionDetails: a.optionDetails.map(String) } : {}),
         ...(reportThreadId !== undefined ? { reportThreadId } : {}),
       })
+      if (shipBranch) f.approvals.addShip(item.id, scope.id, shipBranch)
       f.publish("coordinator", "factory.approval_requested", null, String(Date.now()), item)
       return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
     },
@@ -577,3 +646,76 @@ export const globalTools = (c: Conversations): Tool<any>[] => [
     handler: async (a: any) => json(await c.read(str(a, "threadId"), a.wait === true)),
   }),
 ]
+
+/** The checked-out branch of a worktree, or null when git cannot tell. */
+const currentBranch = (wt: string): string | null => {
+  try {
+    return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: wt, encoding: "utf8" }).trim() || null
+  } catch {
+    return null
+  }
+}
+
+/** Jev decisions made by one coordinator. Untagged (older) decisions belong to the Factory desk ("coordinator"). */
+export const ownDecisions = (all: readonly unknown[], scopeId: string): unknown[] =>
+  all.filter((d) => ((d as { scopeId?: unknown }).scopeId ?? "coordinator") === scopeId)
+
+/**
+ * The data of one card (show_* tool), for a coordinator's scope. The tool returns it, and GET /api/cards returns
+ * its view (shared/cardviews.ts) so a card in an OpenUI-only UI refreshes live.
+ */
+export const cardData = (f: Factory, scope: Scope, name: string, a: Record<string, unknown>): unknown => {
+  switch (name) {
+    case "show_worker_board":
+      return { workers: f.summaries(), at: Date.now() }
+    case "show_decisions":
+      return {
+        pending: f.approvals
+          .list()
+          .filter((x) => x.status === "pending")
+          .map((x) => ({ id: x.id, title: x.title, kind: x.kind ?? "approval", context: x.context ?? "coordinator", options: x.options })),
+      }
+    case "show_security_review": {
+      const all = [...f.securityReviews.values()]
+      const mine = all.filter((r) => r.scopeId === scope.id || (scope.threadId !== null && r.threadId === scope.threadId))
+      const r = (mine.length ? mine : all).at(-1)
+      if (!r) return { reviewId: null, note: "No security review yet." }
+      const findings = r.findings.map((x) => ({ title: x.title, severity: x.severity, file: x.file, verdict: x.verdict ?? "", reason: x.reason ?? "" }))
+      return { reviewId: r.id, status: r.status, model: r.model, ...(r.error ? { error: r.error } : {}), findings }
+    }
+    case "show_delivery_run": {
+      const wt = scope.workdir
+      const decisions = ownDecisions(f.decisions, scope.id).slice(-8)
+      return {
+        scopeId: scope.id,
+        branch: wt ? currentBranch(wt) : (f.run?.branch ?? null),
+        worktree: wt ?? f.run?.worktree ?? null,
+        base: scope.base ?? f.run?.base ?? null,
+        decisions,
+        ...(decisions.length ? {} : { note: "No delivery run in this conversation yet. Answer from factory_status or your last step instead." }),
+      }
+    }
+    case "show_diff_summary": {
+      const wt = scope.workdir ?? f.run?.worktree
+      const base = scope.base ?? f.run?.base
+      if (!wt || !base) return { error: "No worktree or base commit in this conversation." }
+      try {
+        return diffSummary(wt, base)
+      } catch (e) {
+        return { error: `git diff failed: ${e instanceof Error ? e.message : String(e)}` }
+      }
+    }
+    case "show_report_findings": {
+      const p = typeof a.path === "string" ? a.path : ""
+      const file = scope.workdir ? path.resolve(scope.workdir, p) : null
+      if (!file || !file.startsWith(path.resolve(scope.workdir!) + path.sep)) return { path: p, findings: [], note: "The UI loads the report." }
+      try {
+        return { path: p, findings: reportFindings(readFileSync(file, "utf8")) }
+      } catch {
+        return { path: p, findings: [], error: "report not found" }
+      }
+    }
+    default:
+      return { error: `unknown card ${name}` }
+  }
+}

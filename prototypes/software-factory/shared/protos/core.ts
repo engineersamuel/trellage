@@ -63,7 +63,7 @@ const describe = (ev: FeedEvent): string | null => {
   const d = ev.data ?? {}
   switch (ev.type) {
     case "user.message":
-      return `→ ${String(d.content ?? "").replace(/<(ui-format|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim().slice(0, 240)}`
+      return `→ ${String(d.content ?? "").replace(/<(ui-format|ui-context|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim().slice(0, 240)}`
     case "assistant.message":
       return d.content ? String(d.content).slice(0, 240) : null
     case "tool.execution_start":
@@ -147,7 +147,9 @@ export const openDecision = (id: string) => (location.hash = `decision=${id}`)
 /** Live readable transcript of any agent in `el` (same renderer as the classic panel). Returns cleanup. */
 export const mountTranscript = (el: HTMLElement, agentId: string, opts?: MountOptions): (() => void) => {
   el.setAttribute("data-transcript-scroll", "")
+  // Same layout as a [data-transcript] host (gaps between items), without the attribute: that would mount it twice.
   const inner = document.createElement("div")
+  inner.className = "sft-root"
   el.replaceChildren(inner)
   return mountTranscriptRaw(inner, agentId, opts)
 }
@@ -197,9 +199,9 @@ export const prototypes = () => [...registry.values()].sort((a, b) => a.id - b.i
 const KEY = "sf_proto"
 export const currentProto = (): number => {
   const q = new URLSearchParams(location.search).get("proto")
-  // Org Canvas (2) is the default layout; 0 is the classic layout.
-  const n = Number(q ?? localStorage.getItem(KEY) ?? 2)
-  return n === 0 || registry.has(n) ? n : 2
+  // Inbox (3) is the default layout; 0 is the classic layout.
+  const n = Number(q ?? localStorage.getItem(KEY) ?? 3)
+  return n === 0 || registry.has(n) ? n : 3
 }
 /** Switch layout live. Hosts listen for window event "sf:proto" (detail = number). */
 export const setProto = (n: number) => {

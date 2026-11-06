@@ -1,8 +1,9 @@
-import { Effect, Filter, Match, Option, Queue, Schema, Stream } from "effect";
+import { Filter, Match, Option, Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 import { Slider } from "@foldkit/ui";
-import { type FeedEvent, RESYNC, onFeed } from "../../../shared/feed";
+import { type FeedEvent, RESYNC } from "../../../shared/feed";
 import { StoredEvent } from "../../../shared/schemas";
+import { feedEvents } from "../feed";
 import { Settings } from "../domain";
 import { Message } from "./message";
 import type { Model } from "./model";
@@ -26,14 +27,6 @@ export const feedEventToMessage = (raw: FeedEvent): Option.Option<Message> =>
     ),
   );
 
-/** shared/feed keeps one connection per page and fans events out to every subscriber. */
-const feedEvents: Stream.Stream<FeedEvent> = Stream.callback<FeedEvent>((queue) =>
-  Effect.acquireRelease(
-    Effect.sync(() => onFeed((event) => Queue.offerUnsafe(queue, event))),
-    (unsubscribe) => Effect.sync(unsubscribe),
-  ),
-);
-
 const panelWidthSlider = Subscription.lift({
   panelWidthPointer: Slider.subscriptions.dragPointer,
   panelWidthEscape: Slider.subscriptions.dragEscape,
@@ -42,8 +35,8 @@ const panelWidthSlider = Subscription.lift({
   toParentMessage: (message) => Message.GotPanelWidthSliderMessage({ message }),
 });
 
-const feed = Subscription.make<Model, Message>()((entry) => ({
-  settingsFeed: entry({}, { modelToDependencies: () => ({}), dependenciesToStream: () => feedEvents.pipe(Stream.filterMap(Filter.fromPredicateOption(feedEventToMessage))) }),
+const feed = Subscription.make<Model, Message>()(() => ({
+  settingsFeed: Subscription.persistentEntry(feedEvents.pipe(Stream.filterMap(Filter.fromPredicateOption(feedEventToMessage)))),
 }));
 
 export const subscriptions = Subscription.aggregate(feed, panelWidthSlider);

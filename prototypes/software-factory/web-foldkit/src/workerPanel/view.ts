@@ -1,10 +1,11 @@
 import { Array, Option } from "effect";
 import { AsyncData, Submodel } from "foldkit";
 import type { Html, HtmlBuilder } from "foldkit/html";
-import { Button, Checkbox, Input } from "@foldkit/ui";
+import { Button, Checkbox, Dialog, Input } from "@foldkit/ui";
 import { agentLabel, workerTree } from "../../../shared/tree";
 import { COORDINATOR_ID, type Worker, backendName } from "../domain";
 import { MountTranscript } from "./command";
+import { workerName } from "./update";
 import { Message } from "./message";
 import type { LogLine, Model } from "./model";
 
@@ -20,21 +21,27 @@ const workerRow = (model: Model, worker: Worker, depth: number, h: HtmlBuilder<M
   const label = agentLabel(worker);
   const isSelected = worker.id === model.selectedWorkerId;
   return h.keyed("li")(worker.id, [], [
-    h.button(
-      [
-        h.Type("button"),
-        h.Class(`fk-row ${isSelected ? "active" : ""}`),
-        h.Style({ "padding-left": `${ROW_INDENT_PX + depth * DEPTH_INDENT_PX}px` }),
-        ...(isSelected ? [h.AriaCurrent("true")] : []),
-        h.OnClick(Message.ClickedWorker({ workerId: worker.id })),
-      ],
-      [
-        ...(depth > 0 ? [h.span([h.Class("fk-branch"), h.AriaHidden(true)], ["└"])] : []),
-        h.span([h.Class("fk-dot"), h.AriaHidden(true), h.Style({ background: STATUS_COLOR[worker.status] ?? UNKNOWN_STATUS_COLOR })]),
-        h.span([h.Class(`sf-tag sf-tag-${label.kind}`)], [label.tag]),
-        h.b([], [label.name]),
-        h.span([h.Class("fk-meta")], [`${worker.status} · ${worker.auth} · pid ${worker.pid ?? "?"} · ${memoryLabel(worker.rssKb)}`]),
-      ],
+    Button.view(
+      {
+        onClick: Message.ClickedWorker({ workerId: worker.id }),
+        toView: (attributes) =>
+          h.button(
+            [
+              ...attributes.button,
+              h.Class(`fk-row ${isSelected ? "active" : ""}`),
+              h.Style({ "padding-left": `${ROW_INDENT_PX + depth * DEPTH_INDENT_PX}px` }),
+              ...(isSelected ? [h.AriaCurrent("true")] : []),
+            ],
+            [
+              ...(depth > 0 ? [h.span([h.Class("fk-branch"), h.AriaHidden(true)], ["└"])] : []),
+              h.span([h.Class("fk-dot"), h.AriaHidden(true), h.Style({ background: STATUS_COLOR[worker.status] ?? UNKNOWN_STATUS_COLOR })]),
+              h.span([h.Class(`sf-tag sf-tag-${label.kind}`)], [label.tag]),
+              h.b([], [label.name]),
+              h.span([h.Class("fk-meta")], [`${worker.status} · ${worker.auth} · pid ${worker.pid ?? "?"} · ${memoryLabel(worker.rssKb)}`]),
+            ],
+          ),
+      },
+      h,
     ),
   ]);
 };
@@ -91,6 +98,22 @@ const peerToolbar = (model: Model, maybeCurrent: Option.Option<Worker>, h: HtmlB
       },
       h,
     ),
+    // Cancel only while a run is going: on an idle worker the button would do nothing.
+    ...Option.match(
+      Option.filter(maybeCurrent, (current) => current.status === "running"),
+      {
+        onNone: () => [],
+        onSome: (current) => [
+          Button.view(
+            {
+              onClick: Message.ClickedCancelRun({ workerId: current.id }),
+              toView: (attributes) => h.button([...attributes.button, h.AriaLabel(`Cancel run of ${current.name}`)], ["Cancel run"]),
+            },
+            h,
+          ),
+        ],
+      },
+    ),
     ...Option.match(
       Option.filter(maybeCurrent, (current) => current.role !== COORDINATOR_ID),
       {
@@ -98,8 +121,8 @@ const peerToolbar = (model: Model, maybeCurrent: Option.Option<Worker>, h: HtmlB
         onSome: (current) => [
           Button.view(
             {
-              onClick: Message.ClickedStop({ workerId: current.id }),
-              toView: (attributes) => h.button([...attributes.button, h.Class("fk-stop")], [`Stop ${current.name}`]),
+              onClick: Message.ClickedRemove({ workerId: current.id }),
+              toView: (attributes) => h.button([...attributes.button, h.Class("fk-danger"), h.AriaLabel(`Remove ${current.name}`)], ["Remove worker"]),
             },
             h,
           ),
@@ -145,6 +168,47 @@ const messageForm = (model: Model, maybeCurrent: Option.Option<Worker>, h: HtmlB
   ]);
 };
 
+/** Asks before a worker is removed. Cancel, Escape and the backdrop all keep it. */
+const removeDialog = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({
+    slotId: model.removeDialog.id,
+    model: model.removeDialog,
+    view: Dialog.view,
+    viewInputs: {
+      hasDescription: true,
+      toView: (render: Dialog.RenderInfo) =>
+        h.dialog(
+          [...render.dialog, h.Class("fk-dialog")],
+          render.isVisible
+            ? [
+                h.div([...render.backdrop, h.Class("fk-backdrop")]),
+                h.div(
+                  [...render.panel, h.Class("fk-confirm")],
+                  Option.match(model.maybePendingRemoval, {
+                    onNone: () => [],
+                    onSome: (workerId) => [
+                      h.h2([...render.title], [`Remove ${workerName(model, workerId)}?`]),
+                      h.p([...render.description], ["Its session ends and it leaves the list. You cannot undo this."]),
+                      h.div([h.Class("fk-confirm-actions")], [
+                        h.button([...render.closeButton], ["Cancel"]),
+                        Button.view(
+                          {
+                            onClick: Message.ConfirmedRemove(),
+                            toView: (attributes) => h.button([...attributes.button, h.Class("fk-danger")], ["Remove"]),
+                          },
+                          h,
+                        ),
+                      ]),
+                    ],
+                  }),
+                ),
+              ]
+            : [],
+        ),
+    },
+    toParentMessage: (message: Dialog.Message) => Message.GotRemoveDialogMessage({ message }),
+  });
+
 export const view = Submodel.defineView<Model, Message>((model, h) => {
   const workers = AsyncData.getOrElse(model.workers, (): ReadonlyArray<Worker> => []);
   const maybeCurrent = Array.findFirst(workers, ({ id }) => id === model.selectedWorkerId);
@@ -158,5 +222,6 @@ export const view = Submodel.defineView<Model, Message>((model, h) => {
       model.isRawLogVisible ? rawLog(model.logLines, h) : h.keyed("div")(`tx-${model.selectedWorkerId}`, [h.Class("fk-log-host")], [transcript(model.selectedWorkerId, h)]),
       messageForm(model, maybeCurrent, h),
     ]),
+    removeDialog(model, h),
   ]);
 });

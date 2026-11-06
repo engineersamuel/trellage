@@ -14,7 +14,7 @@ import {
   type SessionEvent,
   type Tool,
 } from "@github/copilot-sdk"
-import { Approvals } from "./approvals.ts"
+import { Approvals, type ShipGrant } from "./approvals.ts"
 import { EventStore } from "./events.ts"
 import { freshTurn, type Turn } from "./report.ts"
 import { forbiddenCommand } from "./guard.ts"
@@ -36,6 +36,8 @@ export type Session = {
   abort(): Promise<void>
   disconnect(): Promise<void>
   setModel(model: string, options?: { reasoningEffort?: never }): Promise<void>
+  /** Replace the tools this client supplies (Copilot SDK, experimental). */
+  setTools?(tools: Tool<any>[]): Promise<void>
 }
 
 export type WorkerSummary = {
@@ -150,6 +152,10 @@ export class Worker {
   readonly events = new Channel<SessionEvent>()
   session!: Session
   harness: Harness = "copilot"
+  /** The session's own tools; AG-UI client tools are added to these for one run (Copilot sessions only). */
+  tools: Tool<any>[] = []
+  /** Names of the client tools the session has now; "" when it has only its own. */
+  clientToolKey = ""
 
   constructor(
     readonly id: string,
@@ -432,6 +438,8 @@ export class Factory {
         permissionMode: "default",
         canUseTool: claudeGate,
         disallowedTools: ["AskUserQuestion"],
+        // Text and thinking stream to the feed as deltas, like Copilot workers.
+        includePartialMessages: true,
       },
       emit,
     )
@@ -490,6 +498,7 @@ export class Factory {
 
   private configureWorker(worker: Worker, spec: SpawnSpec): void {
     if (spec.owner) worker.owner = spec.owner
+    worker.tools = spec.tools ?? []
     worker.log = this.store.load(worker.id, LOG_CAP, worker.home)
     if (spec.onDone) worker.onDone = spec.onDone
     if (spec.shareRuntimeOf) worker.sharedRuntime = true
@@ -695,7 +704,7 @@ export class Factory {
       ? {
           kind: "reject",
           feedback:
-            "Sub-coordinators never merge, push, or delete branches or worktrees. Ask the human with request_approval, then report_up.",
+            "Sub-coordinators never merge, push, or delete branches or worktrees. To push and open a PR: request_approval with ship=true, then spawn_worker step=finish. Merging and deleting stay with the human.",
         }
       : this.settingsPermissions(request, invocation)
 
@@ -709,6 +718,36 @@ export class Factory {
         }
       : this.settingsPermissions(request, invocation)
 }
+
+/** The first push plus this many fix rounds per ship approval; then the human decides. */
+export const MAX_FIX_ROUNDS = 5
+
+/**
+ * Gate for a finish worker: it fixes, commits, and pushes only its approved branch (no force); it never merges or deletes.
+ * Pushes count against the grant, so a new finish worker for the same approval does not reset the limit.
+ * `saved` stores the new count after each allowed push.
+ */
+export const finishPermissions =
+  (grant: ShipGrant, saved: (g: ShipGrant) => void = () => {}): PermissionHandler =>
+  (request, invocation) => {
+    if (request.kind !== "shell") return approveAll(request, invocation)
+    const cmd = request.fullCommandText
+    if (forbiddenCommand(cmd, grant.branch))
+      return {
+        kind: "reject",
+        feedback: `Finish workers push only with \`git push -u origin ${grant.branch}\` (no force) and never merge or delete. Report it to the coordinator.`,
+      }
+    if (!forbiddenCommand(cmd)) return approveAll(request, invocation)
+    // An allowed push of the granted branch.
+    if (grant.pushes > MAX_FIX_ROUNDS)
+      return {
+        kind: "reject",
+        feedback: `Fix round limit reached (${MAX_FIX_ROUNDS} after the first push). Stop and return what still fails and why.`,
+      }
+    grant.pushes++
+    saved(grant)
+    return approveAll(request, invocation)
+  }
 
 /** Default gate for Copilot workers: never merge, push, or delete branches or worktrees; approve the rest. */
 export const workerPermissions: PermissionHandler = (request, invocation) =>

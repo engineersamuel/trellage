@@ -113,7 +113,7 @@ const submitCronDraft = (model: Model): UpdateReturn =>
     onSuccess: (cron) => ({ model: modifyFields(model, { maybeCronDraftError: () => Option.none() }), commands: [AddCron(cron)] }),
   });
 
-export const update = (model: Model, message: Message): UpdateReturn =>
+export const update = (model: Model, message: Message) =>
   Message.match<UpdateReturn>(message, {
     SucceededFetchSettings: ({ document }) => pipe(storeDocument(document)(model), withFocus(document)),
     FailedFetchSettings: ({ error }) => ({ model: modifyFields(model, { document: (current) => AsyncData.settle(current, Result.fail(error)) }) }),
@@ -137,6 +137,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     GotPanelWidthSliderMessage: ({ message }) => foldPanelWidthSlider(model, message),
     ClickedTheme: ({ theme }) => patch({ theme })(model),
     ToggledAnimations: ({ isChecked }) => patch({ animations: isChecked })(model),
+    ClickedDiffStyle: ({ style }) => patch({ diffStyle: style })(model),
     ClickedPanelPosition: ({ position }) => patch({ layout: { panel: position } })(model),
     ToggledNavbarItem: ({ item }) => withSettings(model, (settings) => ({ navbar: toggleMember(settings.navbar, item) })),
     UpdatedBanner: ({ value }) => patch({ banner: String.isEmpty(value) ? null : value })(model),
@@ -159,6 +160,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     ToggledExtension: ({ name, isChecked }) => patch({ extensions: { [name]: { enabled: isChecked } } })(model),
     ClickedRemoveExtension: ({ name }) => patch({ extensions: { [name]: null } })(model),
     CompletedSyncExtensions: () => ({ model }),
+    CompletedMountDiffPreview: () => ({ model }),
   });
 
 const nextTheme = (settings: Settings): Option.Option<string> => {
@@ -170,11 +172,10 @@ const nextTheme = (settings: Settings): Option.Option<string> => {
   );
 };
 
-/** Settings actions the hotkeys can run. Unknown actions do nothing. */
 /** Ask the server to focus a worker. The settings broadcast then moves the panel. */
 export const requestFocus = (workerId: string): Step => patch({ focus: workerId });
 
-/** Run a hotkey action. */
+/** Run a hotkey action. Unknown actions do nothing. */
 export const pressHotkey =
   (action: string): Step =>
   (model) =>

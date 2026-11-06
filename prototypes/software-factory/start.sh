@@ -39,6 +39,8 @@ shutdown() {
 }
 
 run() {
+  # The coordinator imports packages/trellage-runtime, which needs the root workspace deps.
+  [[ -d ../../node_modules ]] || (cd ../.. && bun install --frozen-lockfile)
   [[ -d coordinator/node_modules ]] || (cd coordinator && bun install --frozen-lockfile)
   [[ -d web-react/node_modules ]] || (cd web-react && npm ci -q)
   [[ -d web-foldkit/node_modules ]] || (cd web-foldkit && npm ci -q --legacy-peer-deps)

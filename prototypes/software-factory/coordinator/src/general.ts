@@ -3,6 +3,7 @@
 // The Factory desk ("coordinator") owns events no chat owns: crons, supervisor issues, reports whose chat is gone.
 // Every coordinator sees the whole factory through factory_status: live state, never accumulated memory.
 import type { Thread } from "./threads.ts"
+import { DRAFT_NOTE, isUnstartedDraft } from "./drafts.ts"
 
 export const DESK_ID = "coordinator"
 export const genId = (threadId: string) => `gen-${threadId.slice(0, 8)}`
@@ -52,7 +53,7 @@ export const factorySnapshot = (
       title: t.title,
       branch: t.branch ?? null,
       status,
-      ...(STATUS_NOTE[status] ? { note: STATUS_NOTE[status] } : {}),
+      ...(isUnstartedDraft(t) ? { note: DRAFT_NOTE } : STATUS_NOTE[status] ? { note: STATUS_NOTE[status] } : {}),
       ...(t.archivedAt ? { archived: true } : {}),
       ...(t.parentThreadId ? { startedFrom: t.parentThreadId } : {}),
       workers: { running: workers.filter((w) => w.status === "running").length, total: workers.length },

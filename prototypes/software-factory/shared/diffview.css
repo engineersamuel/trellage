@@ -1,0 +1,105 @@
+/* Colored file diffs (shared/diffview.ts). Four prototype styles under .dv-style-<name>. Theme colors come from
+   --sf-* when the factory theme sets them. Syntax colors come from the host's highlight.js theme. */
+.dv {
+  --dv-bg: var(--sf-bg, #0d1117);
+  --dv-ink: var(--sf-text, #e6edf3);
+  --dv-muted: var(--sf-muted, #8b949e);
+  --dv-line: var(--sf-border, #30363d);
+  --dv-add: #3fb950;
+  --dv-del: #f85149;
+  display: grid;
+  gap: 8px;
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--dv-ink);
+  min-width: 0;
+}
+.dv-file { min-width: 0; overflow: hidden; }
+.dv-head { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 2px 0 4px; }
+.dv-verb { font-weight: 600; }
+.dv-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+.dv-stats { display: inline-flex; gap: 6px; align-items: center; color: var(--dv-muted); white-space: nowrap; }
+.dv-plus { color: var(--dv-add); }
+.dv-minus { color: var(--dv-del); }
+.dv-bar { display: inline-flex; gap: 1px; }
+.dv-bar i { width: 8px; height: 8px; border-radius: 1px; background: var(--dv-line); }
+.dv-bar i.add { background: var(--dv-add); }
+.dv-bar i.del { background: var(--dv-del); }
+.dv .dv-pick {
+  margin-left: auto; font: inherit; font-size: 11px; color: var(--dv-muted); background: transparent;
+  border: 1px solid var(--dv-line); border-radius: 4px; padding: 0 4px; cursor: pointer;
+}
+.dv-pick:hover, .dv-pick:focus { color: var(--dv-ink); }
+.dv-rows { overflow-x: auto; }
+.dv-row { display: grid; grid-template-columns: 4ch 2ch 1fr; min-width: max-content; }
+.dv-num { color: var(--dv-muted); text-align: right; padding-right: 1ch; user-select: none; opacity: .75; }
+.dv-sign { user-select: none; text-align: center; }
+.dv-code { white-space: pre; padding-right: 12px; }
+.dv-code mark { color: inherit; border-radius: 2px; }
+.dv-row.gap { grid-template-columns: 1fr; }
+.dv-gap { color: var(--dv-muted); padding-left: 4ch; user-select: none; }
+.dv .dv-more {
+  all: unset; cursor: pointer; display: block; padding: 3px 0 0 4ch; color: var(--dv-muted); font-size: 11px;
+}
+.dv .dv-more:hover { color: var(--dv-ink); }
+
+/* 1. Terminal: Claude Code. Solid green/red rows, syntax colors on top, a "⎿" header. */
+.dv-terminal .dv-head::before { content: "⎿"; color: var(--dv-muted); }
+.dv-terminal .dv-verb { font-weight: 400; }
+.dv-terminal .dv-stats .dv-plus, .dv-terminal .dv-stats .dv-minus { color: var(--dv-muted); }
+.dv-terminal .dv-stats::before { content: "("; color: var(--dv-muted); margin-right: -6px; }
+.dv-terminal .dv-stats::after { content: ")"; color: var(--dv-muted); margin-left: -6px; }
+.dv-terminal .dv-rows { margin-left: 2ch; }
+.dv-terminal .dv-row.add { background: #0f3d14; }
+.dv-terminal .dv-row.del { background: #4a0d0d; }
+.dv-terminal .dv-row.del .dv-code, .dv-terminal .dv-row.del .dv-code * { color: #f0d0d0 !important; }
+.dv-terminal .dv-row.add .dv-sign { color: var(--dv-add); }
+.dv-terminal .dv-row.del .dv-sign { color: var(--dv-del); }
+.dv-terminal .dv-row.ctx .dv-code { opacity: .7; }
+
+/* 2. Gutter: Codex / Grok. Quiet tint, a colored edge bar, the changed words marked. */
+.dv-gutter .dv-file { border: 1px solid var(--dv-line); border-radius: 6px; background: var(--dv-bg); }
+.dv-gutter .dv-head { padding: 5px 10px; border-bottom: 1px solid var(--dv-line); }
+.dv-gutter .dv-verb.dv-created { color: var(--dv-add); }
+.dv-gutter .dv-verb.dv-deleted { color: var(--dv-del); }
+.dv-gutter .dv-rows { padding: 4px 0; }
+.dv-gutter .dv-row { border-left: 3px solid transparent; }
+.dv-gutter .dv-row.add { background: rgb(63 185 80 / .10); border-left-color: var(--dv-add); }
+.dv-gutter .dv-row.del { background: rgb(248 81 73 / .10); border-left-color: var(--dv-del); }
+.dv-gutter .dv-row.add .dv-sign { color: var(--dv-add); }
+.dv-gutter .dv-row.del .dv-sign { color: var(--dv-del); }
+.dv-gutter .dv-row.add mark { background: rgb(63 185 80 / .35); }
+.dv-gutter .dv-row.del mark { background: rgb(248 81 73 / .35); text-decoration: line-through; text-decoration-color: rgb(248 81 73 / .6); }
+.dv-gutter .dv-more { padding: 0 10px 6px; }
+
+/* 3. Split: old on the left, new on the right. */
+.dv-split-file, .dv-style-split .dv-file { border: 1px solid var(--dv-line); border-radius: 6px; }
+.dv-style-split .dv-head { padding: 5px 10px; border-bottom: 1px solid var(--dv-line); }
+.dv-splitrows { display: grid; grid-template-columns: 1fr 1fr; }
+.dv-splitrows .dv-row.gap { grid-column: 1 / -1; }
+.dv-cell { display: grid; grid-template-columns: 4ch 1fr; min-width: 0; overflow: hidden; }
+.dv-cell:nth-child(odd of .dv-cell) { border-right: 1px solid var(--dv-line); }
+.dv-cell .dv-code { overflow: hidden; text-overflow: ellipsis; }
+.dv-cell.del { background: rgb(248 81 73 / .14); }
+.dv-cell.add { background: rgb(63 185 80 / .14); }
+.dv-cell.empty { background: repeating-linear-gradient(135deg, transparent 0 4px, rgb(127 127 127 / .08) 4px 8px); }
+.dv-cell.del mark { background: rgb(248 81 73 / .4); }
+.dv-cell.add mark { background: rgb(63 185 80 / .4); }
+.dv-style-split .dv-more { padding: 3px 10px 6px; }
+
+/* 4. Review: GitHub pull request. Two line-number columns, stat squares, fold per file. */
+.dv-github .dv-file, .dv-style-github .dv-file { border: 1px solid var(--dv-line); border-radius: 6px; }
+.dv-style-github .dv-head { padding: 6px 10px; background: rgb(127 127 127 / .08); border-bottom: 1px solid var(--dv-line); }
+.dv-style-github .dv-file[data-folded] .dv-head { border-bottom: 0; }
+.dv-style-github .dv-file[data-folded] .dv-fold { transform: rotate(-90deg); }
+.dv .dv-fold { all: unset; cursor: pointer; color: var(--dv-muted); width: 1.2em; text-align: center; transition: transform .15s; }
+.dv-style-github .dv-verb { display: none; }
+.dv-style-github .dv-row { grid-template-columns: 4ch 4ch 2ch 1fr; }
+.dv-style-github .dv-num { border-right: 1px solid var(--dv-line); }
+.dv-style-github .dv-row.add { background: rgb(46 160 67 / .15); }
+.dv-style-github .dv-row.del { background: rgb(248 81 73 / .15); }
+.dv-style-github .dv-row.add .dv-num { background: rgb(46 160 67 / .25); }
+.dv-style-github .dv-row.del .dv-num { background: rgb(248 81 73 / .25); }
+.dv-style-github .dv-row.add mark { background: rgb(46 160 67 / .4); }
+.dv-style-github .dv-row.del mark { background: rgb(248 81 73 / .4); }
+.dv-style-github .dv-row.gap { background: rgb(56 139 253 / .1); color: var(--dv-muted); }
+.dv-style-github .dv-more { padding: 4px 10px; }

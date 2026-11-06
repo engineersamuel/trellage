@@ -12,6 +12,8 @@ export const Message = defineMessageUnion({
   // Feed events, one Message per kind, decoded in the feed Subscription.
   ReceivedThreadUpdate: { threadId: Schema.optional(Schema.String) },
   ReceivedFeedGap: {},
+  /** The feed reported a change a chat card shows (workers, decisions, reviews, Jev steps). */
+  ReceivedCardDataChange: {},
   // Window and shared-module events
   RequestedOpenThread: { threadId: Schema.String },
   RequestedNewThread: {},
@@ -23,8 +25,6 @@ export const Message = defineMessageUnion({
   SucceededReloadThread: { threadId: Schema.String, messages: Schema.Array(ChatMessageSchema) },
   FailedReloadThread: { error: Schema.String },
   FailedRefreshThreads: { error: Schema.String },
-  SucceededAbortCoordinator: {},
-  FailedAbortCoordinator: { error: Schema.String },
   CompletedSyncThreadUrl: {},
   CompletedSyncExtensionWorkers: {},
   CompletedAttachSlot: {},

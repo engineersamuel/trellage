@@ -59,3 +59,19 @@ test("sub-coordinator permissions reject forbidden shell commands and keep the s
   f.settings = { ...f.settings, agent: { ...f.settings.agent, disabledTools: ["shell"] } }
   expect(await ask({ kind: "shell", fullCommandText: "git status" })).toMatchObject({ kind: "reject" })
 })
+
+test("forbiddenCommand blocks gh merge, branch delete and repo delete; allows other gh commands and gh api", () => {
+  for (const cmd of ["gh pr merge 12 --squash", "gh pr close 12 -d", "gh repo delete x/y"])
+    expect([cmd, forbiddenCommand(cmd)]).toEqual([cmd, true])
+  for (const cmd of ["gh pr create --fill", "gh pr checks --watch", "gh pr view --json url", "gh run view 1 --log-failed", "gh api repos/x/y/pulls/1", "gh api -X POST repos/x/y/issues/1/comments -f body=x", "gh pr close 12"])
+    expect([cmd, forbiddenCommand(cmd)]).toEqual([cmd, false])
+})
+
+test("with a push branch, only a plain push of that branch to origin is allowed", () => {
+  const b = "factory/x-1"
+  for (const cmd of [`git push -u origin ${b}`, `git push origin ${b}`, `git push --set-upstream origin HEAD:${b}`, `git push origin HEAD:refs/heads/${b}`])
+    expect([cmd, forbiddenCommand(cmd, b)]).toEqual([cmd, false])
+  for (const cmd of [`git push --force origin ${b}`, `git push -f origin ${b}`, `git push origin +${b}`, `git push --force-with-lease origin ${b}`, "git push origin main", `git push origin ${b}:main`, `git push origin :${b}`, `git push --delete origin ${b}`, `git push upstream ${b}`, "git push", `git push origin ${b} main`, `git push -u origin ${b} && git merge main`, `gh pr merge --auto`])
+    expect([cmd, forbiddenCommand(cmd, b)]).toEqual([cmd, true])
+  expect(forbiddenCommand(`git push -u origin ${b}`)).toBe(true)
+})

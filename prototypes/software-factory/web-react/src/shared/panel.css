@@ -52,3 +52,14 @@ kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; ma
 .sf-root > .sf-nav, .sf-root > .sf-banner, .sf-root > .sf-layout { position: relative; z-index: 1; }
 .sf-slot-overlay { position: fixed; inset: 0; z-index: 900; pointer-events: none; }
 .sf-slot-overlay:empty, .sf-slot-bg:empty { display: none; }
+/* Diff style preview (shared/diffview.ts): the chips above pick the style, so the header picker is hidden. */
+.sf-diff-preview { margin-top: 8px; }
+.sf-diff-preview .dv-pick { display: none; }
+/* Worker panel: a destructive action, and the dialog that confirms it. */
+.sf-panel button.sf-danger { border-color: #dc2626; color: #f87171; }
+.sf-confirm { width: min(380px, calc(100vw - 32px)); box-sizing: border-box; background: var(--sf-surface); color: var(--sf-text); border: 1px solid var(--sf-border); border-radius: 8px; padding: 16px; }
+.sf-confirm::backdrop { background: #0006; }
+.sf-confirm h2 { margin: 0 0 6px; font-size: 15px; }
+.sf-confirm p { margin: 0 0 14px; color: var(--sf-muted); font-size: 13px; }
+.sf-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.sf-confirm button.sf-danger { background: #dc2626; border-color: #dc2626; color: #fff; }

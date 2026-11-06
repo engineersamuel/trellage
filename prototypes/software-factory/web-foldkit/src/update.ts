@@ -3,9 +3,9 @@ import { AsyncData, Command, Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
 import type { ChatBackend, Flags } from "@plana-solutions/agent-interface";
 import { currentProto } from "../../shared/protos";
-import { foldChat, newThread, openThread, showReloadedThread, toGotChatMessage } from "./chat";
+import { foldChat, newThread, openThread, refreshCards, showReloadedThread, toGotChatMessage } from "./chat";
 import { chat } from "./chatProgram";
-import { AbortCoordinator, RefreshThreads, ReloadThread, SyncExtensionWorkers, SyncThreadUrl } from "./command";
+import { RefreshThreads, ReloadThread, SyncExtensionWorkers, SyncThreadUrl } from "./command";
 import { COORDINATOR_ID } from "./domain";
 import { Message } from "./message";
 import type { Model } from "./model";
@@ -31,8 +31,8 @@ const requestFocus = (workerId: string): Step =>
 const focusWorker = (workerId: string): Step =>
   Update.foldChildStep({ update: WorkerPanel.focus(workerId), read: readWorkerPanel, write: writeWorkerPanel, toParentMessage: toGotWorkerPanelMessage });
 
-const reportPanelError = (error: string): Step =>
-  Update.foldChildStep({ update: WorkerPanel.reportError(error), read: readWorkerPanel, write: writeWorkerPanel, toParentMessage: toGotWorkerPanelMessage });
+const abortWorker = (workerId: string): Step =>
+  Update.foldChildStep({ update: WorkerPanel.abort(workerId), read: readWorkerPanel, write: writeWorkerPanel, toParentMessage: toGotWorkerPanelMessage });
 
 const pressSettingsHotkey = (action: string): Step =>
   Update.foldChildStep({ update: Settings.pressHotkey(action), read: readSettings, write: writeSettings, toParentMessage: toGotSettingsMessage });
@@ -70,14 +70,15 @@ const reloadOpenThread =
 
 const refreshThreads: Step = (model) => ({ model, commands: [RefreshThreads()] });
 
-const handleMessage = (model: Model, message: Message): UpdateReturn =>
+const handleMessage = (model: Model, message: Message) =>
   Message.match<UpdateReturn>(message, {
     GotChatMessage: ({ message }) => foldChat(model, message),
     GotWorkerPanelMessage: ({ message }) => foldWorkerPanel(model, message),
     GotSettingsMessage: ({ message }) => foldSettings(model, message),
     ReceivedThreadUpdate: ({ threadId }) => Update.combine(model, [refreshThreads, reloadOpenThread(Option.fromNullishOr(threadId))]),
     // After a feed gap the open thread and the thread list may be stale. The panel and settings reload their own data.
-    ReceivedFeedGap: () => Update.combine(model, [refreshThreads, reloadOpenThread(Option.none())]),
+    ReceivedFeedGap: () => Update.combine(model, [refreshThreads, reloadOpenThread(Option.none()), refreshCards]),
+    ReceivedCardDataChange: () => refreshCards(model),
     RequestedOpenThread: ({ threadId }) => openThread(threadId)(model),
     RequestedNewThread: () => newThread(model),
     RequestedSelectWorker: ({ workerId }) => requestFocus(workerId)(model),
@@ -87,7 +88,7 @@ const handleMessage = (model: Model, message: Message): UpdateReturn =>
         Option.flatMap(Settings.maybeSettings(model.settings), (settings) => Option.fromNullishOr(settings.hotkeys[key])),
         {
           onNone: () => ({ model }),
-          onSome: (action) => (action === "abortCoordinator" ? { model, commands: [AbortCoordinator()] } : pressSettingsHotkey(action)(model)),
+          onSome: (action) => (action === "abortCoordinator" ? abortWorker(COORDINATOR_ID)(model) : pressSettingsHotkey(action)(model)),
         },
       ),
     UpdatedApprovals: ({ pending }) => ({ model: modifyFields(model, { approvals: () => pending }) }),
@@ -95,8 +96,6 @@ const handleMessage = (model: Model, message: Message): UpdateReturn =>
     // The chat keeps what it shows; the next feed event or feed gap retries.
     FailedReloadThread: () => ({ model }),
     FailedRefreshThreads: () => ({ model }),
-    SucceededAbortCoordinator: () => ({ model }),
-    FailedAbortCoordinator: ({ error }) => reportPanelError(`Abort failed: ${error}`)(model),
     CompletedSyncThreadUrl: () => ({ model }),
     CompletedSyncExtensionWorkers: () => ({ model }),
     CompletedAttachSlot: () => ({ model }),

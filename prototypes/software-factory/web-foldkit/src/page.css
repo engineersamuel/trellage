@@ -54,14 +54,16 @@ kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; ma
 
 /* Native chat: match the CopilotKit dark chat (system font, dark bubbles, dark composer), driven by the theme variables. */
 .fk-chat .openui-agent-container, .fk-chat .openui-agent-container * { font-family: ui-sans-serif, system-ui, sans-serif !important; }
-.fk-chat .openui-agent-container code, .fk-chat .openui-agent-container code *, .fk-chat .openui-agent-container pre, .fk-chat .openui-agent-container kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; }
+.fk-chat .openui-agent-container code, .fk-chat .openui-agent-container code *, .fk-chat .openui-agent-container pre, .fk-chat .openui-agent-container kbd, .fk-chat .openui-agent-container .dv, .fk-chat .openui-agent-container .dv * { font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important; }
 .fk-chat .openui-shell-thread-message-user__content, .fk-chat .openui-agent-thread-message-user__content {
   background: var(--sf-surface) !important; color: var(--sf-text) !important; border: 1px solid var(--sf-border); border-radius: 18px !important; font-size: 14px; line-height: 1.55; }
 .fk-chat .openui-shell-thread-message-user__content *, .fk-chat .openui-agent-thread-message-user__content * { color: inherit !important; }
 .fk-chat .openui-agent-thread-header { background: var(--sf-surface); border-bottom: 1px solid var(--sf-border); }
 .fk-chat .openui-agent-thread-header h1, .fk-chat .openui-agent-thread-header h2, .fk-chat .openui-agent-thread-header [class*="title"] { font-size: 15px !important; font-weight: 600; }
 .fk-chat [class*="composer"] textarea { color: var(--sf-text) !important; font-size: 14px !important; }
-.fk-chat .openui-agent-thread-composer { background: var(--sf-surface) !important; border-color: var(--sf-border) !important; }
+/* Only the pill has a surface (as in CopilotKit); the strip around it stays transparent. */
+.fk-chat .openui-agent-thread-composer { background: transparent !important; border: 0 !important; box-shadow: none !important; }
+.fk-chat .openui-agent-thread-composer__input-wrapper { background: var(--sf-surface) !important; box-shadow: 0 0 0 0.5px var(--sf-border), 0 4px 16px rgba(0, 0, 0, 0.35) !important; }
 
 /* Panel body: the worker panel Submodel fills the grid rows of .fk-panel below the slot. */
 .fk-panel { grid-template-rows: auto 1fr; }
@@ -87,3 +89,44 @@ kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; ma
 .fk-slider-track { position: relative; flex: 1; height: 4px; border-radius: 2px; background: var(--sf-border); }
 .fk-slider-fill { border-radius: 2px; background: var(--sf-accent); }
 .fk-slider-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--sf-text); cursor: grab; }
+/* Diff style preview (shared/diffview.ts): the chips above pick the style, so the header picker is hidden. */
+.sf-diff-preview { margin-top: 8px; }
+.sf-diff-preview .dv-pick { display: none; }
+/* File diffs of the chat's tool calls (shared/diffview.ts startToolDiffs fills the slots). */
+.sf-tool-slot:not(:empty) { margin: 6px 0 4px; }
+/* Worker panel: a destructive action, and the dialog that confirms it. */
+.fk-panel button.fk-danger { border-color: #dc2626; color: #f87171; }
+.fk-confirm { position: fixed; top: 30%; left: 50%; transform: translateX(-50%); width: min(380px, calc(100vw - 32px)); box-sizing: border-box; background: var(--sf-surface); color: var(--sf-text); border: 1px solid var(--sf-border); border-radius: 8px; padding: 16px; z-index: 1000; box-shadow: 0 8px 24px #0008; }
+.fk-confirm h2 { margin: 0 0 6px; font-size: 15px; }
+.fk-confirm p { margin: 0 0 14px; color: var(--sf-muted); font-size: 13px; }
+.fk-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.fk-confirm button { background: var(--sf-surface); color: var(--sf-text); border: 1px solid var(--sf-border); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+.fk-confirm button.fk-danger { background: #dc2626; border-color: #dc2626; color: #fff; }
+
+/* Chat cards (OpenUI answers that start with a CardHeader, e.g. the live factory cards): the CopilotKit card look.
+   Plain text answers (no header) stay unboxed. */
+.openui-card.openui-card-card:has(> .openui-header:first-child) {
+  background: var(--sf-surface); border-radius: 12px; padding: 16px 16px 14px; box-shadow: 0 0 0 0.5px var(--sf-border);
+  gap: 10px !important; font-size: 13px;
+}
+.openui-card:has(> .openui-header:first-child) > .openui-header .openui-header-top-left { font-size: 16px; font-weight: 600; }
+.openui-card:has(> .openui-header:first-child) > .openui-header .openui-header-bottom { color: var(--sf-muted); font-size: 13px; }
+.openui-card:has(> .openui-header:first-child) .openui-text-content p { margin: 2px 0 4px; color: var(--sf-muted); }
+.openui-card:has(> .openui-header:first-child) .openui-text-content strong { color: var(--sf-text); }
+/* Tables fit the card: no overlay scroll arrows over the first column. */
+.openui-card:has(> .openui-header:first-child) .openui-scrollable-table-control { display: none; }
+.openui-card:has(> .openui-header:first-child) .openui-table { font-size: 13px; }
+.openui-card:has(> .openui-header:first-child) .openui-table-head { color: var(--sf-muted); font-weight: 500; }
+/* Name + role on one line, the role small and muted (as the CopilotKit card). */
+.openui-card:has(> .openui-header:first-child) .openui-table-cell .openui-text-block--text-subtext {
+  flex-direction: row; align-items: baseline; gap: 6px; text-align: left; max-width: 340px;
+}
+.openui-card:has(> .openui-header:first-child) .openui-table-cell .openui-text-block__primary {
+  font: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.openui-card:has(> .openui-header:first-child) .openui-table-cell .openui-text-block__secondary { font-size: 11.5px; color: var(--sf-muted); flex: none; }
+/* Number columns of the worker board (Memory, Context) right-aligned, as in the CopilotKit card. */
+.openui-card:has(> .openui-header:first-child) .openui-table:has(.openui-tag) :is(th, td):nth-child(4),
+.openui-card:has(> .openui-header:first-child) .openui-table:has(.openui-tag) :is(th, td):nth-child(5) { text-align: right; }
+.openui-card:has(> .openui-header:first-child) .openui-table:has(.openui-tag) th:nth-child(4) .openui-table-head-content,
+.openui-card:has(> .openui-header:first-child) .openui-table:has(.openui-tag) th:nth-child(5) .openui-table-head-content { justify-content: flex-end; }

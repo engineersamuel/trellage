@@ -1,148 +1,149 @@
-// Plain HTTP on a tailnet IP is not a secure context, so browsers omit crypto.randomUUID.
-// CopilotKit and the thread picker need it; getRandomValues still works there.
-if (typeof crypto.randomUUID !== "function") {
-  crypto.randomUUID = () =>
-    "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
-      (+c ^ (crypto.getRandomValues(new Uint8Array(1))[0]! & (15 >> (+c / 4)))).toString(16),
-    ) as `${string}-${string}-${string}-${string}-${string}`;
-}
-
-// Option 1: React + CopilotKit. CopilotKit talks AG-UI straight to the Rust
-// coordinator through an HttpAgent (no CopilotKit runtime server in between).
-import { HttpAgent } from "@ag-ui/client";
-import { CopilotChat, CopilotKitProvider, useRenderTool } from "@copilotkit/react-core";
-import { Renderer } from "@openuidev/react-lang";
-import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
-import "@openuidev/react-ui/components.css";
-import { ThemeProvider } from "@openuidev/react-ui";
-import { useEffect, useState } from "react";
+// Must be the first import: ES modules run imports before this file, and the store calls randomUUID on load.
+import "./secure-context";
+// Option 1: React + CopilotKit + Effect + one zustand store. See AGENTS.md for the rules.
+import { CopilotChat, CopilotKitProvider, useAgentContext, useCopilotKit, useFrontendTool, useHumanInTheLoop, useRenderTool } from "@copilotkit/react-core";
+import { Effect } from "effect";
+import { activityRenderers } from "./chat/ActivityCards";
+import { OpenUiCard, renderOpenUiInto } from "./genui/OpenUi";
+import { WorkerBoard } from "./genui/WorkerBoard";
+import { ConfirmCard, DecisionQueueCard, DeliveryRunCard, DiffSummaryCard, ReportFindingsCard, SecurityReviewCard } from "./genui/Cards";
+import { useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
 import { startDecisionCenter } from "../../shared/decisions";
-import { startFolderSidebar, syncThreadUrl } from "../../shared/folders";
+import { startFolderSidebar } from "../../shared/folders";
 import { startTranscripts } from "../../shared/transcript";
 import { setOpenUiRenderer, startPrototypes } from "../../shared/protos";
-import { onFeed, RESYNC } from "../../shared/feed";
+import { setProto } from "../../shared/protos/core";
 import { FactoryShell } from "./shared/FactoryShell";
 import { factoryMarkdownRenderer } from "./shared/CodeBlock";
 import { REPORT_REF, ReportViewer } from "./shared/ReportViewer";
-
-const coordinator = new HttpAgent({ url: "/api/agui", agentId: "coordinator" });
+import { DecisionCard } from "./chat/DecisionCard";
+import { ToolCard, ToolGroup } from "./chat/ToolCards";
+import { coordinator, freshThread, loadCapabilities, openThread, openUiChatAction } from "./state/chat";
+import { startHostEvents } from "./state/host-events";
+import { Action } from "./state/model";
+import { dispatch, patchSettings, startStore, useApp } from "./state/store";
 
 function ToolRenderers() {
-  // Generative UI pushed by the backend: the coordinator's render_ui tool carries OpenUI Lang.
+  // Agent-designed UI: render_ui carries an OpenUI Lang program (rule 10). Buttons continue the chat.
+  const { copilotkit } = useCopilotKit();
+  const onAction = useMemo(() => openUiChatAction(copilotkit), [copilotkit]);
   useRenderTool({
     name: "render_ui",
     parameters: z.object({ title: z.string().optional(), program: z.string() }),
     render: ({ parameters, status }) =>
       parameters?.program ? (
-        <div style={{ margin: "8px 0" }}>
-          <ThemeProvider mode="dark">
-            <Renderer response={parameters.program} library={openuiChatLibrary} isStreaming={status !== "complete"} />
-          </ThemeProvider>
+        <div className="sf-openui">
+          <OpenUiCard program={parameters.program} streaming={status !== "complete"} onAction={onAction} />
         </div>
       ) : null,
-  });
-  useRenderTool({
-    name: "spawn_worker",
-    parameters: z.object({ name: z.string(), task: z.string() }),
-    render: ({ parameters, status, result }) => (
-      <div className="ck-card">
-        <b>🏭 spawn_worker</b> {parameters?.name} — {status}
-        <div className="ck-sub">{parameters?.task}</div>
-        {result && <div className="ck-sub">pid {safe(result)?.pid} · {safe(result)?.id}</div>}
-      </div>
-    ),
-  });
-  useRenderTool({
-    name: "*",
-    render: ({ name, status }: { name: string; status: string }) => (
-      <div className="ck-card">
-        <b>🔧 {name}</b> — {status}
-      </div>
-    ),
-  });
+  }, [onAction]);
+  // Known layout (rule 13): the live worker board, drawn with OpenUI components.
+  useRenderTool({ name: "show_worker_board", parameters: z.object({}), render: (p) => <WorkerBoard result={p.result} /> });
+  useRenderTool({ name: "show_security_review", parameters: z.object({}), render: (p) => <SecurityReviewCard result={p.result} /> });
+  useRenderTool({ name: "show_delivery_run", parameters: z.object({}), render: (p) => <DeliveryRunCard result={p.result} /> });
+  useRenderTool({ name: "show_diff_summary", parameters: z.object({}), render: (p) => <DiffSummaryCard result={p.result} /> });
+  useRenderTool({ name: "show_report_findings", parameters: z.object({ path: z.string() }), render: (p) => <ReportFindingsCard result={p.result} /> });
+  useRenderTool({ name: "show_decisions", parameters: z.object({}), render: () => <DecisionQueueCard /> });
+  // Decisions render as an answerable card in the chat (own row, not grouped).
+  const decision = z.object({ title: z.string(), summary: z.string().optional(), options: z.array(z.string()).optional() });
+  useRenderTool({ name: "request_approval", parameters: decision, render: (p) => <DecisionCard name={p.name} toolCallId={p.toolCallId} args={p.parameters} result={p.result} /> });
+  useRenderTool({ name: "ask_user", parameters: decision, render: (p) => <DecisionCard name={p.name} toolCallId={p.toolCallId} args={p.parameters} result={p.result} /> });
+  // Every other tool: affectUI's Tool Call Card. `group` lets the chat fold calls in a row into ToolGroup.
+  useRenderTool({ name: "*", group: true, render: ToolCard });
   return null;
 }
 
-const safe = (s: string) => {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-};
+/** Sent as forwardedProps with every run. */
+const RUN_PROPERTIES = { interrupts: true };
+const FocusArgs = z.object({ id: z.string() });
 
-type Thread = { id: string; title: string };
-
-/**
- * Saved threads (shared with Foldkit and the sf CLI). Picking one loads its messages
- * into the agent; a thread that changes elsewhere reloads live.
- */
-function useThreads() {
-  const [threads, setThreads] = useState<Thread[]>([]);
-  const [current, setCurrent] = useState<string>(() => crypto.randomUUID());
-  const loadList = () => fetch("/api/threads/get").then((r) => r.json()).then((v) => setThreads(v.threads));
-  const open = async (id: string) => {
-    const msgs = await fetch(`/api/threads/get/${encodeURIComponent(id)}`).then((r) => r.json());
-    coordinator.threadId = id;
-    coordinator.setMessages(msgs);
-    setCurrent(id);
-    syncThreadUrl(id);
-  };
-  useEffect(() => {
-    loadList();
-    return onFeed((ev) => {
-      if (ev.type !== "factory.thread_updated" && ev.type !== RESYNC) return;
-      loadList();
-      // Reload the open thread when another client wrote it (or after a feed gap); our own runs stream in already.
-      const id = ev.type === RESYNC ? coordinator.threadId : ev.data.threadId;
-      if (id && id === coordinator.threadId && !coordinator.isRunning) open(id).catch(() => {});
-    });
-  }, []);
-  const fresh = () => {
-    const id = crypto.randomUUID();
-    coordinator.threadId = id;
-    coordinator.setMessages([]);
-    setCurrent(id);
-    syncThreadUrl(null);
-  };
-  return { threads, current, open, fresh };
+/** What the coordinator can do in this page (AG-UI frontend tools) and what the human is looking at (AG-UI context). */
+function UiBridge() {
+  // Runs in the browser: the coordinator's call ends its run, CopilotKit runs this and resumes with the result.
+  useFrontendTool({
+    name: "focus_agent",
+    description: "Show one agent (coordinator or worker id) in the human's side panel. Use it when you point the human at a worker.",
+    parameters: FocusArgs,
+    handler: async ({ id }) => {
+      if (!useApp.getState().workers[id]) return `unknown agent ${id}`;
+      patchSettings({ focus: id });
+      return `showing ${id}`;
+    },
+  });
+  useFrontendTool({
+    name: "open_report",
+    description: "Open a saved report (e.g. reports/synthesis.md) in the human's report viewer.",
+    parameters: z.object({ path: z.string() }),
+    handler: async ({ path }) => (dispatch(Action.ReportOpened({ ref: path })), `opened ${path}`),
+  });
+  useFrontendTool({
+    name: "set_layout",
+    description: "Switch the human's page layout: 0 = chat with agent panel, 2 = Org Canvas. Only when the human asks.",
+    parameters: z.object({ layout: z.union([z.literal(0), z.literal(2)]) }),
+    handler: async ({ layout }) => (setProto(layout), `layout ${layout}`),
+  });
+  // A yes/no the run waits for: the card's buttons resume the coordinator with "confirmed" or "declined".
+  useHumanInTheLoop({
+    name: "confirm_action",
+    description: "Ask the human for a quick yes/no before a destructive step they did not ask for in this turn. Returns 'confirmed' or 'declined'.",
+    parameters: z.object({ title: z.string(), detail: z.string().optional(), confirmLabel: z.string().optional() }),
+    render: (p) => <ConfirmCard args={p.args} {...(p.respond ? { respond: p.respond } : {})} result={p.result} />,
+  });
+  const focus = useApp((s) => s.settings?.settings.focus ?? null);
+  const pending = useApp((s) => s.decisions.filter((d) => d.status === "pending").length);
+  useAgentContext({ description: "Agent shown in the human's side panel", value: focus ?? "none" });
+  useAgentContext({ description: "Decisions waiting for the human", value: pending });
+  return null;
 }
 
+/**
+ * The chat owns no thread state: the store's thread id is passed as `threadId`, so CopilotKit sets the agent's
+ * thread and loads its history through FactoryAgent.connect(). `threadVersion` remounts it to reload.
+ */
+function CoordinatorChat() {
+  const threadId = useApp((s) => s.threadId);
+  const version = useApp((s) => s.threadVersion);
+  return (
+    <CopilotChat
+      key={`${threadId}:${version}`}
+      agentId="coordinator"
+      threadId={threadId}
+      labels={{ chatInputPlaceholder: "Ask the coordinator to build something… (try: switch to the nord theme)" }}
+      chatView={{ messageView: { assistantMessage: { toolCallsView: { group: ToolGroup } } } }}
+    />
+  );
+}
+
+/** Saved threads (shared with Foldkit and the sf CLI). The store holds the list and the open id. */
 function ThreadPicker() {
-  const t = useThreads();
-  // Opening a decision (deep link) opens its conversation behind the card.
-  useEffect(() => {
-    const onOpen = (e: Event) => t.open((e as CustomEvent<string>).detail);
-    window.addEventListener("sf:open-thread", onOpen);
-    window.addEventListener("sf:new-thread", t.fresh);
-    // The sidebar announces ?thread= on load, which can be before this listener exists: open it here too.
-    const linked = new URL(window.location.href).searchParams.get("thread");
-    if (linked) t.open(linked).catch(() => {});
-    return () => (window.removeEventListener("sf:open-thread", onOpen), window.removeEventListener("sf:new-thread", t.fresh));
-  }, []);
-  return (<>
+  // An unstarted draft is not a conversation yet: it is run from its node on the Org Canvas.
+  const threads = useApp((s) => s.threads).filter((t) => !(t.draft && !t.draft.startedAt));
+  const current = useApp((s) => s.threadId);
+  return (
     <div className="ck-threads">
-      <select value={t.threads.some((x) => x.id === t.current) ? t.current : ""} onChange={(e) => (e.target.value ? t.open(e.target.value) : t.fresh())}>
+      <select value={threads.some((x) => x.id === current) ? current : ""} onChange={(e) => (e.target.value ? openThread(e.target.value) : freshThread())}>
         <option value="">New thread</option>
-        {t.threads.map((x) => (
+        {threads.map((x) => (
           <option key={x.id} value={x.id}>{x.title}</option>
         ))}
       </select>
     </div>
-  </>);
+  );
 }
+
+const refOf = (e: Element) => {
+  const text = (e.textContent ?? "").trim();
+  const href = e.getAttribute("href") ?? "";
+  return REPORT_REF.test(text) ? text : REPORT_REF.test(href) ? href : null;
+};
 
 /** Report paths (`reports/x.md`) anywhere on the page open the report viewer. */
 function ReportLinks() {
-  const [open, setOpen] = useState<{ ref: string; agent?: string } | null>(null);
+  const report = useApp((s) => s.report);
   useEffect(() => {
-    const refOf = (e: Element) => {
-      const text = (e.textContent ?? "").trim();
-      const href = e.getAttribute("href") ?? "";
-      return REPORT_REF.test(text) ? text : REPORT_REF.test(href) ? href : null;
-    };
+    // Shared DOM modules render report paths too, so links are found in the page, not in React output.
     const tag = () => {
       for (const e of document.querySelectorAll("code:not(.sf-report-link), a:not(.sf-report-link)"))
         if (!e.closest("pre, .rv-modal") && refOf(e)) e.classList.add("sf-report-link");
@@ -155,48 +156,60 @@ function ReportLinks() {
       ev.stopPropagation();
       // The agent that wrote the text decides which conversation worktree a relative path means.
       const host = e.closest<HTMLElement>("[data-agent], [data-transcript]");
-      setOpen({ ref, agent: host?.dataset.agent ?? host?.dataset.transcript ?? undefined });
+      const agent = host?.dataset.agent ?? host?.dataset.transcript;
+      dispatch(Action.ReportOpened(agent ? { ref, agent } : { ref }));
     };
-    const mo = new MutationObserver(tag);
-    mo.observe(document.body, { subtree: true, childList: true, characterData: true });
+    // Streaming fires many mutations per second: scan at most once per frame. Report paths sit in <code>/<a>
+    // elements, which arrive as new nodes, so text-only changes (characterData) need no scan.
+    let frame = 0;
+    const schedule = () => (frame ||= requestAnimationFrame(() => ((frame = 0), tag())));
+    const mo = new MutationObserver(schedule);
+    mo.observe(document.body, { subtree: true, childList: true });
     tag();
     document.addEventListener("click", onClick, true);
-    const onOpen = (e: Event) => setOpen({ ref: (e as CustomEvent<string>).detail });
-    window.addEventListener("sf:open-report", onOpen);
-    return () => (mo.disconnect(), document.removeEventListener("click", onClick, true), window.removeEventListener("sf:open-report", onOpen));
+    return () => (mo.disconnect(), cancelAnimationFrame(frame), document.removeEventListener("click", onClick, true));
   }, []);
-  return open ? <ReportViewer refPath={open.ref} agent={open.agent} onClose={() => setOpen(null)} /> : null;
+  return report ? <ReportViewer refPath={report.ref} agent={report.agent} onClose={() => dispatch(Action.ReportClosed())} /> : null;
 }
 
 function App() {
   return (
-    <CopilotKitProvider selfManagedAgents={{ coordinator }} enableInspector={false} markdownRenderer={factoryMarkdownRenderer}>
+    <CopilotKitProvider
+      selfManagedAgents={{ coordinator }}
+      enableInspector={false}
+      markdownRenderer={factoryMarkdownRenderer}
+      renderActivityMessages={activityRenderers}
+      // This UI answers decisions as AG-UI interrupts (resume); Foldkit does not send it and gets plain runs.
+      properties={RUN_PROPERTIES}
+    >
       <ToolRenderers />
+      <UiBridge />
       <ReportLinks />
       <FactoryShell
         title="Factory · CopilotKit"
-        chat={<><ThreadPicker /><CopilotChat agentId="coordinator" labels={{ chatInputPlaceholder: "Ask the coordinator to build something… (try: switch to the nord theme)" }} /></>}
+        chat={<>
+          <ThreadPicker />
+          <CoordinatorChat />
+        </>}
       />
-      <style>{`.ck-card{border:1px solid var(--sf-border);border-radius:8px;padding:6px 10px;margin:6px 0;font-size:13px}
-        .ck-sub{color:var(--sf-muted);font-size:12px;margin-top:2px}
-        .ck-threads{padding:6px 12px;border-bottom:1px solid var(--sf-border)}
-        .ck-threads select{max-width:100%;background:var(--sf-surface);color:var(--sf-text);border:1px solid var(--sf-border);border-radius:6px;padding:3px 6px}`}</style>
+      <style>{`.ck-threads{padding:6px 12px;border-bottom:1px solid var(--sf-border)}
+        .ck-threads select{max-width:100%;background:var(--sf-surface);color:var(--sf-text);border:1px solid var(--sf-border);border-radius:6px;padding:3px 6px}
+        .sf-chat .ui-tcc, .sf-chat .ui-tcc-group, .sf-openui, .sf-board{margin:6px 0}
+        .sf-chat-diffs{margin:2px 0 8px 12px}
+        .sf-board{background:var(--sf-surface);border-radius:12px;padding:16px 16px 14px;box-shadow:0 0 0 0.5px var(--sf-border);font-size:13px}.sf-board .openui-scrollable-table-control{display:none}.sf-board td:first-child{max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sf-board th,.sf-board td{white-space:nowrap}.sf-board-metrics{display:flex;gap:24px;align-items:center;padding:4px 0 8px}.sf-board-text{margin:4px 0 8px;color:var(--sf-muted)}.sf-board-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.sf-queue-row{display:grid;gap:6px;padding:8px 0;border-top:1px solid var(--sf-border)}.sf-progress{height:6px;border-radius:3px;background:var(--sf-bg);margin:0 0 10px;overflow:hidden}.sf-progress span{display:block;height:100%;background:var(--sf-accent)}.sf-diff-add{color:#3fb950}.sf-diff-del{color:#f85149}.sf-err{color:#ff7b72;margin-left:6px}.sf-board-row{cursor:pointer}.sf-board small{color:var(--sf-muted);margin-left:6px;font-size:11.5px}.sf-board-wait{color:var(--sf-muted)}
+        /* affectUI card stays verbatim; its variables follow the factory palette from outside (rule 12). */
+        :root .sf-chat .ui-tcc, :root .sf-chat .ui-tcc-group{--ui-tcc-card:var(--sf-surface);--ui-tcc-code:var(--sf-bg);--ui-tcc-accent:var(--sf-accent);--ui-tcc-strong:var(--sf-text);--ui-tcc-ink:var(--sf-text);--ui-tcc-text:var(--sf-muted);--ui-tcc-focus:var(--sf-accent)}`}</style>
     </CopilotKitProvider>
   );
 }
 
+startStore();
+startHostEvents();
+void Effect.runPromise(loadCapabilities);
 createRoot(document.getElementById("root")!).render(<App />);
 startDecisionCenter();
 startFolderSidebar();
 startTranscripts();
-// The factory stream renders coordinator answers written in OpenUI Lang (for the Foldkit chat) as cards.
-setOpenUiRenderer((el, program, onAction) => {
-  const root = createRoot(el);
-  root.render(
-    <ThemeProvider mode="dark">
-      <Renderer response={program} library={openuiChatLibrary} isStreaming={false} onAction={onAction} />
-    </ThemeProvider>,
-  );
-  return () => root.unmount();
-});
+// The factory stream and canvas render coordinator answers written in OpenUI Lang with the same themed card.
+setOpenUiRenderer(renderOpenUiInto);
 startPrototypes();

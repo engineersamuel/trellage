@@ -368,6 +368,27 @@ HOME="${refresh_home}" SOURCE_CONTRACT_ARGS="${source_args}" NATIVE_CONTRACT_ARG
   "${refresh_fixture}/scripts/refresh-native-if-stale.sh"
 [[ ! -e "${native_args}" ]] || fail "native freshness check rebuilt an installation that was already current"
 
+# Two refreshes at once: the lock runs them one at a time and the second sees the first's receipt.
+rebuild_count="${lefthook_regression_root}/rebuild-count"
+cat >"${refresh_fixture}/scripts/rebuild-profile-images.sh" <<'REBUILD'
+#!/bin/sh
+mkdir "${NATIVE_CONTRACT_BUSY:?}" || exit 1
+printf 'x\n' >>"${NATIVE_CONTRACT_COUNT:?}"
+sleep 2
+rmdir "${NATIVE_CONTRACT_BUSY}"
+REBUILD
+printf '%s\n' 'installed' >"${refresh_home}/.local/share/trellage/.native-stack-sources"
+concurrent_refresh() {
+  HOME="${refresh_home}" SOURCE_CONTRACT_ARGS="${source_args}" NATIVE_CONTRACT_COUNT="${rebuild_count}" \
+    NATIVE_CONTRACT_BUSY="${lefthook_regression_root}/rebuild-busy" "${refresh_fixture}/scripts/refresh-native-if-stale.sh"
+}
+concurrent_refresh 2>/dev/null &
+first_refresh=$!
+concurrent_refresh 2>/dev/null || fail "concurrent native refresh failed"
+wait "${first_refresh}" || fail "concurrent native refresh failed"
+[[ "$(wc -l <"${rebuild_count}" | tr -d ' ')" == 1 ]] || fail "concurrent native refreshes rebuilt more than once"
+[[ ! -e "${refresh_home}/.local/share/trellage/.native-refresh.lock" ]] || fail "native refresh left its lock behind"
+
 rm -f -- "${lefthook_fake_dir}/lefthook"
 set +e
 lefthook_missing_output="$(cd "${lefthook_primary}" && "${lefthook_hook}" 2>&1)"

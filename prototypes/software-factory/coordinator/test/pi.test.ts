@@ -7,7 +7,7 @@ test("Pi session events map to the Copilot event names the feed and UIs read", (
     message: { role: "assistant", responseId: "r1", stopReason: "error", errorMessage: "boom", content: [{ type: "thinking", thinking: "hm" }, { type: "text", text: "hi" }] },
   }
   expect(piEvents(msg, "t").map((e) => [e.type, e.data])).toEqual([
-    ["assistant.reasoning", { content: "hm" }],
+    ["assistant.reasoning", { reasoningId: "r1:0", content: "hm" }],
     ["assistant.message", { messageId: "r1:1", content: "hi" }],
     ["session.error", { message: "boom" }],
   ])
@@ -21,4 +21,13 @@ test("Pi session events map to the Copilot event names the feed and UIs read", (
     result: { content: "no" },
   })
   expect(piEvents({ type: "agent_settled", aborted: false } as any, "t").map((e) => e.type)).toEqual(["session.idle"])
+})
+
+test("Pi text and thinking stream as deltas with the ids of the final message", () => {
+  const m = { role: "assistant", timestamp: 7, content: [] }
+  const upd = (a: unknown) => piEvents({ type: "message_update", message: m, assistantMessageEvent: a } as any, "t")
+  expect(upd({ type: "text_delta", contentIndex: 1, delta: "he" })[0]!.data).toEqual({ messageId: "7:1", deltaContent: "he" })
+  expect(upd({ type: "thinking_delta", contentIndex: 0, delta: "hm" })[0]!.data).toEqual({ reasoningId: "7:0", deltaContent: "hm" })
+  const end = piEvents({ type: "message_end", message: { ...m, content: [{ type: "thinking", thinking: "hm" }, { type: "text", text: "hey" }] } } as any, "t")
+  expect(end.map((e) => e.data)).toEqual([{ reasoningId: "7:0", content: "hm" }, { messageId: "7:1", content: "hey" }])
 })

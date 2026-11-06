@@ -1,11 +1,12 @@
-import { Effect, Filter, Match, Option, Queue, Schema, Stream } from "effect";
+import { Filter, Match, Option, Schema, Stream } from "effect";
 import { Subscription } from "foldkit";
 import { changes as approvalChanges } from "../../shared/approvals";
-import { type FeedEvent, RESYNC, onFeed } from "../../shared/feed";
+import { type FeedEvent, RESYNC } from "../../shared/feed";
 import { onProto } from "../../shared/protos";
 import { StoredEvent } from "../../shared/schemas";
 import { toGotChatMessage } from "./chat";
 import { chat } from "./chatProgram";
+import { feedEvents, fromCallback } from "./feed";
 import { Message } from "./message";
 import type { Model } from "./model";
 import * as Settings from "./settings";
@@ -26,50 +27,50 @@ export const feedEventToMessage = (raw: FeedEvent): Option.Option<Message> =>
     ),
   );
 
-/** A Stream of the values a callback-style source pushes; `subscribe` returns its unsubscribe function. */
-const fromCallback = <A>(subscribe: (emit: (value: A) => void) => () => void): Stream.Stream<A> =>
-  Stream.callback<A>((queue) =>
-    Effect.acquireRelease(
-      Effect.sync(() => subscribe((value) => Queue.offerUnsafe(queue, value))),
-      (unsubscribe) => Effect.sync(unsubscribe),
-    ),
-  );
+/** Feed events that change what a chat card shows. Workers report often while busy, so changes are coalesced. */
+const CARD_EVENTS = /^factory\.(worker_(started|updated|stopped)|approval_|security_review|step_decided)/;
+/** One card refresh per burst of feed events (a busy worker sends several per second). */
+const CARD_REFRESH_DEBOUNCE = "150 millis";
+
+export const isCardEvent = (type: string): boolean => CARD_EVENTS.test(type);
 
 /** The string payload of an sf:* window event ("" when missing). */
 const eventDetail = (event: Event): string => (event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : "");
 
 const windowEvents = (type: string): Stream.Stream<Event> => Stream.fromEventListener<Event>(window, type);
 
-const alwaysOn = <A>(toStream: () => Stream.Stream<A>) => ({ modelToDependencies: () => ({}), dependenciesToStream: toStream });
-
 /** Plain keys outside text fields and dialogs. update looks the key up in the hotkey settings. */
 const isHotkey = (event: KeyboardEvent): boolean =>
   !(event.metaKey || event.ctrlKey || event.altKey) &&
   !(event.target instanceof Element && event.target.closest("input,textarea,select,[contenteditable],dialog"));
 
-const appSubscriptions = Subscription.make<Model, Message>()((entry) => ({
-  feed: entry({}, alwaysOn(() => fromCallback<FeedEvent>(onFeed).pipe(Stream.filterMap(Filter.fromPredicateOption(feedEventToMessage))))),
-  keys: entry(
-    {},
-    alwaysOn(() =>
-      Stream.fromEventListener<KeyboardEvent>(window, "keydown").pipe(
-        Stream.filter(isHotkey),
-        Stream.map((event) => Message.PressedKey({ key: event.key })),
-      ),
+const appSubscriptions = Subscription.make<Model, Message>()(() => ({
+  feed: Subscription.persistentEntry(feedEvents.pipe(Stream.filterMap(Filter.fromPredicateOption(feedEventToMessage)))),
+  // Live chat cards: a change in the factory refreshes them at once (no polling delay).
+  cardData: Subscription.persistentEntry(
+    feedEvents.pipe(
+      Stream.filter((event) => isCardEvent(event.type)),
+      Stream.debounce(CARD_REFRESH_DEBOUNCE),
+      Stream.map(() => Message.ReceivedCardDataChange()),
+    ),
+  ),
+  keys: Subscription.persistentEntry(
+    Stream.fromEventListener<KeyboardEvent>(window, "keydown").pipe(
+      Stream.filter(isHotkey),
+      Stream.map((event) => Message.PressedKey({ key: event.key })),
     ),
   ),
   // Deep links from the decision center and the conversation sidebar.
-  openThread: entry({}, alwaysOn(() => windowEvents("sf:open-thread").pipe(Stream.map((event) => Message.RequestedOpenThread({ threadId: eventDetail(event) }))))),
-  newThread: entry({}, alwaysOn(() => windowEvents("sf:new-thread").pipe(Stream.map(() => Message.RequestedNewThread())))),
+  openThread: Subscription.persistentEntry(windowEvents("sf:open-thread").pipe(Stream.map((event) => Message.RequestedOpenThread({ threadId: eventDetail(event) })))),
+  newThread: Subscription.persistentEntry(windowEvents("sf:new-thread").pipe(Stream.map(() => Message.RequestedNewThread()))),
   // Worker links in shared/transcript.ts.
-  selectWorker: entry(
-    {},
-    alwaysOn(() => windowEvents("sf:select-worker").pipe(Stream.map((event) => Message.RequestedSelectWorker({ workerId: eventDetail(event) })))),
+  selectWorker: Subscription.persistentEntry(
+    windowEvents("sf:select-worker").pipe(Stream.map((event) => Message.RequestedSelectWorker({ workerId: eventDetail(event) }))),
   ),
   // The prototype switcher in shared/protos.
-  proto: entry({}, alwaysOn(() => fromCallback<number>(onProto).pipe(Stream.map((proto) => Message.UpdatedProto({ proto }))))),
+  proto: Subscription.persistentEntry(fromCallback<number>(onProto).pipe(Stream.map((proto) => Message.UpdatedProto({ proto })))),
   // The shared Effect approvals store. Its changes become Messages, so DevTools can replay them.
-  approvals: entry({}, alwaysOn(() => approvalChanges.pipe(Stream.map(({ pending }) => Message.UpdatedApprovals({ pending }))))),
+  approvals: Subscription.persistentEntry(approvalChanges.pipe(Stream.map(({ pending }) => Message.UpdatedApprovals({ pending })))),
 }));
 
 const chatSubscriptions = Subscription.lift(chat.subscriptions)({

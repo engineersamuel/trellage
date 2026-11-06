@@ -140,6 +140,7 @@ staging_root=''
 publication_active=false
 runtime_old_intent=false
 runtime_publish_intent=false
+runtime_swapped=false
 command_publish_intent=false
 lock_acquired=false
 created_local_dir=false
@@ -190,6 +191,13 @@ rollback() {
     elif [[ -e "$command_path" || -L "$command_path" ]]; then
       ok=false
     fi
+  fi
+
+  if [[ "$runtime_swapped" == true && -d "$staging_root/old-runtime" ]]; then
+    "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
+      swap "$staging_root/old-runtime" "$install_root" || ok=false
+    [[ "$ok" == true ]]
+    return
   fi
 
   if [[ "$runtime_publish_intent" == true \
@@ -320,15 +328,27 @@ install -m 0644 "$source_herdr_compatibility" \
 
 publication_active=true
 if [[ -d "$install_root" ]]; then
+  # Exchange old and new in one rename, so $install_root never goes missing
+  # while trx sessions launch from it. Afterwards the old runtime is in
+  # new-runtime; rename it to old-runtime so rollback finds it there.
   runtime_old_intent=true
-  mv "$install_root" "$staging_root/old-runtime"
+  runtime_publish_intent=true
+  runtime_swapped=true
+  "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
+    swap "$staging_root/new-runtime" "$install_root" \
+    || { runtime_swapped=false; runtime_publish_intent=false; runtime_old_intent=false
+      refuse "could not swap in the new router runtime: $install_root"; }
+  mv "$staging_root/new-runtime" "$staging_root/old-runtime"
+  [[ "${TRX_INSTALL_TEST_FAIL_AT-}" != during-runtime-publication ]] \
+    || refuse 'injected failure at during-runtime-publication'
+else
+  [[ "${TRX_INSTALL_TEST_FAIL_AT-}" != during-runtime-publication ]] \
+    || refuse 'injected failure at during-runtime-publication'
+  runtime_publish_intent=true
+  [[ ! -e "$install_root" && ! -L "$install_root" ]] \
+    || refuse "router runtime changed during publication: $install_root"
+  mv "$staging_root/new-runtime" "$install_root"
 fi
-[[ "${TRX_INSTALL_TEST_FAIL_AT-}" != during-runtime-publication ]] \
-  || refuse 'injected failure at during-runtime-publication'
-runtime_publish_intent=true
-[[ ! -e "$install_root" && ! -L "$install_root" ]] \
-  || refuse "router runtime changed during publication: $install_root"
-mv "$staging_root/new-runtime" "$install_root"
 [[ ! -e "$install_root/new-runtime" && ! -L "$install_root/new-runtime" ]] \
   || refuse "router runtime changed during publication: $install_root"
 [[ "${TRX_INSTALL_TEST_FAIL_AT-}" != after-runtime-publication ]] \

@@ -5,6 +5,7 @@ import "./secureContextPolyfill";
 import "@plana-solutions/agent-interface/styles.layered.css";
 import "./page.css";
 import "./openui-card";
+import "./diffHighlight";
 import { Option } from "effect";
 import { Runtime } from "foldkit";
 import {
@@ -30,13 +31,13 @@ import { init, update } from "./update";
 import { view } from "./view";
 
 const config: AgentConfig = {
-  agentName: "Factory coordinator",
+  agentName: "General chat",
   artifacts: NO_ARTIFACTS,
   componentLibrary: "openuiChat",
   maybeStarterVariant: Option.none(),
   maybeWelcome: Option.none(),
   navigation: memoryNavigation,
-  placeholder: "Ask the coordinator… (try: switch to the nord theme)",
+  placeholder: "Type a new request here…",
   starters: [
     { displayText: "Status board", prompt: "Show me a status board of all current workers." },
     {

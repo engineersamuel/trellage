@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { DIFF_STYLES } from "../../../shared/diff";
 import { defineMessageUnion } from "foldkit/message";
 import { Dialog, Slider } from "@foldkit/ui";
 import { Delivery, SettingsDocument } from "../domain";
@@ -21,6 +22,7 @@ export const Message = defineMessageUnion({
   // One Message per control, so DevTools shows which setting the user changed.
   ClickedTheme: { theme: Schema.String },
   ToggledAnimations: { isChecked: Schema.Boolean },
+  ClickedDiffStyle: { style: Schema.Literals(DIFF_STYLES) },
   ClickedPanelPosition: { position: Schema.String },
   ToggledNavbarItem: { item: Schema.String },
   UpdatedBanner: { value: Schema.String },
@@ -40,6 +42,7 @@ export const Message = defineMessageUnion({
   ToggledExtension: { name: Schema.String, isChecked: Schema.Boolean },
   ClickedRemoveExtension: { name: Schema.String },
   CompletedSyncExtensions: {},
+  CompletedMountDiffPreview: {},
 });
 export type Message = typeof Message.Type;
 

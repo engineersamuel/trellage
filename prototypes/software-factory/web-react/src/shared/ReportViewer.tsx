@@ -7,33 +7,40 @@ import * as runtime from "react/jsx-runtime"
 import { renderToStaticMarkup } from "react-dom/server"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { Effect } from "effect"
+import { json } from "../../../shared/http"
+import { Report as ReportSchema, StartedConversation, type Report as ReportT } from "../../../shared/schemas"
 import { findings, toMdx, type Finding } from "./report-model"
+import { openThread } from "../state/chat"
 import "./report-viewer.css"
 
-export type Report = { threadId: string; folderId: string; title: string; path: string; file: string; content: string }
+export type Report = ReportT
 type View = "brief" | "rendered" | "mdx" | "source"
 
-const fetchReport = async (ref: string, thread?: string, agent?: string): Promise<Report> => {
+/** GET one report, decoded. Rejects with the server's message. */
+const fetchReport = (ref: string, thread?: string, agent?: string): Promise<Report> => {
   const q = new URLSearchParams({ path: ref, ...(thread ? { thread } : {}), ...(agent ? { agent } : {}) })
-  const r = await fetch(`/api/reports?${q}`)
-  if (!r.ok) throw new Error(await r.text())
-  return r.json()
+  return Effect.runPromise(json(`/api/reports?${q}`, ReportSchema).pipe(Effect.mapError((e) => new Error(e.reason))))
 }
+
+/** Start a finding as a new conversation; resolves with its thread and branch. */
+const startFinding = (report: Report, finding: Finding) =>
+  Effect.runPromise(
+    json("/api/reports/start", StartedConversation, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: report.path, thread: report.threadId, title: `${finding.rank}. ${finding.title}`, body: finding.body }),
+    }).pipe(Effect.mapError((e) => new Error(e.reason))),
+  )
 
 function StartButton({ report, finding }: { report: Report; finding: Finding }) {
   const [state, setState] = useState<"idle" | "busy" | { branch: string | null } | { error: string }>("idle")
   const start = async () => {
     setState("busy")
     try {
-      const r = await fetch("/api/reports/start", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path: report.path, thread: report.threadId, title: `${finding.rank}. ${finding.title}`, body: finding.body }),
-      })
-      if (!r.ok) throw new Error(await r.text())
-      const t = await r.json()
+      const t = await startFinding(report, finding)
       setState({ branch: t.branch })
-      window.dispatchEvent(new CustomEvent("sf:open-thread", { detail: t.threadId }))
+      openThread(t.threadId)
     } catch (e) {
       setState({ error: e instanceof Error ? e.message : String(e) })
     }

@@ -97,7 +97,8 @@ const render = () => {
     add.onclick = () => newIn(f.id)
     head.append(name, add)
     group.append(head)
-    for (const t of threads.filter((t) => t.folderId === f.id)) {
+    // An unstarted draft is not a conversation yet: a message typed into it would start a run before Run.
+    for (const t of threads.filter((t) => t.folderId === f.id && !(t.draft && !t.draft.startedAt))) {
       group.append(renderThread(t))
     }
     list.append(group)

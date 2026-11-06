@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { SELECTABLE_STEPS, stepById, stepSetup } from "../src/steps.ts"
-import { FANOUT_CATALOG, MAX_FANOUT, OPTIMIZE_SKILLS, optimizeTask, selectWorkflows } from "../src/workflows.ts"
+import { FANOUT_CATALOG, MAX_FANOUT, OPTIMIZE_SKILLS, optimizeTask, researchTask, selectWorkflows } from "../src/workflows.ts"
 
 test("independent probabilities allow multiple workflows or no match", () => {
   expect(selectWorkflows({ council: 0.9, "six-hats": 0.65, hyperresearch: 0.95 }).selected).toEqual([
@@ -30,6 +30,11 @@ test("one fan-out catalog holds research workflows and optimize lenses, each bou
   ])
   for (const e of FANOUT_CATALOG) expect(() => stepById(e.step)).not.toThrow()
   expect(FANOUT_CATALOG[0]!.task("q")).toContain("reports/council.md")
+})
+
+test("researchTask names its report file", () => {
+  expect(researchTask("council", "x", "draft-council")).toContain("reports/draft-council.md")
+  expect(researchTask("council", "x")).toContain("reports/council.md")
 })
 
 test(`selection keeps at most ${MAX_FANOUT} workers, the most probable first`, () => {
