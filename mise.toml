@@ -71,7 +71,95 @@ run = "./scripts/prototype-azure-copilot-spike.sh"
 description = "Create a fresh Azure ARM64 VM and prove Trellage Native installs"
 run = "./scripts/azure-fresh-install.sh"
 
+# Software factory (prototypes/software-factory): process-compose runs the services detached
+# (process-compose.yaml). Its API is a unix socket because copilot-proxy-rs uses port 8080.
+# Every process-compose call prints two "config home" debug lines when ~/.config/process-compose is
+# absent; the tasks drop them from stderr.
+[vars]
+sf_state = '{{ get_env(name="SF_STATE_DIR", default=get_env(name="TMPDIR", default="/tmp") ~ "/software-factory") }}'
+
+[tasks."factory:up"]
+description = "Start the software factory detached: native (default, gh auth token) or proxy (copilot-proxy-rs)"
+usage = 'arg "[mode]" default="native" help="native or proxy"'
+dir = "{{config_root}}/prototypes/software-factory"
+shell = "bash -c"
+quiet = true
+env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock", SF_LOGS = "{{vars.sf_state}}/logs", PC_DISABLE_DOTENV = "1" }
+run = """
+set -euo pipefail
+exec 2> >(grep -v 'process compose config home' >&2)
+export SF_AUTH=${usage_mode}
+[[ $SF_AUTH == native || $SF_AUTH == proxy ]] || { echo "mode must be native or proxy" >&2; exit 2; }
+export SF_MODEL="${SF_MODEL:-claude-sonnet-5.5}"
+if [[ $SF_AUTH == proxy ]] && ! curl -fsS "${SF_PROXY_URL:-http://localhost:8080/v1}/models" >/dev/null; then
+  echo "copilot-proxy-rs is not reachable at ${SF_PROXY_URL:-http://localhost:8080/v1}" >&2; exit 1
+fi
+# The coordinator imports packages/trellage-runtime, which needs the root workspace deps.
+[[ -d ../../node_modules ]] || (cd ../.. && bun install --frozen-lockfile)
+[[ -d coordinator/node_modules ]] || (cd coordinator && bun install --frozen-lockfile)
+[[ -d web-react/node_modules ]] || (cd web-react && npm ci -q)
+[[ -d web-foldkit/node_modules ]] || (cd web-foldkit && npm ci -q --legacy-peer-deps)
+mkdir -p "$SF_LOGS"
+process-compose process list >/dev/null 2>&1 && process-compose down && sleep 2
+rm -f "$PC_SOCKET_PATH"
+process-compose up -D -L "$SF_LOGS/process-compose.log" -f process-compose.yaml
+echo "auth=$SF_AUTH model=$SF_MODEL  (mise run factory:tui | factory:logs | factory:down)"
+echo "  Option 1 CopilotKit : http://localhost:5173/copilotkit.html"
+echo "  Option 2 Foldkit    : http://localhost:5174/"
+echo "  Coordinator API     : http://127.0.0.1:7700/"
+"""
+
+[tasks."factory:down"]
+description = "Stop the software factory"
+shell = "bash -c"
+quiet = true
+env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock" }
+run = """
+exec 2> >(grep -v 'process compose config home' >&2)
+process-compose process list >/dev/null 2>&1 && process-compose down && echo stopped || echo "not running"
+"""
+
+[tasks."factory:restart"]
+description = "Restart one software factory service, or all of them"
+usage = 'arg "[service]" help="coordinator, copilotkit or foldkit; none restarts all"'
+shell = "bash -c"
+quiet = true
+env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock" }
+run = """
+set -euo pipefail
+exec 2> >(grep -v 'process compose config home' >&2)
+for s in ${usage_service:-coordinator copilotkit foldkit}; do process-compose process restart "$s"; done
+"""
+
+[tasks."factory:status"]
+description = "Show software factory services and URL health"
+shell = "bash -c"
+quiet = true
+env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock" }
+run = """
+exec 2> >(grep -v 'process compose config home' >&2)
+process-compose process list -o wide 2>/dev/null || echo "not running"
+for u in http://127.0.0.1:7700/api/info http://localhost:5173/copilotkit.html http://localhost:5174/; do
+  printf '%-42s %s\\n' "$u" "$(curl -s -o /dev/null -m 3 -w '%{http_code}' "$u" || true)"
+done
+"""
+
+[tasks."factory:tui"]
+description = "Open the process-compose TUI (status, live logs); q leaves it, the services keep running"
+shell = "bash -c"
+quiet = true
+raw = true
+env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock" }
+run = "process-compose attach 2> >(grep -v 'process compose config home' >&2)"
+
+[tasks."factory:logs"]
+description = "Follow the software factory service logs"
+quiet = true
+raw = true
+run = "tail -n 30 -F '{{vars.sf_state}}'/logs/{coordinator,copilotkit,foldkit}.log"
+
 [tools]
 bun = "1.4.2"
+process-compose = "1.124.0"
 "github:PrimeIntellect-ai/prime-agent" = "latest"
 uv = "latest"

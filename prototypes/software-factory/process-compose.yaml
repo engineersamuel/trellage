@@ -1,0 +1,26 @@
+# Services of the software factory. Started by `mise run factory:up` (repository mise.toml).
+# SF_LOGS is set by that task. Each service restarts when it exits.
+version: "0.5"
+
+processes:
+  coordinator:
+    working_dir: coordinator
+    command: bun --watch src/main.ts
+    log_location: ${SF_LOGS}/coordinator.log
+    availability: { restart: always, backoff_seconds: 2 }
+    readiness_probe:
+      http_get: { host: 127.0.0.1, port: 7700, path: /api/info }
+      initial_delay_seconds: 2
+      period_seconds: 10
+
+  copilotkit:
+    working_dir: web-react
+    command: npx vite --port 5173 --strictPort
+    log_location: ${SF_LOGS}/copilotkit.log
+    availability: { restart: always, backoff_seconds: 2 }
+
+  foldkit:
+    working_dir: web-foldkit
+    command: npx vite --port 5174 --strictPort
+    log_location: ${SF_LOGS}/foldkit.log
+    availability: { restart: always, backoff_seconds: 2 }

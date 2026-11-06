@@ -13,10 +13,14 @@ browser ──AG-UI SSE──► coordinator (TypeScript, Bun, @github/copilot-s
 ## Run
 
 ```sh
-./start.sh          # native Copilot subscription (token from gh auth token)
-./start.sh proxy    # BYOK through copilot-proxy-rs at localhost:8080/v1
-SF_MODEL=claude-haiku-5.5 ./start.sh   # cheaper model
+mise run factory:up                    # native Copilot subscription (token from gh auth token)
+mise run factory:up proxy              # BYOK through copilot-proxy-rs at localhost:8080/v1
+SF_MODEL=claude-haiku-5.5 mise run factory:up   # cheaper model
+mise run factory:restart coordinator   # one service (coordinator | copilotkit | foldkit); no name restarts all
+mise run factory:status | factory:logs | factory:tui | factory:down
 ```
+
+The tasks are in the repository `mise.toml`. The services run detached under [process-compose](https://f1bonacc1.github.io/process-compose/) (`process-compose.yaml`; mise installs the pinned version). Each service restarts when it exits. `factory:tui` attaches the process-compose TUI (status and live logs; `q` leaves it, the services keep running). The API is the unix socket `$SF_STATE_DIR/pc.sock`, not TCP, because copilot-proxy-rs uses port 8080. Logs are in `$SF_STATE_DIR/logs` (default state dir: `$TMPDIR/software-factory`).
 
 | Option | URL |
 |---|---|
