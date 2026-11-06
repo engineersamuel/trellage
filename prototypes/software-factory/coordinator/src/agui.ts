@@ -35,7 +35,7 @@ export type TranslatorOptions = {
    * For UIs that draw only OpenUI Lang (Foldkit): a card tool's result as an OpenUI program. The run's cards are
    * merged into one program and sent as the run's last assistant message, so that UI shows them as the answer.
    */
-  card?: (toolName: string, result: string) => string | null
+  card?: (toolName: string, result: string, args: Record<string, unknown>, prefix: string) => string | null
 }
 
 type Subagent = { name: string; description: string; model: string | undefined; toolCalls: number }
@@ -64,8 +64,9 @@ export class Translator {
   private usage = new Map<string, TokenUsage>()
   private decisionCalls = new Map<string, Record<string, any>>()
   private decisions: DecisionInterrupt[] = []
-  /** Tool names by call id, for `card`. */
+  /** Tool names and arguments by call id, for `card`. */
   private toolNames = new Map<string, string>()
+  private toolArgs = new Map<string, Record<string, unknown>>()
   /** Card programs from this run's card tools, sent as the run's last message (see `card`). */
   private cards: string[] = []
   /** Calls of consumer-run tools; their results come from the consumer, so none is sent. */
@@ -311,6 +312,7 @@ export class Translator {
         const id = s("toolCallId")
         const name = s("toolName")
         this.toolNames.set(id, name)
+        this.toolArgs.set(id, (d.arguments ?? {}) as Record<string, unknown>)
         out.push({ type: "TOOL_CALL_START", toolCallId: id, toolCallName: name })
         out.push({ type: "TOOL_CALL_ARGS", toolCallId: id, delta: JSON.stringify(d.arguments ?? {}) })
         out.push({ type: "TOOL_CALL_END", toolCallId: id })
@@ -339,7 +341,8 @@ export class Translator {
           ...(d.success === false ? { error: String(d.error?.message ?? text) || "The tool call failed." } : {}),
         })
         if (d.success !== false) this.decisionResult(s("toolCallId"), text)
-        const program = d.success === false ? null : (this.opts.card?.(this.toolNames.get(s("toolCallId")) ?? "", text) ?? null)
+        const tcid = s("toolCallId")
+        const program = d.success === false ? null : (this.opts.card?.(this.toolNames.get(tcid) ?? "", text, this.toolArgs.get(tcid) ?? {}, `k${this.cards.length}`) ?? null)
         if (program) this.cards.push(program)
         break
       }

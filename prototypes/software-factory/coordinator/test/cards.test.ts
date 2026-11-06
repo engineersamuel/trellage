@@ -44,33 +44,33 @@ describe("cards", () => {
   })
 })
 
-describe("cards as OpenUI (Foldkit)", () => {
-  test("strings are escaped and every card starts with root = Card", () => {
-    const p = cardOpenUi("show_worker_board", JSON.stringify({ workers: [{ id: "a", name: 'He said "hi"\n', status: "idle", model: "m", rssKb: null, contextTokens: null, contextLimit: null }], at: 0 }))!
-    expect(p.startsWith("root = Card([")).toBe(true)
-    expect(p).toContain('He said \\"hi\\"\\n')
+describe("cards as live OpenUI (Foldkit)", () => {
+  const card = (name: string, result: string, args: Record<string, unknown>, prefix: string) => cardOpenUi(name, result, "sub-1", args, prefix)
+  test("a card is a live Query for its scope, with the tool result as default", () => {
+    const p = cardOpenUi("show_worker_board", JSON.stringify({ workers: [{ id: "a", name: 'He said "hi"', role: "worker", status: "idle", model: "m", rssKb: null }], at: 0 }), "sub-1", {}, "k0")!
+    expect(p.startsWith("ROOT = Card([k0head")).toBe(true)
+    expect(p).toMatch(/k0card = Query\("factory_card", \{"name":"show_worker_board","scope":"sub-1"\}, \{.*He said \\"hi\\".*\}, 5\)/)
     expect(cardOpenUi("bash", "{}")).toBeNull()
     expect(cardOpenUi("show_worker_board", "not json")).toBeNull()
   })
-  test("the translator sends a card message after a card tool, only when asked", () => {
+  test("report findings keep the path in the live query", () => {
+    expect(cardOpenUi("show_report_findings", JSON.stringify({ path: "reports/s.md", findings: [] }), "sub-1", { path: "reports/s.md" })).toContain('"path":"reports/s.md"')
+  })
+  test("the translator sends the turn's cards, merged, as the last message", () => {
     const ev = (type: string, data: Record<string, unknown>) => ({ type, data }) as never
-    const events = [
-      ev("tool.execution_start", { toolCallId: "c1", toolName: "show_decisions", arguments: {} }),
-      ev("tool.execution_complete", { toolCallId: "c1", success: true, result: { content: JSON.stringify({ pending: [] }) } }),
+    const call = (id: string) => [
+      ev("tool.execution_start", { toolCallId: id, toolName: "show_decisions", arguments: {} }),
+      ev("tool.execution_complete", { toolCallId: id, success: true, result: { content: JSON.stringify({ pending: [] }) } }),
     ]
-    const run = (card?: typeof cardOpenUi) => { const t = new Translator("t", "r", card ? { card } : {}); return events.flatMap((e) => t.translate(e)) as any[] }
-    const answer = ev("assistant.message", { messageId: "m1", content: "root = Card([t])\nt = TextContent(\"x\")" })
-    const idle = ev("session.idle", {})
-    const run2 = (card?: typeof cardOpenUi) => { const t = new Translator("t", "r", card ? { card } : {}); return [...events, ...events, answer, idle].flatMap((e) => t.translate(e)) as any[] }
-    const out = run2(cardOpenUi)
+    const answer = ev("assistant.message", { messageId: "m1", content: 'root = Card([t])\nt = TextContent("x")' })
+    const run = (opts: object) => { const t = new Translator("t", "r", opts); return [...call("c1"), ...call("c2"), answer, ev("session.idle", {})].flatMap((e) => t.translate(e)) as any[] }
+    const out = run({ card })
     const texts = out.filter((e) => e.type === "TEXT_MESSAGE_CONTENT").map((e) => e.delta)
-    // The agent's answer first, then one merged card as the run's last message, before RUN_FINISHED.
     expect(texts.length).toBe(2)
-    expect(texts[1]).toContain('k0head = CardHeader("Waiting for you"')
-    expect(texts[1]).toContain("k1head")
+    expect(texts[1].startsWith("root = Card([k0head")).toBe(true)
+    expect(texts[1]).toContain("k1card = Query(")
     expect(out.findIndex((e) => e.type === "RUN_FINISHED")).toBeGreaterThan(out.findLastIndex((e) => e.type === "TEXT_MESSAGE_END"))
-    expect(run2().filter((e) => e.type === "TEXT_MESSAGE_CONTENT").length).toBe(1)
-    // Saved as two messages, not glued together.
+    expect(run({}).filter((e) => e.type === "TEXT_MESSAGE_CONTENT").length).toBe(1)
     const rec = new RunRecorder()
     for (const e of out) rec.add(e)
     expect(rec.messages().filter((m) => m.role === "assistant" && m.content).length).toBe(2)

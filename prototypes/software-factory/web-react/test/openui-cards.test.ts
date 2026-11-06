@@ -2,7 +2,7 @@
 import { test, expect } from "bun:test"
 import { createParser } from "@openuidev/lang-core"
 import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib"
-import { cardOpenUi } from "../../coordinator/src/cards.ts"
+import { cardOpenUi, mergeCards } from "../../coordinator/src/cards.ts"
 const parser = createParser(openuiChatLibrary.toJSONSchema(), "Card")
 const W = { id: "w1", name: "Alpha \"x\"", status: "running", model: "m", rssKb: 51200, contextTokens: 10, contextLimit: 100 }
 const cases: [string, unknown][] = [
@@ -20,18 +20,17 @@ const cases: [string, unknown][] = [
 ]
 test("every card program parses with no errors or dropped statements", () => {
   for (const [name, data] of cases) {
-    const prog = cardOpenUi(name, JSON.stringify(data))!
+    const prog = mergeCards([cardOpenUi(name, JSON.stringify(data), "sub-1", {}, "k0")!])
     const r = parser.parse(prog)
     const errs = (r.meta as any).errors ?? (r.meta as any).validationErrors ?? []
     if (!r.root || r.meta.orphaned.length || r.meta.unresolved.length || errs.length) console.log(name, JSON.stringify(r.meta).slice(0, 600), "\n", prog)
     expect(r.root).not.toBeNull()
-    expect([r.meta.orphaned, r.meta.unresolved, errs.length]).toEqual([[], [], 0])
+    expect([r.meta.orphaned, r.meta.unresolved, errs.length, r.queryStatements.length]).toEqual([[], [], 0, 1])
   }
 })
 
 test("two cards merged into one program still parse", async () => {
-  const { mergeCards } = await import("../../coordinator/src/cards.ts")
-  const progs = cases.slice(0, 4).map(([n, d]) => cardOpenUi(n, JSON.stringify(d))!)
+  const progs = cases.slice(0, 4).map(([n, d], i) => cardOpenUi(n, JSON.stringify(d), "sub-1", {}, `k${i}`)!)
   const r = parser.parse(mergeCards(progs))
   expect(r.root).not.toBeNull()
   expect([r.meta.orphaned, r.meta.unresolved]).toEqual([[], []])

@@ -2,36 +2,11 @@
 // the agent's render_ui cards. The tool result is the snapshot at call time; the store's live workers win.
 import { Card, CardHeader, MetricIndicatorInline, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tag } from "@openuidev/react-ui"
 import type { Worker } from "../../../shared/schemas"
-import { agentLabel } from "../../../shared/tree"
-import { sortedWorkers } from "../state/model"
+import { toBoard } from "../../../shared/cardviews"
 import { patchSettings, useApp } from "../state/store"
 import { OpenUiTheme } from "./OpenUi"
 
-type TagVariant = "neutral" | "info" | "success" | "warning" | "danger"
-const STATUS: Record<string, TagVariant> = { running: "info", idle: "success", error: "danger", stopped: "neutral" }
-
-export type BoardRow = { id: string; name: string; kind: string; status: string; variant: TagVariant; model: string; memory: string; context: string }
-export type Board = { total: number; running: number; errors: number; rows: BoardRow[] }
-
-/** Pure: workers → what the board shows. Coordinator first, then by name. */
-export const toBoard = (workers: readonly Worker[]): Board => {
-  const sorted = sortedWorkers(Object.fromEntries(workers.map((w) => [w.id, w])))
-  return {
-    total: sorted.length,
-    running: sorted.filter((w) => w.status === "running").length,
-    errors: sorted.filter((w) => w.status === "error").length,
-    rows: sorted.map((w) => ({
-      id: w.id,
-      name: agentLabel(w).name,
-      kind: agentLabel(w).tag,
-      status: w.status,
-      variant: STATUS[w.status] ?? "neutral",
-      model: w.model,
-      memory: w.rssKb ? `${Math.round(w.rssKb / 1024)} MB` : "–",
-      context: w.contextLimit ? `${Math.round((100 * (w.contextTokens ?? 0)) / w.contextLimit)}%` : "–",
-    })),
-  }
-}
+export { toBoard, type Board, type BoardRow } from "../../../shared/cardviews"
 
 /** Tool result `{ workers }` → workers, or [] when it is missing or not JSON. */
 export const snapshotOf = (result: string | undefined): Worker[] => {

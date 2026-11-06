@@ -10,6 +10,7 @@ import { openThread } from "../state/chat"
 import { Action } from "../state/model"
 import { dispatch, useApp } from "../state/store"
 import { OpenUiTheme } from "./OpenUi"
+import { ownSteps, toReview, toRun, plainLine } from "../../../shared/cardviews"
 
 type TagVariant = "neutral" | "info" | "success" | "warning" | "danger"
 
@@ -36,24 +37,7 @@ const Waiting = ({ what }: { what: string }) => <p className="sf-board-wait">Loa
 
 // ---------- Security review ----------
 
-const SEVERITY: Record<string, TagVariant> = { critical: "danger", high: "danger", medium: "warning", low: "info" }
-
-export type ReviewView = { status: string; statusVariant: TagVariant; kept: number; discarded: number; rows: { title: string; severity: string; variant: TagVariant; file: string; verdict: string; reason: string }[] }
-
-/** Pure: review → what the card shows. Kept findings first, then by severity. */
-export const toReview = (r: SecurityReview): ReviewView => {
-  const order = ["critical", "high", "medium", "low"]
-  const rows = r.findings
-    .map((f) => ({ title: f.title, severity: f.severity || "unknown", variant: SEVERITY[f.severity.toLowerCase()] ?? "neutral", file: f.file, verdict: f.verdict || "pending", reason: f.reason }))
-    .sort((a, b) => Number(b.verdict === "keep") - Number(a.verdict === "keep") || order.indexOf(a.severity.toLowerCase()) - order.indexOf(b.severity.toLowerCase()))
-  return {
-    status: r.status,
-    statusVariant: r.status === "done" ? "success" : r.status === "failed" ? "danger" : "info",
-    kept: r.findings.filter((f) => f.verdict === "keep").length,
-    discarded: r.findings.filter((f) => f.verdict && f.verdict !== "keep").length,
-    rows,
-  }
-}
+export { toReview } from "../../../shared/cardviews"
 
 export function SecurityReviewCard({ result }: { result: string | undefined }) {
   const snap = parse<{ reviewId: string | null; note?: string }>(result)
@@ -66,7 +50,7 @@ export function SecurityReviewCard({ result }: { result: string | undefined }) {
     <Frame title="Security review" subtitle={review.model || "routing model"}>
       <div className="sf-board-metrics">
         <Tag text={v.status} variant={v.statusVariant} size="sm" />
-        <MetricIndicatorInline value={String(review.findings.length)} subtext="findings" />
+        <MetricIndicatorInline value={String(v.total)} subtext="findings" />
         <MetricIndicatorInline value={String(v.kept)} subtext="kept (fixed)" />
         <MetricIndicatorInline value={String(v.discarded)} subtext="discarded" />
       </div>
@@ -103,18 +87,7 @@ export function SecurityReviewCard({ result }: { result: string | undefined }) {
 
 // ---------- Delivery run ----------
 
-export type RunView = { branch: string | null; moreWork: number | null; steps: { step: string; confidence: number; request: string }[] }
-
-/** Pure: snapshot + live Jev decisions → run view. Live decisions win; fan-out decisions (no step) are skipped. */
-export const toRun = (branch: string | null, decisions: readonly StepDecision[]): RunView => {
-  const steps = decisions.filter((d) => d.step).slice(-6).map((d) => ({ step: d.step!, confidence: d.confidence ?? 0, request: d.request }))
-  const last = [...decisions].reverse().find((d) => d.moreWork !== undefined)
-  return { branch, moreWork: last?.moreWork ?? null, steps }
-}
-
-/** Pure: only the decisions of one coordinator. Untagged (older) ones belong to the Factory desk. */
-export const ownSteps = (all: readonly StepDecision[], scopeId: string | undefined): StepDecision[] =>
-  scopeId === undefined ? [...all] : all.filter((d) => (d.scopeId ?? "coordinator") === scopeId)
+export { ownSteps, toRun } from "../../../shared/cardviews"
 
 export function DeliveryRunCard({ result }: { result: string | undefined }) {
   const snap = parse<{ scopeId?: string; branch: string | null; decisions?: StepDecision[]; note?: string }>(result)
@@ -123,12 +96,12 @@ export function DeliveryRunCard({ result }: { result: string | undefined }) {
   if (result === undefined) return <Waiting what="delivery run" />
   const v = toRun(snap?.branch ?? null, live.length ? live : (snap?.decisions ?? []))
   if (v.steps.length === 0) return <Frame title="Delivery run"><Callout variant="neutral" description={snap?.note ?? "No delivery run in this conversation yet."} /></Frame>
-  const pct = v.moreWork === null ? null : Math.round((1 - v.moreWork) * 100)
+  const pct = v.percent
   return (
     <Frame title="Delivery run" {...(v.branch ? { subtitle: `⎇ ${v.branch}` } : {})}>
       <div className="sf-board-metrics">
-        <MetricIndicatorInline value={pct === null ? "–" : `${pct}%`} subtext="done (Jev)" />
-        <MetricIndicatorInline value={v.steps.at(-1)?.step ?? "–"} subtext="current step" />
+        <MetricIndicatorInline value={v.done} subtext="done (Jev)" />
+        <MetricIndicatorInline value={v.current} subtext="current step" />
       </div>
       {pct !== null && (
         <div className="sf-progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
@@ -140,7 +113,7 @@ export function DeliveryRunCard({ result }: { result: string | undefined }) {
       ) : (
         <Steps>
           {v.steps.map((s, i) => (
-            <StepsItem key={i} number={i + 1} title={`${s.step} · ${Math.round(s.confidence * 100)}%`} details={s.request.slice(0, 160)} />
+            <StepsItem key={i} number={i + 1} title={s.title} details={s.details} />
           ))}
         </Steps>
       )}
@@ -240,7 +213,7 @@ export function ReportFindingsCard({ result }: { result: string | undefined }) {
             {d.findings.map((f) => (
               <TableRow key={f.rank} title={f.body}>
                 <TableCell>
-                  <b>{f.rank}.</b> {f.title}
+                  <b>{f.rank}.</b> {f.title} <small>{plainLine(f.body)}</small>
                 </TableCell>
                 <TableCell align="right">
                   <StartFinding path={d.path} rank={f.rank} title={f.title} body={f.body} />

@@ -12,10 +12,10 @@ describe("genui/Cards view models", () => {
   test("delivery run: steps only, last moreWork wins, at most 6", () => {
     const ds = [{ selected: ["x"], request: "fan" }, ...Array.from({ length: 7 }, (_, i) => ({ step: `s${i}`, confidence: 0.5, moreWork: 1 - i / 10, request: "r" }))] as never
     const v = toRun("b", ds)
-    expect([v.steps.length, v.steps[0]!.step, v.moreWork, v.branch]).toEqual([6, "s1", 0.4, "b"])
+    expect([v.steps.length, v.steps[0]!.title, v.percent, v.current, v.branch]).toEqual([6, "s1 · 50%", 60, "s6", "b"])
   })
   test("delivery run: no decisions", () => {
-    expect(toRun(null, [])).toEqual({ branch: null, moreWork: null, steps: [] })
+    expect(toRun(null, [])).toEqual({ branch: null, percent: null, done: "–", current: "–", steps: [] })
   })
   test("delivery run: only the card's own coordinator", () => {
     const all = [{ step: "plan", request: "" }, { step: "implement", request: "", scopeId: "sub-1" }] as never

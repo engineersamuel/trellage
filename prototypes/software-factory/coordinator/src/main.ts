@@ -8,7 +8,8 @@ import { createWorktree, discardWorktree, fullyMerged, GENERAL, removeWorktree, 
 import { CARDS_PROMPT, COORDINATOR_PROMPT, DESK_PROMPT, GLOBAL_PROMPT, RESEARCH_PROMPT, subPrompt } from "./prompts.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
 import { findingTask, findReport } from "./reports.ts"
-import { cardOpenUi } from "./cards.ts"
+import { CARD_TOOLS, cardOpenUi, reportFindings } from "./cards.ts"
+import { cardView } from "../../shared/cardviews.ts"
 import { conversationStatus, deletedNotice, DESK_ID, factorySnapshot, genId, reportTarget, STATUS_NOTE } from "./general.ts"
 import { specView } from "./spec.ts"
 import { onTrack, STEPS } from "./steps.ts"
@@ -20,7 +21,7 @@ import { freshTurn, REPORT_NUDGE, reportPrompt, shouldReport, type Report } from
 import { pendingReview } from "./security.ts"
 import { defineTool, type SessionEvent, type Tool } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
-import { coordinatorTools, globalTools, spawnHealing } from "./tools.ts"
+import { cardData, coordinatorTools, globalTools, spawnHealing, type Scope } from "./tools.ts"
 import { DRAFT_NOTE, DraftError, draftNodeId, isUnstartedDraft, makeDrafts } from "./drafts.ts"
 import { enhanceWith, stopEnhance } from "./enhance.ts"
 import { Schema } from "effect"
@@ -559,7 +560,7 @@ const streamAguiRun = (worker: Worker, threadId: string, runId: string, o: RunOp
     interrupts: o.interrupts,
     pending: (id) => factory.approvals.get(id)?.status === "pending",
     clientTool: (name) => o.clientTools.has(name),
-    ...(o.openUi ? { card: cardOpenUi } : {}),
+    ...(o.openUi ? { card: (name: string, result: string, args: Record<string, unknown>, prefix: string) => cardOpenUi(name, result, worker.id, args, prefix) } : {}),
   })
   for (const id of o.delivered) tr.clientCalls.add(id)
   const rec = new RunRecorder()
@@ -905,6 +906,14 @@ type Handler = (req: Request, url: URL, params: string[]) => Response | Promise<
 const threadOfAgent = (w: Worker): Thread | undefined =>
   threads.list().find((t) => t.worktree && (t.worktree === w.spec?.workdir || subId(t.id) === w.id || subId(t.id) === w.owner))
 
+/** The tool scope of a coordinator by worker id: a repo sub-coordinator's worktree, a General chat's thread, the desk. */
+const cardScope = (id: string): Scope => {
+  const w = factory.workers.get(id)
+  const t = w ? threadOfAgent(w) : threads.list().find((x) => subId(x.id) === id || genId(x.id) === id)
+  if (t?.worktree) return { id, threadId: t.id, workdir: t.worktree, ...(t.base ? { base: t.base } : {}) }
+  return { id, threadId: t?.id ?? null }
+}
+
 const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/$/, () => new Response(landing, { headers: { "content-type": "text/html" } })],
   [
@@ -942,6 +951,36 @@ const routes: [string, RegExp, Handler][] = [
       }),
   ],
   ["GET", /^\/api\/approvals$/, () => json(factory.approvals.list().slice(-50))],
+  [
+    // "Start" on a report finding card: a new conversation in the report's repo runs that finding (same as the viewer).
+    "POST",
+    /^\/api\/cards\/start-finding$/,
+    async (req) => {
+      try {
+        const b = (await req.json()) as any
+        const scope = cardScope(String(b?.scope ?? DESK_ID))
+        const r = findReport(threads.list(), String(b?.path ?? ""), scope.threadId)
+        if (!r) return bad("report not found")
+        const f = reportFindings(r.content).find((x) => x.rank === Number(b?.rank))
+        if (!f) return bad(`finding ${b?.rank} not found`)
+        return json(await startConversation(r.folderId, findingTask(r, { title: `${f.rank}. ${f.title}`, body: f.body })))
+      } catch (e) {
+        return bad(e)
+      }
+    },
+  ],
+  [
+    // A live card's current view (OpenUI Query "factory_card"): the same data its show_* tool returns, for that
+    // coordinator's scope, as the view shared/cardviews.ts builds. Read-only.
+    "GET",
+    /^\/api\/cards$/,
+    (_req, url) => {
+      const name = url.searchParams.get("name") ?? ""
+      if (!CARD_TOOLS.has(name)) return bad(`unknown card ${name}`)
+      const path = url.searchParams.get("path")
+      return json(cardView(name, cardData(factory, cardScope(url.searchParams.get("scope") ?? DESK_ID), name, path ? { path } : {})))
+    },
+  ],
   [
     "GET",
     /^\/api\/shadow$/,
