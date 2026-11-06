@@ -3,8 +3,9 @@ import { execFileSync } from "node:child_process"
 import { statSync } from "node:fs"
 import path from "node:path"
 import { defineTool, type Tool } from "@github/copilot-sdk"
-import { finishPermissions, MAX_FIX_ROUNDS, now, type ShipGrant, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
+import { finishPermissions, MAX_FIX_ROUNDS, now, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
 import { SETTINGS_TOOL_DOC } from "./prompts.ts"
+import type { ShipGrant } from "./approvals.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
 import { briefProblem } from "./reports.ts"
 import { pendingReview, reviewIn, securityReview } from "./security.ts"
@@ -324,14 +325,11 @@ export const synthesisBlocked = (f: Factory, scope: Scope): string | null => {
 export const shipGrant = (f: Factory, scope: Scope): ShipGrant | string => {
   if (!scope.workdir) return "step=finish runs only in a repo conversation"
   const branch = gitOr(scope.workdir, "--abbrev-ref", "HEAD")
-  const granted = [...f.shipRequests].find(([id, r]) => {
-    const a = f.approvals.get(id)
-    return r.scopeId === scope.id && r.branch === branch && a?.status === "answered" && a.answer === a.options[0]
-  })?.[1]
-  if (granted && granted.pushes > MAX_FIX_ROUNDS)
-    return `Fix round limit reached for ${branch} (${MAX_FIX_ROUNDS} after the first push). report_up blocked, or ask for a new ship approval.`
-  return granted
-    ? granted
+  const accepted = f.approvals.acceptedShips(scope.id, branch)
+  const open = accepted.find((g) => g.pushes <= MAX_FIX_ROUNDS)
+  if (open) return open
+  return accepted.length
+    ? `Fix round limit reached for ${branch} (${MAX_FIX_ROUNDS} after the first push). report_up blocked, or ask for a new ship approval.`
     : `No accepted ship approval for branch ${branch}. Call request_approval with ship=true, end your turn, and spawn step=finish after the human picks the first option.`
 }
 
@@ -381,7 +379,7 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         ...(typeof a.model === "string" ? { model: a.model } : {}),
         task: str(a, "task"),
         ...(typeof a.step === "string" ? { step: a.step } : {}),
-        ...(ship ? { permissions: finishPermissions(ship) } : {}),
+        ...(ship ? { permissions: finishPermissions(ship, (g) => f.approvals.setPushes(g)) } : {}),
         ...(!ship && (a.harness === "claude" || a.harness === "pi")
           ? { harness: { kind: a.harness, profiles: Array.isArray(a.profiles) ? a.profiles.map(String) : [] } }
           : {}),
@@ -471,7 +469,7 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
         ...(Array.isArray(a.optionDetails) ? { optionDetails: a.optionDetails.map(String) } : {}),
         ...(reportThreadId !== undefined ? { reportThreadId } : {}),
       })
-      if (shipBranch) f.shipRequests.set(item.id, { scopeId: scope.id, branch: shipBranch, pushes: 0 })
+      if (shipBranch) f.approvals.addShip(item.id, scope.id, shipBranch)
       f.publish("coordinator", "factory.approval_requested", null, String(Date.now()), item)
       return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
     },

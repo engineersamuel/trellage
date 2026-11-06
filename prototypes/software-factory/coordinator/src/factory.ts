@@ -14,7 +14,7 @@ import {
   type SessionEvent,
   type Tool,
 } from "@github/copilot-sdk"
-import { Approvals } from "./approvals.ts"
+import { Approvals, type ShipGrant } from "./approvals.ts"
 import { EventStore } from "./events.ts"
 import { freshTurn, type Turn } from "./report.ts"
 import { forbiddenCommand } from "./guard.ts"
@@ -312,8 +312,6 @@ export class Factory {
   readonly extensionErrors = new Map<string, unknown>()
   run: Run | null = null
   approvals!: Approvals
-  /** Ship approvals by approval id: the conversation and branch a finish worker may push once the human picks option 1. */
-  readonly shipRequests = new Map<string, ShipGrant>()
   /** Thread of the coordinator's current turn; approvals opened in that turn belong to it. */
   currentThread: string | null = null
   /** Latest Jev step decisions, newest last, from the event store, so they survive a restart. */
@@ -721,18 +719,16 @@ export class Factory {
       : this.settingsPermissions(request, invocation)
 }
 
-/** An accepted ship approval: the branch a finish worker may push, and the pushes made under it so far. */
-export type ShipGrant = { scopeId: string; branch: string; pushes: number }
-
 /** The first push plus this many fix rounds per ship approval; then the human decides. */
 export const MAX_FIX_ROUNDS = 5
 
 /**
  * Gate for a finish worker: it fixes, commits, and pushes only its approved branch (no force); it never merges or deletes.
  * Pushes count against the grant, so a new finish worker for the same approval does not reset the limit.
+ * `saved` stores the new count after each allowed push.
  */
 export const finishPermissions =
-  (grant: ShipGrant): PermissionHandler =>
+  (grant: ShipGrant, saved: (g: ShipGrant) => void = () => {}): PermissionHandler =>
   (request, invocation) => {
     if (request.kind !== "shell") return approveAll(request, invocation)
     const cmd = request.fullCommandText
@@ -749,6 +745,7 @@ export const finishPermissions =
         feedback: `Fix round limit reached (${MAX_FIX_ROUNDS} after the first push). Stop and return what still fails and why.`,
       }
     grant.pushes++
+    saved(grant)
     return approveAll(request, invocation)
   }
 
