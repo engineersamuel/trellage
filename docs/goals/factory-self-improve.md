@@ -4,10 +4,18 @@ This file is the only memory. It must work in one long conversation
 and in a fresh process that has only this file.
 
 FILL IN BEFORE THE FIRST RUN (the human writes these; the loop never edits them):
-TARGET REPO: <absolute path of the repo that gets the feature, e.g. /Users/me/projects/other-repo>
-TARGET BASE: <branch the feature branches from and the PR targets, e.g. main>
+TARGET REPO: /Users/smendenh/projects/copilot-proxy-rs
+TARGET BASE: main
 FEATURE PROMPT:
-<what to build, how to prove it works, and what the PR must contain>
+Integrate process-compose (https://github.com/F1bonacc1/process-compose) into copilot-proxy-rs and operate it with mise tasks. Install mise if it needs to be installed.
+- Pin `process-compose` in `mise.toml` `[tools]`.
+- Add `process-compose.yaml` that runs the proxy with a readiness probe on `/health`. The proxy keeps listening on TCP 8080 by default (port from `COPILOT_PROXY_RS_PORT`).
+- process-compose's own control API must use a unix socket (`-U` / `PC_SOCKET_PATH`), never TCP, so it never takes port 8080 from the proxy.
+- mise tasks: `proxy:up` (detached), `proxy:down`, `proxy:restart`, `proxy:status`, `proxy:logs`.
+- `scripts/bootstrap.sh`: installs mise when it is missing, then `mise install`. Document it and the tasks in README.
+- Keep `compose.yaml` as it is.
+- Proof: run `COPILOT_PROXY_RS_PORT=18080 mise run proxy:up`, `curl -fsS 127.0.0.1:18080/health`, `mise run proxy:status`, `mise run proxy:down`, and put that output in the PR body. Never stop, restart, or bind the instance already running on port 8080.
+- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test --locked` pass.
 EXPECTATION (written to /tmp/sf-expect.json by the loop):
 {"steps":["implement","verify","security","finish"],"pr":{"state":"OPEN","checks":"SUCCESS"}}
 RUN LIMIT: 5
@@ -45,7 +53,7 @@ LIMITS:
 
 SCOREBOARD (overwrite this block after every VERIFY; do not append):
 Status: ITERATING
-Runs used: 0
+Runs used: 0/5
 Scores:
 - Delivery: _
 - Feature proof: _
