@@ -4,7 +4,8 @@ import { Command, expectNoOutMessage, expectOutMessage, given, message, model, s
 import { modifyFields } from "foldkit/struct";
 import { describe, expect, test } from "vitest";
 import type { Worker } from "../domain";
-import { FetchBacklog, FetchWorkers, SendToWorker, StopWorker } from "./command";
+import { Dialog } from "@foldkit/ui";
+import { AbortWorker, FetchBacklog, FetchWorkers, SendToWorker, StopWorker } from "./command";
 import { Message, OutMessage } from "./message";
 import { WorkersAsyncData } from "./model";
 import { toBacklogLines } from "./log";
@@ -62,6 +63,14 @@ describe("loading", () => {
       ),
       model((current) => expect(AsyncData.getData(current.workers)).toEqual(Option.some([coordinator]))),
     );
+  });
+});
+
+describe("focus", () => {
+  test("moving to another worker clears the old worker's error", () => {
+    const moved = focus("namer")(modifyFields(loaded, { maybeError: () => Option.some("Could not remove namer: HTTP 404") }));
+    expect(moved.model.maybeError).toEqual(Option.none());
+    expect(moved.commands?.map(({ name }) => name)).toEqual(["FetchBacklog"]);
   });
 });
 
@@ -129,14 +138,34 @@ describe("workers", () => {
     );
   });
 
-  test("a failed stop is shown", () => {
+  test("remove asks first; nothing is removed until the user confirms", () => {
     story(
       update,
       given(loaded),
-      message(Message.ClickedStop({ workerId: "namer" })),
-      Command.expectExact(StopWorker),
-      Command.resolve(StopWorker, Message.FailedStopWorker({ error: "HTTP 404" })),
-      model((current) => expect(current.maybeError).toEqual(Option.some("Stop failed: HTTP 404"))),
+      message(Message.ClickedRemove({ workerId: "namer" })),
+      Command.expectExact(Dialog.ShowDialog),
+      model((current) => expect(current.maybePendingRemoval).toEqual(Option.some("namer"))),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
+      message(Message.ConfirmedRemove()),
+      Command.expectExact(StopWorker, Dialog.CloseDialog),
+      Command.resolveAll(
+        [StopWorker, Message.FailedStopWorker({ workerId: "namer", error: "HTTP 404" })],
+        [Dialog.CloseDialog, Dialog.Message.CompletedCloseDialog()],
+      ),
+      model((current) => {
+        expect(current.maybeError).toEqual(Option.some("Could not remove namer: HTTP 404"));
+        expect(current.maybePendingRemoval).toEqual(Option.none());
+      }),
+    );
+  });
+
+  test("a failed cancel names the worker as the list shows it", () => {
+    story(
+      update,
+      given(loaded),
+      message(Message.ClickedCancelRun({ workerId: "coordinator" })),
+      Command.resolve(AbortWorker, Message.FailedAbortWorker({ workerId: "coordinator", error: "HTTP 500" })),
+      model((current) => expect(current.maybeError).toEqual(Option.some("Could not cancel the run of Factory desk: HTTP 500"))),
     );
   });
 });
@@ -162,10 +191,10 @@ describe("sending a message", () => {
       given(loaded),
       message(Message.UpdatedMessageDraft({ value: "hello" })),
       message(Message.SubmittedMessageDraft()),
-      Command.resolve(SendToWorker, Message.FailedSendToWorker({ error: "HTTP 500" })),
+      Command.resolve(SendToWorker, Message.FailedSendToWorker({ workerId: "coordinator", error: "HTTP 500" })),
       model((current) => {
         expect(current.messageDraft).toBe("hello");
-        expect(current.maybeError).toEqual(Option.some("Send failed: HTTP 500"));
+        expect(current.maybeError).toEqual(Option.some("Could not send to Factory desk: HTTP 500"));
       }),
     );
   });

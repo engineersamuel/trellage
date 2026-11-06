@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import type { SettingsDocument } from "../../shared/schemas"
 import { Action, feedActions, initial, MAX_TOOL_TIMINGS, reduce, sortedWorkers, type Model } from "../src/state/model"
 
 const w = (id: string, name: string, role = "worker") =>
@@ -27,6 +28,25 @@ describe("state/model", () => {
     expect([m.threadId, m.report, m.settingsOpen]).toEqual(["t1", { ref: "reports/a.md", agent: "w1" }, true])
     m = run(m, Action.ReportClosed(), Action.SettingsToggled({ open: false }))
     expect([m.report, m.settingsOpen]).toEqual([null, false])
+  })
+
+  test("a settings load failure is kept until settings load", () => {
+    const failed = run(start, Action.SettingsLoadFailed({ error: "HTTP 500" }))
+    expect([failed.settings, failed.settingsLoadError]).toEqual([null, "HTTP 500"])
+    expect(run(failed, Action.SettingsLoaded({ document: { settings: { focus: "a" } } as never })).settingsLoadError).toBeNull()
+  })
+
+  test("a failed worker command is shown until dismissed", () => {
+    const failed = run(start, Action.WorkerCommandFailed({ error: "Stop failed: HTTP 404" }))
+    expect(failed.workerError).toBe("Stop failed: HTTP 404")
+    expect(run(failed, Action.WorkerErrorDismissed()).workerError).toBeNull()
+  })
+
+  test("a worker error clears when the focus moves to another worker, not on other settings changes", () => {
+    const settings = { focus: "a", theme: "dark" } as never as SettingsDocument["settings"]
+    const failed = run(start, Action.SettingsLoaded({ document: { settings, css: "", options: {} } as never }), Action.WorkerCommandFailed({ error: "Stop failed" }))
+    expect(run(failed, Action.SettingsChanged({ settings: { ...settings, theme: "nord" }, css: "" })).workerError).toBe("Stop failed")
+    expect(run(failed, Action.SettingsChanged({ settings: { ...settings, focus: "b" }, css: "" })).workerError).toBeNull()
   })
 
   test("tool timing: first start wins, finish records failure and error", () => {

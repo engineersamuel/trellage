@@ -23,8 +23,6 @@ export const Message = defineMessageUnion({
   SucceededReloadThread: { threadId: Schema.String, messages: Schema.Array(ChatMessageSchema) },
   FailedReloadThread: { error: Schema.String },
   FailedRefreshThreads: { error: Schema.String },
-  SucceededAbortCoordinator: {},
-  FailedAbortCoordinator: { error: Schema.String },
   CompletedSyncThreadUrl: {},
   CompletedSyncExtensionWorkers: {},
   CompletedAttachSlot: {},

@@ -33,17 +33,29 @@ export const SendToWorker = Command.define("SendToWorker", {
   execute: ({ workerId, prompt }) =>
     send("POST", `${workerUrl(workerId)}/message`, { prompt }).pipe(
       Effect.as(Message.SucceededSendToWorker({ prompt })),
-      Effect.catch((error) => Effect.succeed(Message.FailedSendToWorker({ error }))),
+      Effect.catch((error) => Effect.succeed(Message.FailedSendToWorker({ workerId, error }))),
     ),
 });
 
+/** Abort the worker's current run; the worker stays. */
+export const AbortWorker = Command.define("AbortWorker", {
+  args: { workerId: Schema.String },
+  messages: [Message.SucceededAbortWorker, Message.FailedAbortWorker],
+  execute: ({ workerId }) =>
+    send("POST", `${workerUrl(workerId)}/abort`).pipe(
+      Effect.as(Message.SucceededAbortWorker()),
+      Effect.catch((error) => Effect.succeed(Message.FailedAbortWorker({ workerId, error }))),
+    ),
+});
+
+/** Remove the worker: its session ends and it leaves the list. */
 export const StopWorker = Command.define("StopWorker", {
   args: { workerId: Schema.String },
   messages: [Message.SucceededStopWorker, Message.FailedStopWorker],
   execute: ({ workerId }) =>
     send("DELETE", workerUrl(workerId)).pipe(
       Effect.as(Message.SucceededStopWorker()),
-      Effect.catch((error) => Effect.succeed(Message.FailedStopWorker({ error }))),
+      Effect.catch((error) => Effect.succeed(Message.FailedStopWorker({ workerId, error }))),
     ),
 });
 

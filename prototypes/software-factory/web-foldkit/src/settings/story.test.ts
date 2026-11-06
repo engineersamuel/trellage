@@ -3,34 +3,13 @@ import { AsyncData } from "foldkit";
 import { Command, expectOutMessage, given, message, model, story } from "foldkit/story";
 import { modifyFields } from "foldkit/struct";
 import { describe, expect, test } from "vitest";
-import type { Delivery, SettingsDocument } from "../domain";
+import type { Delivery } from "../domain";
 import { AddCron, FetchDelivery, FetchSettings, PatchSettings, SyncExtensions } from "./command";
+import { document } from "./fixture";
 import { Message, OutMessage } from "./message";
 import { feedEventToMessage } from "./subscription";
 import { init, pressHotkey, update } from "./update";
 
-const document: SettingsDocument = {
-  settings: {
-    theme: "dark",
-    themes: {
-      dark: { bg: "#000", surface: "#111", border: "#222", text: "#eee", muted: "#999", accent: "#66f" },
-      nord: { bg: "#2e3440", surface: "#3b4252", border: "#4c566a", text: "#eceff4", muted: "#d8dee9", accent: "#88c0d0" },
-    },
-    layout: { panel: "right", panelWidth: 40 },
-    navbar: ["status"],
-    animations: true,
-    diffStyle: "terminal",
-    hotkeys: { ",": "toggleSettings", t: "cycleTheme" },
-    focus: "coordinator",
-    banner: null,
-    agent: { model: "gpt", reasoningEffort: "low", disabledTools: [], instructions: "" },
-    crons: {},
-    extensions: {},
-    repo: "",
-  },
-  css: ":root{}",
-  options: { navbarItems: ["status", "repo"], panelPositions: ["left", "right", "hidden"], efforts: ["low"], toolKinds: ["shell"], models: ["gpt"] },
-};
 
 const delivery: Delivery = { steps: [], run: null, decisions: [], securityReviews: [] };
 

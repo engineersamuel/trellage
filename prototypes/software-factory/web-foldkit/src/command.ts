@@ -5,7 +5,7 @@ import type { ChatMessage as ChatLine } from "@plana-solutions/agent-interface";
 import { attachSlot, setExtensionWorkers } from "../../shared/extensions";
 import { syncThreadUrl } from "../../shared/folders";
 import { isOpenUi } from "../../shared/protos/core";
-import { getJson, send } from "./api";
+import { getJson } from "./api";
 import { loadedThreads } from "./chat";
 import { Worker } from "./domain";
 import { Message } from "./message";
@@ -39,14 +39,6 @@ export const ReloadThread = Command.define("ReloadThread", {
       Effect.map((messages) => Message.SucceededReloadThread({ threadId, messages: markdownAsOpenUi(messages) })),
       Effect.catch((error) => Effect.succeed(Message.FailedReloadThread({ error }))),
     ),
-});
-
-export const AbortCoordinator = Command.define("AbortCoordinator", {
-  messages: [Message.SucceededAbortCoordinator, Message.FailedAbortCoordinator],
-  execute: send("POST", "/api/workers/coordinator/abort").pipe(
-    Effect.as(Message.SucceededAbortCoordinator()),
-    Effect.catch((error) => Effect.succeed(Message.FailedAbortCoordinator({ error }))),
-  ),
 });
 
 /** Write the open thread into the address bar (?thread=) and the conversation sidebar. */

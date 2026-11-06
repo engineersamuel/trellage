@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
+import { Dialog } from "@foldkit/ui";
 import { StoredEvent } from "../../../shared/schemas";
 import { Worker } from "../domain";
 import { LogLine } from "./model";
@@ -17,10 +18,15 @@ export const Message = defineMessageUnion({
   UpdatedMessageDraft: { value: Schema.String },
   SubmittedMessageDraft: {},
   SucceededSendToWorker: { prompt: Schema.String },
-  FailedSendToWorker: { error: Schema.String },
-  ClickedStop: { workerId: Schema.String },
+  FailedSendToWorker: { workerId: Schema.String, error: Schema.String },
+  ClickedCancelRun: { workerId: Schema.String },
+  SucceededAbortWorker: {},
+  FailedAbortWorker: { workerId: Schema.String, error: Schema.String },
+  ClickedRemove: { workerId: Schema.String },
+  ConfirmedRemove: {},
+  GotRemoveDialogMessage: { message: Dialog.Message },
   SucceededStopWorker: {},
-  FailedStopWorker: { error: Schema.String },
+  FailedStopWorker: { workerId: Schema.String, error: Schema.String },
   ToggledRawLog: { isChecked: Schema.Boolean },
   ClickedDismissError: {},
   CompletedMountTranscript: {},

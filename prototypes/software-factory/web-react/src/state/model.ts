@@ -11,6 +11,10 @@ export type Model = {
   readonly workers: Readonly<Record<string, Worker>>
   readonly settings: SettingsDocument | null
   readonly settingsError: string | null
+  /** Why the settings did not load. The shell shows it with a retry, instead of an empty page. */
+  readonly settingsLoadError: string | null
+  /** The last failed worker command (stop, abort, message), until the user dismisses it. */
+  readonly workerError: string | null
   readonly securityReviews: readonly SecurityReview[]
   readonly threads: readonly Thread[]
   /** Thread the chat shows. A fresh id that is not in `threads` is a new, unsaved conversation. */
@@ -32,6 +36,9 @@ export type Action = Data.TaggedEnum<{
   SettingsLoaded: { readonly document: SettingsDocument }
   SettingsChanged: { readonly settings: SettingsDocument["settings"]; readonly css: string }
   SettingsPatchFinished: { readonly error: string | null }
+  SettingsLoadFailed: { readonly error: string }
+  WorkerCommandFailed: { readonly error: string }
+  WorkerErrorDismissed: {}
   SecurityReviewsLoaded: { readonly reviews: readonly SecurityReview[] }
   ThreadsLoaded: { readonly threads: readonly Thread[] }
   ThreadSelected: { readonly threadId: string }
@@ -53,6 +60,8 @@ export const initial = (threadId: string, proto: number): Model => ({
   workers: {},
   settings: null,
   settingsError: null,
+  settingsLoadError: null,
+  workerError: null,
   securityReviews: [],
   threads: [],
   threadId,
@@ -69,6 +78,9 @@ const trim = (t: Readonly<Record<string, ToolTiming>>): Readonly<Record<string, 
   return keys.length <= MAX_TOOL_TIMINGS ? t : Object.fromEntries(keys.slice(-MAX_TOOL_TIMINGS).map((k) => [k, t[k]!]))
 }
 
+/** The panel shows another worker: an error about the old one no longer applies. */
+const focusChanged = (m: Model, next: SettingsDocument["settings"]): boolean => m.settings?.settings.focus !== next.focus
+
 export const reduce = (m: Model, a: Action): Model =>
   Action.$match(a, {
     WorkersLoaded: ({ workers }) => ({ ...m, workers: Object.fromEntries(workers.map((w) => [w.id, w])) }),
@@ -77,9 +89,13 @@ export const reduce = (m: Model, a: Action): Model =>
       const { [id]: _, ...rest } = m.workers
       return { ...m, workers: rest }
     },
-    SettingsLoaded: ({ document }) => ({ ...m, settings: document }),
-    SettingsChanged: ({ settings, css }) => (m.settings ? { ...m, settings: { ...m.settings, settings, css } } : m),
+    SettingsLoaded: ({ document }) => ({ ...m, settings: document, settingsLoadError: null, workerError: focusChanged(m, document.settings) ? null : m.workerError }),
+    SettingsChanged: ({ settings, css }) =>
+      m.settings ? { ...m, settings: { ...m.settings, settings, css }, workerError: focusChanged(m, settings) ? null : m.workerError } : m,
     SettingsPatchFinished: ({ error }) => ({ ...m, settingsError: error }),
+    SettingsLoadFailed: ({ error }) => ({ ...m, settingsLoadError: error }),
+    WorkerCommandFailed: ({ error }) => ({ ...m, workerError: error }),
+    WorkerErrorDismissed: () => ({ ...m, workerError: null }),
     SecurityReviewsLoaded: ({ reviews }) => ({ ...m, securityReviews: reviews }),
     ThreadsLoaded: ({ threads }) => ({ ...m, threads }),
     ThreadSelected: ({ threadId }) => ({ ...m, threadId }),

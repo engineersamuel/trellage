@@ -28,7 +28,11 @@ const load = <A>(effect: Effect.Effect<A, HttpError>, toAction: (a: A) => Action
   )
 
 export const loadWorkers = load(json("/api/workers", Schema.Array(Worker)), (workers) => Action.WorkersLoaded({ workers }))
-export const loadSettings = load(json("/api/settings", SettingsDocument), (document) => Action.SettingsLoaded({ document }))
+/** Settings gate the whole shell, so a failure is stored (the shell shows it with a retry), not only logged. */
+export const loadSettings: Effect.Effect<void> = json("/api/settings", SettingsDocument).pipe(
+  Effect.map((document) => dispatch(Action.SettingsLoaded({ document }))),
+  Effect.catch((e: HttpError) => Effect.sync(() => dispatch(Action.SettingsLoadFailed({ error: e.reason })))),
+)
 export const loadReviews = load(json("/api/steps", Steps), (d) => Action.SecurityReviewsLoaded({ reviews: d.securityReviews }))
 export const loadThreads = load(json("/api/threads/get", Threads), (d) => Action.ThreadsLoaded({ threads: d.threads }))
 /** The agent that runs a thread's chat (same rule as the coordinator: sub- for repo threads, gen- for general). */
@@ -44,6 +48,8 @@ export const loadToolTimes = (agentId: string): Effect.Effect<void> =>
     Effect.map((events) => events.flatMap(feedActions).forEach(dispatch)),
     Effect.catch((e: HttpError) => Effect.logWarning(`${e.url}: ${e.reason}`)),
   )
+
+export const retrySettings = (): void => void Effect.runPromise(loadSettings)
 
 const reloadAll = Effect.all([loadWorkers, loadSettings, loadReviews, loadThreads], { concurrency: "unbounded", discard: true })
 
@@ -91,12 +97,21 @@ export const patchSettings = (patch: unknown): void =>
     ),
   )
 
-const fire = (effect: Effect.Effect<void, HttpError>) =>
-  void Effect.runPromise(effect.pipe(Effect.catch((e: HttpError) => Effect.logWarning(`${e.url}: ${e.reason}`))))
+/** The name the panel shows for a worker; its id when it is not in the list. */
+const nameOf = (id: string): string => useApp.getState().workers[id]?.name ?? id
 
-/** Worker commands. Results come back through the feed. */
+/** Run a worker command. A failure goes to the store (the panel shows it); resolves true on success. */
+const fire = (failure: (name: string) => string, id: string, effect: Effect.Effect<void, HttpError>): Promise<boolean> =>
+  Effect.runPromise(
+    effect.pipe(
+      Effect.as(true),
+      Effect.catch((e: HttpError) => Effect.sync(() => (dispatch(Action.WorkerCommandFailed({ error: `${failure(nameOf(id))}: ${e.reason}` })), false))),
+    ),
+  )
+
+/** Worker commands. Results come back through the feed; failures through the store. */
 export const workerApi = {
-  stop: (id: string) => fire(send(`/api/workers/${encodeURIComponent(id)}`, "DELETE")),
-  message: (id: string, prompt: string) => fire(send(`/api/workers/${encodeURIComponent(id)}/message`, "POST", { prompt })),
-  abort: (id: string) => fire(send(`/api/workers/${encodeURIComponent(id)}/abort`, "POST")),
+  stop: (id: string) => fire((name) => `Could not remove ${name}`, id, send(`/api/workers/${encodeURIComponent(id)}`, "DELETE")),
+  message: (id: string, prompt: string) => fire((name) => `Could not send to ${name}`, id, send(`/api/workers/${encodeURIComponent(id)}/message`, "POST", { prompt })),
+  abort: (id: string) => fire((name) => `Could not cancel the run of ${name}`, id, send(`/api/workers/${encodeURIComponent(id)}/abort`, "POST")),
 }

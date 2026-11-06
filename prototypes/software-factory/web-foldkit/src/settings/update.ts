@@ -113,7 +113,7 @@ const submitCronDraft = (model: Model): UpdateReturn =>
     onSuccess: (cron) => ({ model: modifyFields(model, { maybeCronDraftError: () => Option.none() }), commands: [AddCron(cron)] }),
   });
 
-export const update = (model: Model, message: Message): UpdateReturn =>
+export const update = (model: Model, message: Message) =>
   Message.match<UpdateReturn>(message, {
     SucceededFetchSettings: ({ document }) => pipe(storeDocument(document)(model), withFocus(document)),
     FailedFetchSettings: ({ error }) => ({ model: modifyFields(model, { document: (current) => AsyncData.settle(current, Result.fail(error)) }) }),
@@ -172,11 +172,10 @@ const nextTheme = (settings: Settings): Option.Option<string> => {
   );
 };
 
-/** Settings actions the hotkeys can run. Unknown actions do nothing. */
 /** Ask the server to focus a worker. The settings broadcast then moves the panel. */
 export const requestFocus = (workerId: string): Step => patch({ focus: workerId });
 
-/** Run a hotkey action. */
+/** Run a hotkey action. Unknown actions do nothing. */
 export const pressHotkey =
   (action: string): Step =>
   (model) =>

@@ -5,7 +5,7 @@ import { setExtensionWorkers, syncExtensions } from "../../../shared/extensions"
 import { DIFF_STYLES } from "../../../shared/diff";
 import { diffPreview, pickDiffStyle, setDiffStyle, STYLES } from "../../../shared/diffview";
 import { Action, sortedWorkers } from "../state/model";
-import { dispatch, patchSettings, useApp, workerApi } from "../state/store";
+import { dispatch, patchSettings, retrySettings, useApp, workerApi } from "../state/store";
 
 /** Empty mount point for agent-written extensions. React never renders children into it. */
 const Slot = ({ name, className }: { name: string; className?: string }) => <div data-slot={name} className={className} />;
@@ -15,6 +15,7 @@ export function FactoryShell({ title, chat }: { title: string; chat: React.React
   const doc = useApp((m) => m.settings);
   const error = useApp((m) => m.settingsError);
   const open = useApp((m) => m.settingsOpen);
+  const loadError = useApp((m) => m.settingsLoadError);
   const proto = useApp((m) => m.proto);
   const workerMap = useApp((m) => m.workers);
   const workers = useMemo(() => sortedWorkers(workerMap), [workerMap]);
@@ -23,7 +24,12 @@ export function FactoryShell({ title, chat }: { title: string; chat: React.React
     if (doc) syncExtensions(doc.settings, "copilotkit"), setDiffStyle(doc.settings.diffStyle);
   }, [doc]);
   useEffect(() => setExtensionWorkers(workers), [workers]);
-  if (!doc) return null;
+  if (!doc)
+    return loadError ? (
+      <div className="sf-error" role="alert">
+        Could not load settings: {loadError} <button onClick={retrySettings}>Retry</button>
+      </div>
+    ) : null;
   const s = doc.settings;
   const { layout } = s;
   const cols = layout.panel === "hidden" ? "1fr" : layout.panel === "left" ? `${layout.panelWidth}% 1fr` : `1fr ${layout.panelWidth}%`;

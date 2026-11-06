@@ -1,8 +1,9 @@
 import { Command, Mount, Subscription, click, expect, given, label, role, scene, submit, text, type } from "foldkit/scene";
 import { modifyFields } from "foldkit/struct";
+import { Dialog } from "@foldkit/ui";
 import { describe, test } from "vitest";
 import type { Worker } from "../domain";
-import { MountTranscript, SendToWorker, StopWorker } from "./command";
+import { AbortWorker, MountTranscript, SendToWorker, StopWorker } from "./command";
 import { Message } from "./message";
 import { WorkersAsyncData } from "./model";
 import { init, update } from "./update";
@@ -57,11 +58,54 @@ describe("worker panel", () => {
       { update, view },
       given(namerSelected),
       Mount.resolve(MountTranscript, Message.CompletedMountTranscript()),
-      click(role("button", { name: "Stop namer" })),
-      Command.resolve(StopWorker, Message.FailedStopWorker({ error: "HTTP 404" })),
-      expect(role("alert")).toHaveText(/Stop failed: HTTP 404/),
+      click(role("button", { name: "Remove namer" })),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
+      Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
+      expect(role("heading", { name: "Remove namer?" })).toExist(),
+      click(role("button", { name: "Remove" })),
+      Command.resolveAll([StopWorker, Message.FailedStopWorker({ workerId: "namer", error: "HTTP 404" })], [Dialog.CloseDialog, Dialog.Message.CompletedCloseDialog()]),
+      Mount.expectEnded(Dialog.AcquireResources),
+      expect(role("alert")).toHaveText(/Could not remove namer: HTTP 404/),
       click(role("button", { name: "Dismiss error" })),
       expect(role("alert")).not.toExist(),
+    );
+  });
+
+  test("cancel run shows only while the worker runs; the coordinator cannot be removed", () => {
+    scene(
+      { update, view },
+      given(loaded),
+      Mount.resolve(MountTranscript, Message.CompletedMountTranscript()),
+      expect(role("button", { name: "Cancel run of Factory desk" })).not.toExist(),
+      expect(role("button", { name: "Remove Factory desk" })).not.toExist(),
+    );
+  });
+
+  test("cancelling a running worker's run; a failure names the worker", () => {
+    scene(
+      { update, view },
+      given(namerSelected),
+      Mount.resolve(MountTranscript, Message.CompletedMountTranscript()),
+      click(role("button", { name: "Cancel run of namer" })),
+      Command.expectExact(AbortWorker),
+      Command.resolve(AbortWorker, Message.FailedAbortWorker({ workerId: "namer", error: "HTTP 500" })),
+      expect(role("alert")).toHaveText(/Could not cancel the run of namer: HTTP 500/),
+    );
+  });
+
+  test("Cancel in the remove dialog keeps the worker", () => {
+    scene(
+      { update, view },
+      given(namerSelected),
+      Mount.resolve(MountTranscript, Message.CompletedMountTranscript()),
+      click(role("button", { name: "Remove namer" })),
+      Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
+      Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
+      click(role("button", { name: "Cancel" })),
+      Command.expectExact(Dialog.CloseDialog),
+      Command.resolve(Dialog.CloseDialog, Dialog.Message.CompletedCloseDialog()),
+      Mount.expectEnded(Dialog.AcquireResources),
+      expect(role("heading", { name: "Remove namer?" })).not.toExist(),
     );
   });
 

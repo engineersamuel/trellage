@@ -92,3 +92,11 @@ kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; ma
 .sf-diff-preview .dv-pick { display: none; }
 /* File diffs of the chat's tool calls (shared/diffview.ts startToolDiffs fills the slots). */
 .sf-tool-slot:not(:empty) { margin: 6px 0 4px; }
+/* Worker panel: a destructive action, and the dialog that confirms it. */
+.fk-panel button.fk-danger { border-color: #dc2626; color: #f87171; }
+.fk-confirm { position: fixed; top: 30%; left: 50%; transform: translateX(-50%); width: min(380px, calc(100vw - 32px)); box-sizing: border-box; background: var(--sf-surface); color: var(--sf-text); border: 1px solid var(--sf-border); border-radius: 8px; padding: 16px; z-index: 1000; box-shadow: 0 8px 24px #0008; }
+.fk-confirm h2 { margin: 0 0 6px; font-size: 15px; }
+.fk-confirm p { margin: 0 0 14px; color: var(--sf-muted); font-size: 13px; }
+.fk-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.fk-confirm button { background: var(--sf-surface); color: var(--sf-text); border: 1px solid var(--sf-border); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+.fk-confirm button.fk-danger { background: #dc2626; border-color: #dc2626; color: #fff; }

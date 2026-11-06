@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { describe, type FeedEvent, type Worker, useWorkerEvents } from "./factory";
-import { workerApi as api } from "../state/store";
+import { Action } from "../state/model";
+import { dispatch, useApp, workerApi as api } from "../state/store";
 import "./panel.css";
 import { agentLabel, workerTree } from "../../../shared/tree";
 
@@ -68,11 +69,31 @@ function toLines(events: FeedEvent[], showAll: boolean): Line[] {
   return out;
 }
 
+/** Remove ends the worker's session for good, so it asks first. A native modal dialog traps focus and closes on Escape. */
+function ConfirmRemove({ w }: { w: Worker }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = `remove-${w.id}-title`;
+  return (
+    <>
+      <button className="sf-danger" aria-label={`Remove ${w.name}`} onClick={() => dialog.current?.showModal()}>Remove worker</button>
+      <dialog ref={dialog} className="sf-confirm" aria-labelledby={titleId}>
+        <h2 id={titleId}>Remove {w.name}?</h2>
+        <p>Its session ends and it leaves the list. You cannot undo this.</p>
+        <div className="sf-confirm-actions">
+          <button autoFocus onClick={() => dialog.current?.close()}>Cancel</button>
+          <button className="sf-danger" onClick={() => (dialog.current?.close(), void api.stop(w.id))}>Remove</button>
+        </div>
+      </dialog>
+    </>
+  );
+}
+
 function Peer({ w }: { w: Worker }) {
   const events = useWorkerEvents(w.id);
   const [showAll, setShowAll] = useState(false);
   const [raw, setRaw] = useState(false);
   const [prompt, setPrompt] = useState("");
+  const error = useApp((m) => m.workerError);
   const lines = useMemo(() => toLines(events, showAll), [events, showAll]);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -97,10 +118,16 @@ function Peer({ w }: { w: Worker }) {
               <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> all events
             </label>
           )}
-          <button onClick={() => api.abort(w.id)}>Abort</button>
-          {w.role !== "coordinator" && <button onClick={() => api.stop(w.id)}>Stop</button>}
+          {/* Cancel only while a run is going: on an idle worker the button would do nothing. */}
+          {w.status === "running" && <button aria-label={`Cancel run of ${w.name}`} onClick={() => api.abort(w.id)}>Cancel run</button>}
+          {w.role !== "coordinator" && <ConfirmRemove w={w} />}
         </div>
       </header>
+      {error && (
+        <div className="sf-error" role="alert">
+          {error} <button aria-label="Dismiss error" onClick={() => dispatch(Action.WorkerErrorDismissed())}>✕</button>
+        </div>
+      )}
       {!raw && <div key={w.id} className="sf-log" data-transcript-scroll><div data-transcript={w.id} /></div>}
       {raw && <div className="sf-log">
         {lines.map((l) => (
@@ -118,9 +145,10 @@ function Peer({ w }: { w: Worker }) {
         className="sf-send"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!prompt) return;
-          api.message(w.id, prompt);
-          setPrompt("");
+          const sent = prompt;
+          if (!sent.trim()) return;
+          // Clear only after the send worked, and only if the user did not type on meanwhile.
+          void api.message(w.id, sent).then((ok) => ok && setPrompt((draft) => (draft === sent ? "" : draft)));
         }}
       >
         <input placeholder={`message ${w.name} directly`} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
