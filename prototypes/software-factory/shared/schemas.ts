@@ -96,8 +96,21 @@ export const SecurityReview = Schema.Struct({
 })
 export type SecurityReview = typeof SecurityReview.Type
 
+/** One Jev step decision (factory.step_decided). Fan-out decisions have no `step` and are skipped by readers. */
+export const StepDecision = Schema.Struct({
+  step: Schema.optionalKey(Schema.String),
+  moreWork: Schema.optionalKey(Schema.Number),
+  confidence: Schema.optionalKey(Schema.Number),
+  request: Schema.String.pipe(withDefault("")),
+  at: Schema.optionalKey(Schema.Number),
+})
+export type StepDecision = typeof StepDecision.Type
+
 /** GET /api/steps: only the part the shared UIs read. */
-export const Steps = Schema.Struct({ securityReviews: Schema.Array(SecurityReview).pipe(withDefault([])) })
+export const Steps = Schema.Struct({
+  securityReviews: Schema.Array(SecurityReview).pipe(withDefault([])),
+  decisions: Schema.Array(StepDecision).pipe(withDefault([])),
+})
 
 /** One stored raw event (GET /api/workers/:id/events, GET /api/events). `data` stays free-form. */
 export const StoredEvent = Schema.Struct({

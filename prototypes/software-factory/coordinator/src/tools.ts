@@ -1,6 +1,6 @@
 // Tools the coordinator session uses to run the factory.
 import { execFileSync } from "node:child_process"
-import { statSync } from "node:fs"
+import { readFileSync, statSync } from "node:fs"
 import path from "node:path"
 import { defineTool, type Tool } from "@github/copilot-sdk"
 import { finishPermissions, MAX_FIX_ROUNDS, now, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
@@ -8,6 +8,7 @@ import { SETTINGS_TOOL_DOC } from "./prompts.ts"
 import type { ShipGrant } from "./approvals.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
 import { briefProblem } from "./reports.ts"
+import { diffSummary, reportFindings } from "./cards.ts"
 import { pendingReview, reviewIn, securityReview } from "./security.ts"
 import { decideNext, SELECTABLE_STEPS, SkillPreflightError } from "./steps.ts"
 import { FANOUT_CATALOG, MAX_FANOUT, routeFanout, type FanoutSelection } from "./workflows.ts"
@@ -120,6 +121,63 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       "Show the human a live board of the worker fleet in the chat (counts, status, model, memory, context use). Use it instead of render_ui whenever the answer is the fleet's status. It takes no arguments and updates live.",
     parameters: obj({}),
     handler: () => json({ workers: f.summaries(), at: Date.now() }),
+  }),
+  defineTool("show_decisions", {
+    description:
+      "Show every decision waiting for the human (approvals and questions from all conversations) as one card the human can answer in place. Use it when the human asks what needs them or several decisions are open.",
+    parameters: obj({}),
+    handler: () => json({ pending: f.approvals.list().filter((a) => a.status === "pending").length }),
+  }),
+  defineTool("show_security_review", {
+    description:
+      "Show the security review of this conversation as a live card: status, each finding with severity and Jev's keep/discard verdict and reason, and the fix/verify progress. Use it when the human asks about security or when a review finishes, instead of listing findings in text.",
+    parameters: obj({}),
+    handler: () => {
+      const all = [...f.securityReviews.values()]
+      const mine = all.filter((r) => r.scopeId === scope.id || (scope.threadId !== null && r.threadId === scope.threadId))
+      const r = (mine.length ? mine : all).at(-1)
+      return json(r ? { reviewId: r.id, status: r.status, findings: r.findings.length } : { reviewId: null, note: "No security review yet." })
+    },
+  }),
+  defineTool("show_delivery_run", {
+    description:
+      "Show the delivery run as a live card: branch, Jev's latest step decisions with confidence, and how much work is left (moreWork). Use it to answer 'where are we?' and after each next_step instead of a long text status.",
+    parameters: obj({}),
+    handler: () => {
+      const wt = scope.workdir
+      const branch = wt ? currentBranch(wt) : (f.run?.branch ?? null)
+      return json({ branch, worktree: wt ?? f.run?.worktree ?? null, base: scope.base ?? f.run?.base ?? null, decisions: f.decisions.slice(-8) })
+    },
+  }),
+  defineTool("show_diff_summary", {
+    description:
+      "Show the files changed in this conversation's worktree (against its base commit) as a card with +/- per file. Use it before asking for approval to ship, and when the human asks what changed.",
+    parameters: obj({}),
+    handler: () => {
+      const wt = scope.workdir ?? f.run?.worktree
+      const base = scope.base ?? f.run?.base
+      if (!wt || !base) return json({ error: "No worktree or base commit in this conversation." })
+      try {
+        return json(diffSummary(wt, base))
+      } catch (e) {
+        return json({ error: `git diff failed: ${e instanceof Error ? e.message : String(e)}` })
+      }
+    },
+  }),
+  defineTool("show_report_findings", {
+    description:
+      "Show a saved report's ranked findings (## 1. Title sections) as a card with a 'Start in Factory' button per finding. `path` is the report path, e.g. reports/synthesis.md. Use it to present a synthesis or optimization report instead of pasting it.",
+    parameters: obj({ path: { type: "string", description: "Report path, e.g. reports/synthesis.md" } }, ["path"]),
+    handler: (a: any) => {
+      const p = str(a, "path")
+      const file = scope.workdir ? path.resolve(scope.workdir, p) : null
+      if (!file || !file.startsWith(path.resolve(scope.workdir!) + path.sep)) return json({ path: p, findings: [], note: "The UI loads the report." })
+      try {
+        return json({ path: p, findings: reportFindings(readFileSync(file, "utf8")) })
+      } catch {
+        return json({ path: p, findings: [], error: "report not found" })
+      }
+    },
   }),
   defineTool("render_ui", {
     description:
@@ -614,3 +672,12 @@ export const globalTools = (c: Conversations): Tool<any>[] => [
     handler: async (a: any) => json(await c.read(str(a, "threadId"), a.wait === true)),
   }),
 ]
+
+/** The checked-out branch of a worktree, or null when git cannot tell. */
+const currentBranch = (wt: string): string | null => {
+  try {
+    return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: wt, encoding: "utf8" }).trim() || null
+  } catch {
+    return null
+  }
+}

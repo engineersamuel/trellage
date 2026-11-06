@@ -33,7 +33,8 @@ export const loadSettings: Effect.Effect<void> = json("/api/settings", SettingsD
   Effect.map((document) => dispatch(Action.SettingsLoaded({ document }))),
   Effect.catch((e: HttpError) => Effect.sync(() => dispatch(Action.SettingsLoadFailed({ error: e.reason })))),
 )
-export const loadReviews = load(json("/api/steps", Steps), (d) => Action.SecurityReviewsLoaded({ reviews: d.securityReviews }))
+/** Security reviews and Jev step decisions (both from /api/steps). */
+export const loadReviews = load(json("/api/steps", Steps), (d) => Action.StepsLoaded({ reviews: d.securityReviews, decisions: d.decisions }))
 export const loadThreads = load(json("/api/threads/get", Threads), (d) => Action.ThreadsLoaded({ threads: d.threads }))
 /** The agent that runs a thread's chat (same rule as the coordinator: sub- for repo threads, gen- for general). */
 export const agentOfThread = (t: Thread | undefined): string =>
@@ -63,7 +64,7 @@ export const feed: Stream.Stream<FeedEvent> = Stream.callback<FeedEvent>((queue)
 
 /** Feed events that need a refetch rather than a patch. */
 const reloadFor = (type: string): Effect.Effect<void> | null =>
-  type === RESYNC ? reloadAll : type === "factory.security_review" ? loadReviews : type === "factory.thread_updated" ? loadThreads : null
+  type === RESYNC ? reloadAll : type === "factory.security_review" || type === "factory.step_decided" ? loadReviews : type === "factory.thread_updated" ? loadThreads : null
 
 /** One program: initial load, then every feed event becomes actions or a reload. */
 export const bridge: Effect.Effect<void> = Effect.gen(function* () {

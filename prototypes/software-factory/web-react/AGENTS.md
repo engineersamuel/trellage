@@ -69,9 +69,20 @@ CopilotKit owns the chat and every UI whose layout we know in advance. OpenUI dr
     typed card) through `src/genui/`, wrapped in `OpenUiTheme`; it still renders through `useRenderTool`, not `render_ui`.
     Example: `show_worker_board` → `src/genui/WorkerBoard.tsx` (a pure `toBoard` view model, tested in `test/workerboard.test.ts`;
     live workers from the store, the tool result as the fallback snapshot).
+    Cards today (`src/genui/`): `show_worker_board`, `show_delivery_run`, `show_security_review`, `show_diff_summary`,
+    `show_report_findings`, `show_decisions` (backend tools in `coordinator/src/tools.ts`, data helpers in `coordinator/src/cards.ts`).
 14. **A gap is a typed tool, not a new library.** When neither catalog has a component (map, video, HTML), add a tool
     with typed arguments and a renderer. Add a component library only verbatim under `src/components/ui/` (rule 8).
 15. **Generative UI is data, not state.** A renderer reads its tool arguments and the store; it never writes app state
     except through actions (`dispatch`) or Effect APIs (`../shared/approvals.ts`). Card-local state (open, input) stays local.
 16. **OpenUI stays while Foldkit stays.** OpenUI is the one agent UI format both UIs draw. Revisit when Foldkit is retired
     and CopilotKit `standardUI` is no longer Experimental; then gaps (Steps, metrics, radar charts) become custom components.
+17. **Every card is taught to the coordinators.** A new `show_*` tool needs a line in `CARDS_PROMPT`
+    (`coordinator/src/prompts.ts`): which question it answers. All coordinators get that prompt (desk, General chats,
+    repo sub-coordinators). `coordinator/test/cards.test.ts` fails if the prompt names a tool that does not exist.
+18. **Browser tools are `useFrontendTool` / `useHumanInTheLoop` in `UiBridge`** (`focus_agent`, `open_report`, `set_layout`,
+    `confirm_action`) and listed in `BROWSER_TOOLS` (`src/state/chat.ts`). While one waits for a result the open thread
+    must not reload (it would remount the chat and abort the call); `refreshOpenThread` checks this.
+    `confirm_action` is for a quick yes/no inside a run; decisions that must be recorded stay `request_approval` / `ask_user`.
+19. **Selectors return stable values.** `useApp((s) => s.list.filter(...))` returns a new array each call and loops forever.
+    Select the stored value and derive with `useMemo`, or select a primitive (a count, an id).

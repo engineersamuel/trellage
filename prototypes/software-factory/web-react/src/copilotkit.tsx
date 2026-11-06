@@ -1,11 +1,12 @@
 // Must be the first import: ES modules run imports before this file, and the store calls randomUUID on load.
 import "./secure-context";
 // Option 1: React + CopilotKit + Effect + one zustand store. See AGENTS.md for the rules.
-import { CopilotChat, CopilotKitProvider, useAgentContext, useCopilotKit, useFrontendTool, useRenderTool } from "@copilotkit/react-core";
+import { CopilotChat, CopilotKitProvider, useAgentContext, useCopilotKit, useFrontendTool, useHumanInTheLoop, useRenderTool } from "@copilotkit/react-core";
 import { Effect } from "effect";
 import { activityRenderers } from "./chat/ActivityCards";
 import { OpenUiCard, renderOpenUiInto } from "./genui/OpenUi";
 import { WorkerBoard } from "./genui/WorkerBoard";
+import { ConfirmCard, DecisionQueueCard, DeliveryRunCard, DiffSummaryCard, ReportFindingsCard, SecurityReviewCard } from "./genui/Cards";
 import { useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
@@ -13,6 +14,7 @@ import { startDecisionCenter } from "../../shared/decisions";
 import { startFolderSidebar } from "../../shared/folders";
 import { startTranscripts } from "../../shared/transcript";
 import { setOpenUiRenderer, startPrototypes } from "../../shared/protos";
+import { setProto } from "../../shared/protos/core";
 import { FactoryShell } from "./shared/FactoryShell";
 import { factoryMarkdownRenderer } from "./shared/CodeBlock";
 import { REPORT_REF, ReportViewer } from "./shared/ReportViewer";
@@ -39,6 +41,11 @@ function ToolRenderers() {
   }, [onAction]);
   // Known layout (rule 13): the live worker board, drawn with OpenUI components.
   useRenderTool({ name: "show_worker_board", parameters: z.object({}), render: (p) => <WorkerBoard result={p.result} /> });
+  useRenderTool({ name: "show_security_review", parameters: z.object({}), render: (p) => <SecurityReviewCard result={p.result} /> });
+  useRenderTool({ name: "show_delivery_run", parameters: z.object({}), render: (p) => <DeliveryRunCard result={p.result} /> });
+  useRenderTool({ name: "show_diff_summary", parameters: z.object({}), render: (p) => <DiffSummaryCard result={p.result} /> });
+  useRenderTool({ name: "show_report_findings", parameters: z.object({ path: z.string() }), render: (p) => <ReportFindingsCard result={p.result} /> });
+  useRenderTool({ name: "show_decisions", parameters: z.object({}), render: () => <DecisionQueueCard /> });
   // Decisions render as an answerable card in the chat (own row, not grouped).
   const decision = z.object({ title: z.string(), summary: z.string().optional(), options: z.array(z.string()).optional() });
   useRenderTool({ name: "request_approval", parameters: decision, render: (p) => <DecisionCard name={p.name} toolCallId={p.toolCallId} args={p.parameters} result={p.result} /> });
@@ -64,6 +71,25 @@ function UiBridge() {
       patchSettings({ focus: id });
       return `showing ${id}`;
     },
+  });
+  useFrontendTool({
+    name: "open_report",
+    description: "Open a saved report (e.g. reports/synthesis.md) in the human's report viewer.",
+    parameters: z.object({ path: z.string() }),
+    handler: async ({ path }) => (dispatch(Action.ReportOpened({ ref: path })), `opened ${path}`),
+  });
+  useFrontendTool({
+    name: "set_layout",
+    description: "Switch the human's page layout: 0 = chat with agent panel, 2 = Org Canvas. Only when the human asks.",
+    parameters: z.object({ layout: z.union([z.literal(0), z.literal(2)]) }),
+    handler: async ({ layout }) => (setProto(layout), `layout ${layout}`),
+  });
+  // A yes/no the run waits for: the card's buttons resume the coordinator with "confirmed" or "declined".
+  useHumanInTheLoop({
+    name: "confirm_action",
+    description: "Ask the human for a quick yes/no before a destructive step they did not ask for in this turn. Returns 'confirmed' or 'declined'.",
+    parameters: z.object({ title: z.string(), detail: z.string().optional(), confirmLabel: z.string().optional() }),
+    render: (p) => <ConfirmCard args={p.args} {...(p.respond ? { respond: p.respond } : {})} result={p.result} />,
   });
   const focus = useApp((s) => s.settings?.settings.focus ?? null);
   const pending = useApp((s) => s.decisions.filter((d) => d.status === "pending").length);
@@ -170,7 +196,7 @@ function App() {
         .ck-threads select{max-width:100%;background:var(--sf-surface);color:var(--sf-text);border:1px solid var(--sf-border);border-radius:6px;padding:3px 6px}
         .sf-chat .ui-tcc, .sf-chat .ui-tcc-group, .sf-openui, .sf-board{margin:6px 0}
         .sf-chat-diffs{margin:2px 0 8px 12px}
-        .sf-board{background:var(--sf-surface);border-radius:10px;padding:12px 14px;box-shadow:0 0 0 0.5px var(--sf-border)}.sf-board-metrics{display:flex;gap:24px;padding:4px 0 8px}.sf-board-row{cursor:pointer}.sf-board small{color:var(--sf-muted);margin-left:4px}.sf-board-wait{color:var(--sf-muted)}
+        .sf-board{background:var(--sf-surface);border-radius:10px;padding:12px 14px;box-shadow:0 0 0 0.5px var(--sf-border)}.sf-board-metrics{display:flex;gap:24px;align-items:center;padding:4px 0 8px}.sf-board-text{margin:4px 0 8px;color:var(--sf-muted)}.sf-board-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.sf-queue-row{display:grid;gap:6px;padding:8px 0;border-top:1px solid var(--sf-border)}.sf-progress{height:6px;border-radius:3px;background:var(--sf-bg);margin:0 0 10px;overflow:hidden}.sf-progress span{display:block;height:100%;background:var(--sf-accent)}.sf-diff-add{color:#3fb950}.sf-diff-del{color:#f85149}.sf-err{color:#ff7b72;margin-left:6px}.sf-board-row{cursor:pointer}.sf-board small{color:var(--sf-muted);margin-left:4px}.sf-board-wait{color:var(--sf-muted)}
         /* affectUI card stays verbatim; its variables follow the factory palette from outside (rule 12). */
         :root .sf-chat .ui-tcc, :root .sf-chat .ui-tcc-group{--ui-tcc-card:var(--sf-surface);--ui-tcc-code:var(--sf-bg);--ui-tcc-accent:var(--sf-accent);--ui-tcc-strong:var(--sf-text);--ui-tcc-ink:var(--sf-text);--ui-tcc-text:var(--sf-muted);--ui-tcc-focus:var(--sf-accent)}`}</style>
     </CopilotKitProvider>

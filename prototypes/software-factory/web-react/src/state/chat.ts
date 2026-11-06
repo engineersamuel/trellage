@@ -170,8 +170,20 @@ export const freshThread = (): void => {
 /** Reload the open thread when another client wrote it; our own runs stream in already. */
 export const refreshOpenThread = (threadId: string | null): void => {
   const open = useApp.getState().threadId
-  if ((threadId === null || threadId === open) && !coordinator.isRunning) dispatch(Action.ThreadReloaded())
+  if ((threadId === null || threadId === open) && !coordinator.isRunning && !awaitsBrowser()) dispatch(Action.ThreadReloaded())
 }
+
+/**
+ * A browser-side tool call (confirm_action, focus_agent…) has no result yet: the run is paused, not finished.
+ * Reloading then would remount the chat and abort the call the human is about to answer.
+ */
+const awaitsBrowser = (): boolean => {
+  const answered = new Set(coordinator.messages.flatMap((m) => (m.role === "tool" ? [m.toolCallId] : [])))
+  return coordinator.messages.some((m) => m.role === "assistant" && (m.toolCalls ?? []).some((c) => BROWSER_TOOLS.has(c.function.name) && !answered.has(c.id)))
+}
+
+/** Tools the browser runs (useFrontendTool / useHumanInTheLoop in copilotkit.tsx). */
+export const BROWSER_TOOLS = new Set(["focus_agent", "open_report", "set_layout", "confirm_action"])
 
 /**
  * A button inside an agent-designed (OpenUI) card in the chat: "continue" buttons send their text as the next

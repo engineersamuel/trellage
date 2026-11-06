@@ -5,7 +5,7 @@ import path from "node:path"
 import { Translator } from "./agui.ts"
 import { Factory, now, type FeedEvent, type Worker } from "./factory.ts"
 import { createWorktree, discardWorktree, fullyMerged, GENERAL, removeWorktree, worktreeRoot, type Worktree } from "./folders.ts"
-import { COORDINATOR_PROMPT, DESK_PROMPT, GLOBAL_PROMPT, RESEARCH_PROMPT, subPrompt } from "./prompts.ts"
+import { CARDS_PROMPT, COORDINATOR_PROMPT, DESK_PROMPT, GLOBAL_PROMPT, RESEARCH_PROMPT, subPrompt } from "./prompts.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
 import { findingTask, findReport } from "./reports.ts"
 import { conversationStatus, deletedNotice, DESK_ID, factorySnapshot, genId, reportTarget, STATUS_NOTE } from "./general.ts"
@@ -84,7 +84,7 @@ const snapshot = () =>
   )
 
 const globalSystem = (extra: string) =>
-  `${COORDINATOR_PROMPT}\n\n${GLOBAL_PROMPT}${extra}${instructions ? `\n\n<human-instructions>\n${instructions}\n</human-instructions>` : ""}\n\n# OpenUI Lang\n${openuiPrompt}`
+  `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${GLOBAL_PROMPT}${extra}${instructions ? `\n\n<human-instructions>\n${instructions}\n</human-instructions>` : ""}\n\n# OpenUI Lang\n${openuiPrompt}`
 
 // The Factory desk keeps the id "coordinator" and its runtime process; General chats open their own sessions on it.
 const coord = await factory.spawn({
@@ -266,7 +266,7 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
         name: `${folder.name} · ${t.title}`.slice(0, 60),
         role: "coordinator",
         ...(t.parentThreadId ? { owner: genId(t.parentThreadId) } : {}),
-        system: `${COORDINATOR_PROMPT}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!)}\n\n${RESEARCH_PROMPT}\n\n# OpenUI Lang\n${openuiPrompt}`,
+        system: `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!)}\n\n${RESEARCH_PROMPT}\n\n# OpenUI Lang\n${openuiPrompt}`,
         tools: coordinatorTools(factory, {
           id,
           threadId: t.id,

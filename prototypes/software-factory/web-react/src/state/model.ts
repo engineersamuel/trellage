@@ -2,7 +2,7 @@
 // every change is a named Action, so tests drive `reduce` directly (like Foldkit's story tests).
 import { Data } from "effect"
 import type { Decision } from "../../../shared/approvals"
-import type { SecurityReview, SettingsDocument, Thread, Worker } from "../../../shared/schemas"
+import type { SecurityReview, SettingsDocument, StepDecision, Thread, Worker } from "../../../shared/schemas"
 
 /** Start and end of one tool call, from the factory feed. AG-UI messages carry no times. */
 export type ToolTiming = { readonly startedAt: number; readonly endedAt?: number; readonly failed?: boolean; readonly error?: string }
@@ -16,6 +16,8 @@ export type Model = {
   /** The last failed worker command (stop, abort, message), until the user dismisses it. */
   readonly workerError: string | null
   readonly securityReviews: readonly SecurityReview[]
+  /** Jev's latest step decisions, newest last (delivery run card). */
+  readonly stepDecisions: readonly StepDecision[]
   readonly threads: readonly Thread[]
   /** Thread the chat shows. A fresh id that is not in `threads` is a new, unsaved conversation. */
   readonly threadId: string
@@ -40,6 +42,7 @@ export type Action = Data.TaggedEnum<{
   WorkerCommandFailed: { readonly error: string }
   WorkerErrorDismissed: {}
   SecurityReviewsLoaded: { readonly reviews: readonly SecurityReview[] }
+  StepsLoaded: { readonly reviews: readonly SecurityReview[]; readonly decisions: readonly StepDecision[] }
   ThreadsLoaded: { readonly threads: readonly Thread[] }
   ThreadSelected: { readonly threadId: string }
   ThreadReloaded: {}
@@ -63,6 +66,7 @@ export const initial = (threadId: string, proto: number): Model => ({
   settingsLoadError: null,
   workerError: null,
   securityReviews: [],
+  stepDecisions: [],
   threads: [],
   threadId,
   threadVersion: 0,
@@ -97,6 +101,7 @@ export const reduce = (m: Model, a: Action): Model =>
     WorkerCommandFailed: ({ error }) => ({ ...m, workerError: error }),
     WorkerErrorDismissed: () => ({ ...m, workerError: null }),
     SecurityReviewsLoaded: ({ reviews }) => ({ ...m, securityReviews: reviews }),
+    StepsLoaded: ({ reviews, decisions }) => ({ ...m, securityReviews: reviews, stepDecisions: decisions }),
     ThreadsLoaded: ({ threads }) => ({ ...m, threads }),
     ThreadSelected: ({ threadId }) => ({ ...m, threadId }),
     ThreadReloaded: () => ({ ...m, threadVersion: m.threadVersion + 1 }),
