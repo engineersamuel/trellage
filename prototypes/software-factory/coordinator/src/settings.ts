@@ -83,9 +83,10 @@ const palette = (bg: string, surface: string, border: string, text: string, mute
 })
 
 export const defaultSettings = (): Settings => ({
-  theme: "default",
+  theme: "slate",
   themes: {
     default: palette("#0a0a0a", "#171717", "#262626", "#e5e5e5", "#a3a3a3", "#6366f1"),
+    slate: palette("#121318", "#1b1c22", "#2a2b33", "#e6e7ec", "#8b8d98", "#7f72e5"),
     midnight: palette("#0b1020", "#121a33", "#1f2a4d", "#dbe4ff", "#8b9bc8", "#60a5fa"),
     dracula: palette("#282a36", "#343746", "#44475a", "#f8f8f2", "#a9adc1", "#bd93f9"),
     nord: palette("#2e3440", "#3b4252", "#4c566a", "#eceff4", "#a3acbd", "#88c0d0"),

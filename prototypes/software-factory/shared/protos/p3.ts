@@ -3,6 +3,7 @@
 // The detail of a chat, sub-coordinator or the desk is the host's native chat (placed by placeChat), so you keep talking to it.
 // The detail of a worker is its live transcript plus a composer to the worker or to the coordinator it reports to.
 import "./p3.css"
+import { answer, runApprovals } from "../approvals"
 import { fire, send } from "../http"
 import { harnessBadge } from "../harness"
 import { openSpec } from "../spec"
@@ -49,6 +50,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   let cur: string | null = null
   const opened = new Set<string>()
   let mounted: { key: string; stop: () => void } | null = null
+  /** Open questions of the shown worker, between its transcript and composer. Filled on every render. */
+  let askBox: HTMLElement | null = null
 
   const choose = (id: string) => ((cur = id), render())
 
@@ -92,10 +95,13 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       const r = el("div", `p3-item s-${tone} ${n.id === rootOf(m, sel!) ? "on" : ""}`)
       r.dataset.testid = "inbox-item"
       const top = el("div", "p3-row")
-      top.append(el("b", "p3-ell", `${ICON[n.kind]} ${n.title}`), el("span", "p3-n", ago(n.thread?.createdAt)))
+      top.append(el("i", "p3-dot"), el("b", "p3-ell", n.title), el("span", "p3-n", ago(n.thread?.createdAt)))
       const repos = [...new Set(subtree(m, n.id).map((x) => x.thread?.folderId).filter((f) => f && f !== "general"))]
-      const where = el("div", "p3-sub p3-ell", `${KIND[n.kind]}${repos.length ? ` · ${repos.join(", ")}` : ""}`)
-      r.append(top, where, el("div", "p3-sub p3-st p3-ell", reason))
+      const path = focus.id === n.id ? "" : ` › ${KIND[focus.kind]}`
+      const where = el("div", "p3-sub p3-ell", `${ICON[n.kind]} ${KIND[n.kind]}${repos.length ? ` · ${repos.join(", ")}` : ""}${path}`)
+      r.append(top, where)
+      // Quiet rows (idle, dormant, draft): the dot says it all.
+      if (tone === "needs" || tone === "error" || tone === "running") r.append(el("div", "p3-sub p3-st p3-ell", reason))
       r.onclick = () => ((autoView = false), (sel = n.id), (cur = focus.id), render())
       return r
     }), ...(list.length ? [] : [el("div", "p3-empty", view === "needs" ? "Nothing needs you. 🎉" : "Nothing here.")]))
@@ -193,7 +199,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const go = el("button", "primary", "Send")
     const label = el("label", "p3-sub", "To ")
     label.append(to)
-    form.append(label, ta, go)
+    const chips = el("div", "p3-chips")
+    for (const q of ["Status?", "Try another approach", "Stop and report up"])
+      chips.append(btn(q, () => ((ta.value = q), form.requestSubmit())))
+    form.append(label, ta, chips, go)
     form.onsubmit = (e) => {
       e.preventDefault()
       const text = ta.value.trim()
@@ -203,8 +212,26 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       void messageAgent(target.id, text, target.thread?.id).then((err) => (ta.placeholder = err ? `Send failed: ${err}` : "Sent. Message again…"))
     }
     ta.onkeydown = (e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), form.requestSubmit())
-    body.replaceChildren(scroll, form)
+    askBox = el("div", "p3-asks")
+    body.replaceChildren(scroll, askBox, form)
     return mountTranscript(scroll, n.id, { stopped: n.agent?.status !== "running" })
+  }
+  /** Open questions of the conversation the worker reports to (decisions belong to conversations, not workers), answered in place.
+   *  Free-text questions open the decision drawer. */
+  const renderAsks = (n: Node) => {
+    if (!askBox) return
+    const boss = bossOf(m, n.id)
+    const from = boss ? ` · from its ${KIND[boss.kind]}` : ""
+    askBox.replaceChildren(...(boss?.pending ?? []).map((d) => {
+      const q = el("div", "p3-ask")
+      const acts = el("div", "p3-acts")
+      const err = el("span", "p3-sub p3-err")
+      for (const o of d.options)
+        acts.append(btn(o, () => void runApprovals(answer(d.id, o, null)).catch((e: { reason?: string }) => (err.textContent = e.reason ?? String(e)))))
+      acts.append(btn(d.allowText || !d.options.length ? "Answer…" : "Details", () => openDecision(d.id)), err)
+      q.append(el("div", "p3-label", `${d.kind === "question" ? "Question for you" : "Approval for you"}${from}`), el("div", "", d.title), acts)
+      return q
+    }))
   }
   const draftBody = (n: Node) => {
     const p = el("pre", "p3-draft", n.title)
@@ -225,6 +252,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     }
     renderHead(n)
     const chat = showsChat(n.id)
+    if (mounted?.key === n.id && n.kind === "worker") renderAsks(n)
     if (chat) placeOverBody()
     if (mounted?.key === n.id) return
     mounted?.stop()
@@ -234,7 +262,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       mounted = { key: n.id, stop: () => {} }
     } else {
       placeChat(null)
+      askBox = null
       mounted = { key: n.id, stop: n.kind === "worker" ? workerBody(n) : draftBody(n) }
+      if (n.kind === "worker") renderAsks(n)
     }
   }
 
