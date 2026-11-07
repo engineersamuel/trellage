@@ -95,3 +95,40 @@ describe("outside sync", () => {
     );
   });
 });
+
+describe("render cost", () => {
+  // Foldkit renders the page when the Model reference changes: stream deltas and other workers' events must not.
+  test("a feed event the panel does not log keeps the same Model", () => {
+    const event = (workerId: string, type: string) => ({ seq: 9, workerId, type, agentId: null, timestamp: "0", data: { content: "x" } });
+    expect(update(loaded, toPanel(WorkerPanel.Message.ReceivedWorkerEvent({ event: event("namer", "user.message") }))).model).toBe(loaded);
+    expect(update(loaded, toPanel(WorkerPanel.Message.ReceivedWorkerEvent({ event: event("coordinator", "assistant.message_delta") }))).model).toBe(loaded);
+  });
+
+  test("an identical worker report, an unknown stop, or the same approvals keep the same Model", () => {
+    expect(update(loaded, toPanel(WorkerPanel.Message.ReceivedWorkerUpdate({ worker: { ...namer } }))).model).toBe(loaded);
+    expect(update(loaded, toPanel(WorkerPanel.Message.ReceivedWorkerStopped({ workerId: "gone" }))).model).toBe(loaded);
+    expect(update(loaded, Message.UpdatedApprovals({ pending: [] })).model).toBe(loaded);
+  });
+
+  test("a changed worker report still updates the list", () => {
+    const busy = update(loaded, toPanel(WorkerPanel.Message.ReceivedWorkerUpdate({ worker: { ...namer, contextTokens: 5 } }))).model;
+    expect(AsyncData.getData(busy.workerPanel.workers)).toEqual(Option.some([coordinator, { ...namer, contextTokens: 5 }]));
+  });
+
+  test("a thread list or a reloaded thread equal to what the chat shows keeps the same Model", () => {
+    const thread = { id: "t1", title: "chat", createdAt: 1 };
+    const listed = update(loaded, Message.SucceededRefreshThreads({ threads: [thread] })).model;
+    expect(listed).not.toBe(loaded);
+    expect(update(listed, Message.SucceededRefreshThreads({ threads: [{ ...thread }] })).model).toBe(listed);
+    const open = modifyFields(listed, { chat: modifyFields({ maybeSelectedThreadId: () => Option.some("t1") }) });
+    const messages = [{ id: "m1", role: "user" as const, content: "hi" }];
+    const shown = update(open, Message.SucceededReloadThread({ threadId: "t1", messages })).model;
+    expect(shown).not.toBe(open);
+    expect(update(shown, Message.SucceededReloadThread({ threadId: "t1", messages: [{ ...messages[0]! }] })).model).toBe(shown);
+  });
+
+  test("a child update that keeps its Model keeps the root Model", () => {
+    expect(update(loaded, toPanel(WorkerPanel.Message.SucceededAbortWorker())).model).toBe(loaded);
+    expect(update(loaded, toSettings(Settings.Message.CompletedSyncExtensions())).model).toBe(loaded);
+  });
+});

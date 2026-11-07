@@ -122,11 +122,12 @@ const navbar = (settingsModel: Settings.Model, goalsModel: Goals.Model, workers:
 
 // ---------- Layout ----------
 
-const chatView = (model: Model, h: HtmlBuilder<Message>): Html =>
+/** Reads only the chat Model, so a worker, settings or approvals Message reuses the cached chat subtree. */
+const chatView = (chatModel: Model["chat"], h: HtmlBuilder<Message>): Html =>
   // .sf-chat is the stable hook extension CSS targets in both UIs.
   h.keyed("div")("chat", [h.Class("fk-chat sf-chat")], [
     slot("chat-background", h, "fk-slot-bg"),
-    h.div([h.Class("fk-chat-body")], [h.submodel({ model: model.chat, slotId: "chat", toParentMessage: toGotChatMessage, view: chat.view })]),
+    h.div([h.Class("fk-chat-body")], [h.submodel({ model: chatModel, slotId: "chat", toParentMessage: toGotChatMessage, view: chat.view })]),
   ]);
 
 const workerPanel = (workerPanelModel: WorkerPanel.Model, h: HtmlBuilder<Message>): Html =>
@@ -144,6 +145,8 @@ const lazyPanelLeft = createLazy();
 const lazyPanelRight = createLazy();
 const lazySettingsDrawer = createLazy();
 const lazyGoalsDialog = createLazy();
+const lazyClassicChat = createLazy();
+const lazyPrototypeChat = createLazy();
 
 const goalsDialog = (goalsModel: Goals.Model, h: HtmlBuilder<Message>): Html =>
   h.submodel({ model: goalsModel, slotId: "goals", toParentMessage: toGotGoalsMessage, view: Goals.view });
@@ -158,9 +161,9 @@ const gridColumns = (side: string, width: number): string =>
 const classicLayout = (model: Model, layout: SettingsDocument["layout"], h: HtmlBuilder<Message>): Html => {
   const { panel: side, panelWidth } = layout;
   const cells = Match.value(side).pipe(
-    Match.when("hidden", () => [chatView(model, h)]),
-    Match.when("left", () => [lazyPanelLeft(workerPanel, [model.workerPanel, h]), chatView(model, h)]),
-    Match.orElse(() => [chatView(model, h), lazyPanelRight(workerPanel, [model.workerPanel, h])]),
+    Match.when("hidden", () => [lazyClassicChat(chatView, [model.chat, h])]),
+    Match.when("left", () => [lazyPanelLeft(workerPanel, [model.workerPanel, h]), lazyClassicChat(chatView, [model.chat, h])]),
+    Match.orElse(() => [lazyClassicChat(chatView, [model.chat, h]), lazyPanelRight(workerPanel, [model.workerPanel, h])]),
   );
   return h.main([h.Class("fk-layout"), h.Style({ "grid-template-columns": gridColumns(side, panelWidth) })], cells);
 };
@@ -168,7 +171,7 @@ const classicLayout = (model: Model, layout: SettingsDocument["layout"], h: Html
 /** Prototype layout: shared/protos owns .sfp-host's children and places the chat cell. */
 const prototypeLayout = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.main([h.Class("sfp-stage"), h.DataAttribute("proto", String(model.protoIndex))], [
-    h.keyed("div")("sfp-chat", [h.Class("sfp-chat")], [chatView(model, h)]),
+    h.keyed("div")("sfp-chat", [h.Class("sfp-chat")], [lazyPrototypeChat(chatView, [model.chat, h])]),
     h.keyed("div")(`sfp-host-${model.protoIndex}`, [h.Class("sfp-host"), h.DataAttribute("proto", String(model.protoIndex))]),
   ]);
 

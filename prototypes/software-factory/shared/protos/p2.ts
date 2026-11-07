@@ -201,6 +201,14 @@ const ghostAction = (t: Thread, kind: "archive" | "delete") => {
   return b
 }
 
+/** Replace only the children whose HTML changed. The shared state changes on every streamed event; an unchanged
+ *  button stays the same element, so a click on it is not lost. */
+const patchChildren = (host: Element, next: Element[]) => {
+  const old = host.children
+  if (old.length !== next.length) return host.replaceChildren(...next)
+  next.forEach((n, i) => old[i]!.outerHTML !== n.outerHTML && old[i]!.replaceWith(n))
+}
+
 const mount = ({ root, placeChat }: Ctx): (() => void) => {
   root.classList.add("sfp-p2")
   const canvas = el("div", "p2-canvas")
@@ -722,8 +730,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       chips.append(open)
     }
     const err = errs.get(t.id), b = busy.get(t.id)
-    card.replaceChildren(head, el("div", "p2-n-name", n.name), el("div", "p2-n-wt", t.folderId), chips, ...(err ? [errLine(err)] : []),
-      el("div", "p2-n-foot", b ? (b === "enhance" ? "Enhancing…" : `${LABEL[b]} is starting…`) : "draft · click for actions"))
+    patchChildren(card, [head, el("div", "p2-n-name", n.name), el("div", "p2-n-wt", t.folderId), chips, ...(err ? [errLine(err)] : []),
+      el("div", "p2-n-foot", b ? (b === "enhance" ? "Enhancing…" : `${LABEL[b]} is starting…`) : "draft · click for actions")])
   }
 
   /** One clipped error line on the card; the full text is in the tooltip and the slide-over. */
@@ -745,7 +753,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const t = n.kind === "global" ? undefined : worktreeOf(n)
     const wt = el("div", "p2-n-wt", t?.worktree ? worktreeLine(t) : n.kind === "global" ? "event inbox · read only" : n.id.startsWith("gen-") ? "own memory · no worktree" : "own workspace")
     if (t?.worktree) wt.title = `Worktree ${t.worktree}\nBranch ${t.branch}${t.base ? `\nBased on ${t.base}` : ""}`
-    card.replaceChildren(cardHead(n), el("div", "p2-n-name", n.name), wt, el("div", "p2-n-act", activityText(s!, n)), bar, foot)
+    patchChildren(card, [cardHead(n), el("div", "p2-n-name", n.name), wt, el("div", "p2-n-act", activityText(s!, n)), bar, foot])
   }
 
   const createCard = (id: string) => {
@@ -793,7 +801,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       orderKey = order.join()
       world.append(...order.map((id) => cards.get(id)!))
     }
-    tiers.replaceChildren(...tierLabels(nodes.values()).map(([y, t]) => {
+    patchChildren(tiers, tierLabels(nodes.values()).map(([y, t]) => {
       const l = el("div", "p2-tier", t)
       l.style.top = `${y + PAD - 24}px`
       return l
@@ -810,24 +818,25 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       d.style.setProperty("--glow", c)
       legend.append(d, el("span", "", t))
     }
-    stats.replaceChildren(legend, el("span", "", `${st.agents.length} agents`), el("span", running ? "on" : "", `${running} running`))
+    patchChildren(stats, [legend, el("span", "", `${st.agents.length} agents`), el("span", running ? "on" : "", `${running} running`)])
     const n = sel ? nodes.get(sel) : undefined
     where.textContent = n ? `Viewing ${n.kind === "global" ? "Factory" : n.name} · Esc goes back` : "Factory overview · click any card to open its chat"
     // Decisions waiting for a human: each one is a button that opens its card.
     const pend = st.decisions.filter((d) => d.status === "pending").sort((a, b) => a.createdAt - b.createdAt)
     decisions.classList.toggle("warn", pend.length > 0)
-    decisions.replaceChildren(el("b", "", pend.length ? `⚑ ${pend.length} decision${pend.length > 1 ? "s" : ""} waiting` : "Decisions: none waiting"))
+    const items: Element[] = [el("b", "", pend.length ? `⚑ ${pend.length} decision${pend.length > 1 ? "s" : ""} waiting` : "Decisions: none waiting")]
     for (const d of pend.slice(0, 3)) {
       const b = el("button", "", d.title)
       b.onclick = () => openDecision(d.id)
-      decisions.append(b)
+      items.push(b)
     }
     const last = pend.length ? undefined : [...st.decisions].sort((a, b) => b.createdAt - a.createdAt)[0]
     if (last) {
       const b = el("button", "p2-last", `Last answered: ${last.title}`)
       b.onclick = () => openDecision(last.id)
-      decisions.append(b)
+      items.push(b)
     }
+    patchChildren(decisions, items)
   }
 
   const crumbs = (n: Node) => {
@@ -889,7 +898,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       p.onclick = () => void navigator.clipboard?.writeText(t.worktree!).then(() => ((p.textContent = "Copied ✓"), setTimeout(() => (p.textContent = t.worktree!), 1200)))
       row4.append(p)
     } else row4.append(el("span", "p2-ph-tag", n.kind === "global" ? "General · no worktree" : "Own workspace · no repo worktree"))
-    panelHead.replaceChildren(row1, row4, row2, row3)
+    patchChildren(panelHead, [row1, row4, row2, row3])
   }
 
   /** A search hit to scroll to when this worker's panel transcript mounts. */
@@ -939,7 +948,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     fresh.onclick = () => newThread("general")
     const dot = el("i", "p2-dot")
     dot.style.setProperty("--glow", statusColor(g?.status ?? "idle"))
-    dockHead.replaceChildren(dot, el("b", "", "💬 Chat here"), el("span", "p2-ph-act", g && s ? activityText(s, g) : "new requests start here"), fresh, b)
+    patchChildren(dockHead, [dot, el("b", "", "💬 Chat here"), el("span", "p2-ph-act", g && s ? activityText(s, g) : "new requests start here"), fresh, b])
   }
 
   const mountPanelBody = (n: Node | undefined): (() => void) => {
@@ -1214,6 +1223,15 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     else fit()
   }
 
+  // A render between mousedown and mouseup can still replace the pressed element (its text changed): wait for the release.
+  let pressed = false
+  let owed = false
+  const press = () => void (pressed = true)
+  // Click fires after pointerup in the same task; the owed render runs after it.
+  const release = () => ((pressed = false), owed && ((owed = false), setTimeout(() => alive && sync())))
+  root.addEventListener("pointerdown", press, true)
+  window.addEventListener("pointerup", release, true)
+  window.addEventListener("pointercancel", release, true)
   const unsub = subscribe((st) => {
     s = st
     nodes = buildTree(st, sel)
@@ -1222,7 +1240,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       const linked = [...nodes.values()].find((n) => n.thread?.id === threadId && n.kind !== "draft")
       if (linked) (sel = linked.id), (nodes = buildTree(st, sel))
     }
-    sync()
+    if (pressed) owed = true
+    else sync()
   })
   const ro = new ResizeObserver(() => fit())
   ro.observe(canvas)
@@ -1251,6 +1270,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     window.removeEventListener("keydown", onKey, true)
     window.removeEventListener("keydown", onSearchKey, true)
     document.removeEventListener("pointerdown", onDown, true)
+    root.removeEventListener("pointerdown", press, true)
+    window.removeEventListener("pointerup", release, true)
+    window.removeEventListener("pointercancel", release, true)
     clearTimeout(searchTimer)
     mounted?.stop()
     for (const g of genui.values()) g.stop()

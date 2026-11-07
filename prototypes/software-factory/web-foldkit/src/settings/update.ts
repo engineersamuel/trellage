@@ -69,7 +69,7 @@ const refreshSettings = Update.refresh<Model, Message, SettingsDocument, string>
 const foldDialog = Update.foldChild({
   update: Dialog.update,
   read: (model: Model) => Option.some(model.dialog),
-  write: (model: Model, dialog: Dialog.Model) => modifyFields(model, { dialog: () => dialog }),
+  write: (model: Model, dialog: Dialog.Model) => (dialog === model.dialog ? model : modifyFields(model, { dialog: () => dialog })),
   toParentMessage: (message: Dialog.Message) => Message.GotDialogMessage({ message }),
   foldOutMessage: Dialog.OutMessage.match<Step>({ Opened: () => (model) => ({ model }), Closed: () => (model) => ({ model }) }),
 });
@@ -78,7 +78,7 @@ const foldDialog = Update.foldChild({
 export const toggleDialog = Update.foldChildStep({
   update: (dialog: Dialog.Model) => (dialog.isOpen ? Dialog.close(dialog) : Dialog.open(dialog)),
   read: (model: Model) => Option.some(model.dialog),
-  write: (model: Model, dialog: Dialog.Model) => modifyFields(model, { dialog: () => dialog }),
+  write: (model: Model, dialog: Dialog.Model) => (dialog === model.dialog ? model : modifyFields(model, { dialog: () => dialog })),
   toParentMessage: (message: Dialog.Message) => Message.GotDialogMessage({ message }),
   foldOutMessage: Dialog.OutMessage.match<Step>({ Opened: () => (model) => ({ model }), Closed: () => (model) => ({ model }) }),
 });
@@ -86,7 +86,7 @@ export const toggleDialog = Update.foldChildStep({
 const foldPanelWidthSlider = Update.foldChild({
   update: Slider.update,
   read: (model: Model) => Option.some(model.panelWidthSlider),
-  write: (model: Model, slider: Slider.Model) => modifyFields(model, { panelWidthSlider: () => slider }),
+  write: (model: Model, slider: Slider.Model) => (slider === model.panelWidthSlider ? model : modifyFields(model, { panelWidthSlider: () => slider })),
   toParentMessage: (message: Slider.Message) => Message.GotPanelWidthSliderMessage({ message }),
   foldOutMessage: Slider.OutMessage.match<Step>({ ChangedValue: ({ value }) => patch({ layout: { panelWidth: value } }) }),
 });

@@ -29,7 +29,7 @@ const dialogStep = (f: (dialog: Dialog.Model) => ReturnType<typeof Dialog.open>)
   Update.foldChildStep({
     update: f,
     read: (model: Model) => Option.some(model.dialog),
-    write: (model: Model, dialog: Dialog.Model) => modifyFields(model, { dialog: () => dialog }),
+    write: (model: Model, dialog: Dialog.Model) => (dialog === model.dialog ? model : modifyFields(model, { dialog: () => dialog })),
     toParentMessage: (message: Dialog.Message) => Message.GotDialogMessage({ message }),
     foldOutMessage: Dialog.OutMessage.match<Step>({ Opened: () => (model) => ({ model }), Closed: () => (model) => ({ model }) }),
   });
@@ -37,7 +37,7 @@ const dialogStep = (f: (dialog: Dialog.Model) => ReturnType<typeof Dialog.open>)
 const foldDialog = Update.foldChild({
   update: Dialog.update,
   read: (model: Model) => Option.some(model.dialog),
-  write: (model: Model, dialog: Dialog.Model) => modifyFields(model, { dialog: () => dialog }),
+  write: (model: Model, dialog: Dialog.Model) => (dialog === model.dialog ? model : modifyFields(model, { dialog: () => dialog })),
   toParentMessage: (message: Dialog.Message) => Message.GotDialogMessage({ message }),
   foldOutMessage: Dialog.OutMessage.match<Step>({ Opened: () => (model) => ({ model }), Closed: () => (model) => ({ model }) }),
 });

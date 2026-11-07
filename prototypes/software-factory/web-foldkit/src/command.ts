@@ -6,7 +6,6 @@ import { attachSlot, setExtensionWorkers } from "../../shared/extensions";
 import { syncThreadUrl } from "../../shared/folders";
 import { isOpenUi } from "../../shared/protos/core";
 import { getJson } from "./api";
-import { loadedThreads } from "./chat";
 import { Worker } from "./domain";
 import { Message } from "./message";
 
@@ -23,9 +22,9 @@ export const markdownAsOpenUi = (messages: ReadonlyArray<ChatLine>): Array<ChatL
 
 // Threads started elsewhere (CopilotKit, the sf CLI) appear in the chat's thread list.
 export const RefreshThreads = Command.define("RefreshThreads", {
-  messages: [Message.GotChatMessage, Message.FailedRefreshThreads],
+  messages: [Message.SucceededRefreshThreads, Message.FailedRefreshThreads],
   execute: getJson("/api/threads/get", Schema.Struct({ threads: Schema.Array(ThreadSchema) })).pipe(
-    Effect.map(({ threads }) => loadedThreads(threads)),
+    Effect.map(({ threads }) => Message.SucceededRefreshThreads({ threads })),
     Effect.catch((error) => Effect.succeed(Message.FailedRefreshThreads({ error }))),
   ),
 });

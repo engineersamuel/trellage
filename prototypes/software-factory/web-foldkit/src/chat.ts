@@ -2,7 +2,7 @@
 // capabilities, so this module is the one place that turns host facts into chat Messages. The rest of
 // the app drives the chat through the Steps and Message mappers exported here.
 /* oxlint-disable foldkit/no-child-message-construction-in-root -- agent-interface exposes no update capabilities; this adapter stands in for them. */
-import { Option } from "effect";
+import { Equal, Option } from "effect";
 import { Update } from "foldkit";
 import type { UrlRequest } from "foldkit/navigation";
 import { modifyFields } from "foldkit/struct";
@@ -22,7 +22,7 @@ export const foldChat = Update.foldChild({
   read: (model: Model) => Option.some(model.chat),
   toParentMessage: toGotChatMessage,
   update: chat.update,
-  write: (model: Model, next: AppModel): Model => modifyFields(model, { chat: () => next }),
+  write: (model: Model, next: AppModel): Model => (next === model.chat ? model : modifyFields(model, { chat: () => next })),
 });
 
 /** In a narrow column the chat acts as mobile and opens its thread drawer on select; close it again. */
@@ -43,7 +43,10 @@ export const showReloadedThread =
   (threadId: string, messages: ReadonlyArray<ChatMessage>): Step =>
   (model) =>
     Option.contains(model.chat.maybeSelectedThreadId, threadId) && model.chat.run._tag === "Idle"
-      ? foldChat(model, chat.Message.SucceededLoadMessages({ threadId, messages }))
+    // The same messages keep the same Model: the chat does not render again and the composer keeps its focus.
+      ? Equal.equals(model.chat.messages, messages)
+        ? { model }
+        : foldChat(model, chat.Message.SucceededLoadMessages({ threadId, messages }))
       : { model };
 
 /** The tool behind every live chat card (coordinator/src/cards.ts): an OpenUI Query("factory_card", …). */
@@ -67,9 +70,13 @@ export const refreshCards: Step = (model) =>
     cardQueries(model.chat).map((q) => foldChat(chat.Message.TickedGenUiQueryRefresh(q))),
   );
 
-/** A fresh thread list (threads started elsewhere) as a root Message. */
-export const loadedThreads = (threads: ReadonlyArray<Thread>): GotChatMessage =>
-  toGotChatMessage(chat.Message.SucceededLoadThreads({ maybeNextCursor: Option.none(), threads }));
+/** Show a fresh thread list (threads started elsewhere). A list equal to the loaded one keeps the same Model. */
+export const showRefreshedThreads =
+  (threads: ReadonlyArray<Thread>): Step =>
+  (model) =>
+    model.chat.threadList._tag === "Loaded" && Option.isNone(model.chat.maybeNextCursor) && Equal.equals(model.chat.threads, threads)
+      ? { model }
+      : foldChat(model, chat.Message.SucceededLoadThreads({ maybeNextCursor: Option.none(), threads }));
 
 export const changedUrl = (url: Url): GotChatMessage => toGotChatMessage(chat.Message.ChangedUrl({ url }));
 export const requestedUrl = (request: UrlRequest): GotChatMessage => toGotChatMessage(chat.Message.RequestedUrl({ request }));

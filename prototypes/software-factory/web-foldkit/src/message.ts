@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
-import { Message as ChatMessage, ChatMessageSchema } from "@plana-solutions/agent-interface";
+import { Message as ChatMessage, ChatMessageSchema, ThreadSchema } from "@plana-solutions/agent-interface";
 import { Decision as Approval } from "../../shared/approvals";
 import * as Goals from "./goals";
 import * as Settings from "./settings";
@@ -26,6 +26,7 @@ export const Message = defineMessageUnion({
   // Command results
   SucceededReloadThread: { threadId: Schema.String, messages: Schema.Array(ChatMessageSchema) },
   FailedReloadThread: { error: Schema.String },
+  SucceededRefreshThreads: { threads: Schema.Array(ThreadSchema) },
   FailedRefreshThreads: { error: Schema.String },
   CompletedSyncThreadUrl: {},
   CompletedSyncExtensionWorkers: {},
