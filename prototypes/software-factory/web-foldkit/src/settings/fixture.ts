@@ -16,6 +16,7 @@ export const document: SettingsDocument = {
     focus: "coordinator",
     banner: null,
     agent: { model: "gpt", reasoningEffort: "low", disabledTools: [], instructions: "" },
+    subAgent: { model: "opus", reasoningEffort: "high" },
     crons: {},
     extensions: {},
     repo: "",

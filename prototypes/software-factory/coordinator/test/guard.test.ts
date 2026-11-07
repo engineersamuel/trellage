@@ -55,7 +55,10 @@ test("sub-coordinator permissions reject forbidden shell commands and keep the s
   const ask = (request: any) => f.subPermissions(request, { sessionId: "s" } as any)
   expect(await ask({ kind: "shell", fullCommandText: "git push -u origin factory/x" })).toMatchObject({ kind: "reject" })
   expect(await ask({ kind: "shell", fullCommandText: "git worktree remove ../wt" })).toMatchObject({ kind: "reject" })
-  expect(await ask({ kind: "shell", fullCommandText: "git commit -m x" })).toEqual({ kind: "approve-once" })
+  // Coordinate, do not do: writes and non-read-only shell go to workers; reading stays allowed.
+  expect(await ask({ kind: "shell", fullCommandText: "git commit -m x" })).toMatchObject({ kind: "reject" })
+  expect(await ask({ kind: "write", fileName: "mise.toml" })).toMatchObject({ kind: "reject" })
+  expect(await ask({ kind: "shell", fullCommandText: "git status && cat README.md" })).toEqual({ kind: "approve-once" })
   f.settings = { ...f.settings, agent: { ...f.settings.agent, disabledTools: ["shell"] } }
   expect(await ask({ kind: "shell", fullCommandText: "git status" })).toMatchObject({ kind: "reject" })
 })

@@ -163,6 +163,10 @@ export const Settings = Schema.Struct({
     disabledTools: Schema.Array(Schema.String),
     instructions: Schema.String,
   }),
+  /** Model and effort of the repo sub-coordinators (the delivery loops); the global ones use `agent`. */
+  subAgent: Schema.Struct({ model: Schema.String, reasoningEffort: Schema.String }).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed({ model: "claude-opus-5.5", reasoningEffort: "high" })),
+  ),
   crons: Schema.Record(Schema.String, Cron),
   extensions: Schema.Record(Schema.String, Extension),
   repo: Schema.String,

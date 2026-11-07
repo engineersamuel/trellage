@@ -47,6 +47,11 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   let autoView = true
   /** Selected inbox row, and the node shown in the detail column (same tree). */
   let sel: string | null = null
+  /** Conversations whose live activity (the coordinator's own tool calls and messages) is shown instead of the chat. */
+  const liveOn = new Set<string>()
+  const liveOff = new Set<string>()
+  /** Live by default while the coordinator runs a turn, unless the human switched it off; on when switched on. */
+  const showsLive = (n: Node) => !!n.agent && n.kind !== "worker" && n.kind !== "draft" && (liveOn.has(n.id) || (n.agent.status === "running" && !liveOff.has(n.id)))
   let cur: string | null = null
   const opened = new Set<string>()
   let mounted: { key: string; stop: () => void } | null = null
@@ -183,6 +188,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const acts = el("div", "p3-acts")
     for (const d of n.pending) acts.append(btn(`⚑ ${d.title}`, () => openDecision(d.id), "warn"))
     if (n.agent) acts.append(btn("⚙ Spec", () => openSpec(n.id)))
+    if (n.agent && n.kind !== "worker" && n.kind !== "draft") {
+      const live = showsLive(n)
+      acts.append(btn(live ? "💬 Chat" : "◉ Live activity", () => (live ? (liveOn.delete(n.id), liveOff.add(n.id)) : (liveOff.delete(n.id), liveOn.add(n.id)), render())))
+    }
     if (n.agent?.status === "running") acts.append(btn("■ Stop", () => fire(send(`/api/workers/${encodeURIComponent(n.id)}/abort`, "POST"))))
     if (n.kind === "draft" && n.thread) acts.append(btn("▶ Run draft", () => fire(send(`/api/drafts/${n.thread!.id}/run`, "POST")), "primary"))
     const kids = el("div", "p3-kids")
@@ -262,12 +271,21 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       return
     }
     renderHead(n)
-    const chat = showsChat(n.id)
-    if (mounted?.key === n.id && n.kind === "worker") renderAsks(n)
+    const live = showsLive(n)
+    const chat = showsChat(n.id) && !live
+    const key = live ? `live:${n.id}` : n.id
+    if (mounted?.key === key && n.kind === "worker") renderAsks(n)
     if (chat) placeOverBody()
-    if (mounted?.key === n.id) return
+    if (mounted?.key === key) return
     mounted?.stop()
-    if (chat) {
+    if (live) {
+      // The coordinator's own live log: every tool call, shell command and message, also for runs started from sf.
+      placeChat(null)
+      askBox = null
+      const scroll = el("div", "p3-log")
+      body.replaceChildren(el("div", "p3-sub", "Live activity of this coordinator (tool calls and messages). Switch back with 💬 Chat."), scroll)
+      mounted = { key, stop: mountTranscript(scroll, n.id, { stopped: n.agent?.status !== "running" }) }
+    } else if (chat) {
       body.replaceChildren()
       if (n.thread) openThread(n.thread.id)
       mounted = { key: n.id, stop: () => {} }

@@ -295,12 +295,13 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
         }),
         permissions: factory.subPermissions,
         workdir: t.worktree,
-        model: factory.settings.agent.model,
+        model: factory.settings.subAgent.model,
         sessionId: `sf-${id}`,
       })
       .then(async (w) => {
-        const { model, reasoningEffort } = factory.settings.agent
-        if (reasoningEffort !== "default") await w.setModel(model, reasoningEffort).catch(() => {})
+        // Resumed sessions keep their old model: always apply the sub-coordinator model and effort.
+        const { model, reasoningEffort } = factory.settings.subAgent
+        await w.setModel(model, reasoningEffort).catch((e) => console.error(`sub-coordinator model ${model}/${reasoningEffort} not applied: ${e}`))
         w.events.subscribe((ev) => watchSub(w, t.id, ev))
         return w
       })

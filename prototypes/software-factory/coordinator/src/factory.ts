@@ -1,5 +1,6 @@
 // Worker lifecycle: each worker is a separate agent process with its own home. Copilot SDK is the
 // default harness (a runtime over TCP); a step may name the Claude Agent SDK harness instead.
+import { readOnlyViolation, SUB_SHELL_FEEDBACK } from "./readonly.ts"
 import type { CodeReview } from "./review.ts"
 import type { Sdlc } from "./sdlc.ts"
 import { execFileSync } from "node:child_process"
@@ -352,8 +353,8 @@ export class Factory {
     this.settingsFile = S.settingsPath(this.root)
     this.settings = S.loadSettings(this.settingsFile)
     this.approvals = new Approvals(this.root)
-    if (this.settings.agent.model === "" || env.SF_MODEL !== undefined)
-      this.settings = { ...this.settings, agent: { ...this.settings.agent, model: this.defaultModel } }
+    // SF_MODEL is the worker default; coordinators use the settings (agent: global, subAgent: repo conversations).
+    if (this.settings.agent.model === "") this.settings = { ...this.settings, agent: { ...this.settings.agent, model: "gpt-6-astra" } }
   }
 
   get(id: string): Worker {
@@ -664,10 +665,18 @@ export class Factory {
   }
 
   private async applyModelChange(prev: S.Settings, next: S.Settings): Promise<void> {
-    if (next.agent.model === prev.agent.model && next.agent.reasoningEffort === prev.agent.reasoningEffort) return
+    const same = (a: { model: string; reasoningEffort: string }, b: { model: string; reasoningEffort: string }) => a.model === b.model && a.reasoningEffort === b.reasoningEffort
+    if (same(next.agent, prev.agent) && same(next.subAgent, prev.subAgent)) return
     try {
-      // Every coordinator (desk, General chats, sub-coordinators) follows the coordinator model setting.
-      await Promise.all([...this.workers.values()].filter((w) => w.role === "coordinator").map((w) => w.setModel(next.agent.model, next.agent.reasoningEffort)))
+      // Global coordinators (desk, General chats) follow `agent`; repo sub-coordinators follow `subAgent`.
+      await Promise.all(
+        [...this.workers.values()]
+          .filter((w) => w.role === "coordinator")
+          .map((w) => {
+            const c = w.id.startsWith("sub-") ? next.subAgent : next.agent
+            return w.setModel(c.model, c.reasoningEffort)
+          }),
+      )
     } catch (e) {
       throw new Error(`model change rejected: ${e instanceof Error ? e.message : e}`)
     }
@@ -712,14 +721,19 @@ export class Factory {
   }
 
   /** Sub-coordinator permission gate: the settings gate, and never merge, push, or delete without the human. */
-  readonly subPermissions: PermissionHandler = (request, invocation) =>
-    request.kind === "shell" && forbiddenCommand(request.fullCommandText)
-      ? {
-          kind: "reject",
-          feedback:
-            "Sub-coordinators never merge, push, or delete branches or worktrees. To push and open a PR: request_approval with ship=true, then spawn_worker step=finish. Merging and deleting stay with the human.",
-        }
-      : this.settingsPermissions(request, invocation)
+  readonly subPermissions: PermissionHandler = (request, invocation) => {
+    if (request.kind === "shell" && forbiddenCommand(request.fullCommandText))
+      return {
+        kind: "reject",
+        feedback:
+          "Sub-coordinators never merge, push, or delete branches or worktrees. To push and open a PR: request_approval with ship=true, then spawn_worker step=finish. Merging and deleting stay with the human.",
+      }
+    // Coordinate, do not do: no file writes, and only read-only shell commands.
+    if (request.kind === "write") return { kind: "reject", feedback: SUB_SHELL_FEEDBACK }
+    const why = request.kind === "shell" ? readOnlyViolation(request.fullCommandText) : null
+    if (why) return { kind: "reject", feedback: `Refused (${why}). ${SUB_SHELL_FEEDBACK}` }
+    return this.settingsPermissions(request, invocation)
+  }
 
   /** Global coordinator permission gate: the settings gate, and never merge, push, or delete; the human does that. */
   readonly globalPermissions: PermissionHandler = (request, invocation) =>

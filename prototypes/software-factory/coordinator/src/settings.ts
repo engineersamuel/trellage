@@ -57,6 +57,10 @@ const SettingsSchema = Schema.Struct({
     disabledTools: Schema.Array(Schema.String),
     instructions: Schema.String,
   }),
+  /** Model and effort of the repo sub-coordinators (the delivery loops); the global ones use `agent`. */
+  subAgent: Schema.Struct({ model: Schema.String, reasoningEffort: Schema.String }).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed({ model: "claude-opus-5.5", reasoningEffort: "high" })),
+  ),
   crons: Schema.Record(Schema.String, Cron),
   extensions: Schema.Record(Schema.String, Extension),
   /** Absolute path of the git repository the factory works on. Empty = no target. */
@@ -100,7 +104,8 @@ export const defaultSettings = (): Settings => ({
   hotkeys: { ",": "toggleSettings", p: "togglePanel", t: "cycleTheme", ".": "focusCoordinator" },
   focus: "coordinator",
   banner: null,
-  agent: { model: "", reasoningEffort: "default", disabledTools: [], instructions: "" },
+  agent: { model: "gpt-6-astra", reasoningEffort: "high", disabledTools: [], instructions: "" },
+  subAgent: { model: "claude-opus-5.5", reasoningEffort: "high" },
   crons: {},
   extensions: {},
   repo: "",
@@ -158,6 +163,7 @@ const validate = (s: Settings): void => {
   for (const item of s.navbar) oneOf("navbar", item, NAVBAR_ITEMS)
   for (const action of Object.values(s.hotkeys)) oneOf("hotkeys", action, HOTKEY_ACTIONS)
   oneOf("agent.reasoningEffort", s.agent.reasoningEffort, EFFORTS)
+  oneOf("subAgent.reasoningEffort", s.subAgent.reasoningEffort, EFFORTS)
   for (const kind of s.agent.disabledTools) oneOf("agent.disabledTools", kind, TOOL_KINDS)
   for (const [name, x] of Object.entries(s.extensions)) {
     oneOf(`extensions.${name}.slot`, x.slot, SLOTS)
