@@ -14,3 +14,12 @@ test("pipe tables render as tables", () => {
 test("a lone pipe line without a rule row stays a paragraph", () => {
   expect(markdown("a | b")).toBe("<p>a | b</p>")
 })
+
+test("bare URLs become links that open in a new tab", () => {
+  expect(markdown("PR: https://github.com/o/r/pull/54.")).toBe(
+    '<p>PR: <a href="https://github.com/o/r/pull/54" target="_blank" rel="noreferrer">https://github.com/o/r/pull/54</a>.</p>',
+  )
+  expect(markdown("[PR](https://x.dev/1) and `https://x.dev/2`")).toBe(
+    '<p><a href="https://x.dev/1" target="_blank" rel="noreferrer">PR</a> and <code>https://x.dev/2</code></p>',
+  )
+})

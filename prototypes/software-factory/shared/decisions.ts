@@ -26,7 +26,9 @@ export const markdown = (src: string): string => {
       .replace(/`([^`]+)`/g, "<code>$1</code>")
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
-      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+      .replace(/(<code>.*?<\/code>)|\[([^\]]+)\]\((https?:[^)\s]+)\)|https?:\/\/[^\s<]*[^\s<.,;:!?)]/g, (m, code, text, href) =>
+        code ? code : `<a href="${href ?? m}" target="_blank" rel="noreferrer">${text ?? m}</a>`,
+      )
   const out: string[] = []
   let list: "ul" | "ol" | null = null
   const close = () => list && (out.push(`</${list}>`), (list = null))
