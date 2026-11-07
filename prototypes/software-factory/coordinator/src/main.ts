@@ -3,7 +3,7 @@ import { KEEP_PER_WORKER } from "./events.ts"
 import { readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Translator } from "./agui.ts"
-import { Factory, now, type FeedEvent, type Worker } from "./factory.ts"
+import { Factory, now, type FeedEvent, type Worker, type WorkerSummary } from "./factory.ts"
 import { createWorktree, discardWorktree, fullyMerged, GENERAL, removeWorktree, worktreeRoot, type Worktree } from "./folders.ts"
 import { CARDS_PROMPT, COORDINATOR_PROMPT, DESK_PROMPT, GLOBAL_PROMPT, RESEARCH_PROMPT, subPrompt } from "./prompts.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
@@ -19,7 +19,7 @@ import { loop, stopLoops } from "./loops.ts"
 import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, REPORT_NUDGE, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
-import { branchPr, runWorkers, type Run } from "./run.ts"
+import { branchPr, pastWorkers, runWorkers, type Run } from "./run.ts"
 import { checkoutCommit, GoalError, goalsDir, loopPrompt, makeGoals } from "./goals.ts"
 import { defineTool, type SessionEvent, type Tool } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
@@ -1118,6 +1118,12 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/workers$/, () => json(factory.summaries())],
+  // Stopped agents, for a historical record (live ones are in /api/workers). Their transcripts stay in the event store.
+  [
+    "GET",
+    /^\/api\/workers\/past$/,
+    () => json(pastWorkers(factory.store.latestTimed("factory.worker_started", 100_000) as { ts: number; data: WorkerSummary }[], (id) => factory.workers.has(id))),
+  ],
   [
     "DELETE",
     /^\/api\/workers\/([^/]+)$/,

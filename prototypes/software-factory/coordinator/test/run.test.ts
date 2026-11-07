@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { draftToSpec, emptyDraft, goalProblems, goalUnmet, specToDraft, splitPending, stopReason, type GoalSpec, type Run } from "../../shared/goal.ts"
-import { checksState, runWorkers } from "../src/run.ts"
+import { checksState, pastWorkers, runWorkers } from "../src/run.ts"
 import { decodeGoalOrThrow, loopPrompt, makeGoals } from "../src/goals.ts"
 import { parseSteps, scoreCard } from "../goal-cli.ts"
 
@@ -158,4 +158,15 @@ describe("goal form draft", () => {
     const r = draftToSpec(d)
     expect(!r.ok && r.problems).toEqual(["step implement: counts must be whole numbers"])
   })
+})
+
+test("pastWorkers: stopped non-coordinators, newest summary, first start time", () => {
+  const w = (id: string, role: string, name = id) => ({ id, role, name })
+  const rows = [
+    { ts: 10, data: w("pc-impl", "worker") },
+    { ts: 20, data: w("sub-1", "coordinator") },
+    { ts: 30, data: w("live", "worker") },
+    { ts: 40, data: w("pc-impl", "worker", "pc-impl v2") },
+  ]
+  expect(pastWorkers(rows, (id) => id === "live")).toEqual([{ id: "pc-impl", role: "worker", name: "pc-impl v2", status: "stopped", startedAt: 10 }])
 })

@@ -58,3 +58,18 @@ describe("p3 inbox model", () => {
     expect([r.root.id, r.focus.id, r.reason]).toEqual(["gen-aaaaaaaa", "w1", "✗ w1 failed"])
   })
 })
+
+test("workers under one coordinator are listed in spawn order, not by name", () => {
+  const w = (id: string, startedAt: number) => ({ ...agent(id, "worker", "idle", "sub-bbbbbbbb"), startedAt })
+  const m = build([...agents.slice(0, 3), w("pc-verify", 30), w("pc-finish", 40), w("pc-impl", 10)], threads, [])
+  expect(m.nodes.get("sub-bbbbbbbb")!.children).toEqual(["pc-impl", "pc-verify", "pc-finish"])
+})
+
+test("stopped workers stay under their conversation; orphaned ones are dropped, not put under the desk", () => {
+  const past = (id: string, owner: string) => ({ ...agent(id, "worker", "stopped", owner), startedAt: 1 })
+  const m = build([...agents, past("old", "sub-bbbbbbbb"), past("lost", "sub-gone")], threads, [])
+  expect(m.nodes.get("old")!.status).toBe("stopped")
+  expect(m.nodes.get("sub-bbbbbbbb")!.children).toContain("old")
+  expect(m.nodes.has("lost")).toBe(false)
+  expect(m.roots).not.toContain("lost")
+})

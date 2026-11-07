@@ -60,6 +60,8 @@ export type WorkerSummary = {
   owner: string
   /** SDLC step this agent runs, if any. */
   step: string | null
+  /** When the factory started this agent (ms); gives the spawn order. */
+  startedAt: number
 }
 
 /** One event in the factory feed. `seq` is global so a client can resume. */
@@ -138,6 +140,7 @@ export class Worker {
   log: FeedEvent[] = []
   /** Supervisor inputs: last event time, consecutive failed tool calls, last error, result read. */
   lastActivity = Date.now()
+  readonly startedAt = Date.now()
   failedTools = 0
   lastError: string | null = null
   collected = false
@@ -196,6 +199,7 @@ export class Worker {
       contextLimit: this.context?.[1] ?? null,
       owner: this.owner,
       step: this.spec?.step ?? null,
+      startedAt: this.startedAt,
     }
   }
 

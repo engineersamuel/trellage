@@ -5,6 +5,17 @@ import type { ChecksState, RunPr, RunWorker } from "../../shared/goal.ts"
 
 export { goalUnmet, stopReason, type Run, type RunPr, type RunWorker } from "../../shared/goal.ts"
 
+/** Agents the factory started that are no longer live, from their `factory.worker_started` events, as stopped summaries.
+ *  Coordinators are left out: their conversation (thread) already stands for them. The first start gives the spawn time. */
+export const pastWorkers = <W extends { id: string; role: string; startedAt?: number }>(rows: { ts: number; data: W }[], isLive: (id: string) => boolean): (W & { status: "stopped"; startedAt: number })[] => {
+  const byId = new Map<string, W & { status: "stopped"; startedAt: number }>()
+  for (const { ts, data } of rows) {
+    if (data.role === "coordinator" || isLive(data.id)) continue
+    byId.set(data.id, { ...data, status: "stopped", startedAt: byId.get(data.id)?.startedAt ?? data.startedAt ?? ts })
+  }
+  return [...byId.values()]
+}
+
 type Started = { id: string; name: string; step?: string | null; harness?: string; owner: string }
 
 /** Every agent started under `root` (directly or through an agent it started), newest summary per id. Skills are filled in by the caller. */

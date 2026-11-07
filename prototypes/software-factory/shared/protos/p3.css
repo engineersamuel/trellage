@@ -17,7 +17,7 @@
 .sfp-p3 .p3-n { margin-left: auto; color: var(--sf-muted); font-size: 11px; flex: none; }
 .sfp-p3 .p3-empty { padding: 16px 12px; color: var(--sf-muted); }
 .sfp-p3 .s-running { --c: var(--p3-run); } .sfp-p3 .s-needs { --c: var(--p3-needs); } .sfp-p3 .s-error { --c: var(--p3-err); }
-.sfp-p3 .s-idle, .sfp-p3 .s-dormant, .sfp-p3 .s-draft { --c: var(--p3-idle); }
+.sfp-p3 .s-idle, .sfp-p3 .s-dormant, .sfp-p3 .s-draft, .sfp-p3 .s-stopped { --c: var(--p3-idle); }
 .sfp-p3 .p3-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--p3-idle)); display: inline-block; flex: none; }
 .sfp-p3 .p3-st { color: var(--c, var(--sf-muted)); }
 .sfp-p3 .p3-pill { margin-left: auto; display: inline-flex; gap: 5px; align-items: center; padding: 1px 8px; border-radius: 999px; font-size: 11px; background: var(--sf-bg); color: var(--sf-muted); white-space: nowrap; }
@@ -92,3 +92,5 @@
 .sfp-p3 .p3-label { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--sf-muted); }
 .sfp-p3 .p3-err { color: var(--p3-err); }
 .sfp-p3 .p3-draft { white-space: pre-wrap; padding: 12px 14px; margin: 0; font: 12px ui-monospace, Menlo, monospace; overflow: auto; }
+/* Spawn order: siblings run oldest first and carry their step number. */
+.sfp-p3 .p3-ord { flex: none; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; background: var(--p3-line); color: var(--sf-text); font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; }

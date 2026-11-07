@@ -39,8 +39,8 @@ const linkParents = (nodes: Map<string, Node>) => {
   const root = nodes.get("coordinator")
   for (const n of nodes.values()) {
     if (n === root) continue
-    // A draft node has no agent: buildTree puts the General chat it came from in `parent`.
-    const o = n.kind === "draft" ? n.parent : n.agent?.owner
+    // A draft node has no agent, and a stopped worker may hang under a dormant conversation: buildTree sets their `parent`.
+    const o = n.kind === "draft" || n.agent?.status === "stopped" ? n.parent : n.agent?.owner
     n.parent = o && o !== n.id && nodes.has(o) ? o : root ? root.id : null
     if (n.parent) nodes.get(n.parent)!.children.push(n)
   }
@@ -85,7 +85,7 @@ const lineDiff = (a: string[], b: string[]): [" " | "-" | "+", string][] => {
 }
 
 /** Build the org tree: agents by owner, unstarted drafts under their General chat (else the global node), and dormant repo conversations (no live sub-coordinator) as ghosts under the global node. */
-const buildTree = (s: State): Map<string, Node> => {
+const buildTree = (s: State, focus: string | null = null): Map<string, Node> => {
   const archivedChat = (a: Agent) => a.id.startsWith("gen-") && s.threads.some((t) => !t.worktree && t.archivedAt && `gen-${t.id.slice(0, 8)}` === a.id)
   const nodes = new Map(s.agents.filter((a) => !archivedChat(a)).map((a) => [a.id, agentNode(a)]))
   const live = new Set(s.agents.map((a) => a.id))
@@ -96,7 +96,20 @@ const buildTree = (s: State): Map<string, Node> => {
   }
   s.threads.filter((t) => t.worktree && !t.cleanedAt && !t.archivedAt && !isDraft(t) && !live.has(`sub-${t.id.slice(0, 8)}`)).sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_GHOSTS)
     .forEach((t) => nodes.set(`t:${t.id}`, { id: `t:${t.id}`, kind: "ghost", tag: `Dormant · ${t.folderId}`, name: t.title, status: "dormant", thread: t, parent: null, children: [], x: 0, y: 0, w: W }))
+  // Stopped workers, for the record, only along the selected node's chain (there can be dozens across the factory):
+  // under their live sub-coordinator or its dormant conversation. Orphans are left out.
+  const byStream = new Map([...nodes.values()].map((n) => [streamId(n), n.id]))
+  // The chain is in agent ids: a dormant conversation's node is `t:<thread>`, its agent id `sub-<thread>`.
+  const ownerOf = new Map([...s.agents, ...s.past].map((a) => [a.id, a.owner ?? null]))
+  const chain = new Set<string>()
+  for (let id = focus && nodes.has(focus) ? streamId(nodes.get(focus)!) : focus; id && !chain.has(id); id = ownerOf.get(id) ?? null) chain.add(id)
+  for (const a of s.past) {
+    const owner = a.owner ? byStream.get(a.owner) : undefined
+    if (owner && chain.has(a.owner!) && !nodes.has(a.id)) nodes.set(a.id, { ...agentNode(a), parent: owner })
+  }
   linkParents(nodes)
+  // Siblings in spawn order (oldest first).
+  for (const n of nodes.values()) n.children.sort((a, b) => (a.agent?.startedAt ?? 0) - (b.agent?.startedAt ?? 0))
   let x = 0
   for (const n of nodes.values()) if (!n.parent) x += placeNode(n, x, 0) + GX * 2
   return nodes
@@ -168,7 +181,7 @@ const activityText = (s: State, n: Node) => {
   if (n.kind === "ghost") return n.thread?.branch ?? "no live coordinator"
   const a = s.activity[n.id]
   if (a) return `${a.label} ${a.detail}`.trim()
-  return n.agent?.status === "running" ? "Working…" : (n.agent?.lastMessage ?? "Idle").replace(/[`*#>\n]+/g, " ").trim()
+  return n.agent?.status === "running" ? "Working…" : n.agent?.status === "stopped" ? "Stopped · saved history" : (n.agent?.lastMessage ?? "Idle").replace(/[`*#>\n]+/g, " ").trim()
 }
 
 /** Archive hides a dormant conversation or a General chat from the canvas. Delete removes the conversation (and a repo conversation's worktree and local branch). */
@@ -416,6 +429,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     }
     if (id) overId = null
     sel = id && nodes.has(id) ? id : null
+    if (s) nodes = buildTree(s, sel)
     sync(true)
   }
 
@@ -882,6 +896,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   let panelFocus: { id: string; seq: number } | null = null
   const workerBody = (id: string): (() => void) => {
     const scroll = el("div", "p2-transcript")
+    if (nodes.get(id)?.status === "stopped") {
+      panelBody.replaceChildren(scroll)
+      return mountTranscript(scroll, id, { stopped: true })
+    }
     const form = el("form", "p2-compose")
     const ta = el("textarea")
     ta.placeholder = "Message this worker directly… (Enter sends)"
@@ -1166,7 +1184,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const renderStream = (force = false) => {
     const st = s
     if (!st) return
-    const sig = [backlogVer, st.pulses.at(-1)?.seq, sel, railOpen, st.decisions.map((d) => d.id + d.status).join(), st.reviews.map((r) => r.id + r.status + r.findings.length).join(), st.agents.map((a) => a.id + a.status).join()].join("|")
+    const sig = [backlogVer, st.pulses.at(-1)?.seq, sel, railOpen, st.decisions.map((d) => d.id + d.status).join(), st.reviews.map((r) => r.id + r.status + r.findings.length).join(), st.agents.map((a) => a.id + a.status).join(), st.past.length].join("|")
     if (!force && sig === streamSig) return
     streamSig = sig
     rail.classList.toggle("shut", !railOpen)
@@ -1198,11 +1216,11 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
 
   const unsub = subscribe((st) => {
     s = st
-    nodes = buildTree(st)
+    nodes = buildTree(st, sel)
     if (!mounted) {
       const threadId = new URL(window.location.href).searchParams.get("thread")
       const linked = [...nodes.values()].find((n) => n.thread?.id === threadId && n.kind !== "draft")
-      if (linked) sel = linked.id
+      if (linked) (sel = linked.id), (nodes = buildTree(st, sel))
     }
     sync()
   })

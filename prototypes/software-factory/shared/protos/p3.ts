@@ -8,9 +8,9 @@ import { fire, send } from "../http"
 import { harnessBadge } from "../harness"
 import { openSpec } from "../spec"
 import { el, messageAgent, mountTranscript, newThread, openDecision, openThread, register, subscribe, type Ctx, type State } from "./core"
-import { ancestors, bossOf, build, count, items, rootOf, subtree, VIEWS, type Model, type Node, type View } from "./p3-model"
+import { ancestors, bornAt, bossOf, build, count, items, rootOf, subtree, VIEWS, type Model, type Node, type View } from "./p3-model"
 
-const LABEL: Record<Node["status"], string> = { running: "Running", idle: "Idle", error: "Failed", needs: "Needs you", dormant: "Dormant", draft: "Draft" }
+const LABEL: Record<Node["status"], string> = { running: "Running", idle: "Idle", error: "Failed", needs: "Needs you", dormant: "Dormant", draft: "Draft", stopped: "Stopped" }
 const ICON: Record<Node["kind"], string> = { desk: "🌐", chat: "💬", sub: "◆", worker: "⚙", draft: "📄" }
 const KIND: Record<Node["kind"], string> = { desk: "Factory desk", chat: "General chat", sub: "Sub-coordinator", worker: "Worker", draft: "Draft" }
 const ago = (t?: number) => {
@@ -125,16 +125,26 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     c.onclick = (e) => (e.stopPropagation(), choose(n.id))
     return c
   }
+  /** Spawn-order badge: the node's place among its siblings by spawn time. */
+  const order = (n: Node) => {
+    const sibs = m.nodes.get(n.parent ?? "")?.children.map((id) => m.nodes.get(id)!) ?? [n]
+    const k = [...sibs].sort((x, y) => bornAt(x) - bornAt(y)).indexOf(n) + 1
+    const t = bornAt(n)
+    const b = el("span", "p3-ord", String(k))
+    b.title = `Spawned #${k}${t ? ` at ${new Date(t).toLocaleTimeString()}` : ""}`
+    return b
+  }
   const row = (n: Node) => {
     const r = el("div", `p3-w s-${n.status} ${n.id === cur ? "on" : ""}`)
     r.dataset.testid = "tree-row"
-    r.append(el("i", "p3-dot"), el("b", "", n.kind === "draft" ? "📄 draft" : n.kind === "worker" ? n.agent?.name ?? "worker" : `${ICON[n.kind]} ${KIND[n.kind]}`), el("span", "p3-tt p3-ell", n.kind === "worker" ? n.agent?.task ?? "" : n.title), el("span", "p3-st", LABEL[n.status]))
+    r.append(order(n), el("i", "p3-dot"), el("b", "", n.kind === "draft" ? "📄 draft" : n.kind === "worker" ? n.agent?.name ?? "worker" : `${ICON[n.kind]} ${KIND[n.kind]}`), el("span", "p3-tt p3-ell", n.kind === "worker" ? n.agent?.task ?? "" : n.title), el("span", "p3-n", ago(bornAt(n))), el("span", "p3-st", LABEL[n.status]))
     r.onclick = (e) => (e.stopPropagation(), choose(n.id))
     return r
   }
   /** A sub-coordinator card with its workers on their own branch. Quiet ones fold to one line. */
   const subCard = (n: Node) => {
     const c = card(n)
+    c.querySelector(".p3-row")!.prepend(order(n))
     const kids = n.children.map((id) => m.nodes.get(id)!)
     const open = opened.has(n.id) || n.agg.running || n.agg.error || n.agg.needs || kids.some((k) => k.id === cur)
     if (!kids.length) c.append(el("div", "p3-sub", "no workers yet"))
@@ -189,13 +199,14 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const scroll = el("div", "p3-log")
     const form = el("form", "p3-comp")
     const to = el("select")
-    to.append(Object.assign(el("option", "", "this worker"), { value: n.id }))
     const boss = bossOf(m, n.id)
+    // A stopped worker cannot take messages; its coordinator can.
+    if (n.status !== "stopped" || !boss?.agent) to.append(Object.assign(el("option", "", "this worker"), { value: n.id }))
     if (boss?.agent) to.append(Object.assign(el("option", "", `its ${KIND[boss.kind]}: ${boss.title.slice(0, 40)}`), { value: boss.id }))
     const ta = el("textarea")
     ta.rows = 2
-    ta.placeholder = "Steer this worker… (Enter sends)"
     to.onchange = () => (ta.placeholder = to.value === n.id ? "Steer this worker… (Enter sends)" : "Ask its coordinator: more work, another worker… (Enter sends)")
+    to.onchange(new Event("change"))
     const go = el("button", "primary", "Send")
     const label = el("label", "p3-sub", "To ")
     label.append(to)
@@ -270,8 +281,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
 
   const render = () => {
     if (!s) return
-    const live = build(s.agents, s.threads, s.decisions)
-    m = view === "archived" ? build(s.agents, s.threads, s.decisions, true) : live
+    const agents = [...s.agents, ...s.past]
+    const live = build(agents, s.threads, s.decisions)
+    m = view === "archived" ? build(agents, s.threads, s.decisions, true) : live
     renderSide(live)
     renderInbox()
     renderTree()

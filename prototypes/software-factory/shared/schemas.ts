@@ -25,6 +25,8 @@ export const Worker = Schema.Struct({
   eventCount: Schema.Number.pipe(withDefault(0)),
   contextTokens: NullableNumber,
   contextLimit: NullableNumber,
+  /** When the factory started this agent (ms); gives the spawn order. */
+  startedAt: Schema.optionalKey(Schema.Number),
 })
 export type Worker = typeof Worker.Type
 

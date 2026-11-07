@@ -176,6 +176,14 @@ export class EventStore {
     return out
   }
 
+  /** Time and data of the newest `limit` events of one type, across agents, oldest first. */
+  latestTimed(type: string, limit: number): { ts: number; data: unknown }[] {
+    const rows = this.db
+      .query("SELECT ts, data FROM (SELECT ts, data, seq FROM events WHERE type = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq")
+      .all(type, limit) as { ts: string; data: string }[]
+    return rows.map((r) => ({ ts: Number(r.ts), data: JSON.parse(r.data) }))
+  }
+
   /** Data of the newest `limit` events of one type, across agents, oldest first. */
   latest(type: string, limit: number): unknown[] {
     const rows = this.db
