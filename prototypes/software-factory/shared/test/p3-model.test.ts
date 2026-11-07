@@ -73,3 +73,18 @@ test("stopped workers stay under their conversation; orphaned ones are dropped, 
   expect(m.nodes.has("lost")).toBe(false)
   expect(m.roots).not.toContain("lost")
 })
+
+describe("modelReason", () => {
+  const { modelReason } = require("../protos/p3-model.ts")
+  const a = (modelSource?: unknown) => ({ ...agent("w", "worker", "idle"), ...(modelSource ? { modelSource } : {}) })
+  test("routed shows who routed it and the confidence", () => {
+    expect(modelReason(a({ kind: "routed", by: "jev", confidence: 0.834 })).text).toBe("jev 83%")
+    expect(modelReason(a({ kind: "routed", by: "ui-rule", confidence: 0.6 })).title).toContain("UI rule")
+  })
+  test("fallback says Jev was unavailable", () => {
+    expect(modelReason(a({ kind: "fallback" })).text).toBe("default · Jev unavailable")
+  })
+  test("no source from an older server shows nothing", () => {
+    expect(modelReason(a())).toBeNull()
+  })
+})

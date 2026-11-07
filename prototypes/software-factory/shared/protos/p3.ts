@@ -8,7 +8,7 @@ import { fire, send } from "../http"
 import { harnessBadge } from "../harness"
 import { openSpec } from "../spec"
 import { el, messageAgent, mountTranscript, newThread, openDecision, openThread, register, subscribe, type Ctx, type State } from "./core"
-import { ancestors, bornAt, bossOf, build, count, items, rootOf, subtree, VIEWS, type Model, type Node, type View } from "./p3-model"
+import { ancestors, bornAt, bossOf, build, count, items, modelReason, rootOf, subtree, VIEWS, type Model, type Node, type View } from "./p3-model"
 
 const LABEL: Record<Node["status"], string> = { running: "Running", idle: "Idle", error: "Failed", needs: "Needs you", dormant: "Dormant", draft: "Draft", stopped: "Stopped" }
 const ICON: Record<Node["kind"], string> = { desk: "🌐", chat: "💬", sub: "◆", worker: "⚙", draft: "📄" }
@@ -184,7 +184,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     for (const a of ancestors(m, n.id)) crumbs.append(btn(a.kind === "desk" ? "Global" : a.title.slice(0, 24), () => choose(a.id)), el("span", "", "›"))
     crumbs.append(el("b", "", KIND[n.kind]))
     const st = el("div", "p3-sub p3-row")
-    st.append(pill(n), ...(n.agent ? [harnessBadge(n.agent.harness)] : []), el("span", "p3-ell", [n.agent?.model, n.thread?.folderId, n.thread?.branch && `⎇ ${n.thread.branch}`].filter(Boolean).join(" · ")))
+    const why = n.agent ? modelReason(n.agent) : null
+    const reason = why ? el("span", "p3-why", `⇢ ${why.text}`) : null
+    if (reason && why) reason.title = why.title
+    st.append(pill(n), ...(n.agent ? [harnessBadge(n.agent.harness)] : []), el("span", "p3-ell", [n.agent?.model, n.thread?.folderId, n.thread?.branch && `⎇ ${n.thread.branch}`].filter(Boolean).join(" · ")), ...(reason ? [reason] : []))
     const acts = el("div", "p3-acts")
     for (const d of n.pending) acts.append(btn(`⚑ ${d.title}`, () => openDecision(d.id), "warn"))
     if (n.agent) acts.append(btn("⚙ Spec", () => openSpec(n.id)))

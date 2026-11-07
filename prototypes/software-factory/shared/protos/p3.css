@@ -94,3 +94,4 @@
 .sfp-p3 .p3-draft { white-space: pre-wrap; padding: 12px 14px; margin: 0; font: 12px ui-monospace, Menlo, monospace; overflow: auto; }
 /* Spawn order: siblings run oldest first and carry their step number. */
 .sfp-p3 .p3-ord { flex: none; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; background: var(--p3-line); color: var(--sf-text); font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; }
+.sfp-p3 .p3-why { flex: none; font-size: 11px; opacity: .7; white-space: nowrap; cursor: help; }

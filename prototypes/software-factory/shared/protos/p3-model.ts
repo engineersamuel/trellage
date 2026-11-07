@@ -121,6 +121,21 @@ export const subtree = (m: Model, id: string): Node[] => {
 /** One inbox row = one conversation tree. `focus` is the node the row is about (selected on click). */
 export type Row = { root: Node; focus: Node; reason: string; tone: Node["status"] }
 const newest = (m: Model, r: Node) => Math.max(0, ...subtree(m, r.id).map((n) => n.thread?.createdAt ?? 0))
+/** Header text for how an agent's model was picked, with a tooltip that explains it. Null when the server did not say. */
+export const modelReason = (a: Agent): { text: string; title: string } | null => {
+  const s = a.modelSource
+  if (!s) return null
+  switch (s.kind) {
+    case "routed":
+      return { text: `${s.by} ${Math.round(s.confidence * 100)}%`, title: s.by === "ui-rule" ? "Jev saw UI work; the UI rule forced the latest Opus" : s.by === "jev" ? "Jev picked this model for the task" : "Jev's top pick is not usable with this auth; next usable model in Jev's ranking" }
+    case "pinned":
+      return { text: "set by spawner", title: "The coordinator or the factory named this model; Jev was not asked" }
+    case "fallback":
+      return { text: "default · Jev unavailable", title: "Jev routing failed or gave no usable model; SF_MODEL was used" }
+    case "default":
+      return { text: "default", title: "Not routed (coordinator, or no task); settings or SF_MODEL" }
+  }
+}
 const name = (n: Node) => (n.kind === "worker" ? n.agent?.name ?? n.title : n.title)
 
 /** Why the conversation is in the inbox. The view's own reason leads (Failed shows the failure); else open questions, failures, running work. */
