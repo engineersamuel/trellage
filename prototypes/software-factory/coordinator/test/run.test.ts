@@ -44,6 +44,7 @@ const run: Run = {
   approvals: [],
   securityReviews: [],
   report: null,
+  sdlc: null,
   pr: { number: 7, url: "u", state: "OPEN", head: "h", base: "main", body: "proof 18080", files: ["a.ts", "compose.yaml"], checks: "PENDING" },
 }
 const spec = decodeGoalOrThrow({ id: "demo", repo: "/r", prompt: "p", expect: { steps: { implement: {}, verify: { max: 1 }, finish: {} }, skills: ["security-audit", "council"], pr: { checks: "SUCCESS", bodyIncludes: ["18080", "OK"], untouched: ["compose.yaml"] } } })
@@ -169,4 +170,20 @@ test("pastWorkers: stopped non-coordinators, newest summary, first start time", 
     { ts: 40, data: w("pc-impl", "worker", "pc-impl v2") },
   ]
   expect(pastWorkers(rows, (id) => id === "live")).toEqual([{ id: "pc-impl", role: "worker", name: "pc-impl v2", status: "stopped", startedAt: 10 }])
+})
+
+describe("sdlc expectations", () => {
+  const gate = (id: string, chosen: boolean, status: string) => ({ id, chosen, probability: 0.5, threshold: 0.5, reason: "r", status })
+  const sdlc = { tier: "T2", criteria: ["a", "b"], unproven: ["AC-2"], gates: [gate("codeReview", true, "done"), gate("supplyChain", true, "failed"), gate("design", false, "skipped")], codeReviews: [], metrics: { minutes: 1, workers: 1, findingsKept: 0, findingsDropped: 0 } }
+  test("criteria, gates run and skipped, tier", () => {
+    const e = { steps: {}, skills: [], sdlc: { criteriaProven: true, gatesRun: ["codeReview", "supplyChain", "design"], gatesSkipped: ["codeReview"], maxTier: "T1" as const } }
+    expect(goalUnmet({ ...run, sdlc }, e)).toEqual([
+      "criteria without PASS evidence: AC-2",
+      "gate supplyChain is failed, expected done",
+      "gate design was skipped (r), expected to run",
+      "gate codeReview ran, expected skipped",
+      "tier T2, expected at most T1",
+    ])
+    expect(goalUnmet(run, e)).toEqual(["no SDLC record (sdlc_plan never ran)"])
+  })
 })

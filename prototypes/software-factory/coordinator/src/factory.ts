@@ -1,5 +1,7 @@
 // Worker lifecycle: each worker is a separate agent process with its own home. Copilot SDK is the
 // default harness (a runtime over TCP); a step may name the Claude Agent SDK harness instead.
+import type { CodeReview } from "./review.ts"
+import type { Sdlc } from "./sdlc.ts"
 import { execFileSync } from "node:child_process"
 import { mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -328,6 +330,10 @@ export class Factory {
   readonly researchBatches = new Map<string, { workers: { id: string; workflow: string }[]; errors: string[] }>()
   /** Automatic security reviews by id. */
   readonly securityReviews = new Map<string, SecurityReview>()
+  /** Code reviews (the codeReview gate) by id. */
+  readonly codeReviews = new Map<string, CodeReview>()
+  /** SDLC state per sub-coordinator id: criteria, risk tier, gates. */
+  readonly sdlc = new Map<string, Sdlc>()
   /** Sub-coordinator turns by worker id, for the report_up nudge. */
   readonly turns = new Map<string, Turn>()
   /** Last report sent per sub-coordinator, as "turn start|commit|status", so a repeat in the same turn is dropped. */

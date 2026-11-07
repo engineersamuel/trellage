@@ -28,7 +28,7 @@ export const feedEventToMessage = (raw: FeedEvent): Option.Option<Message> =>
   );
 
 /** Feed events that change what a chat card shows. Workers report often while busy, so changes are coalesced. */
-const CARD_EVENTS = /^factory\.(worker_(started|updated|stopped)|approval_|security_review|step_decided)/;
+const CARD_EVENTS = /^factory\.(worker_(started|updated|stopped)|approval_|security_review|code_review|sdlc|step_decided)/;
 /** One card refresh per burst of feed events (a busy worker sends several per second). */
 const CARD_REFRESH_DEBOUNCE = "150 millis";
 

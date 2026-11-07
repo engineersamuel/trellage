@@ -1,7 +1,7 @@
 // Typed chat cards (rule 13): our layouts, drawn with OpenUI's React components. Each card reads live data from the
 // store and falls back to the tool result (the snapshot at call time). View models are pure and tested.
 import { Button, Callout, Card, CardHeader, MetricIndicatorInline, Steps, StepsItem, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tag } from "@openuidev/react-ui"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { answer, runApprovals, type Decision } from "../../../shared/approvals"
 import { Effect } from "effect"
 import { json } from "../../../shared/http"
@@ -10,7 +10,7 @@ import { openThread } from "../state/chat"
 import { Action } from "../state/model"
 import { dispatch, useApp } from "../state/store"
 import { OpenUiTheme } from "./OpenUi"
-import { ownSteps, toReview, toRun, plainLine } from "../../../shared/cardviews"
+import { cardView, ownSteps, toReview, toRun, plainLine, type CardView, type SdlcRow } from "../../../shared/cardviews"
 
 type TagVariant = "neutral" | "info" | "success" | "warning" | "danger"
 
@@ -299,5 +299,61 @@ function QueueRow({ d }: { d: Decision }) {
         {state?.startsWith("failed") && <small className="sf-err">{state}</small>}
       </div>
     </div>
+  )
+}
+
+// ---------- SDLC gates ----------
+
+/** Live SDLC card: the tool result first, then GET /api/cards every 5 s (the same view the Foldkit card reads). */
+export function SdlcCard({ result, scope }: { result: string | undefined; scope: string | undefined }) {
+  const snap = useMemo(() => (result ? cardView("show_sdlc", parse<unknown>(result)) : null), [result])
+  const [live, setLive] = useState<CardView | null>(null)
+  useEffect(() => {
+    if (!scope) return
+    const load = () =>
+      fetch(`/api/cards?name=show_sdlc&scope=${encodeURIComponent(scope)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((v) => v && setLive(v as CardView))
+        .catch(() => {})
+    void load()
+    const t = setInterval(load, 5000)
+    return () => clearInterval(t)
+  }, [scope])
+  const v = live ?? snap
+  if (!v) return <Waiting what="SDLC gates" />
+  const rows = v.rows as SdlcRow[]
+  return (
+    <Frame title={v.title} subtitle={v.subtitle}>
+      <div className="sf-board-metrics">
+        {v.metrics.map((m) => (
+          <MetricIndicatorInline key={m.label} value={m.value} subtext={m.label} />
+        ))}
+      </div>
+      {v.note && <Callout variant={v.noteVariant === "error" ? "danger" : v.noteVariant} description={v.note} />}
+      {rows.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Gate</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Why</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => (
+              <TableRow key={r.gate}>
+                <TableCell>{r.gate}</TableCell>
+                <TableCell>
+                  <Tag text={r.status} variant={r.variant} size="sm" />
+                </TableCell>
+                <TableCell>
+                  <small>{r.why}</small>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </Frame>
   )
 }

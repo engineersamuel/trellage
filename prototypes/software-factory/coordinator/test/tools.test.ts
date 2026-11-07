@@ -1,3 +1,4 @@
+import { artifact, ensureFactoryDir, newSdlc } from "../src/sdlc.ts"
 import { expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
@@ -13,7 +14,7 @@ const fakeFactory = () => {
   const f = Object.create(Factory.prototype)
   Object.assign(f, {
     workers: new Map(),
-    securityReviews: new Map(),
+    securityReviews: new Map(), codeReviews: new Map(), sdlc: new Map(),
     researchBatches: new Map(),
     turns: new Map(),
     lastReports: new Map(),
@@ -300,6 +301,14 @@ test("step=finish needs an accepted ship approval for this conversation's factor
   const f = fakeFactory()
   f.approvals = new Approvals(root)
   const tools = coordinatorTools(f, { id: "sub-1", threadId: "t", workdir: repo })
+  // No SDLC plan yet: the ship request itself is refused.
+  const refused = JSON.parse(await tool(tools, "request_approval")({ title: "Ship?", summary: "s", options: ["Ship", "Hold"], ship: true }))
+  expect(refused.error).toContain("no SDLC plan")
+  // A conversation whose floors are met: criteria proven, verify after implement, security done; no optional gate on.
+  ensureFactoryDir(repo)
+  writeFileSync(artifact(repo, "evidence.md"), "AC-1: PASS — t — ok\n")
+  f.sdlc.set("sub-1", { ...newSdlc("sub-1", "t"), criteria: ["works"], implementDoneAt: 1, verifyDoneAt: 2 })
+  f.securityReviews.set("sr-1", { id: "sr-1", scopeId: "sub-1", threadId: "t", implementWorkerId: "w", status: "done", model: "", findings: [], at: 3 })
   const finish = () => tool(tools, "spawn_worker")({ name: "finish", task: "ship", step: "finish", harness: "claude" })
   expect(JSON.parse(await finish()).error).toContain("No accepted ship approval")
   const ask = async () => JSON.parse(await tool(tools, "request_approval")({ title: "Ship?", summary: "s", options: ["Ship", "Hold"], ship: true })).id

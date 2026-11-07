@@ -1,6 +1,6 @@
 // Software factory coordinator: HTTP API, raw feed, and AG-UI over SSE.
 import { KEEP_PER_WORKER } from "./events.ts"
-import { readdirSync, readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Translator } from "./agui.ts"
 import { Factory, now, type FeedEvent, type Worker, type WorkerSummary } from "./factory.ts"
@@ -20,6 +20,8 @@ import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, REPORT_NUDGE, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, type Run } from "./run.ts"
+import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
+import { postMergeCheck } from "./postmerge.ts"
 import { checkoutCommit, GoalError, goalsDir, loopPrompt, makeGoals } from "./goals.ts"
 import { defineTool, type SessionEvent, type Tool } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
@@ -36,6 +38,17 @@ if (process.env.SF_DISABLE_STARTUP_CHILD_CLEANUP !== "1")
   Bun.spawnSync(["pkill", "-f", new URL("../node_modules/@github/copilot-sdk-", import.meta.url).pathname])
 
 const factory = new Factory()
+// Gate state, code and security reviews survive a restart: the newest published copy of each wins. A review that
+// was mid-run when the process stopped lost its workers, so it is marked failed (the gate then blocks shipping).
+const restore = <T extends { at?: number; status?: string }>(type: string, key: (v: T) => string, into: Map<string, T>, unfinished?: (v: T) => boolean) => {
+  for (const v of factory.store.latest(type, 2000) as T[]) into.set(key(v), v)
+  if (unfinished) for (const [k, v] of into) if (unfinished(v)) into.set(k, { ...v, status: "failed", error: "coordinator restarted" } as T)
+}
+restore("factory.sdlc", (s: any) => s.scopeId, factory.sdlc as Map<string, any>)
+restore("factory.code_review", (r: any) => r.id, factory.codeReviews as Map<string, any>, (r) => r.status !== "done" && r.status !== "failed")
+restore("factory.security_review", (r: any) => r.id, factory.securityReviews as Map<string, any>, (r) => r.status !== "done" && r.status !== "failed")
+for (const [k, s] of factory.sdlc)
+  factory.sdlc.set(k, { ...s, gates: s.gates.map((g) => (g.status === "running" ? { ...g, status: "failed", detail: "coordinator restarted" } : g)) })
 const threads = new Threads(factory.root)
 const instructions = readInstructions()
 console.error(
@@ -270,13 +283,14 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
         name: `${folder.name} · ${t.title}`.slice(0, 60),
         role: "coordinator",
         ...(t.parentThreadId ? { owner: genId(t.parentThreadId) } : {}),
-        system: `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!, t.prBase)}\n\n${RESEARCH_PROMPT}\n\n# OpenUI Lang\n${openuiPrompt}`,
+        system: `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!, t.prBase, readLessons(factory.root, folder.id))}\n\n${RESEARCH_PROMPT}\n\n# OpenUI Lang\n${openuiPrompt}`,
         tools: coordinatorTools(factory, {
           id,
           threadId: t.id,
           workdir: t.worktree,
           ...(t.base ? { base: t.base } : {}),
           label: folder.name,
+          folderId: folder.id,
           report: (r) => reportToGeneral(folder.name, threads.get(t.id) ?? t, r),
         }),
         permissions: factory.subPermissions,
@@ -429,6 +443,12 @@ const cleanMergedThread = async (t: Thread): Promise<void> => {
   if (!t.worktree || t.cleanedAt || conversationBusy(t.id)) return
   const repo = threads.folder(t.folderId)?.path
   if (!repo || !fullyMerged(repo, t as Worktree)) return
+  const s = factory.sdlc.get(subId(t.id))
+  if (s?.gates.some((g) => g.id === "postMerge" && g.chosen))
+    void postMergeCheck(repo, t.branch!).then((r) => {
+      factory.publish(subId(t.id), "factory.post_merge", null, now(), { threadId: t.id, ...r })
+      if (!r.ok) deliverAndLog(reportTarget(t, threads.list(), deskThread().id), `[post-merge ${t.title}] ${r.detail}`)
+    })
   try {
     await stopConversationWorkers(t.id)
     removeWorktree(repo, t as Worktree)
@@ -930,6 +950,23 @@ const goalReply = async (run: () => unknown): Promise<Response> => {
   }
 }
 
+/** SDLC record of a conversation: tier, criteria and which lack PASS evidence, gates, code reviews, metrics. */
+const runSdlc = (scopeId: string, workdir: string | undefined): Run["sdlc"] => {
+  const s = factory.sdlc.get(scopeId)
+  if (!s) return null
+  const evidence = workdir && existsSync(artifact(workdir, "evidence.md")) ? readFileSync(artifact(workdir, "evidence.md"), "utf8") : null
+  return {
+    tier: s.risk?.tier ?? null,
+    criteria: s.criteria,
+    unproven: unprovenCriteria(s.criteria, evidence),
+    gates: s.gates,
+    codeReviews: [...factory.codeReviews.values()]
+      .filter((r) => r.scopeId === scopeId)
+      .map((r) => ({ id: r.id, status: r.status, lenses: r.lenses, kept: r.findings.filter((x) => x.keep).length, dropped: r.findings.filter((x) => !x.keep).length })),
+    metrics: { minutes: Math.round((Date.now() - s.startedAt) / 60_000), workers: s.workers, findingsKept: s.findings.kept, findingsDropped: s.findings.dropped },
+  }
+}
+
 /** Newest report_up of a conversation, from the event store. */
 const latestReport = (threadId: string): Run["report"] => {
   const all = factory.store.latest("factory.report_up", 500) as { threadId: string | null; report: Report }[]
@@ -959,6 +996,7 @@ const runRecord = async (threadId: string): Promise<Run | null> => {
       .map((a) => ({ id: a.id, title: a.title, topic: a.topic ?? "other", status: a.status, answer: a.answer, options: a.options })),
     securityReviews: [...factory.securityReviews.values()].filter((r) => r.threadId === t.id).map((r) => ({ id: r.id, status: r.status })),
     report: latestReport(t.id),
+    sdlc: runSdlc(subId(t.id), t.worktree),
     pr: repo && t.branch ? await branchPr(repo, t.branch) : null,
   }
 }

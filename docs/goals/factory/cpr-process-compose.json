@@ -33,6 +33,14 @@
       "untouched": [
         "compose.yaml"
       ]
+    },
+    "sdlc": {
+      "criteriaProven": true,
+      "gatesRun": [
+        "codeReview",
+        "supplyChain"
+      ],
+      "gatesSkipped": []
     }
   },
   "approvals": {

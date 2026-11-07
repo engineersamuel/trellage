@@ -2,7 +2,7 @@ import { Array, Option } from "effect";
 import { AsyncData, Submodel } from "foldkit";
 import type { Html, HtmlBuilder } from "foldkit/html";
 import { Button, Checkbox, Dialog, Input, Select, Textarea } from "@foldkit/ui";
-import { APPROVAL_TOPICS } from "../../../shared/goal";
+import { APPROVAL_TOPICS, SDLC_GATES } from "../../../shared/goal";
 import { Message } from "./message";
 import type { Model } from "./model";
 import { catalogSkills, stepRows } from "./update";
@@ -195,6 +195,41 @@ const prSection = (model: Model, h: HtmlBuilder<Message>): Html =>
     h,
   );
 
+const GATE_HINT: Record<(typeof SDLC_GATES)[number], string> = {
+  design: "design note before code",
+  testFirst: "failing tests committed first",
+  codeReview: "Jev-picked review lenses, scored fixes",
+  supplyChain: "secrets, vulnerabilities, licenses",
+  docs: "README / docs / changelog updated",
+  postMerge: "main's checks watched after merge",
+};
+
+/** Floors always apply (criteria proven, verify, security). Per optional gate: must run, must be skipped, or Jev decides. */
+const sdlcSection = (model: Model, h: HtmlBuilder<Message>): Html =>
+  section(
+    "SDLC gates",
+    [
+      checkbox("goal-sdlc", "check the SDLC record (criteria proven, verify and security always)", model.draft.expectSdlc, (isChecked) => Message.ToggledExpectSdlc({ isChecked }), h),
+      ...(model.draft.expectSdlc
+        ? [
+            h.ul(
+              [h.Class("fk-list")],
+              Array.map(SDLC_GATES, (gate) => {
+                const current = model.draft.gatesRun.includes(gate) ? "run" : model.draft.gatesSkipped.includes(gate) ? "skip" : "any";
+                return h.keyed("li")(gate, [h.Class("fk-chips")], [
+                  h.span([], [`${gate} `, h.span([h.Class("fk-muted")], [GATE_HINT[gate]])]),
+                  chip(`${gate}: must run`, current === "run", Message.ClickedGateExpectation({ gate, expectation: "run" }), h),
+                  chip(`${gate}: must skip`, current === "skip", Message.ClickedGateExpectation({ gate, expectation: "skip" }), h),
+                  chip(`${gate}: Jev decides`, current === "any", Message.ClickedGateExpectation({ gate, expectation: "any" }), h),
+                ]);
+              }),
+            ),
+          ]
+        : []),
+    ],
+    h,
+  );
+
 const approvalsSection = (model: Model, h: HtmlBuilder<Message>): Html =>
   section(
     "Who answers decisions",
@@ -246,6 +281,7 @@ const form = (model: Model, h: HtmlBuilder<Message>): Html =>
     stepsSection(model, h),
     skillsSection(model, h),
     prSection(model, h),
+    sdlcSection(model, h),
     approvalsSection(model, h),
     ...Array.match(model.problems, {
       onEmpty: () => [],

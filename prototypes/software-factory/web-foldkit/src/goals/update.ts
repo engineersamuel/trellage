@@ -108,6 +108,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     UpdatedBodyIncludes: ({ value }) => field(model, "bodyIncludes", value),
     UpdatedUntouched: ({ value }) => field(model, "untouched", value),
     ClickedPolicy: ({ topic, policy }) => edit(model, (draft) => ({ ...draft, approvals: { ...draft.approvals, [topic]: policy } })),
+    ToggledExpectSdlc: ({ isChecked }) => field(model, "expectSdlc", isChecked),
+    ClickedGateExpectation: ({ gate, expectation }) =>
+      edit(model, (draft) => ({
+        ...draft,
+        gatesRun: expectation === "run" ? Array.dedupe([...draft.gatesRun, gate]) : Array.filter(draft.gatesRun, (g) => g !== gate),
+        gatesSkipped: expectation === "skip" ? Array.dedupe([...draft.gatesSkipped, gate]) : Array.filter(draft.gatesSkipped, (g) => g !== gate),
+      })),
     UpdatedRuns: ({ value }) => field(model, "runs", value),
     UpdatedMinutes: ({ value }) => field(model, "minutesPerRun", value),
     ClickedEditGoal: ({ id }) => editGoal(model, id),

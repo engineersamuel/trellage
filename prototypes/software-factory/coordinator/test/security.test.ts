@@ -86,7 +86,7 @@ const fakeFactory = (findings: unknown[] | null, idle = true) => {
     run: null,
     defaultModel: "default-model",
     workers: new Map([["sub-1", { auth: "proxy" }]]),
-    securityReviews: new Map(),
+    securityReviews: new Map(), codeReviews: new Map(), sdlc: new Map(),
     publish: (_w: string, type: string, _a: null, _t: string, data: any) => type === "factory.security_review" && events.push(data),
     routeModel: async () => ({ id: "routed-model" }),
     stop: async (id: string) => void stopped.push(id),

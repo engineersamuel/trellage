@@ -28,12 +28,23 @@ export const PrExpect = Schema.Struct({
 })
 export type PrExpect = typeof PrExpect.Type
 
+/** What the SDLC record must show: every criterion proven, gates that must have run, gates that must have been skipped. */
+export const SdlcExpect = Schema.Struct({
+  criteriaProven: Schema.Boolean.pipe(withDefault(true)),
+  gatesRun: Schema.Array(Schema.String).pipe(withDefault([])),
+  gatesSkipped: Schema.Array(Schema.String).pipe(withDefault([])),
+  /** Highest risk tier allowed (T0 < T1 < T2); omit for any. */
+  maxTier: Schema.optionalKey(Schema.Literals(["T0", "T1", "T2"])),
+})
+export type SdlcExpect = typeof SdlcExpect.Type
+
 export const Expect = Schema.Struct({
   /** Step id (from /api/steps) → how often it must run. */
   steps: Schema.Record(Schema.String, StepCount).pipe(withDefault({})),
   /** Skills some worker of the run must have invoked (a `skill.invoked` event). */
   skills: Schema.Array(Schema.String).pipe(withDefault([])),
   pr: Schema.optionalKey(PrExpect),
+  sdlc: Schema.optionalKey(SdlcExpect),
 })
 export type Expect = typeof Expect.Type
 
@@ -55,6 +66,9 @@ export const Limits = Schema.Struct({
   runs: Schema.Number.pipe(withDefault(5)),
   minutesPerRun: Schema.Number.pipe(withDefault(90)),
 })
+
+/** Optional gates a goal can require to run or to be skipped (coordinator/src/sdlc.ts GATES). */
+export const SDLC_GATES = ["design", "testFirst", "codeReview", "supplyChain", "docs", "postMerge"] as const
 
 export const GoalSpec = Schema.Struct({
   /** Slug; also the file name docs/goals/factory/<id>.json. */
@@ -117,6 +131,18 @@ export type Run = {
   /** Newest report_up of the conversation: done, blocked or needs-decision. */
   report: { status: string; summary: string; gaps: string[] } | null
   pr: RunPr | null
+  /** SDLC gates of the conversation; null when sdlc_plan never ran. */
+  sdlc: RunSdlc | null
+}
+
+export type RunGate = { id: string; chosen: boolean; probability: number | null; threshold: number; reason: string; status: string; detail?: string }
+export type RunSdlc = {
+  tier: string | null
+  criteria: string[]
+  unproven: string[]
+  gates: RunGate[]
+  codeReviews: { id: string; status: string; lenses: string[]; kept: number; dropped: number }[]
+  metrics: { minutes: number; workers: number; findingsKept: number; findingsDropped: number }
 }
 
 /** Each unmet expectation as one line; empty when the run meets them all. `base` is the goal's base branch. */
@@ -129,6 +155,23 @@ export const goalUnmet = (run: Run, expect: Expect, base?: string): string[] => 
   }
   const loaded = new Set(run.workers.flatMap((w) => w.skills))
   for (const s of expect.skills) if (!loaded.has(s)) out.push(`skill ${s} never invoked`)
+  const sd = expect.sdlc
+  if (sd) {
+    const s = run.sdlc
+    if (!s) out.push("no SDLC record (sdlc_plan never ran)")
+    else {
+      if (sd.criteriaProven && !s.criteria.length) out.push("no acceptance criteria")
+      if (sd.criteriaProven && s.unproven.length) out.push(`criteria without PASS evidence: ${s.unproven.join(", ")}`)
+      for (const id of sd.gatesRun) {
+        const g = s.gates.find((x) => x.id === id)
+        if (!g?.chosen) out.push(`gate ${id} was skipped${g ? ` (${g.reason})` : ""}, expected to run`)
+        else if (g.status !== "done" && id !== "design" && id !== "testFirst" && id !== "docs" && id !== "postMerge") out.push(`gate ${id} is ${g.status}, expected done`)
+      }
+      for (const id of sd.gatesSkipped) if (s.gates.find((x) => x.id === id)?.chosen) out.push(`gate ${id} ran, expected skipped`)
+      const rank = { T0: 0, T1: 1, T2: 2 } as Record<string, number>
+      if (sd.maxTier && s.tier && rank[s.tier]! > rank[sd.maxTier]!) out.push(`tier ${s.tier}, expected at most ${sd.maxTier}`)
+    }
+  }
   const want = expect.pr
   if (want) {
     const pr = run.pr
@@ -178,6 +221,10 @@ export type GoalDraft = {
   greenChecks: boolean
   bodyIncludes: string
   untouched: string
+  /** Require the SDLC record: criteria proven, these gates run, these gates skipped. */
+  expectSdlc: boolean
+  gatesRun: readonly string[]
+  gatesSkipped: readonly string[]
   approvals: Approvals
   runs: string
   minutesPerRun: string
@@ -202,6 +249,9 @@ export const emptyDraft = (): GoalDraft => ({
   greenChecks: true,
   bodyIncludes: "",
   untouched: "",
+  expectSdlc: true,
+  gatesRun: [],
+  gatesSkipped: [],
   approvals: { plan: "auto", findings: "auto", ship: "auto", other: "human" },
   runs: "5",
   minutesPerRun: "90",
@@ -236,6 +286,7 @@ export const draftToSpec = (d: GoalDraft, knownSteps?: readonly string[]): { ok:
       ...(d.expectPr
         ? { pr: { state: "OPEN", ...(d.greenChecks ? { checks: "SUCCESS" } : {}), bodyIncludes: csv(d.bodyIncludes), untouched: csv(d.untouched) } }
         : {}),
+      ...(d.expectSdlc ? { sdlc: { criteriaProven: true, gatesRun: d.gatesRun, gatesSkipped: d.gatesSkipped } } : {}),
     },
     approvals: d.approvals,
     limits: { runs: runs ?? 5, minutesPerRun: minutesPerRun ?? 90 },
@@ -259,6 +310,9 @@ export const specToDraft = (s: GoalSpec): GoalDraft => ({
   greenChecks: s.expect.pr?.checks === "SUCCESS",
   bodyIncludes: (s.expect.pr?.bodyIncludes ?? []).join(", "),
   untouched: (s.expect.pr?.untouched ?? []).join(", "),
+  expectSdlc: !!s.expect.sdlc,
+  gatesRun: [...(s.expect.sdlc?.gatesRun ?? [])],
+  gatesSkipped: [...(s.expect.sdlc?.gatesSkipped ?? [])],
   approvals: s.approvals,
   runs: String(s.limits.runs),
   minutesPerRun: String(s.limits.minutesPerRun),

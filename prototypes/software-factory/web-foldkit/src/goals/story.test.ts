@@ -41,6 +41,8 @@ describe("goal form", () => {
       message(Message.ToggledStep({ step: "review", isChecked: true })),
       message(Message.ToggledSkill({ skill: "security-audit", isChecked: true })),
       message(Message.ClickedPolicy({ topic: "ship", policy: "human" })),
+      message(Message.ClickedGateExpectation({ gate: "codeReview", expectation: "run" })),
+      message(Message.ClickedGateExpectation({ gate: "design", expectation: "skip" })),
       message(Message.SubmittedGoal()),
       Command.expectHas(SaveGoal),
       Command.resolve(SaveGoal, Message.SucceededSaveGoal({ saved })),
@@ -49,6 +51,7 @@ describe("goal form", () => {
         expect(m.maybeSaved).toEqual(Option.some(saved));
         expect(m.draft.steps.review).toEqual({ on: true, min: "1", max: "" });
         expect(m.draft.approvals.ship).toBe("human");
+        expect([m.draft.gatesRun, m.draft.gatesSkipped]).toEqual([["codeReview"], ["design"]]);
       }),
       message(Message.ClickedCopy({ text: saved.skill })),
       Command.resolve(CopyText, Message.CompletedCopy()),

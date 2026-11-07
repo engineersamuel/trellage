@@ -28,6 +28,24 @@ The tasks are in the repository `mise.toml`. The services run detached under [pr
 | 2 Foldkit + agent-interface | http://localhost:5174/ |
 | Coordinator API | http://127.0.0.1:7700/ |
 
+## SDLC gates
+
+Each change gets the smallest correct process. Code holds the floors; Jev decides the optional gates (one probability per gate against its threshold, `GATES` in `coordinator/src/sdlc.ts`); a risk tier can force a gate on. `request_approval ship=true` is refused while `sdlc_status` lists blockers.
+
+| Gate | When | What it checks |
+|---|---|---|
+| Criteria + evidence | always (floor) | `sdlc_plan` writes `.factory/acceptance.md`; verify writes `AC-n: PASS` lines to `.factory/evidence.md` |
+| Verify after implement | always (floor) | runs the repo's CI commands (`.github/workflows`, `AGENTS.md`) |
+| Security review | always (floor) | `security.ts` |
+| Design note | Jev ≥ 0.6 | `.factory/design.md` (decision, alternatives, rollback) |
+| Tests first | Jev ≥ 0.5 | a tests-only commit before the first code commit |
+| Code review | Jev ≥ 0.6, or tier T2 | `review.ts`: Jev picks ≤3 lenses, parallel reviewers, synthesis, Jev scores each finding (real ≥ 0.7 and worth ≥ 0.6), fix + verify |
+| Supply chain | Jev ≥ 0.5, or a dependency change | betterleaks on the new commits, osv-scanner (vulnerabilities, license allowlist) on changed lockfiles |
+| Docs | Jev ≥ 0.5 | the diff changes README, docs or CHANGELOG |
+| Post-merge | Jev ≥ 0.5 | after the human merges, the merge commit's checks on the default branch |
+
+Risk tier (`classify`): T0 small docs-only, T2 > 400 lines, dependency manifests or sensitive paths (auth, secrets, bind, CI, scripts, Docker, mise), else T1. `.factory/` is git-excluded; `.factory/pr.md` (criteria ✓, tier, gates, evidence, rollback) is the PR body. `report_up` saves up to 3 lessons per repo (`$SF_STATE_DIR/lessons/<folder>.md`), shown to the next sub-coordinator. The `show_sdlc` card shows it all live; `/api/runs/<thread>` has it under `sdlc` with metrics (minutes, workers, findings kept and dropped), and goal specs can require it (`expect.sdlc`: `criteriaProven`, `gatesRun`, `gatesSkipped`, `maxTier`).
+
 ## Goals: the self-improve loop
 
 A goal is one test case for the factory: a prompt for a repo, and what the run must show. The loop runs the goal; when the run fails, an outer agent fixes the factory code, commits, restarts, and runs again until it passes. Agents open PRs; a human merges.

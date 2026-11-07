@@ -33,6 +33,16 @@ export const scoreCard = (run: Run, spec: GoalSpec, unmet: string[]): string => 
   }
   const loaded = new Set(run.workers.flatMap((w) => w.skills))
   for (const s of spec.expect.skills) lines.push(`${loaded.has(s) ? "✓" : "✗"} skill ${s}`)
+  if (spec.expect.sdlc) {
+    const s = run.sdlc
+    if (!s) lines.push("✗ no SDLC record")
+    else {
+      lines.push(`${s.unproven.length ? "✗" : "✓"} criteria ${s.criteria.length - s.unproven.length}/${s.criteria.length} proven · tier ${s.tier ?? "?"}`)
+      for (const g of s.gates) lines.push(`  ${g.chosen ? "●" : "○"} ${g.id} ${g.chosen ? g.status : "skipped"} (${g.reason})`)
+      for (const r of s.codeReviews) lines.push(`  review ${r.id} ${r.status} lenses ${r.lenses.join(",")} kept ${r.kept} dropped ${r.dropped}`)
+      lines.push(`  metrics: ${s.metrics.minutes} min, ${s.metrics.workers} workers, findings kept ${s.metrics.findingsKept} dropped ${s.metrics.findingsDropped}`)
+    }
+  }
   if (spec.expect.pr) lines.push(run.pr ? `${unmet.some((u) => u.startsWith("PR") || u.startsWith("no PR")) ? "✗" : "✓"} PR ${run.pr.url} ${run.pr.state} checks ${run.pr.checks}` : "✗ no PR")
   const other = run.workers.filter((w) => w.step && !(w.step in spec.expect.steps)).map((w) => w.step)
   if (other.length) lines.push(`  also ran: ${[...new Set(other)].join(", ")}`)
@@ -80,6 +90,8 @@ const guided = (json: Json) =>
           const checks = pr && (await question(rl, "PR checks must be green? y/n", "y")) === "y"
           const bodyIncludes = pr ? list(await question(rl, "PR body must include (comma)")) : []
           const untouched = pr ? list(await question(rl, "files the PR must not change (comma)")) : []
+          const gatesRun = list(await question(rl, "SDLC gates that must run (design,testFirst,codeReview,supplyChain,docs,postMerge)"))
+          const gatesSkipped = list(await question(rl, "SDLC gates that must be skipped (comma)"))
           const approvals = Object.fromEntries(
             await APPROVAL_TOPICS.reduce(
               async (acc, t) => [...(await acc), [t, await question(rl, `${t} decisions: auto or human`, t === "other" ? "human" : "auto")]],
@@ -97,6 +109,7 @@ const guided = (json: Json) =>
               steps: parseSteps(stepsIn),
               skills,
               ...(pr ? { pr: { state: "OPEN", ...(checks ? { checks: "SUCCESS" } : {}), base, bodyIncludes, untouched } } : {}),
+              sdlc: { criteriaProven: true, gatesRun, gatesSkipped },
             },
             approvals,
             limits: { runs, minutesPerRun },

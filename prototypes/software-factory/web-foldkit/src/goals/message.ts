@@ -30,6 +30,8 @@ export const Message = defineMessageUnion({
   UpdatedBodyIncludes: { value: Schema.String },
   UpdatedUntouched: { value: Schema.String },
   ClickedPolicy: { topic: Topic, policy: Policy },
+  ToggledExpectSdlc: { isChecked: Schema.Boolean },
+  ClickedGateExpectation: { gate: Schema.String, expectation: Schema.Literals(["run", "skip", "any"]) },
   UpdatedRuns: { value: Schema.String },
   UpdatedMinutes: { value: Schema.String },
   ClickedEditGoal: { id: Schema.String },

@@ -21,7 +21,7 @@ describe("cards", () => {
     expect(reportFindings(md).map((f) => [f.rank, f.title])).toEqual([[1, "Fast path"], [2, "Second"]])
   })
   test("every card the prompt names is a coordinator tool or a browser tool", () => {
-    const backend = new Set(coordinatorTools({ summaries: () => [], securityReviews: new Map(), decisions: [], run: null } as never).map((t) => t.name))
+    const backend = new Set(coordinatorTools({ summaries: () => [], securityReviews: new Map(), codeReviews: new Map(), sdlc: new Map(), decisions: [], run: null } as never).map((t) => t.name))
     const browser = new Set(["focus_agent", "open_report", "set_layout", "confirm_action"])
     for (const name of CARDS_PROMPT.match(/\b(show_[a-z_]+|render_ui|request_approval|ask_user|focus_agent|open_report|set_layout|confirm_action)\b/g)!)
       expect(backend.has(name) || browser.has(name)).toBe(true)
@@ -33,7 +33,7 @@ describe("cards", () => {
     expect(ownDecisions(all, "gen-9")).toEqual([])
   })
   test("show_delivery_run in a General chat returns no foreign decisions", async () => {
-    const f = { summaries: () => [], securityReviews: new Map(), decisions: [{ step: "plan", moreWork: 0.9 }], run: null } as never
+    const f = { summaries: () => [], securityReviews: new Map(), codeReviews: new Map(), sdlc: new Map(), decisions: [{ step: "plan", moreWork: 0.9 }], run: null } as never
     const tool = coordinatorTools(f, { id: "gen-x", threadId: "t" }).find((t) => t.name === "show_delivery_run")!
     const r = JSON.parse(String(await (tool.handler as any)({}, {})))
     expect([r.decisions.length, typeof r.note]).toEqual([0, "string"])
