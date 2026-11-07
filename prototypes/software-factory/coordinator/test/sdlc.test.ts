@@ -178,3 +178,14 @@ describe("gate settling", () => {
     expect(t).toContain("Scope warning: diff grew from 100 to 600 lines")
   })
 })
+
+describe("reviewer model", () => {
+  test("the other family than the implementer; an env pin wins", async () => {
+    const { reviewModelFor } = await import("../src/review.ts")
+    expect(reviewModelFor("gpt-6-astra", "")).toBe("claude-opus-5.5")
+    expect(reviewModelFor("gpt-6.1-sol", undefined)).toBe("claude-opus-5.5")
+    expect(reviewModelFor("claude-opus-5.5", undefined)).toBe("gpt-6-astra")
+    expect(reviewModelFor(null, undefined)).toBe("gpt-6-astra")
+    expect(reviewModelFor("gpt-6-astra", "claude-sonnet-5.5")).toBe("claude-sonnet-5.5")
+  })
+})

@@ -183,6 +183,8 @@ export type Sdlc = {
   reviewedCommit: string | null
   /** Code review rounds run so far. */
   reviewRounds: number
+  /** Model of the last implement worker; reviewers use the other family. */
+  implementerModel: string | null
   /** Changed lines after the first implement; the scope check compares later diffs against it. */
   firstLines: number | null
   /** Set when the diff grew past twice the first implement and Jev judged the growth not needed. */
@@ -204,6 +206,7 @@ export const newSdlc = (scopeId: string, threadId: string | null): Sdlc => ({
   findings: { kept: 0, dropped: 0 },
   reviewedCommit: null,
   reviewRounds: 0,
+  implementerModel: null,
   firstLines: null,
   scopeWarning: null,
 })

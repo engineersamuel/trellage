@@ -29,7 +29,14 @@ export const WORTH_THRESHOLD = 0.7
 /** Findings below this severity are never fixed in the change (logged as dropped). */
 export const MIN_SEVERITY = ["medium", "high", "critical"]
 /** Model of the reviewers and the synthesis: a different family than the implementer, for a rubber-duck read. */
-export const REVIEW_MODEL = process.env.SF_REVIEW_MODEL?.trim() || "gpt-6-astra"
+export const REVIEW_MODELS = { claude: "claude-opus-5.5", gpt: "gpt-6-astra" } as const
+
+/**
+ * Reviewer model: the other family than the implementer's, for a rubber-duck read (GPT implemented → Claude reviews,
+ * anything else → GPT reviews). SF_REVIEW_MODEL pins one model for every review.
+ */
+export const reviewModelFor = (implementerModel: string | null | undefined, env = process.env.SF_REVIEW_MODEL): string =>
+  env?.trim() || (/^(gpt|o\d)/i.test(implementerModel ?? "") ? REVIEW_MODELS.claude : REVIEW_MODELS.gpt)
 
 export const pickLenses = (p: Record<string, number> | null, tier?: string): LensId[] => {
   if (!p) return ["correctness", "tests"]
@@ -165,7 +172,7 @@ const list = (fs: ScoredFinding[]) => fs.map((x) => `- [${x.severity}] ${x.title
 export const codeReview = async (
   f: Factory,
   scope: Scope,
-  opts: { workdir: string; base: string; auth: Auth; request: string; criteria: string[]; diffStat: string; tier?: string; lenses?: LensId[]; onFindings?: (kept: number, dropped: number) => void },
+  opts: { workdir: string; base: string; auth: Auth; request: string; criteria: string[]; diffStat: string; tier?: string; lenses?: LensId[]; implementerModel?: string | null; onFindings?: (kept: number, dropped: number) => void },
 ): Promise<CodeReview> => {
   const r: CodeReview = { id: `cr-${crypto.randomUUID().slice(0, 8)}`, scopeId: scope.id, threadId: scope.threadId, workdir: opts.workdir, status: "started", lenses: [], lensProbabilities: null, findings: [], workerIds: [], at: Date.now() }
   const set = (patch: Partial<CodeReview>) => {
@@ -177,7 +184,7 @@ export const codeReview = async (
   const started: string[] = []
   const spawn = async (name: string, step: string, task: string, id?: string) => {
     const reviewer = step === "review" || step === "synthesis"
-    const w = await f.spawn({ ...(id ? { id } : {}), name, role: "worker", auth: opts.auth, step, task, owner: scope.id, workdir: opts.workdir, ...(reviewer ? { model: REVIEW_MODEL } : {}) })
+    const w = await f.spawn({ ...(id ? { id } : {}), name, role: "worker", auth: opts.auth, step, task, owner: scope.id, workdir: opts.workdir, ...(reviewer ? { model: reviewModelFor(opts.implementerModel) } : {}) })
     started.push(w.id)
     set({ workerIds: [...r.workerIds, w.id], workerId: w.id })
     return w

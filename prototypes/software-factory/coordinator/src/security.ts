@@ -180,11 +180,11 @@ const pickReviewModel = async (f: Factory, auth: Auth) => {
   return pickModel(env, routed, f.defaultModel)
 }
 
-const run = async (f: Factory, scope: Scope, r: SecurityReview, set: Set) => {
+const run = async (f: Factory, scope: Scope, r: SecurityReview, set: Set, pinned?: string) => {
   const { workdir, base } = target(f, scope)
   const auth = r.auth
   if (!auth) throw new Error(`no auth for the review: implement worker ${r.implementWorkerId} and coordinator ${scope.id} are gone`)
-  const model = await pickReviewModel(f, auth)
+  const model = pinned ?? (await pickReviewModel(f, auth))
   set({ model })
   const started: string[] = []
   const spawn: Spawn = async (name, step, task, id) => {
@@ -210,7 +210,7 @@ const run = async (f: Factory, scope: Scope, r: SecurityReview, set: Set) => {
  * Review workers use the implement worker's auth (its account wrote the diff), else the coordinator's, else `scopeAuth`
  * (the coordinator's auth captured when the implement worker was spawned).
  */
-export const securityReview = async (f: Factory, scope: Scope, implementWorkerId: string, scopeAuth?: Auth): Promise<SecurityReview> => {
+export const securityReview = async (f: Factory, scope: Scope, implementWorkerId: string, scopeAuth?: Auth, model?: string): Promise<SecurityReview> => {
   const r: SecurityReview = { id: `sr-${crypto.randomUUID().slice(0, 8)}`, scopeId: scope.id, threadId: scope.threadId, implementWorkerId, status: "started", model: "", findings: [], at: Date.now() }
   const set: Set = (patch) => {
     Object.assign(r, patch, { at: Date.now() })
@@ -222,7 +222,7 @@ export const securityReview = async (f: Factory, scope: Scope, implementWorkerId
   const auth = f.workers.get(implementWorkerId)?.auth ?? f.workers.get(scope.id)?.auth ?? scopeAuth
   set({ ...(workdir ? { workdir } : {}), ...(auth ? { auth } : {}) })
   try {
-    await run(f, scope, r, set)
+    await run(f, scope, r, set, model)
     set({ status: "done" })
   } catch (e) {
     set({ status: "failed", error: e instanceof Error ? e.message : String(e) })

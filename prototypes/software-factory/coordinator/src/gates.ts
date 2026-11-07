@@ -2,7 +2,7 @@
 // and verify (risk tier, diff-phase gates, code review, supply chain), and the ship check.
 import { writeFileSync } from "node:fs"
 import { now, type Auth, type Factory } from "./factory.ts"
-import { codeReview, codeReviewDoneSince } from "./review.ts"
+import { codeReview, codeReviewDoneSince, reviewModelFor } from "./review.ts"
 import {
   artifact,
   askGates,
@@ -106,7 +106,8 @@ const growthNeeded = async (state: Record<string, unknown>): Promise<number | nu
  * and only when they are REREVIEW_LINES or more. The security review is not here: it runs last, at ship time.
  */
 export const afterImplement = async (f: Factory, scope: Scope, implementWorkerId: string, scopeAuth: Auth | undefined) => {
-  const s0 = f.sdlc.get(scope.id) ?? newSdlc(scope.id, scope.threadId)
+  const s0prev = f.sdlc.get(scope.id) ?? newSdlc(scope.id, scope.threadId)
+  const s0 = { ...s0prev, implementerModel: f.workers.get(implementWorkerId)?.model ?? s0prev.implementerModel ?? null }
   publish(f, { ...s0, implementDoneAt: Date.now() })
   const workdir = scope.workdir
   const base = scope.base
@@ -149,6 +150,7 @@ export const afterImplement = async (f: Factory, scope: Scope, implementWorkerId
         criteria: s0.criteria,
         diffStat,
         tier: risk.tier,
+        implementerModel: s0.implementerModel,
         // A re-review is one correctness reviewer on the new lines, no synthesis.
         ...(rereview ? { lenses: ["correctness" as const] } : {}),
         onFindings: (kept, dropped) => {
@@ -184,7 +186,7 @@ export const startFinalSecurity = (f: Factory, scope: Scope): string | null => {
   const last = [...f.securityReviews.values()].filter((r) => r.scopeId === scope.id).at(-1)
   if (last && (last.status !== "done" && last.status !== "failed")) return `final security review ${last.id} is ${last.status}; wait for it, then ask to ship again.`
   if (last?.status === "done" && last.at >= (s.implementDoneAt ?? 0)) return null
-  void securityReview(f, scope, s.scopeId, f.workers.get(scope.id)?.auth)
+  void securityReview(f, scope, s.scopeId, f.workers.get(scope.id)?.auth, reviewModelFor(s.implementerModel, process.env.SF_SECURITY_MODEL))
   return "Everything else is ready, so the final security review started now (it reviews the whole diff last; Jev picks which findings to fix). Wait with next_step until it is done, then ask to ship again."
 }
 
