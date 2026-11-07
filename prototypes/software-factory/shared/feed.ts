@@ -96,7 +96,14 @@ export const appendCompact = <E extends { type: string; data: any }>(log: E[], e
   if (ev.type === "assistant.streaming_delta") return
   if (ev.type === "assistant.message") drop((e) => e.type === "assistant.message_delta" && e.data?.messageId === d.messageId)
   if (ev.type === "assistant.reasoning") drop((e) => e.type === "assistant.reasoning_delta" && e.data?.reasoningId === d.reasoningId)
-  if (ev.type === "assistant.tool_call_delta" || ev.type === "tool.execution_start") drop((e) => e.type === "assistant.tool_call_delta")
+  // A call's input deltas fold into one event (the transcript streams it) until the call starts; then it is dropped.
+  if (ev.type === "assistant.tool_call_delta") {
+    let prev: E | undefined
+    for (let i = log.length - 1; i >= 0 && !prev; i--) if (log[i]!.type === "assistant.tool_call_delta" && log[i]!.data?.toolCallId === d.toolCallId) prev = log[i]
+
+    if (prev) return void (prev.data = { ...prev.data, ...d, inputDelta: `${prev.data.inputDelta ?? ""}${d.inputDelta ?? ""}` })
+  }
+  if (ev.type === "tool.execution_start") drop((e) => e.type === "assistant.tool_call_delta" && e.data?.toolCallId === d.toolCallId)
   log.push(ev)
   if (log.length > cap) log.splice(0, log.length - cap)
 }

@@ -148,6 +148,9 @@ describe("code review", () => {
     expect(pickLenses(null)).toEqual(["correctness", "tests"])
     expect(pickLenses({ correctness: 0.9, tests: 0.7, design: 0.65, performance: 0.8, operability: 0.1 })).toEqual(["correctness", "performance", "tests"])
     expect(pickLenses({ correctness: 0.1, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.3 })).toEqual(["operability"])
+    // T2 always gets at least 2 reviewers; the bar is 0.5.
+    expect(pickLenses({ correctness: 0.7, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.4 }, "T2")).toEqual(["correctness", "operability"])
+    expect(pickLenses({ correctness: 0.7, tests: 0.5, design: 0.1, performance: 0.1, operability: 0.4 }, "T1")).toEqual(["correctness", "tests"])
   })
   test("findings parse and score", () => {
     const fs = parseReviewFindings(JSON.stringify([{ title: "t", problem: "p", severity: "high" }, { nope: 1 }]))

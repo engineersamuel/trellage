@@ -84,7 +84,11 @@ export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessE
           : b.type === "thinking"
             ? [ev("assistant.reasoning", { content: b.thinking })]
             : b.type === "tool_use"
-              ? [ev("tool.execution_start", { toolCallId: b.id, toolName: b.name, arguments: b.input })]
+              ? [
+                  ev("tool.execution_start", { toolCallId: b.id, toolName: b.name, arguments: b.input }),
+                  // The Skill tool is Claude's skill invocation: the same event Copilot runtimes emit (plugin prefix dropped).
+                  ...(b.name === "Skill" && typeof b.input?.skill === "string" ? [ev("skill.invoked", { name: String(b.input.skill).split(":").at(-1) })] : []),
+                ]
               : [],
       )
     case "user":
@@ -123,6 +127,8 @@ type Block = { kind: "text" | "thinking"; id: string; text: string; message: str
 export class ClaudeStream {
   private message = ""
   private open = new Map<number, Block>()
+  /** tool_use blocks being written: content index → call id and name; their input streams as tool_call_delta. */
+  private tools = new Map<number, { id: string; name: string }>()
   /** Streamed blocks whose full assistant message has not arrived yet. */
   private finished: Block[] = []
 
@@ -138,10 +144,14 @@ export class ClaudeStream {
         return []
       case "content_block_start": {
         const kind = e.content_block?.type
+        if (kind === "tool_use") this.tools.set(e.index, { id: e.content_block.id, name: e.content_block.name })
         if (kind === "text" || kind === "thinking") this.open.set(e.index, { kind, id: `${this.message}:${e.index}`, text: "", message: this.message })
         return []
       }
       case "content_block_delta": {
+        const t = this.tools.get(e.index)
+        if (t && e.delta?.type === "input_json_delta" && e.delta.partial_json)
+          return [ev("assistant.tool_call_delta", { toolCallId: t.id, toolName: t.name, inputDelta: e.delta.partial_json })]
         const b = this.open.get(e.index)
         if (!b) return []
         if (e.delta?.type === "text_delta" && e.delta.text) {
@@ -155,6 +165,7 @@ export class ClaudeStream {
         return []
       }
       case "content_block_stop": {
+        this.tools.delete(e.index)
         const b = this.open.get(e.index)
         if (b) (this.open.delete(e.index), this.finished.push(b))
         return []

@@ -13,6 +13,11 @@ export const Worker = Schema.Struct({
   role: Schema.String,
   status: Schema.String,
   model: Schema.String,
+  /** How the model was picked; older servers do not send it. */
+  modelSource: Schema.optionalKey(Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("routed"), by: Schema.String, confidence: Schema.Number }),
+    Schema.Struct({ kind: Schema.Literals(["pinned", "fallback", "default"]) }),
+  ])),
   auth: Schema.String,
   pid: NullableNumber,
   rssKb: NullableNumber,
@@ -167,6 +172,8 @@ export const Settings = Schema.Struct({
   subAgent: Schema.Struct({ model: Schema.String, reasoningEffort: Schema.String }).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed({ model: "claude-opus-5.5", reasoningEffort: "high" })),
   ),
+  /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
+  workers: Schema.Struct({ harness: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" }))),
   crons: Schema.Record(Schema.String, Cron),
   extensions: Schema.Record(Schema.String, Extension),
   repo: Schema.String,

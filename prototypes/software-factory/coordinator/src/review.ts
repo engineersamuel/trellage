@@ -19,17 +19,20 @@ export const LENSES = [
 export type LensId = (typeof LENSES)[number]["id"]
 
 /** Jev probability per lens; at or above it the lens runs. At most MAX_LENSES, the most probable first; at least one. */
-export const LENS_THRESHOLD = 0.6
+export const LENS_THRESHOLD = 0.5
 export const MAX_LENSES = 3
+/** Tier T2 (large or sensitive) always gets at least this many reviewers, the most probable lenses. */
+export const MIN_LENSES_T2 = 2
 /** A merged finding is fixed only if Jev scores it real AND worth fixing now at or above these. */
 export const REAL_THRESHOLD = 0.7
 export const WORTH_THRESHOLD = 0.6
 
-export const pickLenses = (p: Record<string, number> | null): LensId[] => {
+export const pickLenses = (p: Record<string, number> | null, tier?: string): LensId[] => {
   if (!p) return ["correctness", "tests"]
   const ranked = LENSES.map((l) => l.id).sort((a, b) => (p[b] ?? 0) - (p[a] ?? 0))
   const chosen = ranked.filter((id) => (p[id] ?? 0) >= LENS_THRESHOLD).slice(0, MAX_LENSES)
-  return chosen.length ? chosen : [ranked[0]!]
+  const min = tier === "T2" ? MIN_LENSES_T2 : 1
+  return chosen.length >= min ? chosen : ranked.slice(0, min)
 }
 
 export type ReviewFinding = { id: string; title: string; file: string; severity: string; problem: string; fix: string; lenses: string[] }
@@ -157,7 +160,7 @@ const list = (fs: ScoredFinding[]) => fs.map((x) => `- [${x.severity}] ${x.title
 export const codeReview = async (
   f: Factory,
   scope: Scope,
-  opts: { workdir: string; base: string; auth: Auth; request: string; criteria: string[]; diffStat: string; onFindings?: (kept: number, dropped: number) => void },
+  opts: { workdir: string; base: string; auth: Auth; request: string; criteria: string[]; diffStat: string; tier?: string; onFindings?: (kept: number, dropped: number) => void },
 ): Promise<CodeReview> => {
   const r: CodeReview = { id: `cr-${crypto.randomUUID().slice(0, 8)}`, scopeId: scope.id, threadId: scope.threadId, workdir: opts.workdir, status: "started", lenses: [], lensProbabilities: null, findings: [], workerIds: [], at: Date.now() }
   const set = (patch: Partial<CodeReview>) => {
@@ -175,7 +178,7 @@ export const codeReview = async (
   }
   try {
     const probabilities = await askLenses({ request: opts.request, criteria: opts.criteria, diff: opts.diffStat })
-    const lenses = pickLenses(probabilities)
+    const lenses = pickLenses(probabilities, opts.tier)
     set({ status: "reviewing", lenses, lensProbabilities: probabilities })
     const dir = path.join(f.root, r.id)
     mkdirSync(dir, { recursive: true })

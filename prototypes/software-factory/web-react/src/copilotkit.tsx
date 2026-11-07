@@ -6,7 +6,7 @@ import { Effect } from "effect";
 import { activityRenderers } from "./chat/ActivityCards";
 import { OpenUiCard, renderOpenUiInto } from "./genui/OpenUi";
 import { WorkerBoard } from "./genui/WorkerBoard";
-import { ConfirmCard, DecisionQueueCard, DeliveryRunCard, DiffSummaryCard, ReportFindingsCard, SdlcCard, SecurityReviewCard } from "./genui/Cards";
+import { ConfirmCard, DecisionQueueCard, DeliveryRunCard, DiffSummaryCard, ReportFindingsCard, SdlcCard, SecurityReviewCard, CodeReviewCard } from "./genui/Cards";
 import { useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
@@ -44,6 +44,7 @@ function ToolRenderers() {
   useRenderTool({ name: "show_security_review", parameters: z.object({}), render: (p) => <SecurityReviewCard result={p.result} /> });
   // The sub-coordinator of the open repo thread is sub-<first 8 of the thread id> (coordinator/src/threads.ts subId).
   const sdlcScope = useApp((s) => (s.threadId ? `sub-${s.threadId.slice(0, 8)}` : undefined));
+  useRenderTool({ name: "show_code_review", parameters: z.object({}), render: (p) => <CodeReviewCard result={p.result} scope={sdlcScope} /> }, [sdlcScope]);
   useRenderTool({ name: "show_sdlc", parameters: z.object({}), render: (p) => <SdlcCard result={p.result} scope={sdlcScope} /> }, [sdlcScope]);
   useRenderTool({ name: "show_delivery_run", parameters: z.object({}), render: (p) => <DeliveryRunCard result={p.result} /> });
   useRenderTool({ name: "show_diff_summary", parameters: z.object({}), render: (p) => <DiffSummaryCard result={p.result} /> });

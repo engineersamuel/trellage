@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { partialArgs, toTranscript } from "../transcript"
 import { hasUnified, lineDiff, parsePatch, parseUnified, toolDiffs, wordRanges } from "../diff.ts"
 
 // Copied from a Copilot SDK `edit` result (`result.detailedContent`).
@@ -65,6 +66,37 @@ describe("toolDiffs", () => {
   })
 })
 
+test("a read tool's context-only diff is no file change", () => {
+  const read = "\ndiff --git a/src/main.rs b/src/main.rs\nindex 0000000..0000000 100644\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -21,2 +21,2 @@\n #[tokio::main]\n async fn main() {\n"
+  expect(toolDiffs("view", { path: "/src/main.rs" }, read)).toEqual([])
+})
+
 test("wordRanges marks only the changed word", () => {
   expect(wordRanges("const ENV = {", "window.ENV = {")).toEqual({ del: [[0, 6]], add: [[0, 7]] })
+})
+
+
+describe("streaming tool calls", () => {
+  test("partialArgs: raw custom input, complete JSON, unfinished JSON strings", () => {
+    expect(partialArgs("*** Begin Patch\n*** Add File: a.txt\n+hi")).toEqual({ input: "*** Begin Patch\n*** Add File: a.txt\n+hi" })
+    expect(partialArgs('{"path":"a.ts","file_text":"x"}')).toEqual({ path: "a.ts", file_text: "x" })
+    expect(partialArgs('{"path":"a.ts","file_text":"line1\\nline2')).toEqual({ path: "a.ts", file_text: "line1\nline2" })
+  })
+  test("deltas build one tool item that execution_start completes", () => {
+    const ev = (seq: number, type: string, data: any) => ({ seq, workerId: "w", type, agentId: null, timestamp: "2026-01-01T00:00:00Z", data })
+    const partial = toTranscript([
+      ev(1, "assistant.tool_call_delta", { toolCallId: "c1", toolName: "apply_patch", inputDelta: "*** Begin Patch\n*** Add File: a.txt\n" }),
+      ev(2, "assistant.tool_call_delta", { toolCallId: "c1", inputDelta: "+one\n+two\n" }),
+    ])
+    expect(partial).toHaveLength(1)
+    expect((partial[0] as any).args.input).toContain("+two")
+    expect((partial[0] as any).done).toBe(false)
+    const full = toTranscript([
+      ev(1, "assistant.tool_call_delta", { toolCallId: "c1", toolName: "apply_patch", inputDelta: "*** Begin" }),
+      ev(3, "tool.execution_start", { toolCallId: "c1", toolName: "apply_patch", arguments: { input: "final" } }),
+      ev(4, "tool.execution_complete", { toolCallId: "c1", success: true, result: { content: "ok" } }),
+    ])
+    expect(full).toHaveLength(1)
+    expect(full[0]).toMatchObject({ args: { input: "final" }, done: true })
+  })
 })

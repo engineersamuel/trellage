@@ -9,6 +9,8 @@ import { MountDiffPreview } from "./command";
 import { Message } from "./message";
 import type { Model } from "./model";
 
+/** Worker agent SDK choices (coordinator/src/settings.ts WORKER_HARNESSES). */
+const WORKER_HARNESSES = ["auto", "copilot", "claude", "pi"] as const;
 const RECENT_DECISIONS = 5;
 const RECENT_REVIEWS = 3;
 const REQUEST_PREVIEW_LENGTH = 60;
@@ -252,6 +254,16 @@ const agentSection = (settings: Settings, options: SettingsOptions, h: HtmlBuild
     [
       select("agent-model", "model", settings.agent.model, options.models, (model) => Message.SelectedModel({ model }), h),
       select("agent-effort", "reasoning", settings.agent.reasoningEffort, options.efforts, (effort) => Message.SelectedReasoningEffort({ effort }), h),
+      h.h4([], ["Sub-coordinators (repo conversations)"]),
+      select("sub-model", "sub model", settings.subAgent.model, options.models, (model) => Message.SelectedSubModel({ model }), h),
+      select("sub-effort", "sub reasoning", settings.subAgent.reasoningEffort, options.efforts, (effort) => Message.SelectedSubEffort({ effort }), h),
+      h.h4([], ["Worker agent SDK"]),
+      h.div(
+        [h.Class("fk-chips")],
+        Array.map(WORKER_HARNESSES, (harness) =>
+          h.keyed("span")(harness, [], [chip(harness === "auto" ? "auto (step decides)" : harness, settings.workers.harness === harness, Message.ClickedWorkerHarness({ harness }), h)]),
+        ),
+      ),
       h.h4([], ["Disabled built-in tools"]),
       h.div(
         [h.Class("fk-chips")],

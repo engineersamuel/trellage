@@ -4,7 +4,7 @@ import { readOnlyViolation, SUB_SHELL_FEEDBACK } from "./readonly.ts"
 import type { CodeReview } from "./review.ts"
 import type { Sdlc } from "./sdlc.ts"
 import { execFileSync } from "node:child_process"
-import { mkdirSync } from "node:fs"
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -43,6 +43,13 @@ export type Session = {
   setTools?(tools: Tool<any>[]): Promise<void>
 }
 
+/** How a worker got its model: Jev routing, set by the spawner, or the default (Jev unavailable or not asked). */
+export type ModelSource =
+  | { kind: "routed"; by: string; confidence: number }
+  | { kind: "pinned" }
+  | { kind: "fallback" }
+  | { kind: "default" }
+
 export type WorkerSummary = {
   id: string
   name: string
@@ -51,6 +58,7 @@ export type WorkerSummary = {
   auth: Auth
   harness: Harness
   model: string
+  modelSource: ModelSource
   pid: number | null
   rssKb: number | null
   home: string
@@ -138,6 +146,7 @@ export const now = (): string => String(Date.now())
 export class Worker {
   status = "idle"
   model: string
+  modelSource: ModelSource = { kind: "default" }
   context: [number, number] | null = null
   lastMessage: string | null = null
   log: FeedEvent[] = []
@@ -192,6 +201,7 @@ export class Worker {
       auth: this.auth,
       harness: this.harness,
       model: this.model,
+      modelSource: this.modelSource,
       pid: this.pid,
       rssKb: this.pid === null ? null : rssKb(this.pid),
       home: this.home,
@@ -304,6 +314,32 @@ export class Worker {
   }
 }
 
+/**
+ * The harness a worker runs in. `auto`: the step's or the spawn's choice (Copilot SDK when none). A forced SDK
+ * applies to every worker; a step's own profiles (e.g. council in Claude) are kept when the forced SDK matches.
+ * Coordinators always stay on the Copilot SDK: their tools are Copilot SDK tools.
+ */
+export const workerHarness = (setting: string, role: string, chosen: HarnessSpec | undefined, gated = false): HarnessSpec | undefined => {
+  // A worker with its own Copilot permission gate (the finish worker's push gate) stays on the Copilot SDK.
+  if (role !== "worker" || setting === "auto" || gated) return chosen
+  if (setting === "copilot") return undefined
+  const kind = setting as HarnessSpec["kind"]
+  return chosen?.kind === kind ? chosen : { kind, profiles: kind === "claude" ? ["default"] : [] }
+}
+
+/** A Claude plugin folder whose skills/ links the step's skill folders. */
+export const stepSkillPlugin = (dir: string, skills: { name: string; dir: string }[]): string => {
+  mkdirSync(path.join(dir, ".claude-plugin"), { recursive: true })
+  mkdirSync(path.join(dir, "skills"), { recursive: true })
+  writeFileSync(path.join(dir, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "factory-step", version: "0.0.0", description: "Skills of this factory step" }))
+  for (const s of skills) {
+    const link = path.join(dir, "skills", s.name)
+    rmSync(link, { force: true, recursive: true })
+    symlinkSync(s.dir, link)
+  }
+  return dir
+}
+
 export class Factory {
   readonly workers = new Map<string, Worker>()
   readonly feed = new Channel<FeedEvent>()
@@ -390,13 +426,14 @@ export class Factory {
     const step = spec.step ? stepById(spec.step) : null
     // Skill preflight runs first, so a worker with an unusable skill fails before any model call.
     const { workdir, setup, skills } = this.prepareSpawn(spec, id, home, step)
-    const harness = spec.harness ?? step?.harness
-    if (harness) return this.spawnHarness(spec, id, home, workdir, harness)
-    const model = await this.spawnModel(spec, auth)
+    const harness = workerHarness(this.settings.workers.harness, spec.role, spec.harness ?? step?.harness, !!spec.permissions)
+    if (harness) return this.spawnHarness(spec, id, home, workdir, harness, skills)
+    const { model, source } = await this.spawnModel(spec, auth)
     const host = spec.shareRuntimeOf ? this.workers.get(spec.shareRuntimeOf) : undefined
     if (host && !(host.client instanceof CopilotClient)) throw new Error(`cannot share the runtime of ${host.id}: not a Copilot runtime`)
     const client = host ? (host.client as CopilotClient) : await this.startClient(home, workdir, auth, setup)
     const worker = new Worker(id, spec.name, spec.role, auth, home, spec.task ?? null, client, model)
+    worker.modelSource = source
     this.configureWorker(worker, spec)
     worker.spec = {
       step: step?.id ?? null,
@@ -414,21 +451,24 @@ export class Factory {
   }
 
   /** A Claude Agent SDK or Pi SDK worker with trx-composed profiles; the task runs through the profile's entry command. */
-  private async spawnHarness(spec: SpawnSpec, id: string, home: string, workdir: string, harness: HarnessSpec): Promise<Worker> {
+  private async spawnHarness(spec: SpawnSpec, id: string, home: string, workdir: string, harness: HarnessSpec, skills: SkillCheck[] = []): Promise<Worker> {
     let worker: Worker | undefined
     const emit = (ev: HarnessEvent) => {
       worker?.observe(this, ev as SessionEvent)
       worker?.events.send(ev as SessionEvent)
     }
-    const { session, model, loaded } = harness.kind === "claude" ? await this.claudeSession(spec, workdir, harness, emit) : await this.piSession(spec, workdir, harness, emit)
+    const stepSkills = skills.flatMap((s) => (s.dir ? [{ name: s.name, dir: s.dir }] : []))
+    const { session, model, loaded } =
+      harness.kind === "claude" ? await this.claudeSession(spec, workdir, harness, emit, stepSkills, home) : await this.piSession(spec, workdir, harness, emit, stepSkills)
     worker = new Worker(id, spec.name, spec.role, spec.auth ?? this.defaultAuth, home, spec.task ?? null, session, model)
     worker.harness = harness.kind
+    if (spec.model) worker.modelSource = { kind: "pinned" }
     worker.session = session
     this.configureWorker(worker, spec)
     worker.spec = {
       step: spec.step ?? null,
       workdir,
-      skills: [],
+      skills: skills.map(({ name, dir, healed }) => ({ name, dir, healed })),
       skillDirectories: [],
       extraPath: [],
       tools: [],
@@ -438,8 +478,10 @@ export class Factory {
     return this.register(worker, spec.task && (harness.entry ? `${harness.entry} ${spec.task}` : spec.task))
   }
 
-  private async claudeSession(spec: SpawnSpec, workdir: string, harness: HarnessSpec, emit: (ev: HarnessEvent) => void) {
+  private async claudeSession(spec: SpawnSpec, workdir: string, harness: HarnessSpec, emit: (ev: HarnessEvent) => void, stepSkills: { name: string; dir: string }[] = [], home = workdir) {
     const launch = await composeClaude(harness.profiles, workdir)
+    // The step's skills (ub-mode, security-audit, ...) load as one local plugin, as they would in a Copilot worker.
+    if (stepSkills.length) launch.plugins.push(stepSkillPlugin(path.join(home, "step-plugin"), stepSkills))
     const model = spec.model ?? launch.model ?? this.defaultModel
     const session = new ClaudeSession(
       {
@@ -460,20 +502,21 @@ export class Factory {
     return { session, model, loaded: `plugins ${launch.plugins.map((p) => path.basename(p)).join(", ")}` }
   }
 
-  private async piSession(spec: SpawnSpec, workdir: string, harness: HarnessSpec, emit: (ev: HarnessEvent) => void) {
+  private async piSession(spec: SpawnSpec, workdir: string, harness: HarnessSpec, emit: (ev: HarnessEvent) => void, stepSkills: { name: string; dir: string }[] = []) {
     const launch = await composePi(harness.profiles, workdir)
+    launch.skills.push(...stepSkills.map((s) => s.dir))
     if (spec.model) launch.model = spec.model
     const session = await PiSession.start(launch, workdir, emit)
     return { session, model: session.model, loaded: `skills ${launch.skills.map((p) => path.basename(p)).join(", ")}` }
   }
 
-  private async spawnModel(spec: SpawnSpec, auth: Auth): Promise<string> {
-    const model = spec.model ?? this.defaultModel
-    if (spec.model || spec.role !== "worker" || !spec.task) return model
+  private async spawnModel(spec: SpawnSpec, auth: Auth): Promise<{ model: string; source: ModelSource }> {
+    if (spec.model) return { model: spec.model, source: { kind: "pinned" } }
+    if (spec.role !== "worker" || !spec.task) return { model: this.defaultModel, source: { kind: "default" } }
     const routed = await this.routeModel(spec.task, auth)
-    if (!routed) return model
+    if (!routed) return { model: this.defaultModel, source: { kind: "fallback" } }
     this.publish("coordinator", "factory.model_routed", null, now(), { worker: spec.name, ...routed })
-    return routed.id
+    return { model: routed.id, source: { kind: "routed", by: routed.routedBy, confidence: routed.confidence } }
   }
 
   private prepareSpawn(spec: SpawnSpec, id: string, home: string, step: ReturnType<typeof stepById> | null) {

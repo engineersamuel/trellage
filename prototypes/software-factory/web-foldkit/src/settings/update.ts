@@ -144,6 +144,9 @@ export const update = (model: Model, message: Message) =>
     UpdatedRepo: ({ value }) => patch({ repo: value.trim() })(model),
     SelectedModel: ({ model: agentModel }) => patch({ agent: { model: agentModel } })(model),
     SelectedReasoningEffort: ({ effort }) => patch({ agent: { reasoningEffort: effort } })(model),
+    SelectedSubModel: ({ model: subModel }) => patch({ subAgent: { model: subModel } })(model),
+    SelectedSubEffort: ({ effort }) => patch({ subAgent: { reasoningEffort: effort } })(model),
+    ClickedWorkerHarness: ({ harness }) => patch({ workers: { harness } })(model),
     ToggledDisabledTool: ({ tool }) =>
       withSettings(model, (settings) => ({ agent: { disabledTools: toggleMember(settings.agent.disabledTools, tool) } })),
     UpdatedInstructions: ({ value }) => patch({ agent: { instructions: value } })(model),

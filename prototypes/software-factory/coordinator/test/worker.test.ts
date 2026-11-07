@@ -74,3 +74,47 @@ test("a finish grant allows the first push and 5 fix rounds, then rejects the ne
   expect(gate(shell("git commit -m fix"), {} as any)).toEqual({ kind: "approve-once" })
   expect(grant.pushes).toBe(6)
 })
+
+test("summary carries the model source; a new worker starts as default", () => {
+  const w = new Worker("w-3", "impl", "worker", "native", "/tmp/h", "task", {} as any, "m")
+  expect(w.summary().modelSource).toEqual({ kind: "default" })
+  w.modelSource = { kind: "routed", by: "jev", confidence: 0.9 }
+  expect(w.summary().modelSource).toEqual({ kind: "routed", by: "jev", confidence: 0.9 })
+})
+
+test("spawnModel records how the model was picked", async () => {
+  const f: any = new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-m-")), SF_MODEL: "dflt" })
+  f.publish = () => {}
+  f.routeModel = async () => ({ id: "gpt-x", confidence: 0.7, routedBy: "jev" })
+  expect(await f.spawnModel({ name: "a", role: "worker", task: "t" }, "native")).toEqual({ model: "gpt-x", source: { kind: "routed", by: "jev", confidence: 0.7 } })
+  expect(await f.spawnModel({ name: "a", role: "worker", task: "t", model: "pin" }, "native")).toEqual({ model: "pin", source: { kind: "pinned" } })
+  expect(await f.spawnModel({ name: "a", role: "coordinator", task: "t" }, "native")).toEqual({ model: "dflt", source: { kind: "default" } })
+  f.routeModel = async () => null
+  expect(await f.spawnModel({ name: "a", role: "worker", task: "t" }, "native")).toEqual({ model: "dflt", source: { kind: "fallback" } })
+})
+
+import { stepSkillPlugin, workerHarness } from "../src/factory.ts"
+
+test("workers.harness: auto keeps the step's choice; a forced SDK applies to workers, never to coordinators or gated workers", () => {
+  const council = { kind: "claude" as const, profiles: ["council"], entry: "/council" }
+  expect(workerHarness("auto", "worker", undefined)).toBeUndefined()
+  expect(workerHarness("auto", "worker", council)).toBe(council)
+  expect(workerHarness("claude", "worker", undefined)).toEqual({ kind: "claude", profiles: ["default"] })
+  expect(workerHarness("claude", "worker", council)).toBe(council)
+  expect(workerHarness("pi", "worker", council)).toEqual({ kind: "pi", profiles: [] })
+  expect(workerHarness("copilot", "worker", council)).toBeUndefined()
+  expect(workerHarness("claude", "coordinator", undefined)).toBeUndefined()
+  expect(workerHarness("claude", "worker", undefined, true)).toBeUndefined()
+})
+
+test("stepSkillPlugin links the step's skills into one Claude plugin", () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } = require("node:fs")
+  const { tmpdir } = require("node:os")
+  const path = require("node:path")
+  const root = mkdtempSync(path.join(tmpdir(), "sf-plug-"))
+  mkdirSync(path.join(root, "src", "ub-mode"), { recursive: true })
+  writeFileSync(path.join(root, "src", "ub-mode", "SKILL.md"), "---\nname: ub-mode\ndescription: x\n---\n")
+  const dir = stepSkillPlugin(path.join(root, "plug"), [{ name: "ub-mode", dir: path.join(root, "src", "ub-mode") }])
+  expect(JSON.parse(readFileSync(path.join(dir, ".claude-plugin", "plugin.json"), "utf8")).name).toBe("factory-step")
+  expect(existsSync(path.join(dir, "skills", "ub-mode", "SKILL.md"))).toBe(true)
+})

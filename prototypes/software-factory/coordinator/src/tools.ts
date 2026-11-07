@@ -148,6 +148,12 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
     parameters: obj({}),
     handler: (a: any) => json(cardData(f, scope, "show_security_review", a ?? {})),
   }),
+  defineTool("show_code_review", {
+    description:
+      "Show this conversation's latest code review as a live card: the Jev-picked reviewer lenses, every synthesized finding with severity, Jev's real/worth scores, and whether it was kept (fixed) or dropped. Use it when a code review finishes and when the human asks about the review.",
+    parameters: obj({}),
+    handler: (a: any) => json(cardData(f, scope, "show_code_review", a ?? {})),
+  }),
   defineTool("show_sdlc", {
     description:
       "Show this conversation's SDLC gates as a live card: risk tier, each gate (floor or Jev probability vs threshold, status), criteria proven, review findings kept, and what still blocks shipping. Use it after sdlc_plan, after implement, and before asking to ship.",
@@ -767,6 +773,11 @@ export const cardData = (f: Factory, scope: Scope, name: string, a: Record<strin
       if (!r) return { reviewId: null, note: "No security review yet." }
       const findings = r.findings.map((x) => ({ title: x.title, severity: x.severity, file: x.file, verdict: x.verdict ?? "", reason: x.reason ?? "" }))
       return { reviewId: r.id, status: r.status, model: r.model, ...(r.error ? { error: r.error } : {}), findings }
+    }
+    case "show_code_review": {
+      const r = [...f.codeReviews.values()].filter((x) => x.scopeId === scope.id).at(-1)
+      if (!r) return { note: "No code review yet." }
+      return { reviewId: r.id, status: r.status, lenses: r.lenses, lensProbabilities: r.lensProbabilities, findings: r.findings, ...(r.error ? { error: r.error } : {}) }
     }
     case "show_sdlc": {
       const s = f.sdlc.get(scope.id)

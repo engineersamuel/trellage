@@ -206,6 +206,26 @@ export const cardView = (name: string, data: any): CardView => {
         d.blockers?.length ? "warning" : "success",
       )
     }
+    case "show_code_review": {
+      if (!d.status) return view("Code review", "", [], [], d.note ?? "No code review yet.")
+      const findings = (d.findings ?? []).map((f: any) => ({
+        title: f.title,
+        severity: f.severity,
+        file: f.file,
+        verdict: f.keep ? "keep" : "drop",
+        reason: `${f.real === null ? "" : `real ${Number(f.real).toFixed(2)} · worth ${Number(f.worth).toFixed(2)} · `}${f.problem}${f.fix ? ` → ${f.fix}` : ""}`,
+      }))
+      const v = toReview({ status: d.status, findings })
+      const lenses = (d.lenses ?? []).map((l: string) => `${l}${d.lensProbabilities?.[l] !== undefined ? ` ${Number(d.lensProbabilities[l]).toFixed(2)}` : ""}`).join(", ")
+      return view(
+        "Code review",
+        `${v.status}${lenses ? ` · lenses ${lenses}` : ""}`,
+        [{ value: String(d.lenses?.length ?? 0), label: "reviewers" }, { value: String(v.total), label: "findings" }, { value: String(v.kept), label: "kept (fixed)" }, { value: String(v.discarded), label: "dropped by Jev" }],
+        v.rows,
+        d.error ?? (v.rows.length ? null : "No findings."),
+        d.error ? "error" : "success",
+      )
+    }
     case "show_diff_summary": {
       if (d.error) return view("Changes", "", [], [], d.error, "warning")
       const files = (d.files ?? []) as { path: string; added: number; removed: number; binary: boolean }[]

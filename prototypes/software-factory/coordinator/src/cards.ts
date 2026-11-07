@@ -99,6 +99,17 @@ const body = (name: string, c: string, x: string): { children: string[]; lines: 
           ]),
         ],
       }
+    case "show_code_review":
+      return {
+        lines: L,
+        children: [
+          table("t", [
+            col("f", "Finding", `@Each(${c}.rows, "r", Text("text", r.title, r.file))`),
+            col("s", "Severity", `@Each(${c}.rows, "r", Tag(r.severity, null, "sm", r.variant))`),
+            col("v", "Jev", `@Each(${c}.rows, "r", Text("text", r.verdict, r.reason))`),
+          ]),
+        ],
+      }
     case "show_sdlc":
       return {
         lines: L,
@@ -173,7 +184,7 @@ export const cardOpenUi = (toolName: string, result: string, scope = "coordinato
   return [`ROOT = Card([${shown.join(", ")}])`, ...out].join("\n")
 }
 
-export const CARD_TOOLS = new Set(["show_worker_board", "show_delivery_run", "show_security_review", "show_sdlc", "show_diff_summary", "show_report_findings", "show_decisions"])
+export const CARD_TOOLS = new Set(["show_worker_board", "show_delivery_run", "show_security_review", "show_code_review", "show_sdlc", "show_diff_summary", "show_report_findings", "show_decisions"])
 
 /** Several cards (each built with its own prefix) as one program: Foldkit shows only a turn's last message as the answer. */
 export const mergeCards = (programs: readonly string[]): string => {

@@ -142,6 +142,7 @@ export const afterImplement = async (f: Factory, scope: Scope, implementWorkerId
         request: s0.request,
         criteria: s0.criteria,
         diffStat,
+        tier: risk.tier,
         onFindings: (kept, dropped) => {
           const s = f.sdlc.get(scope.id)!
           publish(f, { ...s, findings: { kept: s.findings.kept + kept, dropped: s.findings.dropped + dropped } })

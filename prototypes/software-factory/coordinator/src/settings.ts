@@ -10,6 +10,7 @@ export const NAVBAR_ITEMS = ["status", "workers", "model", "context", "auth", "c
 export const PANEL_POSITIONS = ["right", "left", "hidden"]
 export const HOTKEY_ACTIONS = ["toggleSettings", "togglePanel", "cycleTheme", "focusCoordinator", "abortCoordinator"]
 export const EFFORTS = ["default", "low", "medium", "high", "xhigh"]
+export const WORKER_HARNESSES = ["auto", "copilot", "claude", "pi"]
 export const TOOL_KINDS = ["shell", "write", "read", "url", "mcp"]
 export const MIN_CRON_SECONDS = 30
 /** Named mount points both UIs expose to extensions. */
@@ -61,6 +62,8 @@ const SettingsSchema = Schema.Struct({
   subAgent: Schema.Struct({ model: Schema.String, reasoningEffort: Schema.String }).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed({ model: "claude-opus-5.5", reasoningEffort: "high" })),
   ),
+  /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
+  workers: Schema.Struct({ harness: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" }))),
   crons: Schema.Record(Schema.String, Cron),
   extensions: Schema.Record(Schema.String, Extension),
   /** Absolute path of the git repository the factory works on. Empty = no target. */
@@ -106,6 +109,7 @@ export const defaultSettings = (): Settings => ({
   banner: null,
   agent: { model: "gpt-6-astra", reasoningEffort: "high", disabledTools: [], instructions: "" },
   subAgent: { model: "claude-opus-5.5", reasoningEffort: "high" },
+  workers: { harness: "auto" },
   crons: {},
   extensions: {},
   repo: "",
@@ -164,6 +168,7 @@ const validate = (s: Settings): void => {
   for (const action of Object.values(s.hotkeys)) oneOf("hotkeys", action, HOTKEY_ACTIONS)
   oneOf("agent.reasoningEffort", s.agent.reasoningEffort, EFFORTS)
   oneOf("subAgent.reasoningEffort", s.subAgent.reasoningEffort, EFFORTS)
+  oneOf("workers.harness", s.workers.harness, WORKER_HARNESSES)
   for (const kind of s.agent.disabledTools) oneOf("agent.disabledTools", kind, TOOL_KINDS)
   for (const [name, x] of Object.entries(s.extensions)) {
     oneOf(`extensions.${name}.slot`, x.slot, SLOTS)

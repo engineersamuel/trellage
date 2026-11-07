@@ -10,7 +10,7 @@ import { openThread } from "../state/chat"
 import { Action } from "../state/model"
 import { dispatch, useApp } from "../state/store"
 import { OpenUiTheme } from "./OpenUi"
-import { cardView, ownSteps, toReview, toRun, plainLine, type CardView, type SdlcRow } from "../../../shared/cardviews"
+import { cardView, ownSteps, toReview, toRun, plainLine, type CardView } from "../../../shared/cardviews"
 
 type TagVariant = "neutral" | "info" | "success" | "warning" | "danger"
 
@@ -305,23 +305,24 @@ function QueueRow({ d }: { d: Decision }) {
 // ---------- SDLC gates ----------
 
 /** Live SDLC card: the tool result first, then GET /api/cards every 5 s (the same view the Foldkit card reads). */
-export function SdlcCard({ result, scope }: { result: string | undefined; scope: string | undefined }) {
-  const snap = useMemo(() => (result ? cardView("show_sdlc", parse<unknown>(result)) : null), [result])
+function LiveCard({ name, title, result, scope }: { name: string; title: string; result: string | undefined; scope: string | undefined }) {
+  const snap = useMemo(() => (result ? cardView(name, parse<unknown>(result)) : null), [result, name])
   const [live, setLive] = useState<CardView | null>(null)
   useEffect(() => {
     if (!scope) return
     const load = () =>
-      fetch(`/api/cards?name=show_sdlc&scope=${encodeURIComponent(scope)}`)
+      fetch(`/api/cards?name=${name}&scope=${encodeURIComponent(scope)}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((v) => v && setLive(v as CardView))
         .catch(() => {})
     void load()
     const t = setInterval(load, 5000)
     return () => clearInterval(t)
-  }, [scope])
+  }, [scope, name])
   const v = live ?? snap
-  if (!v) return <Waiting what="SDLC gates" />
-  const rows = v.rows as SdlcRow[]
+  if (!v) return <Waiting what={title} />
+  const rows = v.rows as Record<string, unknown>[]
+  const cols = rows.length ? Object.keys(rows[0]!).filter((k) => k !== "variant") : []
   return (
     <Frame title={v.title} subtitle={v.subtitle}>
       <div className="sf-board-metrics">
@@ -334,21 +335,25 @@ export function SdlcCard({ result, scope }: { result: string | undefined; scope:
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Gate</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Why</TableHead>
+              {cols.map((c) => (
+                <TableHead key={c}>{c}</TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.gate}>
-                <TableCell>{r.gate}</TableCell>
-                <TableCell>
-                  <Tag text={r.status} variant={r.variant} size="sm" />
-                </TableCell>
-                <TableCell>
-                  <small>{r.why}</small>
-                </TableCell>
+            {rows.map((r, i) => (
+              <TableRow key={i}>
+                {cols.map((c) =>
+                  c === "status" || c === "severity" ? (
+                    <TableCell key={c}>
+                      <Tag text={String(r[c])} variant={(r.variant as TagVariant) ?? "neutral"} size="sm" />
+                    </TableCell>
+                  ) : (
+                    <TableCell key={c}>
+                      <small>{String(r[c] ?? "")}</small>
+                    </TableCell>
+                  ),
+                )}
               </TableRow>
             ))}
           </TableBody>
@@ -357,3 +362,8 @@ export function SdlcCard({ result, scope }: { result: string | undefined; scope:
     </Frame>
   )
 }
+
+/** Live SDLC gates card. */
+export const SdlcCard = ({ result, scope }: { result: string | undefined; scope: string | undefined }) => <LiveCard name="show_sdlc" title="SDLC gates" result={result} scope={scope} />
+/** Live code review card: lenses, findings, Jev scores, kept or dropped. */
+export const CodeReviewCard = ({ result, scope }: { result: string | undefined; scope: string | undefined }) => <LiveCard name="show_code_review" title="code review" result={result} scope={scope} />

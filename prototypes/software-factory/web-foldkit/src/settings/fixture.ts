@@ -17,6 +17,7 @@ export const document: SettingsDocument = {
     banner: null,
     agent: { model: "gpt", reasoningEffort: "low", disabledTools: [], instructions: "" },
     subAgent: { model: "opus", reasoningEffort: "high" },
+    workers: { harness: "auto" },
     crons: {},
     extensions: {},
     repo: "",
