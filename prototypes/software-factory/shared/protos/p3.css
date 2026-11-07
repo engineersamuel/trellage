@@ -95,3 +95,6 @@
 /* Spawn order: siblings run oldest first and carry their step number. */
 .sfp-p3 .p3-ord { flex: none; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; background: var(--p3-line); color: var(--sf-text); font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; }
 .sfp-p3 .p3-why { flex: none; font-size: 11px; opacity: .7; white-space: nowrap; cursor: help; }
+
+/* 📡 Factory stream in the detail column (shared/protos/stream.ts) */
+.sfp-p3 .p3-stream { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--sf-surface); }

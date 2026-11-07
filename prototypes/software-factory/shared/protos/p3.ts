@@ -8,6 +8,7 @@ import { fire, send } from "../http"
 import { harnessBadge } from "../harness"
 import { openSpec } from "../spec"
 import { el, messageAgent, mountTranscript, newThread, openDecision, openThread, register, subscribe, type Ctx, type State } from "./core"
+import { mountStream, openHistory, type StreamAgent } from "./stream"
 import { ancestors, bornAt, bossOf, build, count, items, modelReason, rootOf, subtree, VIEWS, type Model, type Node, type View } from "./p3-model"
 
 const LABEL: Record<Node["status"], string> = { running: "Running", idle: "Idle", error: "Failed", needs: "Needs you", dormant: "Dormant", draft: "Draft", stopped: "Stopped" }
@@ -58,20 +59,27 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   /** Open questions of the shown worker, between its transcript and composer. Filled on every render. */
   let askBox: HTMLElement | null = null
 
-  const choose = (id: string) => ((cur = id), render())
+  /** The 📡 Factory stream shows in the detail column; any other pick in the sidebar, inbox or tree leaves it. */
+  let streamOn = false
+  let stream: ReturnType<typeof mountStream> | null = null
+  const choose = (id: string) => ((streamOn = false), (cur = id), render())
 
   // ---------- sidebar ----------
   const renderSide = (live: Model) => {
     const row = (v: View, label: string, n: number, badge = false) => {
       const r = el("div", `p3-sv ${view === v ? "on" : ""}`)
       r.append(el("span", "p3-ell", label), el("span", badge && n ? "p3-badge" : "p3-n", String(n)))
-      r.onclick = () => ((view = v), (autoView = false), (sel = cur = null), render())
+      r.onclick = () => ((view = v), (autoView = false), (streamOn = false), (sel = cur = null), render())
       return r
     }
     const desk = live.nodes.get("coordinator")
-    const deskRow = el("div", `p3-sv ${cur === "coordinator" ? "on" : ""}`)
+    const deskRow = el("div", `p3-sv ${cur === "coordinator" && !streamOn ? "on" : ""}`)
     deskRow.append(el("span", "p3-ell", "🌐 Factory desk"), el("span", "p3-n", desk?.agg.needs ? `▲${desk.pending.length}` : ""))
-    deskRow.onclick = () => ((autoView = false), (sel = cur = "coordinator"), render())
+    deskRow.onclick = () => ((autoView = false), (streamOn = false), (sel = cur = "coordinator"), render())
+    const streamRow = el("div", `p3-sv ${streamOn ? "on" : ""}`)
+    streamRow.dataset.testid = "stream-row"
+    streamRow.append(el("span", "p3-ell", "📡 Factory stream"))
+    streamRow.onclick = () => ((streamOn = true), render())
     const repos = (s?.folders ?? []).filter((f) => f.path)
     const archivedN = (s?.threads ?? []).filter((t) => t.archivedAt && !t.desk).length
     side.replaceChildren(
@@ -79,6 +87,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       el("h5", "", "Views"),
       ...VIEWS.map((v) => row(v.id, v.label, count(live, v.id), v.id === "needs")),
       deskRow,
+      streamRow,
       el("h5", "", "Repos"),
       ...repos.map((f) => row(`repo:${f.id}`, `# ${f.name}`, count(live, `repo:${f.id}`))),
       el("h5", "", "Archive"),
@@ -107,7 +116,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       r.append(top, where)
       // Quiet rows (idle, dormant, draft): the dot says it all.
       if (tone === "needs" || tone === "error" || tone === "running") r.append(el("div", "p3-sub p3-st p3-ell", reason))
-      r.onclick = () => ((autoView = false), (sel = n.id), (cur = focus.id), render())
+      r.onclick = () => ((autoView = false), (streamOn = false), (sel = n.id), (cur = focus.id), render())
       return r
     }), ...(list.length ? [] : [el("div", "p3-empty", view === "needs" ? "Nothing needs you. 🎉" : "Nothing here.")]))
   }
@@ -266,7 +275,52 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const box = body.getBoundingClientRect(), stage = root.getBoundingClientRect()
     placeChat({ left: `${box.left - stage.left}px`, top: `${box.top - stage.top}px`, right: "0", bottom: "0" })
   }
+  /** Stream click on an agent: show it in the inbox and tree; the stream stays open. */
+  const streamSelect = (id: string) => {
+    const n = m.nodes.get(id)
+    if (!n) return
+    const root = rootOf(m, id)
+    if (root !== "coordinator" && !items(m, view).some((x) => x.root.id === root)) (autoView = false), (view = "chats")
+    sel = root
+    cur = id
+    render()
+  }
+  const STREAM_KIND: Record<Node["kind"], StreamAgent["kind"]> = { desk: "desk", chat: "chat", sub: "sub", worker: "worker", draft: "sub" }
+  const streamAgent = (id: string): StreamAgent | undefined => {
+    const n = m.nodes.get(id)
+    if (n) return { name: n.kind === "worker" ? n.agent?.name ?? n.title : n.title, kind: STREAM_KIND[n.kind], status: n.agent?.status ?? "idle" }
+    const a = s ? [...s.agents, ...s.past].find((x) => x.id === id) : undefined
+    return a && { name: a.name, kind: id.startsWith("sub-") ? "sub" : id.startsWith("gen-") ? "chat" : "worker", status: a.status }
+  }
+  const showStream = () => {
+    head.replaceChildren()
+    head.style.display = "none"
+    placeChat(null)
+    askBox = null
+    const box = el("section", "p3-stream")
+    box.dataset.testid = "factory-stream"
+    body.replaceChildren(box)
+    const v = mountStream(box, {
+      agent: streamAgent,
+      select: streamSelect,
+      // The Inbox has no transcript that scrolls to an event: every hit opens the agent's history in a dialog.
+      openHit: (h) => {
+        const a = streamAgent(h.workerId)
+        const live = !!s?.agents.some((x) => x.id === h.workerId)
+        openHistory(h.workerId, h.seq, live ? `${a?.name ?? h.workerId} · live transcript` : `${a?.name ?? h.workerId} · stopped · saved history`, !live)
+      },
+    })
+    stream = v
+    if (s) v.render(s)
+    return () => ((stream = null), v.stop(), (head.style.display = ""))
+  }
   const syncDetail = () => {
+    if (streamOn) {
+      if (mounted?.key === "stream") return
+      mounted?.stop()
+      mounted = { key: "stream", stop: showStream() }
+      return
+    }
     const n = cur ? m.nodes.get(cur) : undefined
     if (!n) {
       head.replaceChildren(el("div", "p3-empty", "Inbox zero."))
@@ -318,6 +372,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   let ready = false
   const unsub = subscribe((st) => {
     s = st
+    // The stream draws every agent's events, so it checks each update itself (it skips unchanged ones).
+    stream?.render(st)
     if (!st.threads.length) return
     const first = !ready
     ready = true
