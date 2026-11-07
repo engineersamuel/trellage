@@ -16,6 +16,7 @@ import {
   prBody,
   readLessons,
   repoChecks,
+  settleGates,
   shipBlockers,
   testsCameFirst,
   unprovenCriteria,
@@ -97,7 +98,7 @@ describe("worktree artifacts", () => {
     expect(shipBlockers(s, r, base, false, false)).toEqual([
       "no PASS evidence in .factory/evidence.md for AC-1",
       "no verify step after the last implement",
-      "security review not done",
+      "security review not done (it runs last, when everything else is ready)",
       "design gate: .factory/design.md missing",
       "test-first gate: no tests-only commit before the first code commit",
       "code review gate not done",
@@ -156,5 +157,19 @@ describe("code review", () => {
     expect(score(fs[0]!, 0.8, 0.5).keep).toBe(false)
     expect(score(fs[0]!, undefined, undefined).keep).toBe(true)
     expect(score({ ...fs[0]!, severity: "low" }, undefined, undefined).keep).toBe(false)
+  })
+})
+
+describe("gate settling", () => {
+  test("unblocked on-diff gates become done; postMerge waits for the merge; blocked ones stay", () => {
+    const s = withGates(withGates(newSdlc("sub", null), decide("plan", { design: 0.9, testFirst: 0.9 }, null)), decide("diff", { codeReview: 0.1, supplyChain: 0.1, docs: 0.9, postMerge: 0.9 }, classify([f("src/a.ts")])))
+    const settled = settleGates(s, ["test-first gate: no tests-only commit before the first code commit"])
+    expect(Object.fromEntries(settled.gates.map((g) => [g.id, g.status]))).toEqual({ design: "done", testFirst: "pending", codeReview: "skipped", supplyChain: "skipped", docs: "done", postMerge: "pending" })
+    expect(settled.gates.find((g) => g.id === "postMerge")?.detail).toBe("runs after the human merges")
+  })
+  test("implement rules carry the minimal-change rule and a scope warning", () => {
+    const t = implementAddendum({ ...newSdlc("sub", null), criteria: ["c"], scopeWarning: "diff grew from 100 to 600 lines" })
+    expect(t).toContain("smallest change")
+    expect(t).toContain("Scope warning: diff grew from 100 to 600 lines")
   })
 })

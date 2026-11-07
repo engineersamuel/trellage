@@ -179,6 +179,12 @@ export type Sdlc = {
   /** Metrics of the delivery. */
   workers: number
   findings: { kept: number; dropped: number }
+  /** Commit the last code review covered; later implements re-review only what changed since, when it is large. */
+  reviewedCommit: string | null
+  /** Changed lines after the first implement; the scope check compares later diffs against it. */
+  firstLines: number | null
+  /** Set when the diff grew past twice the first implement and Jev judged the growth not needed. */
+  scopeWarning: string | null
 }
 
 export const newSdlc = (scopeId: string, threadId: string | null): Sdlc => ({
@@ -194,6 +200,23 @@ export const newSdlc = (scopeId: string, threadId: string | null): Sdlc => ({
   startedAt: Date.now(),
   workers: 0,
   findings: { kept: 0, dropped: 0 },
+  reviewedCommit: null,
+  firstLines: null,
+  scopeWarning: null,
+})
+
+/** Lines changed since the last reviewed commit at or above this re-run the code review on those lines only. */
+export const REREVIEW_LINES = 50
+
+/** Gate statuses a ship check settles: on-diff gates done when not blocked, postMerge waits for the merge. */
+export const settleGates = (s: Sdlc, blockers: string[]): Sdlc => ({
+  ...s,
+  gates: s.gates.map((g) => {
+    if (!g.chosen || g.status === "done" || g.status === "failed" || g.status === "running") return g
+    if (g.id === "postMerge") return { ...g, status: "pending", detail: "runs after the human merges" }
+    const blocked = blockers.some((b) => b.startsWith(`${g.id === "testFirst" ? "test-first" : g.id} gate`))
+    return blocked ? g : { ...g, status: "done" }
+  }),
 })
 
 /** Replace the gates of one phase; keep the others. */
@@ -237,7 +260,7 @@ export const shipBlockers = (s: Sdlc | undefined, workdir: string, base: string 
   if (unproven.length) out.push(`no PASS evidence in .factory/evidence.md for ${unproven.join(", ")}`)
   if (s.implementDoneAt === null) out.push("no implement step finished")
   else if (s.verifyDoneAt === null || s.verifyDoneAt < s.implementDoneAt) out.push("no verify step after the last implement")
-  if (!securityDone) out.push("security review not done")
+  if (!securityDone) out.push("security review not done (it runs last, when everything else is ready)")
   if (isOn(s, "design") && !existsSync(artifact(workdir, "design.md"))) out.push("design gate: .factory/design.md missing")
   if (isOn(s, "testFirst") && base && !testsCameFirst(commits(workdir, base))) out.push("test-first gate: no tests-only commit before the first code commit")
   if (isOn(s, "codeReview") && !codeReviewDone) out.push("code review gate not done")
@@ -258,6 +281,8 @@ export const implementAddendum = (s: Sdlc): string =>
       ? "Tests first: write failing tests for the criteria, run them and see them fail, and commit them alone (tests only, message starts with `test:`). Then implement in later commits."
       : "",
     isOn(s, "docs") ? "Update README, docs or CHANGELOG for every user-visible change." : "",
+    "Make the smallest change that meets the criteria: no extra scripts, wrappers, abstractions or features the criteria do not ask for.",
+    s.scopeWarning ? `Scope warning: ${s.scopeWarning}` : "",
     "Commit with conventional messages (feat:, fix:, test:, docs:). Keep commits small. Never commit .factory/.",
   ]
     .filter(Boolean)

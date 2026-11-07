@@ -11,7 +11,7 @@ import { briefProblem } from "./reports.ts"
 import { diffSummary, reportFindings } from "./cards.ts"
 import { pendingReview, reviewIn } from "./security.ts"
 import { codeReviewIn, pendingCodeReview } from "./review.ts"
-import { afterImplement, afterVerify, countWorker, planSdlc, sdlcBusy, sdlcShipBlockers, sdlcTask } from "./gates.ts"
+import { afterImplement, afterVerify, countWorker, planSdlc, sdlcBusy, sdlcShipBlockers, sdlcTask, startFinalSecurity } from "./gates.ts"
 import { addLessons, artifact, prBody, unprovenCriteria } from "./sdlc.ts"
 import { decideNext, SELECTABLE_STEPS, SkillPreflightError } from "./steps.ts"
 import { FANOUT_CATALOG, MAX_FANOUT, routeFanout, type FanoutSelection } from "./workflows.ts"
@@ -254,7 +254,7 @@ const sdlcStatusTool = (f: Factory, scope: Scope) =>
         prFile = `${scope.workdir}/.factory/pr.md`
         await Bun.write(prFile, prBody(s, scope.workdir, a.summary))
       }
-      return json({ tier: s?.risk ?? null, gates: s?.gates ?? [], criteria: s?.criteria ?? [], blockers, readyToShip: blockers.length === 0, ...(prFile ? { prBody: prFile } : {}) })
+      return json({ tier: s?.risk ?? null, gates: s?.gates ?? [], criteria: s?.criteria ?? [], scopeWarning: s?.scopeWarning ?? null, blockers, readyToShip: blockers.length === 0, ...(prFile ? { prBody: prFile } : {}) })
     },
   })
 
@@ -561,6 +561,8 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
       const shipBranch = ships && a.ship === true ? gitOr(scope.workdir!, "--abbrev-ref", "HEAD") : null
       if (shipBranch !== null && !shipBranch.startsWith("factory/"))
         return json({ error: `Only factory/* branches ship; this worktree is on ${shipBranch}` })
+      const security = shipBranch !== null ? startFinalSecurity(f, scope) : null
+      if (security) return json({ error: `Not ready to ship yet: ${security}` })
       const blockers = shipBranch !== null ? sdlcShipBlockers(f, scope) : []
       if (blockers.length) return json({ error: `Not ready to ship:\n- ${blockers.join("\n- ")}\nFix these (sdlc_status shows the gates), then ask again.` })
       const item = f.approvals.open({

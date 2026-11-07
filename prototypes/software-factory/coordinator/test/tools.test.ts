@@ -1,3 +1,4 @@
+import { startFinalSecurity } from "../src/gates.ts"
 import { artifact, ensureFactoryDir, newSdlc } from "../src/sdlc.ts"
 import { expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
@@ -339,4 +340,24 @@ test("step=finish needs an accepted ship approval for this conversation's factor
   git("checkout", "-q", "-b", "main")
   expect(JSON.parse(await tool(tools, "request_approval")({ title: "Ship?", summary: "s", options: ["Ship"], ship: true })).error).toContain("factory/*")
   expect(f.approvals.list()).toHaveLength(3)
+})
+
+test("the security review starts last: only when every other gate is ready, and once per implement", async () => {
+  const repo = mkdtempSync(path.join(tmpdir(), "sf-last-"))
+  execFileSync("git", ["-C", repo, "init", "-q", "-b", "factory/x"])
+  execFileSync("git", ["-C", repo, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "x"])
+  const f = fakeFactory()
+  f.approvals = new Approvals(mkdtempSync(path.join(tmpdir(), "sf-last-state-")))
+  const scope = { id: "sub-1", threadId: "t", workdir: repo }
+  ensureFactoryDir(repo)
+  f.sdlc.set("sub-1", { ...newSdlc("sub-1", "t"), criteria: ["works"], implementDoneAt: 1, verifyDoneAt: 2 })
+  // Criteria not proven yet: no security review starts, the normal blockers come back.
+  expect(startFinalSecurity(f, scope)).toBeNull()
+  writeFileSync(artifact(repo, "evidence.md"), "AC-1: PASS — t — ok\n")
+  // Everything else ready, the review running: wait note.
+  f.securityReviews.set("sr-1", { id: "sr-1", scopeId: "sub-1", threadId: "t", implementWorkerId: "w", status: "started", model: "", findings: [], at: 3 })
+  expect(startFinalSecurity(f, scope)).toContain("final security review sr-1 is started")
+  // Done after the last implement: nothing more to start.
+  f.securityReviews.set("sr-1", { ...f.securityReviews.get("sr-1")!, status: "done" })
+  expect(startFinalSecurity(f, scope)).toBeNull()
 })
