@@ -93,7 +93,7 @@ test("spawnModel records how the model was picked", async () => {
   expect(await f.spawnModel({ name: "a", role: "worker", task: "t" }, "native")).toEqual({ model: "dflt", source: { kind: "fallback" } })
 })
 
-import { stepSkillPlugin, workerHarness } from "../src/factory.ts"
+import { stepSkillDir, workerHarness } from "../src/factory.ts"
 
 test("workers.harness: auto keeps the step's choice; a forced SDK applies to workers, never to coordinators or gated workers", () => {
   const council = { kind: "claude" as const, profiles: ["council"], entry: "/council" }
@@ -107,14 +107,13 @@ test("workers.harness: auto keeps the step's choice; a forced SDK applies to wor
   expect(workerHarness("claude", "worker", undefined, true)).toBeUndefined()
 })
 
-test("stepSkillPlugin links the step's skills into one Claude plugin", () => {
+test("stepSkillDir links the step's skills into .claude/skills (no plugin prefix)", () => {
   const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } = require("node:fs")
   const { tmpdir } = require("node:os")
   const path = require("node:path")
   const root = mkdtempSync(path.join(tmpdir(), "sf-plug-"))
   mkdirSync(path.join(root, "src", "ub-mode"), { recursive: true })
   writeFileSync(path.join(root, "src", "ub-mode", "SKILL.md"), "---\nname: ub-mode\ndescription: x\n---\n")
-  const dir = stepSkillPlugin(path.join(root, "plug"), [{ name: "ub-mode", dir: path.join(root, "src", "ub-mode") }])
-  expect(JSON.parse(readFileSync(path.join(dir, ".claude-plugin", "plugin.json"), "utf8")).name).toBe("factory-step")
-  expect(existsSync(path.join(dir, "skills", "ub-mode", "SKILL.md"))).toBe(true)
+  const dir = stepSkillDir(path.join(root, "step"), [{ name: "ub-mode", dir: path.join(root, "src", "ub-mode") }])
+  expect(existsSync(path.join(dir, ".claude", "skills", "ub-mode", "SKILL.md"))).toBe(true)
 })

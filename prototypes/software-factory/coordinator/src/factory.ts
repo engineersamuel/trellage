@@ -345,13 +345,12 @@ export const claudeSessionOption = (configDir: string, name: string): { resume: 
   return found ? { resume: id } : { sessionId: id }
 }
 
-/** A Claude plugin folder whose skills/ links the step's skill folders. */
-export const stepSkillPlugin = (dir: string, skills: { name: string; dir: string }[]): string => {
-  mkdirSync(path.join(dir, ".claude-plugin"), { recursive: true })
-  mkdirSync(path.join(dir, "skills"), { recursive: true })
-  writeFileSync(path.join(dir, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "factory-step", version: "0.0.0", description: "Skills of this factory step" }))
+/** A folder whose .claude/skills/ links the step's skill folders; Claude loads them under their own names. */
+export const stepSkillDir = (dir: string, skills: { name: string; dir: string }[]): string => {
+  const root = path.join(dir, ".claude", "skills")
+  mkdirSync(root, { recursive: true })
   for (const s of skills) {
-    const link = path.join(dir, "skills", s.name)
+    const link = path.join(root, s.name)
     rmSync(link, { force: true, recursive: true })
     symlinkSync(s.dir, link)
   }
@@ -501,8 +500,9 @@ export class Factory {
 
   private async claudeSession(spec: SpawnSpec, workdir: string, harness: HarnessSpec, emit: (ev: HarnessEvent) => void, stepSkills: { name: string; dir: string }[] = [], home = workdir) {
     const launch = await composeClaude(harness.profiles, workdir)
-    // The step's skills (ub-mode, security-audit, ...) load as one local plugin, as they would in a Copilot worker.
-    if (stepSkills.length) launch.plugins.push(stepSkillPlugin(path.join(home, "step-plugin"), stepSkills))
+    // The step's skills (ub-mode, security-audit, ...) load under their own names, as in a Copilot worker:
+    // a .claude/skills folder in the worker's home, added as a working directory (a plugin would prefix them).
+    const skillRoot = stepSkills.length ? stepSkillDir(path.join(home, "step-skills"), stepSkills) : null
     // Claude SDK prefers Anthropic models; an explicit model (reviewers use another family on purpose) wins.
     const model = spec.model ?? launch.model ?? (/^claude/.test(this.defaultModel) ? this.defaultModel : "claude-sonnet-5.5")
     const session = new ClaudeSession(
@@ -510,6 +510,7 @@ export class Factory {
         cwd: workdir,
         env: launch.env,
         plugins: launch.plugins.map((p) => ({ type: "local" as const, path: p })),
+        ...(skillRoot ? { additionalDirectories: [skillRoot] } : {}),
         model,
         ...(launch.effort ? { effort: launch.effort as never } : {}),
         // default mode, so every permission prompt goes through the factory gate; bypassPermissions skips canUseTool.
