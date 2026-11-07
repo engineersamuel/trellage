@@ -11,5 +11,5 @@
     "resolveJsonModule": true,
     "types": ["bun"]
   },
-  "include": ["src", "test", "cli.ts"]
+  "include": ["src", "test", "cli.ts", "goal-cli.ts"]
 }

@@ -35,3 +35,17 @@ export const send = (method: "POST" | "PATCH" | "DELETE", url: string, body?: un
     Effect.provide(Http.layer),
   );
 };
+
+/** POST `body` as JSON and decode the JSON reply with `schema`. */
+export const postJson = <S extends Schema.Top & { readonly DecodingServices: never }>(
+  url: string,
+  body: unknown,
+  schema: S,
+): Effect.Effect<S["Type"], string> =>
+  HttpClient.execute(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), body)).pipe(
+    Effect.flatMap(requireOk),
+    Effect.flatMap((response) => response.json),
+    Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+    Effect.mapError(toReason),
+    Effect.provide(Http.layer),
+  );

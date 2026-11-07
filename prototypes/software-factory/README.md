@@ -28,13 +28,28 @@ The tasks are in the repository `mise.toml`. The services run detached under [pr
 | 2 Foldkit + agent-interface | http://localhost:5174/ |
 | Coordinator API | http://127.0.0.1:7700/ |
 
-## Run record and goal loop
+## Goals: the self-improve loop
 
-- `GET /api/runs/<thread>` (`sf run THREAD`): every agent started under the conversation's sub-coordinator (with its `step` and harness), the steps that ran, its decisions, security reviews, newest `report_up`, and the branch's PR (state and check rollup, from `gh`).
-- `sf verify THREAD EXPECT.json [SECS]`: polls the record every 15 s until it meets `{"steps":[...],"pr":{"state":"OPEN","checks":"SUCCESS"}}`. Exit 0 met, 1 unmet at timeout, 2 a decision is pending, 3 the run reported blocked.
-- `sf -f FOLDER -b BRANCH`: the worktree branches from BRANCH and the finish worker opens the PR against it.
-- `make factory-test` (also in CI): coordinator type check and the coordinator and shared tests.
-- `docs/goals/factory-self-improve.md`: goal-loop file. An outer agent sends a feature prompt for another repo, checks the run with `sf verify`, and when it fails fixes this factory, restarts it, and runs again, until the feature PR is open and green. A human merges.
+A goal is one test case for the factory: a prompt for a repo, and what the run must show. The loop runs the goal; when the run fails, an outer agent fixes the factory code, commits, restarts, and runs again until it passes. Agents open PRs; a human merges.
+
+| Part | Where |
+|---|---|
+| Spec Schema, scoring, form draft | `shared/goal.ts` (one Schema for the UI, the API and `sf`) |
+| Specs and run logs | `docs/goals/factory/<id>.json`, `<id>.runs.jsonl` (append only; each line has the factory commit) |
+| API | `GET/POST /api/goals`, `GET /api/goals/<id>`, `GET /api/goals/<id>/prompt`, `GET/POST /api/goals/<id>/runs`, `GET /api/runs/<thread>` |
+| Form | Foldkit navbar **◎ Goals**: steps and skills come from `/api/steps`, repos from `/api/folders` |
+| CLI | `sf goal list | show ID | new | save FILE | run ID [--thread T] | check ID THREAD | history ID` |
+| Loop protocol | `skills/factory-loop/SKILL.md`; `mise run factory:skill` links it so `/factory-loop <id>` works in Claude Code |
+
+A spec says:
+
+- `expect.steps`: step id → `{min, max}` workers on that step (e.g. `review: {min: 1}`, `finish: {min: 1, max: 1}`).
+- `expect.skills`: skills some worker must have invoked (`skill.invoked` events).
+- `expect.pr`: `state`, `checks`, `base` (defaults to the goal's base), `bodyIncludes`, `untouched` files.
+- `approvals`: per topic (`plan`, `findings`, `ship`, `other`) who answers: `auto` (the runner picks the first option) or `human` (`sf goal run` stops with exit 2). Approvals carry a `topic`; a ship request is always `ship`.
+- `limits`: runs per loop, minutes per run.
+
+Flow: fill the form (or `sf goal new`) → copy `/factory-loop <id>` → paste into Claude Code. `sf goal run` exits 0 pass, 1 fail/timeout, 2 waiting for the human, 3 blocked. `sf -f FOLDER -b BRANCH` branches the worktree from BRANCH and the finish worker opens the PR against it. `make factory-test` (also in CI) runs the coordinator type check and tests.
 
 ## Model routing
 

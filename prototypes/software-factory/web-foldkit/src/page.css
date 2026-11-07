@@ -130,3 +130,15 @@ kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; ma
 .openui-card:has(> .openui-header:first-child) .openui-table:has(.openui-tag) :is(th, td):nth-child(5) { text-align: right; }
 .openui-card:has(> .openui-header:first-child) .openui-table:has(.openui-tag) th:nth-child(4) .openui-table-head-content,
 .openui-card:has(> .openui-header:first-child) .openui-table:has(.openui-tag) th:nth-child(5) .openui-table-head-content { justify-content: flex-end; }
+
+/* Factory goals form */
+.fk-drawer.fk-goals { width: 560px; }
+.fk-goal-form section { margin-bottom: 10px; }
+.fk-goal-form .fk-field { margin: 4px 0; }
+.fk-goal-prompt { align-items: flex-start; }
+.fk-goal-steps li { display: flex; gap: 6px; align-items: center; }
+.fk-goal-steps .fk-check-row { min-width: 210px; }
+.fk-goal-count input { width: 44px; padding: 3px; border: 1px solid var(--sf-border); border-radius: 6px; background: var(--sf-bg); color: inherit; }
+.fk-goal-copy { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0; }
+.fk-goal-copy pre { flex: 1; max-height: 220px; overflow: auto; white-space: pre-wrap; font-size: 11px; background: var(--sf-bg); padding: 6px; border-radius: 6px; }
+.fk-goal-copy code { flex: 1; background: var(--sf-bg); padding: 4px 6px; border-radius: 6px; }

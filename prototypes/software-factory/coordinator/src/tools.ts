@@ -456,6 +456,11 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
           description: "Optional, one per option: what happens next if the human picks it, in under 12 words.",
         },
         context: { type: "string", description: "Who asks and about what, e.g. 'coordinator · review of b39040eb'." },
+        topic: {
+          type: "string",
+          enum: ["plan", "findings", "other"],
+          description: "plan: approve a plan before implement. findings: apply review findings. other: anything else. A ship request is always topic ship.",
+        },
         ...(ships
           ? {
               ship: {
@@ -500,6 +505,7 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
         context: typeof a.context === "string" ? a.context : (scope.label ?? "coordinator"),
         ...(Array.isArray(a.optionDetails) ? { optionDetails: a.optionDetails.map(String) } : {}),
         ...(reportThreadId !== undefined ? { reportThreadId } : {}),
+        topic: shipBranch ? "ship" : a.topic === "plan" || a.topic === "findings" ? a.topic : "other",
       })
       if (shipBranch) f.approvals.addShip(item.id, scope.id, shipBranch)
       f.publish("coordinator", "factory.approval_requested", null, String(Date.now()), item)

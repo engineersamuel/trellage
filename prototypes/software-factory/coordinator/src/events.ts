@@ -165,6 +165,17 @@ export class EventStore {
       .all(match, ...(workers ?? []), limit) as SearchHit[]
   }
 
+  /** Names of the skills each of `workers` invoked (`skill.invoked` events), by worker id. */
+  skillsInvoked(workers: string[]): Map<string, string[]> {
+    const out = new Map<string, string[]>()
+    if (!workers.length) return out
+    const rows = this.db
+      .query(`SELECT DISTINCT worker, json_extract(data, '$.name') AS name FROM events WHERE type = 'skill.invoked' AND worker IN (${workers.map(() => "?").join(",")})`)
+      .all(...workers) as { worker: string; name: string | null }[]
+    for (const r of rows) if (r.name) out.set(r.worker, [...(out.get(r.worker) ?? []), r.name])
+    return out
+  }
+
   /** Data of the newest `limit` events of one type, across agents, oldest first. */
   latest(type: string, limit: number): unknown[] {
     const rows = this.db

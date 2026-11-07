@@ -31,6 +31,8 @@ export const Decision = Schema.Struct({
   note: Schema.NullOr(Schema.String).pipe(withDefault(null)),
   createdAt: Schema.Number,
   reportThreadId: Schema.optionalKey(Schema.String),
+  /** What is decided: a plan before implement, review findings, shipping the branch, or anything else. */
+  topic: Schema.Literals(["plan", "findings", "ship", "other"]).pipe(withDefault("other")),
   /** Shadow mode: undefined while Jev predicts, null when no prediction is available. */
   shadow: Schema.optionalKey(Schema.NullOr(Shadow)),
 })

@@ -9,6 +9,7 @@ import { RefreshThreads, ReloadThread, SyncExtensionWorkers, SyncThreadUrl } fro
 import { COORDINATOR_ID } from "./domain";
 import { Message } from "./message";
 import type { Model } from "./model";
+import * as Goals from "./goals";
 import * as Settings from "./settings";
 import * as WorkerPanel from "./workerPanel";
 
@@ -17,6 +18,7 @@ type Step = Update.Step<Model, Message, ChatBackend>;
 
 export const toGotWorkerPanelMessage = (message: WorkerPanel.Message): Message => Message.GotWorkerPanelMessage({ message });
 export const toGotSettingsMessage = (message: Settings.Message): Message => Message.GotSettingsMessage({ message });
+export const toGotGoalsMessage = (message: Goals.Message): Message => Message.GotGoalsMessage({ message });
 
 const readWorkerPanel = (model: Model) => Option.some(model.workerPanel);
 const writeWorkerPanel = (model: Model, next: WorkerPanel.Model): Model => modifyFields(model, { workerPanel: () => next });
@@ -44,6 +46,13 @@ const foldWorkerPanel = Update.foldChild({
   update: WorkerPanel.update,
   // The user picked a worker: the focus setting decides which worker every UI shows.
   foldOutMessage: WorkerPanel.OutMessage.match<Step>({ SelectedWorker: ({ workerId }) => requestFocus(workerId) }),
+});
+
+const foldGoals = Update.foldChild({
+  read: (model: Model) => Option.some(model.goals),
+  write: (model: Model, next: Goals.Model): Model => modifyFields(model, { goals: () => next }),
+  toParentMessage: toGotGoalsMessage,
+  update: Goals.update,
 });
 
 const foldSettings = Update.foldChild({
@@ -75,6 +84,7 @@ const handleMessage = (model: Model, message: Message) =>
     GotChatMessage: ({ message }) => foldChat(model, message),
     GotWorkerPanelMessage: ({ message }) => foldWorkerPanel(model, message),
     GotSettingsMessage: ({ message }) => foldSettings(model, message),
+    GotGoalsMessage: ({ message }) => foldGoals(model, message),
     ReceivedThreadUpdate: ({ threadId }) => Update.combine(model, [refreshThreads, reloadOpenThread(Option.fromNullishOr(threadId))]),
     // After a feed gap the open thread and the thread list may be stale. The panel and settings reload their own data.
     ReceivedFeedGap: () => Update.combine(model, [refreshThreads, reloadOpenThread(Option.none()), refreshCards]),
@@ -129,12 +139,14 @@ const openThreadFromUrl =
 export const init = (flags: Flags, url: Parameters<typeof chat.init>[1], maybeThreadId: Option.Option<string>): UpdateReturn => {
   const workerPanel = WorkerPanel.init(COORDINATOR_ID);
   const settings = Settings.init();
+  const goals = Goals.init();
   const app = Update.foldChildInit(chat.init(flags, url), {
     toParentMessage: toGotChatMessage,
     toParentModel: (chatModel): Model => ({
       chat: chatModel,
       workerPanel: workerPanel.model,
       settings: settings.model,
+      goals: goals.model,
       protoIndex: currentProto(),
       approvals: [],
     }),

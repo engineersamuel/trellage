@@ -1,30 +1,14 @@
-// One record of a repo conversation's delivery: which agents ran (with their step), decisions, security
-// reviews and the branch's PR. `sf verify` checks it against an expectation file.
+// Delivery record of a repo conversation: which agents ran (step, skills), decisions, security reviews and
+// the branch's PR. Scoring against a goal spec lives in shared/goal.ts.
 import { execFile } from "node:child_process"
+import type { ChecksState, RunPr, RunWorker } from "../../shared/goal.ts"
 
-export type RunWorker = { id: string; name: string; step: string | null; harness: string; owner: string; status: string }
-export type RunPr = { number: number; url: string; state: string; head: string; checks: ChecksState }
-export type ChecksState = "SUCCESS" | "PENDING" | "FAILURE" | "NONE"
-export type Run = {
-  threadId: string
-  status: string
-  branch: string | null
-  base: string | null
-  workers: RunWorker[]
-  steps: string[]
-  approvals: { id: string; title: string; status: string; answer: string | null }[]
-  securityReviews: { id: string; status: string }[]
-  /** Newest report_up of the conversation: done, blocked or needs-decision. */
-  report: { status: string; summary: string; gaps: string[] } | null
-  pr: RunPr | null
-}
+export { goalUnmet, stopReason, type Run, type RunPr, type RunWorker } from "../../shared/goal.ts"
 
-/** Every agent started under `root` (directly or through an agent it started), newest summary per id. */
-export const runWorkers = (
-  started: { id: string; name: string; step?: string | null; harness?: string; owner: string }[],
-  root: string,
-  liveStatus: (id: string) => string | undefined,
-): RunWorker[] => {
+type Started = { id: string; name: string; step?: string | null; harness?: string; owner: string }
+
+/** Every agent started under `root` (directly or through an agent it started), newest summary per id. Skills are filled in by the caller. */
+export const runWorkers = (started: Started[], root: string, liveStatus: (id: string) => string | undefined): RunWorker[] => {
   const byId = new Map(started.map((w) => [w.id, w]))
   const owners = new Set([root])
   for (let grew = true; grew; ) {
@@ -33,7 +17,15 @@ export const runWorkers = (
   }
   return [...byId.values()]
     .filter((w) => w.id !== root && owners.has(w.owner))
-    .map((w) => ({ id: w.id, name: w.name, step: w.step ?? null, harness: w.harness ?? "copilot", owner: w.owner, status: liveStatus(w.id) ?? "stopped" }))
+    .map((w) => ({
+      id: w.id,
+      name: w.name,
+      step: w.step ?? null,
+      skills: [],
+      harness: w.harness ?? "copilot",
+      owner: w.owner,
+      status: liveStatus(w.id) ?? "stopped",
+    }))
 }
 
 type Check = { status?: string; conclusion?: string; state?: string }
@@ -46,41 +38,32 @@ export const checksState = (rollup: Check[]): ChecksState => {
   return results.every((r) => ["SUCCESS", "SKIPPED", "NEUTRAL"].includes(r)) ? "SUCCESS" : "PENDING"
 }
 
+type GhPr = { number: number; url: string; state: string; headRefOid: string; baseRefName: string; body: string; files: { path: string }[] | null; statusCheckRollup: Check[] | null }
+
 /** The newest PR of `branch`, from the GitHub CLI in `repo`. Null when there is none or gh fails. */
 export const branchPr = (repo: string, branch: string): Promise<RunPr | null> =>
   new Promise((resolve) =>
     execFile(
       "gh",
-      ["pr", "list", "--head", branch, "--state", "all", "--limit", "1", "--json", "number,url,state,headRefOid,statusCheckRollup"],
-      { cwd: repo, timeout: 20_000 },
+      ["pr", "list", "--head", branch, "--state", "all", "--limit", "1", "--json", "number,url,state,headRefOid,baseRefName,body,files,statusCheckRollup"],
+      { cwd: repo, timeout: 20_000, maxBuffer: 8 * 1024 * 1024 },
       (err, out) => {
         if (err) return resolve(null)
-        const pr = (JSON.parse(out) as { number: number; url: string; state: string; headRefOid: string; statusCheckRollup: Check[] }[])[0]
-        resolve(pr ? { number: pr.number, url: pr.url, state: pr.state, head: pr.headRefOid, checks: checksState(pr.statusCheckRollup ?? []) } : null)
+        const pr = (JSON.parse(out) as GhPr[])[0]
+        resolve(
+          pr
+            ? {
+                number: pr.number,
+                url: pr.url,
+                state: pr.state,
+                head: pr.headRefOid,
+                base: pr.baseRefName,
+                body: pr.body ?? "",
+                files: (pr.files ?? []).map((f) => f.path),
+                checks: checksState(pr.statusCheckRollup ?? []),
+              }
+            : null,
+        )
       },
     ),
   )
-
-/** What `sf verify` expects: steps that must have run at least once, and the PR's state and checks. */
-export type Expectation = { steps?: string[]; pr?: { state?: string; checks?: ChecksState } }
-
-/** Each unmet expectation as one line; empty when the run meets them all. */
-export const unmet = (run: Run, expect: Expectation): string[] => {
-  const out = (expect.steps ?? []).filter((s) => !run.steps.includes(s)).map((s) => `step ${s} never ran`)
-  if (expect.pr) {
-    if (!run.pr) out.push("no PR for the branch")
-    else {
-      if (expect.pr.state && run.pr.state !== expect.pr.state) out.push(`PR #${run.pr.number} is ${run.pr.state}, expected ${expect.pr.state}`)
-      if (expect.pr.checks && run.pr.checks !== expect.pr.checks) out.push(`PR #${run.pr.number} checks ${run.pr.checks}, expected ${expect.pr.checks}`)
-    }
-  }
-  return out
-}
-
-/** Why polling should stop before the expectation is met: the run waits for a human, or it reported blocked. */
-export const stopReason = (run: Run): { code: 2 | 3; reason: string } | null => {
-  const pending = run.approvals.filter((a) => a.status === "pending")
-  if (pending.length) return { code: 2, reason: `waiting for an answer: ${pending.map((a) => `${a.id} ${a.title}`).join("; ")}` }
-  if (run.report?.status === "blocked") return { code: 3, reason: `reported blocked: ${run.report.summary}` }
-  return null
-}

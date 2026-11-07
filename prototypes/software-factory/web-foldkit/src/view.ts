@@ -9,8 +9,9 @@ import { Message } from "./message";
 import { toGotChatMessage } from "./chat";
 import { chat } from "./chatProgram";
 import type { Model } from "./model";
+import * as Goals from "./goals";
 import * as Settings from "./settings";
-import { toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
+import { toGotGoalsMessage, toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
 import * as WorkerPanel from "./workerPanel";
 
 const BUSY_COLOR = "#f59e0b";
@@ -98,7 +99,7 @@ const approvalsLink = (pending: ReadonlyArray<Approval>, h: HtmlBuilder<Message>
 const EMPTY_WORKERS: ReadonlyArray<Worker> = [];
 
 /** The navbar reads only settings, workers and approvals, so a chat Message reuses the cached subtree. */
-const navbar = (settingsModel: Settings.Model, workers: WorkerPanel.Model["workers"], approvals: ReadonlyArray<Approval>, h: HtmlBuilder<Message>): Html =>
+const navbar = (settingsModel: Settings.Model, goalsModel: Goals.Model, workers: WorkerPanel.Model["workers"], approvals: ReadonlyArray<Approval>, h: HtmlBuilder<Message>): Html =>
   Option.match(Settings.maybeSettings(settingsModel), {
     onNone: () => h.empty,
     onSome: (settings) => {
@@ -113,6 +114,7 @@ const navbar = (settingsModel: Settings.Model, workers: WorkerPanel.Model["worke
         slot("navbar", h, "fk-nav-item"),
         h.span([h.Class("fk-spacer")]),
         h.span([h.Class("fk-nav-item fk-muted")], [settings.theme]),
+        h.submodel({ model: goalsModel, slotId: "goals-button", toParentMessage: toGotGoalsMessage, view: Goals.navButton }),
         h.submodel({ model: settingsModel, slotId: "settings-gear", toParentMessage: toGotSettingsMessage, view: Settings.gearButton }),
       ]);
     },
@@ -141,6 +143,10 @@ const lazyNavbar = createLazy();
 const lazyPanelLeft = createLazy();
 const lazyPanelRight = createLazy();
 const lazySettingsDrawer = createLazy();
+const lazyGoalsDialog = createLazy();
+
+const goalsDialog = (goalsModel: Goals.Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({ model: goalsModel, slotId: "goals", toParentMessage: toGotGoalsMessage, view: Goals.view });
 
 const gridColumns = (side: string, width: number): string =>
   Match.value(side).pipe(
@@ -184,7 +190,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
       slot("page-background", h, "fk-slot-bg"),
       Option.match(maybeSettings, {
         onNone: () => h.h1([h.Class("fk-visually-hidden")], ["Factory · Foldkit"]),
-        onSome: () => lazyNavbar(navbar, [model.settings, model.workerPanel.workers, model.approvals, h]),
+        onSome: () => lazyNavbar(navbar, [model.settings, model.goals, model.workerPanel.workers, model.approvals, h]),
       }),
       ...Option.match(banner, { onNone: () => [], onSome: (text) => [h.div([h.Class("fk-banner"), h.Role("status")], [text])] }),
       slot("banner", h),
@@ -193,6 +199,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
         : classicLayout(model, Option.match(maybeSettings, { onNone: () => LOADING_LAYOUT, onSome: ({ layout }) => layout }), h),
       slot("overlay", h, "fk-slot-overlay"),
       lazySettingsDrawer(settingsDrawer, [model.settings, h]),
+      lazyGoalsDialog(goalsDialog, [model.goals, h]),
     ]),
   };
 };

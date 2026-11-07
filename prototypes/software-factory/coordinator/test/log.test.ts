@@ -133,3 +133,14 @@ test("between returns one agent's events in [from, before), oldest first", () =>
   expect(s.between("a", 1, 6, 10).map((e) => e.seq)).toEqual([1, 3, 5])
   expect(s.between("a", 1, 6, 2).map((e) => e.seq)).toEqual([1, 3])
 })
+
+test("skillsInvoked lists each worker's invoked skills once", () => {
+  const s = new EventStore(tmpFile())
+  const inv = (seq: number, worker: string, name: string) => ({ seq, workerId: worker, type: "skill.invoked", agentId: null, timestamp: "1", data: { name } })
+  s.append(inv(1, "w-1", "ub-mode"))
+  s.append(inv(2, "w-1", "ub-mode"))
+  s.append(inv(3, "w-2", "security-audit"))
+  s.append(inv(4, "w-3", "other"))
+  expect(Object.fromEntries(s.skillsInvoked(["w-1", "w-2"]))).toEqual({ "w-1": ["ub-mode"], "w-2": ["security-audit"] })
+  expect(s.skillsInvoked([]).size).toBe(0)
+})

@@ -20,6 +20,7 @@ import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, REPORT_NUDGE, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
 import { branchPr, runWorkers, type Run } from "./run.ts"
+import { checkoutCommit, GoalError, goalsDir, loopPrompt, makeGoals } from "./goals.ts"
 import { defineTool, type SessionEvent, type Tool } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
 import { cardData, coordinatorTools, globalTools, spawnHealing, type Scope } from "./tools.ts"
@@ -915,6 +916,20 @@ const cardScope = (id: string): Scope => {
   return { id, threadId: t?.id ?? null }
 }
 
+const goals = makeGoals(goalsDir(), STEPS.map((s) => s.id))
+/** prototypes/software-factory: its commit (and dirty flag) is the factory version a goal run ran on. */
+const FACTORY_DIR = path.resolve(new URL(".", import.meta.url).pathname, "../..")
+
+/** JSON reply for a goal route: GoalError is 400, anything else 500. */
+const goalReply = async (run: () => unknown): Promise<Response> => {
+  try {
+    const v = await run()
+    return v === null ? json({ error: "not found" }, 404) : json(v)
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, e instanceof GoalError || e instanceof SyntaxError ? 400 : 500)
+  }
+}
+
 /** Newest report_up of a conversation, from the event store. */
 const latestReport = (threadId: string): Run["report"] => {
   const all = factory.store.latest("factory.report_up", 500) as { threadId: string | null; report: Report }[]
@@ -927,7 +942,9 @@ const runRecord = async (threadId: string): Promise<Run | null> => {
   const t = threads.get(threadId)
   if (!t) return null
   const started = factory.store.latest("factory.worker_started", 100_000) as Parameters<typeof runWorkers>[0]
-  const workers = runWorkers(started, subId(t.id), (id) => factory.workers.get(id)?.status)
+  const listed = runWorkers(started, subId(t.id), (id) => factory.workers.get(id)?.status)
+  const invoked = factory.store.skillsInvoked(listed.map((w) => w.id))
+  const workers = listed.map((w) => ({ ...w, skills: invoked.get(w.id) ?? [] }))
   const repo = threads.folders().find((f) => f.id === t.folderId)?.path
   return {
     threadId: t.id,
@@ -939,7 +956,7 @@ const runRecord = async (threadId: string): Promise<Run | null> => {
     approvals: factory.approvals
       .list()
       .filter((a) => a.threadId === t.id || a.reportThreadId === t.id)
-      .map((a) => ({ id: a.id, title: a.title, status: a.status, answer: a.answer })),
+      .map((a) => ({ id: a.id, title: a.title, topic: a.topic ?? "other", status: a.status, answer: a.answer, options: a.options })),
     securityReviews: [...factory.securityReviews.values()].filter((r) => r.threadId === t.id).map((r) => ({ id: r.id, status: r.status })),
     report: latestReport(t.id),
     pr: repo && t.branch ? await branchPr(repo, t.branch) : null,
@@ -1246,6 +1263,15 @@ const routes: [string, RegExp, Handler][] = [
     const run = await runRecord(id!)
     return run ? json(run) : json({ error: `no thread ${id}` }, 404)
   }],
+  ["GET", /^\/api\/goals$/, () => goalReply(() => ({ dir: goals.dir, factoryCommit: checkoutCommit(FACTORY_DIR), goals: goals.list() }))],
+  ["POST", /^\/api\/goals$/, (req) => goalReply(async () => goals.save(await req.json()))],
+  ["GET", /^\/api\/goals\/([^/]+)$/, (_req, _url, [id]) => goalReply(() => goals.get(id!))],
+  ["GET", /^\/api\/goals\/([^/]+)\/prompt$/, (_req, _url, [id]) => goalReply(() => {
+    const spec = goals.get(id!)
+    return spec && { skill: `/factory-loop ${spec.id}`, prompt: loopPrompt(readFileSync(path.join(FACTORY_DIR, "skills/factory-loop/SKILL.md"), "utf8"), spec) }
+  })],
+  ["GET", /^\/api\/goals\/([^/]+)\/runs$/, (_req, _url, [id]) => goalReply(() => goals.runs(id!))],
+  ["POST", /^\/api\/goals\/([^/]+)\/runs$/, (req, _url, [id]) => goalReply(async () => goals.appendRun(id!, { factoryCommit: checkoutCommit(FACTORY_DIR), ...(await req.json()) }))],
   ["GET", /^\/api\/threads\/get$/, () => json({ threads: threads.list(), folders: threads.folders() })],
   ["GET", /^\/api\/threads\/get\/([^/]+)$/, (_req, _url, [id]) => json(threads.messages(id!))],
   [

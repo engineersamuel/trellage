@@ -29,6 +29,8 @@ export type Approval = {
   createdAt: number
   /** Conversation whose report this decision answers; the answer is relayed to it. */
   reportThreadId?: string
+  /** What is decided; goal runs answer by topic. */
+  topic?: "plan" | "findings" | "ship" | "other"
   /** Shadow mode: what Jev predicted the human would answer. */
   shadow?: Shadow | null
 }
@@ -129,7 +131,7 @@ export class Approvals {
     return this.items.find((x) => x.id === id)
   }
 
-  open(a: Pick<Approval, "threadId" | "title" | "summary" | "options"> & Partial<Pick<Approval, "kind" | "allowText" | "context" | "optionDetails" | "reportThreadId">>): Approval {
+  open(a: Pick<Approval, "threadId" | "title" | "summary" | "options"> & Partial<Pick<Approval, "kind" | "allowText" | "context" | "optionDetails" | "reportThreadId" | "topic">>): Approval {
     const kind = a.kind ?? "approval"
     if (a.optionDetails && a.optionDetails.length && a.optionDetails.length !== a.options.length)
       throw new Error("optionDetails must have one entry per option")
