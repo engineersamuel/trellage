@@ -16,6 +16,8 @@ import {
   gate,
   implementAddendum,
   REREVIEW_LINES,
+  MAX_REVIEW_ROUNDS,
+  isTestPath,
   settleGates,
   newSdlc,
   repoChecks,
@@ -130,9 +132,13 @@ export const afterImplement = async (f: Factory, scope: Scope, implementWorkerId
   }
   const cr = gate(f.sdlc.get(scope.id)!, "codeReview")
   const since = s0.reviewedCommit ?? base
-  const newLines = s0.reviewedCommit ? diffFiles(workdir, s0.reviewedCommit).reduce((n, x) => n + x.added + x.removed, 0) : risk.lines
-  if (cr?.chosen && (s0.reviewedCommit === null || newLines >= REREVIEW_LINES)) {
+  // Re-reviews count only non-test lines: tests added for review findings do not earn another round.
+  const newLines = s0.reviewedCommit ? diffFiles(workdir, s0.reviewedCommit).filter((x) => !isTestPath(x.path)).reduce((n, x) => n + x.added + x.removed, 0) : risk.lines
+  const rounds = s0.reviewRounds ?? 0
+  const rereview = s0.reviewedCommit !== null
+  if (cr?.chosen && rounds < MAX_REVIEW_ROUNDS && (!rereview || newLines >= REREVIEW_LINES)) {
     setGate(f, scope.id, "codeReview", "running")
+    publish(f, { ...f.sdlc.get(scope.id)!, reviewRounds: rounds + 1 })
     const reviewed = head(workdir)
     jobs.push(
       codeReview(f, scope, {
@@ -143,6 +149,8 @@ export const afterImplement = async (f: Factory, scope: Scope, implementWorkerId
         criteria: s0.criteria,
         diffStat,
         tier: risk.tier,
+        // A re-review is one correctness reviewer on the new lines, no synthesis.
+        ...(rereview ? { lenses: ["correctness" as const] } : {}),
         onFindings: (kept, dropped) => {
           const s = f.sdlc.get(scope.id)!
           publish(f, { ...s, findings: { kept: s.findings.kept + kept, dropped: s.findings.dropped + dropped } })
@@ -153,7 +161,8 @@ export const afterImplement = async (f: Factory, scope: Scope, implementWorkerId
         setGate(f, scope.id, "codeReview", r.status === "done" ? "done" : "failed", r.error)
       }),
     )
-  } else if (cr?.chosen) setGate(f, scope.id, "codeReview", "done", `${newLines} lines since the last review (< ${REREVIEW_LINES}); verify only`)
+  } else if (cr?.chosen)
+    setGate(f, scope.id, "codeReview", "done", rounds >= MAX_REVIEW_ROUNDS ? `review round limit (${MAX_REVIEW_ROUNDS}) reached; verify only` : `${newLines} non-test lines since the last review (< ${REREVIEW_LINES}); verify only`)
   await Promise.all(jobs)
 }
 

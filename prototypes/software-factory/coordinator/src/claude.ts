@@ -85,7 +85,8 @@ export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessE
             ? [ev("assistant.reasoning", { content: b.thinking })]
             : b.type === "tool_use"
               ? [
-                  ev("tool.execution_start", { toolCallId: b.id, toolName: b.name, arguments: b.input }),
+                  // Factory tools come over MCP as mcp__factory__<name>; the feed, cards and UIs know them by <name>.
+                  ev("tool.execution_start", { toolCallId: b.id, toolName: String(b.name).replace(/^mcp__factory__/, ""), arguments: b.input }),
                   // The Skill tool is Claude's skill invocation: the same event Copilot runtimes emit (plugin prefix dropped).
                   ...(b.name === "Skill" && typeof b.input?.skill === "string" ? [ev("skill.invoked", { name: String(b.input.skill).split(":").at(-1) })] : []),
                 ]
@@ -144,7 +145,7 @@ export class ClaudeStream {
         return []
       case "content_block_start": {
         const kind = e.content_block?.type
-        if (kind === "tool_use") this.tools.set(e.index, { id: e.content_block.id, name: e.content_block.name })
+        if (kind === "tool_use") this.tools.set(e.index, { id: e.content_block.id, name: String(e.content_block.name).replace(/^mcp__factory__/, "") })
         if (kind === "text" || kind === "thinking") this.open.set(e.index, { kind, id: `${this.message}:${e.index}`, text: "", message: this.message })
         return []
       }
@@ -262,8 +263,10 @@ export class ClaudeSession {
   async abort(): Promise<void> {
     await this.q.interrupt()
   }
-  async setModel(model: string): Promise<void> {
+  async setModel(model: string, options?: { reasoningEffort?: string }): Promise<void> {
     await this.q.setModel(model)
+    const effort = options?.reasoningEffort
+    if (effort) await this.q.applyFlagSettings({ effortLevel: effort as never })
   }
   async disconnect(): Promise<void> {
     this.inbox.end()

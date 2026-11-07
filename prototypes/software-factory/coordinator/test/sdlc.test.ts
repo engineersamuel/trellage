@@ -148,16 +148,18 @@ describe("code review", () => {
     expect(pickLenses(null)).toEqual(["correctness", "tests"])
     expect(pickLenses({ correctness: 0.9, tests: 0.7, design: 0.65, performance: 0.8, operability: 0.1 })).toEqual(["correctness", "performance", "tests"])
     expect(pickLenses({ correctness: 0.1, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.3 })).toEqual(["operability"])
-    // T2 always gets at least 2 reviewers; the bar is 0.5.
+    // T2 always gets at least 2 reviewers; the bar is 0.6.
     expect(pickLenses({ correctness: 0.7, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.4 }, "T2")).toEqual(["correctness", "operability"])
-    expect(pickLenses({ correctness: 0.7, tests: 0.5, design: 0.1, performance: 0.1, operability: 0.4 }, "T1")).toEqual(["correctness", "tests"])
+    expect(pickLenses({ correctness: 0.7, tests: 0.55, design: 0.1, performance: 0.1, operability: 0.4 }, "T1")).toEqual(["correctness"])
   })
   test("findings parse and score", () => {
     const fs = parseReviewFindings(JSON.stringify([{ title: "t", problem: "p", severity: "high" }, { nope: 1 }]))
     expect(fs).toEqual([{ id: "cr1", title: "t", file: "unknown", severity: "high", problem: "p", fix: "", lenses: [] }])
     expect(parseReviewFindings("not json")).toEqual([])
     expect(score(fs[0]!, 0.8, 0.7).keep).toBe(true)
-    expect(score(fs[0]!, 0.8, 0.5).keep).toBe(false)
+    expect(score(fs[0]!, 0.8, 0.65).keep).toBe(false)
+    // Low severity is never fixed in the change, however Jev scores it.
+    expect(score({ ...fs[0]!, severity: "low" }, 0.95, 0.95).keep).toBe(false)
     expect(score(fs[0]!, undefined, undefined).keep).toBe(true)
     expect(score({ ...fs[0]!, severity: "low" }, undefined, undefined).keep).toBe(false)
   })

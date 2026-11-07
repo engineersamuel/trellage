@@ -181,6 +181,8 @@ export type Sdlc = {
   findings: { kept: number; dropped: number }
   /** Commit the last code review covered; later implements re-review only what changed since, when it is large. */
   reviewedCommit: string | null
+  /** Code review rounds run so far. */
+  reviewRounds: number
   /** Changed lines after the first implement; the scope check compares later diffs against it. */
   firstLines: number | null
   /** Set when the diff grew past twice the first implement and Jev judged the growth not needed. */
@@ -201,12 +203,15 @@ export const newSdlc = (scopeId: string, threadId: string | null): Sdlc => ({
   workers: 0,
   findings: { kept: 0, dropped: 0 },
   reviewedCommit: null,
+  reviewRounds: 0,
   firstLines: null,
   scopeWarning: null,
 })
 
 /** Lines changed since the last reviewed commit at or above this re-run the code review on those lines only. */
-export const REREVIEW_LINES = 50
+export const REREVIEW_LINES = 100
+/** At most this many code review rounds per conversation; later changes get verify only. */
+export const MAX_REVIEW_ROUNDS = 2
 
 /** Gate statuses a ship check settles: on-diff gates done when not blocked, postMerge waits for the merge. */
 export const settleGates = (s: Sdlc, blockers: string[]): Sdlc => ({
@@ -238,6 +243,7 @@ const commits = (workdir: string, base: string): { files: string[] }[] => {
 }
 
 const TEST = /(^|\/)(tests?|__tests__|spec)\/|[._-](test|spec)\.[a-z]+$|_test\.(go|rs|py)$/i
+export const isTestPath = (p: string): boolean => TEST.test(p)
 
 /** Test-first: a commit that changes only tests comes before the first commit that changes other code. */
 export const testsCameFirst = (history: { files: string[] }[]): boolean => {

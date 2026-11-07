@@ -19,13 +19,17 @@ export const LENSES = [
 export type LensId = (typeof LENSES)[number]["id"]
 
 /** Jev probability per lens; at or above it the lens runs. At most MAX_LENSES, the most probable first; at least one. */
-export const LENS_THRESHOLD = 0.5
+export const LENS_THRESHOLD = 0.6
 export const MAX_LENSES = 3
 /** Tier T2 (large or sensitive) always gets at least this many reviewers, the most probable lenses. */
 export const MIN_LENSES_T2 = 2
 /** A merged finding is fixed only if Jev scores it real AND worth fixing now at or above these. */
 export const REAL_THRESHOLD = 0.7
-export const WORTH_THRESHOLD = 0.6
+export const WORTH_THRESHOLD = 0.7
+/** Findings below this severity are never fixed in the change (logged as dropped). */
+export const MIN_SEVERITY = ["medium", "high", "critical"]
+/** Model of the reviewers and the synthesis: a different family than the implementer, for a rubber-duck read. */
+export const REVIEW_MODEL = process.env.SF_REVIEW_MODEL?.trim() || "gpt-6-astra"
 
 export const pickLenses = (p: Record<string, number> | null, tier?: string): LensId[] => {
   if (!p) return ["correctness", "tests"]
@@ -66,8 +70,9 @@ export const score = (f: ReviewFinding, real: number | undefined, worth: number 
     const keep = /^(high|critical)$/i.test(f.severity)
     return { ...f, real: null, worth: null, keep, reason: `Jev unavailable; ${keep ? "kept: high severity" : "dropped: not high severity"}` }
   }
-  const keep = real >= REAL_THRESHOLD && worth >= WORTH_THRESHOLD
-  return { ...f, real, worth, keep, reason: `real ${real.toFixed(2)} (>= ${REAL_THRESHOLD}), worth ${worth.toFixed(2)} (>= ${WORTH_THRESHOLD}): ${keep ? "kept" : "dropped"}` }
+  const severe = MIN_SEVERITY.includes(f.severity.toLowerCase())
+  const keep = severe && real >= REAL_THRESHOLD && worth >= WORTH_THRESHOLD
+  return { ...f, real, worth, keep, reason: `real ${real.toFixed(2)} (>= ${REAL_THRESHOLD}), worth ${worth.toFixed(2)} (>= ${WORTH_THRESHOLD}), severity ${f.severity}${severe ? "" : " (< medium)"}: ${keep ? "kept" : "dropped"}` }
 }
 
 const jev = (apiKey: string) => new TypeSafeClient({ apiKey, defaultModel: "jev-1.13.0", retry: { maxRetries: 0 }, timeout: 10_000, logLevel: "off" })
@@ -160,7 +165,7 @@ const list = (fs: ScoredFinding[]) => fs.map((x) => `- [${x.severity}] ${x.title
 export const codeReview = async (
   f: Factory,
   scope: Scope,
-  opts: { workdir: string; base: string; auth: Auth; request: string; criteria: string[]; diffStat: string; tier?: string; onFindings?: (kept: number, dropped: number) => void },
+  opts: { workdir: string; base: string; auth: Auth; request: string; criteria: string[]; diffStat: string; tier?: string; lenses?: LensId[]; onFindings?: (kept: number, dropped: number) => void },
 ): Promise<CodeReview> => {
   const r: CodeReview = { id: `cr-${crypto.randomUUID().slice(0, 8)}`, scopeId: scope.id, threadId: scope.threadId, workdir: opts.workdir, status: "started", lenses: [], lensProbabilities: null, findings: [], workerIds: [], at: Date.now() }
   const set = (patch: Partial<CodeReview>) => {
@@ -171,14 +176,15 @@ export const codeReview = async (
   set({})
   const started: string[] = []
   const spawn = async (name: string, step: string, task: string, id?: string) => {
-    const w = await f.spawn({ ...(id ? { id } : {}), name, role: "worker", auth: opts.auth, step, task, owner: scope.id, workdir: opts.workdir })
+    const reviewer = step === "review" || step === "synthesis"
+    const w = await f.spawn({ ...(id ? { id } : {}), name, role: "worker", auth: opts.auth, step, task, owner: scope.id, workdir: opts.workdir, ...(reviewer ? { model: REVIEW_MODEL } : {}) })
     started.push(w.id)
     set({ workerIds: [...r.workerIds, w.id], workerId: w.id })
     return w
   }
   try {
     const probabilities = await askLenses({ request: opts.request, criteria: opts.criteria, diff: opts.diffStat })
-    const lenses = pickLenses(probabilities, opts.tier)
+    const lenses = opts.lenses ?? pickLenses(probabilities, opts.tier)
     set({ status: "reviewing", lenses, lensProbabilities: probabilities })
     const dir = path.join(f.root, r.id)
     mkdirSync(dir, { recursive: true })

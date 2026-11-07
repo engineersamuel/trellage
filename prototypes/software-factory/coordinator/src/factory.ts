@@ -1,12 +1,14 @@
 // Worker lifecycle: each worker is a separate agent process with its own home. Copilot SDK is the
 // default harness (a runtime over TCP); a step may name the Claude Agent SDK harness instead.
 import { readOnlyViolation, SUB_SHELL_FEEDBACK } from "./readonly.ts"
+import { factoryMcpServer, gateFromPermissions, MCP_SERVER, mcpToolNames } from "./claudetools.ts"
 import type { CodeReview } from "./review.ts"
 import type { Sdlc } from "./sdlc.ts"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { homedir } from "node:os"
 import {
   CopilotClient,
   RuntimeConnection,
@@ -317,14 +319,30 @@ export class Worker {
 /**
  * The harness a worker runs in. `auto`: the step's or the spawn's choice (Copilot SDK when none). A forced SDK
  * applies to every worker; a step's own profiles (e.g. council in Claude) are kept when the forced SDK matches.
- * Coordinators always stay on the Copilot SDK: their tools are Copilot SDK tools.
+ * Global coordinators stay on the Copilot SDK; a repo sub-coordinator moves to Claude when Claude is forced.
  */
-export const workerHarness = (setting: string, role: string, chosen: HarnessSpec | undefined, gated = false): HarnessSpec | undefined => {
+export const workerHarness = (setting: string, role: string, chosen: HarnessSpec | undefined, gated = false, subCoordinator = false): HarnessSpec | undefined => {
+  // A repo sub-coordinator follows a forced Claude SDK too (its tools are served over MCP); global ones never move.
+  if (subCoordinator && setting === "claude") return { kind: "claude", profiles: ["default"] }
   // A worker with its own Copilot permission gate (the finish worker's push gate) stays on the Copilot SDK.
   if (role !== "worker" || setting === "auto" || gated) return chosen
   if (setting === "copilot") return undefined
   const kind = setting as HarnessSpec["kind"]
   return chosen?.kind === kind ? chosen : { kind, profiles: kind === "claude" ? ["default"] : [] }
+}
+
+/** The factory's stable session name as a Claude session UUID (deterministic, so a restart finds it). */
+export const claudeSessionId = (name: string): string => {
+  const h = new Bun.CryptoHasher("sha256").update(`sf-claude:${name}`).digest("hex")
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`
+}
+
+/** Resume the coordinator's Claude session when its transcript exists, else start it under that id. */
+export const claudeSessionOption = (configDir: string, name: string): { resume: string } | { sessionId: string } => {
+  const id = claudeSessionId(name)
+  const projects = path.join(configDir, "projects")
+  const found = existsSync(projects) && readdirSync(projects).some((d) => existsSync(path.join(projects, d, `${id}.jsonl`)))
+  return found ? { resume: id } : { sessionId: id }
 }
 
 /** A Claude plugin folder whose skills/ links the step's skill folders. */
@@ -426,7 +444,7 @@ export class Factory {
     const step = spec.step ? stepById(spec.step) : null
     // Skill preflight runs first, so a worker with an unusable skill fails before any model call.
     const { workdir, setup, skills } = this.prepareSpawn(spec, id, home, step)
-    const harness = workerHarness(this.settings.workers.harness, spec.role, spec.harness ?? step?.harness, !!spec.permissions)
+    const harness = workerHarness(this.settings.workers.harness, spec.role, spec.harness ?? step?.harness, spec.role === "worker" && !!spec.permissions, id.startsWith("sub-"))
     if (harness) return this.spawnHarness(spec, id, home, workdir, harness, skills)
     const { model, source } = await this.spawnModel(spec, auth)
     const host = spec.shareRuntimeOf ? this.workers.get(spec.shareRuntimeOf) : undefined
@@ -475,14 +493,18 @@ export class Factory {
       systemPrompt: `${harness.kind} ${harness.profiles.join("+")}; ${loaded}`,
       sessionId: null,
     }
-    return this.register(worker, spec.task && (harness.entry ? `${harness.entry} ${spec.task}` : spec.task))
+    // The step's prefix ("Use the ub-mode skill.") applies in every SDK, not only Copilot.
+    const prefix = skills.length ? skills.map((s) => `Use the ${s.name} skill.`).join("\n") : ""
+    const task = spec.task && (prefix ? `${prefix}\n\n${spec.task}` : spec.task)
+    return this.register(worker, task && (harness.entry ? `${harness.entry} ${task}` : task))
   }
 
   private async claudeSession(spec: SpawnSpec, workdir: string, harness: HarnessSpec, emit: (ev: HarnessEvent) => void, stepSkills: { name: string; dir: string }[] = [], home = workdir) {
     const launch = await composeClaude(harness.profiles, workdir)
     // The step's skills (ub-mode, security-audit, ...) load as one local plugin, as they would in a Copilot worker.
     if (stepSkills.length) launch.plugins.push(stepSkillPlugin(path.join(home, "step-plugin"), stepSkills))
-    const model = spec.model ?? launch.model ?? this.defaultModel
+    // Claude SDK prefers Anthropic models; an explicit model (reviewers use another family on purpose) wins.
+    const model = spec.model ?? launch.model ?? (/^claude/.test(this.defaultModel) ? this.defaultModel : "claude-sonnet-5.5")
     const session = new ClaudeSession(
       {
         cwd: workdir,
@@ -492,8 +514,13 @@ export class Factory {
         ...(launch.effort ? { effort: launch.effort as never } : {}),
         // default mode, so every permission prompt goes through the factory gate; bypassPermissions skips canUseTool.
         permissionMode: "default",
-        canUseTool: claudeGate,
+        canUseTool: spec.permissions ? gateFromPermissions(spec.permissions) : claudeGate,
         disallowedTools: ["AskUserQuestion"],
+        // A coordinator: the factory tools as an in-process MCP server, and its role prompt after Claude Code's.
+        ...(spec.tools?.length ? { mcpServers: { [MCP_SERVER]: factoryMcpServer(spec.tools) }, allowedTools: mcpToolNames(spec.tools) } : {}),
+        ...(spec.system ? { systemPrompt: { type: "preset" as const, preset: "claude_code" as const, append: spec.system } } : {}),
+        // A coordinator keeps its memory across restarts (Claude session ids are UUIDs).
+        ...(spec.sessionId ? claudeSessionOption(launch.env.CLAUDE_CONFIG_DIR ?? path.join(homedir(), ".claude"), spec.sessionId) : {}),
         // Text and thinking stream to the feed as deltas, like Copilot workers.
         includePartialMessages: true,
       },
