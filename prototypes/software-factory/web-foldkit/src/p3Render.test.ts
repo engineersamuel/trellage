@@ -31,6 +31,33 @@ vi.mock("../../shared/http", async (original) => ({ ...(await original<typeof im
 await import("../../shared/protos/p3");
 const { prototypes } = await import("../../shared/protos/core");
 
+const push = (type: string, workerId = "w1") =>
+  feed.subs.forEach((subscriber) => subscriber({ seq: 1, workerId, type, agentId: null, timestamp: "2026-01-01T00:00:00Z", data: { id: workerId, deltaContent: "x" } }));
+const frames = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+// A tree row replaced between mousedown and mouseup gets no click: streamed events must not replace it.
+test("the conversation tree keeps its rows while agents stream, and waits for a press to end", async () => {
+  const root = document.createElement("div");
+  document.body.append(root);
+  const stop = prototypes().find(({ id }) => id === 3)!.mount({ root, placeChat: () => {} });
+  await vi.waitFor(() => expect(root.querySelector("[data-testid=tree-row]")).not.toBeNull());
+  const row = root.querySelector("[data-testid=tree-row]")!;
+
+  push("assistant.message_delta");
+  push("factory.worker_updated");
+  await frames();
+  expect(root.querySelector("[data-testid=tree-row]")).toBe(row);
+
+  row.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  feed.workerStatus = "idle";
+  push("factory.worker_updated");
+  await frames();
+  expect(root.querySelector("[data-testid=tree-row]")).toBe(row);
+  window.dispatchEvent(new PointerEvent("pointerup"));
+  await vi.waitFor(() => expect(root.querySelector("[data-testid=tree-row]")?.textContent).toContain("Idle"));
+  stop();
+});
+
 // The 📡 Factory stream row shows every agent's events in the detail column; a click on an agent opens it in the tree.
 test("the Factory stream view lists agent events and opens the agent it names", async () => {
   const root = document.createElement("div");

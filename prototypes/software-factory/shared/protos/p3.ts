@@ -14,6 +14,8 @@ import { ancestors, bornAt, bossOf, build, count, items, modelReason, rootOf, su
 const LABEL: Record<Node["status"], string> = { running: "Running", idle: "Idle", error: "Failed", needs: "Needs you", dormant: "Dormant", draft: "Draft", stopped: "Stopped" }
 const ICON: Record<Node["kind"], string> = { desk: "🌐", chat: "💬", sub: "◆", worker: "⚙", draft: "📄" }
 const KIND: Record<Node["kind"], string> = { desk: "Factory desk", chat: "General chat", sub: "Sub-coordinator", worker: "Worker", draft: "Draft" }
+/** Agent fields that change on every model call and that p3 does not draw. */
+const VOLATILE = new Set(["contextTokens", "contextLimit", "rssKb", "eventCount", "lastMessage", "pid"])
 const ago = (t?: number) => {
   if (!t) return ""
   const m = Math.max(0, Math.round((Date.now() - t) / 60000))
@@ -369,12 +371,38 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const ro = new ResizeObserver(() => mounted?.key === cur && showsChat(cur) && placeOverBody())
   ro.observe(head)
   ro.observe(root)
+  // The shared state changes on every streamed event of any agent. A render replaces the tree and inbox rows, so it
+  // runs only when what p3 draws changed, and waits while a pointer is down: a row replaced between mousedown and
+  // mouseup gets no click.
+  let seen: readonly unknown[] = []
+  let drawn = ""
+  const changed = (st: State): boolean => {
+    const refs = [st.agents, st.past, st.threads, st.folders, st.decisions]
+    if (refs.every((r, i) => r === seen[i])) return false
+    seen = refs
+    const next = JSON.stringify(refs, (k, v) => (VOLATILE.has(k) ? undefined : v))
+    if (next === drawn) return false
+    drawn = next
+    return true
+  }
+  let pressed = false
+  let owed = false
+  const paint = () => (pressed ? (owed = true) : render())
+  const press = () => void (pressed = true)
+  // Click fires after pointerup in the same task; the owed render runs after it.
+  const release = () => ((pressed = false), owed && ((owed = false), setTimeout(render)))
+  root.addEventListener("pointerdown", press, true)
+  window.addEventListener("pointerup", release, true)
+  window.addEventListener("pointercancel", release, true)
+  // Ages ("3m") move without data changes.
+  const clock = setInterval(paint, 60_000)
   let ready = false
   const unsub = subscribe((st) => {
     s = st
     // The stream draws every agent's events, so it checks each update itself (it skips unchanged ones).
     stream?.render(st)
     if (!st.threads.length) return
+    if (!changed(st)) return
     const first = !ready
     ready = true
     // Until you pick a view, it follows: Needs me if anything needs you, else All conversations
@@ -396,10 +424,19 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
         if (r) (sel = r.root.id), (cur = hit.id)
       }
     }
-    render()
+    paint()
   })
   placeChat(null)
-  return () => (unsub(), ro.disconnect(), mounted?.stop(), root.classList.remove("sfp-p3"))
+  return () => (
+    unsub(),
+    ro.disconnect(),
+    clearInterval(clock),
+    root.removeEventListener("pointerdown", press, true),
+    window.removeEventListener("pointerup", release, true),
+    window.removeEventListener("pointercancel", release, true),
+    mounted?.stop(),
+    root.classList.remove("sfp-p3")
+  )
 }
 
 register({ id: 3, name: "Inbox", blurb: "Inbox of what needs you, the conversation tree, and the chat or worker you pick", mount })
