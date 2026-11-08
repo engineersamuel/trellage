@@ -1,10 +1,11 @@
 import { Command, Mount, Subscription, click, expect, given, keydown, label, role, scene } from "foldkit/scene";
+import { Option } from "effect";
 import { Dialog } from "@foldkit/ui";
 import { describe, test, expect as vitestExpect } from "vitest";
 import type { FeedEvent } from "../../../shared/feed";
 import { FetchDiff, MountNativeDiff } from "./command";
 import { Message } from "./message";
-import { init, open, update } from "./update";
+import { follow, init, open, totals, update } from "./update";
 import { changesWorktree, reloadDependencies } from "./subscription";
 import { view } from "./view";
 
@@ -28,7 +29,7 @@ describe("worktree changes panel", () => {
       given(opened),
       Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
       click(role("button", { name: "Reload changes" })),
-      Command.resolve(FetchDiff, Message.SucceededFetchDiff({ diff })),
+      Command.resolve(FetchDiff, Message.SucceededFetchDiff({ threadId: "t1", diff })),
       expect(role("heading", { name: "Worktree changes" })).toExist(),
       expect(role("navigation", { name: "Changed files" })).toContainText("src/"),
       expect(label("Diff of README.md")).toExist(),
@@ -49,7 +50,7 @@ describe("worktree changes panel", () => {
       given(opened),
       Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
       click(role("button", { name: "Reload changes" })),
-      Command.resolve(FetchDiff, Message.SucceededFetchDiff({ diff: { ...diff, files: [] } })),
+      Command.resolve(FetchDiff, Message.SucceededFetchDiff({ threadId: "t1", diff: { ...diff, files: [] } })),
       expect(role("paragraph")).toHaveText("No changes against the base commit."),
     );
   });
@@ -61,10 +62,10 @@ describe("worktree changes panel", () => {
       given(opened),
       Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
       click(role("button", { name: "Reload changes" })),
-      Command.resolve(FetchDiff, Message.SucceededFetchDiff({ diff })),
+      Command.resolve(FetchDiff, Message.SucceededFetchDiff({ threadId: "t1", diff })),
       Mount.resolve(MountNativeDiff, Message.CompletedMountNativeDiff()),
       Subscription.emit(Message.ReceivedFileChange()),
-      Command.resolve(FetchDiff, Message.SucceededFetchDiff({ diff: edited })),
+      Command.resolve(FetchDiff, Message.SucceededFetchDiff({ threadId: "t1", diff: edited })),
       expect(role("button", { name: /README\.md/ })).toContainText("+3"),
     );
   });
@@ -79,8 +80,19 @@ describe("worktree changes panel", () => {
   });
 
   test("the agents whose workdir is the shown worktree", () => {
-    const loaded = update(opened, Message.SucceededFetchDiff({ diff })).model;
+    const loaded = update(opened, Message.SucceededFetchDiff({ threadId: "t1", diff })).model;
     const worker = (id: string, workdir: string | null) => ({ id, name: id, role: "worker", status: "idle", auth: "native", model: "m", pid: null, rssKb: null, workdir });
-    vitestExpect(reloadDependencies(loaded, [worker("w1", "/w"), worker("w2", "/elsewhere"), worker("w3", null)])).toEqual({ isOpen: true, agentIds: ["w1"] });
+    vitestExpect(reloadDependencies(loaded, [worker("w1", "/w"), worker("w2", "/elsewhere"), worker("w3", null)])).toEqual({ agentIds: ["w1"] });
+  });
+
+  test("follows the open conversation while closed and sums the lines for the navbar", () => {
+    const following = follow("t2")(init().model);
+    vitestExpect(following.model.threadId).toBe("t2");
+    vitestExpect(following.model.dialog.isOpen).toBe(false);
+    vitestExpect(following.commands?.length).toBe(1);
+    vitestExpect(follow("t2")(following.model).commands ?? []).toEqual([]);
+    const loaded = update(following.model, Message.SucceededFetchDiff({ threadId: "t2", diff })).model;
+    vitestExpect(update(loaded, Message.FailedFetchDiff({ threadId: "-", error: "late" })).model).toBe(loaded);
+    vitestExpect(totals(loaded)).toEqual(Option.some({ added: 6, removed: 3 }));
   });
 });

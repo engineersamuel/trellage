@@ -11,8 +11,8 @@ export const FetchDiff = Command.define("FetchDiff", {
   messages: [Message.SucceededFetchDiff, Message.FailedFetchDiff],
   execute: ({ threadId }) =>
     getJson(`/api/threads/${encodeURIComponent(threadId)}/diff`, WorktreeDiff).pipe(
-      Effect.map((diff) => Message.SucceededFetchDiff({ diff })),
-      Effect.catch((error) => Effect.succeed(Message.FailedFetchDiff({ error }))),
+      Effect.map((diff) => Message.SucceededFetchDiff({ threadId, diff })),
+      Effect.catch((error) => Effect.succeed(Message.FailedFetchDiff({ threadId, error }))),
     ),
 });
 

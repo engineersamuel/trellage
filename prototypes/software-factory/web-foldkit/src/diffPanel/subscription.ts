@@ -19,17 +19,16 @@ export const changesWorktree =
 /** A busy worker finishes several tools per second; reload once the burst settles. */
 const RELOAD_DEBOUNCE = "1 second";
 
-export const ReloadDependencies = { isOpen: Schema.Boolean, agentIds: Schema.Array(Schema.String) };
+export const ReloadDependencies = { agentIds: Schema.Array(Schema.String) };
 
 /** Ids of the agents whose working directory is the worktree the panel shows. */
-export const reloadDependencies = (model: Model, workers: ReadonlyArray<Worker>): { isOpen: boolean; agentIds: ReadonlyArray<string> } => ({
-  isOpen: model.dialog.isOpen,
+export const reloadDependencies = (model: Model, workers: ReadonlyArray<Worker>): { agentIds: ReadonlyArray<string> } => ({
   agentIds: Option.match(AsyncData.getData(model.diff), {
     onNone: () => [],
     onSome: ({ worktree }) => Array.map(Array.filter(workers, ({ workdir }) => workdir === worktree), ({ id }) => id),
   }),
 });
 
-/** While the panel is open, file changes in its worktree reload it. Closed, it listens to nothing. */
-export const reloadStream = ({ isOpen, agentIds }: { isOpen: boolean; agentIds: ReadonlyArray<string> }): Stream.Stream<Message> =>
-  isOpen ? feedEvents.pipe(Stream.filter(changesWorktree(agentIds)), Stream.debounce(RELOAD_DEBOUNCE), Stream.map(() => Message.ReceivedFileChange())) : Stream.empty;
+/** File changes in the shown worktree reload it, open or closed: the navbar button shows the live counts. */
+export const reloadStream = ({ agentIds }: { agentIds: ReadonlyArray<string> }): Stream.Stream<Message> =>
+  feedEvents.pipe(Stream.filter(changesWorktree(agentIds)), Stream.debounce(RELOAD_DEBOUNCE), Stream.map(() => Message.ReceivedFileChange()));

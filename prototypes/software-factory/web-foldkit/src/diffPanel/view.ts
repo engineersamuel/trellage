@@ -3,6 +3,7 @@ import { AsyncData, Submodel } from "foldkit";
 import type { Html, HtmlBuilder } from "foldkit/html";
 import { Button, Dialog } from "@foldkit/ui";
 import { MountNativeDiff } from "./command";
+import { totals as lineTotals } from "./update";
 import { type ChangedFile, type WorktreeDiff, fileGroups } from "./domain";
 import { Message } from "./message";
 import type { Model } from "./model";
@@ -120,5 +121,21 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 );
 
 /** The navbar button that opens the changes panel. */
-export const navButton = <ParentMessage>(onClick: ParentMessage, h: HtmlBuilder<ParentMessage>): Html =>
-  Button.view({ onClick, toView: (attributes) => h.button([...attributes.button, h.AriaLabel("Open worktree changes"), h.Title("Worktree changes")], ["± Changes"]) }, h);
+export const navButton = <ParentMessage>(model: Model, onClick: ParentMessage, h: HtmlBuilder<ParentMessage>): Html =>
+  Button.view(
+    {
+      onClick,
+      toView: (attributes) =>
+        h.button(
+          [...attributes.button, h.AriaLabel("Open worktree changes"), h.Title("Worktree changes: lines added and removed against the base")],
+          [
+            "± Changes",
+            ...Option.match(lineTotals(model), {
+              onNone: () => [],
+              onSome: ({ added, removed }) => [" ", h.span([h.Class("fk-nav-plus")], [`+${added}`]), " ", h.span([h.Class("fk-nav-minus")], [`−${removed}`])],
+            }),
+          ],
+        ),
+    },
+    h,
+  );

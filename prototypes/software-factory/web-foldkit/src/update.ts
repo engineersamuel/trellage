@@ -150,8 +150,17 @@ const syncOutside =
     ],
   });
 
+/** The diff panel (and its navbar counts) follows the open conversation, or the run worktree when none is open. */
+const followThread: Step = (model) =>
+  Update.foldChildStep({
+    update: DiffPanel.follow(Option.getOrElse(model.chat.maybeSelectedThreadId, () => DiffPanel.RUN_WORKTREE)),
+    read: readDiffPanel,
+    write: writeDiffPanel,
+    toParentMessage: toGotDiffPanelMessage,
+  })(model);
+
 export const update = (model: Model, message: Message): UpdateReturn =>
-  Update.combine(model, [(stepModel) => handleMessage(stepModel, message), syncOutside(model)]);
+  Update.combine(model, [(stepModel) => handleMessage(stepModel, message), followThread, syncOutside(model)]);
 
 /** ?thread=<id> in the address bar opens that conversation on load. */
 const openThreadFromUrl =
@@ -186,5 +195,6 @@ export const init = (flags: Flags, url: Parameters<typeof chat.init>[1], maybeTh
       ],
     }),
     openThreadFromUrl(maybeThreadId),
+    followThread,
   ]);
 };

@@ -168,3 +168,5 @@ kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; ma
 .fk-diff-pane-head { padding: 6px 12px; border-bottom: 1px solid var(--sf-border); font-size: 12px; }
 .fk-diff-pane > p { padding: 12px; margin: 0; }
 .fk-diff-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; font-size: 12px; }
+.fk-nav-plus { color: #3fb950; }
+.fk-nav-minus { color: #f85149; }

@@ -41,6 +41,21 @@ const fetch: Step = (model) => ({
   commands: [FetchDiff({ threadId: model.threadId })],
 });
 
+/** Show `threadId`'s worktree: the navbar counts follow the open conversation even while the panel is closed. */
+export const follow =
+  (threadId: string): Step =>
+  (model) =>
+    model.threadId === threadId
+      ? { model }
+      : fetch(modifyFields(model, { threadId: () => threadId, diff: () => AsyncData.Idle(), maybeSelectedPath: () => Option.none() }));
+
+/** Total added and removed lines of the loaded changes, for the navbar button. */
+export const totals = (model: Model): Option.Option<{ added: number; removed: number }> =>
+  Option.map(AsyncData.getData(model.diff), ({ files }) => ({
+    added: Array.reduce(files, 0, (n, f) => n + f.added),
+    removed: Array.reduce(files, 0, (n, f) => n + f.removed),
+  }));
+
 /** Open the panel on `threadId`'s worktree and load its changes fresh. */
 export const open =
   (threadId: string): Step =>
@@ -77,8 +92,11 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     GotDialogMessage: ({ message }) => foldDialog(model, message),
     ClickedRefresh: () => fetch(model),
     ReceivedFileChange: () => fetch(model),
-    SucceededFetchDiff: ({ diff }) => ({ model: keepSelection(modifyFields(model, { diff: () => AsyncData.succeed(diff) })) }),
-    FailedFetchDiff: ({ error }) => ({ model: modifyFields(model, { diff: (current) => AsyncData.settle(current, Result.fail(error)) }) }),
+    // A reply for a worktree the panel no longer shows (the conversation changed while it loaded) is dropped.
+    SucceededFetchDiff: ({ threadId, diff }) =>
+      threadId === model.threadId ? { model: keepSelection(modifyFields(model, { diff: () => AsyncData.succeed(diff) })) } : { model },
+    FailedFetchDiff: ({ threadId, error }) =>
+      threadId === model.threadId ? { model: modifyFields(model, { diff: (current) => AsyncData.settle(current, Result.fail(error)) }) } : { model },
     ClickedFile: ({ path }) => select(model, Option.some(path)),
     PressedNextFile: () => step(model, 1),
     PressedPreviousFile: () => step(model, -1),

@@ -8,8 +8,8 @@ export const Message = defineMessageUnion({
   ClickedRefresh: {},
   /** The feed reported a finished tool call or a cleaned worktree while the panel is open. */
   ReceivedFileChange: {},
-  SucceededFetchDiff: { diff: WorktreeDiff },
-  FailedFetchDiff: { error: Schema.String },
+  SucceededFetchDiff: { threadId: Schema.String, diff: WorktreeDiff },
+  FailedFetchDiff: { threadId: Schema.String, error: Schema.String },
   ClickedFile: { path: Schema.String },
   PressedNextFile: {},
   PressedPreviousFile: {},

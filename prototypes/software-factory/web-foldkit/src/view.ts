@@ -100,7 +100,7 @@ const approvalsLink = (pending: ReadonlyArray<Approval>, h: HtmlBuilder<Message>
 const EMPTY_WORKERS: ReadonlyArray<Worker> = [];
 
 /** The navbar reads only settings, workers and approvals, so a chat Message reuses the cached subtree. */
-const navbar = (settingsModel: Settings.Model, goalsModel: Goals.Model, workers: WorkerPanel.Model["workers"], approvals: ReadonlyArray<Approval>, h: HtmlBuilder<Message>): Html =>
+const navbar = (settingsModel: Settings.Model, goalsModel: Goals.Model, diffPanelModel: DiffPanel.Model, workers: WorkerPanel.Model["workers"], approvals: ReadonlyArray<Approval>, h: HtmlBuilder<Message>): Html =>
   Option.match(Settings.maybeSettings(settingsModel), {
     onNone: () => h.empty,
     onSome: (settings) => {
@@ -115,7 +115,7 @@ const navbar = (settingsModel: Settings.Model, goalsModel: Goals.Model, workers:
         slot("navbar", h, "fk-nav-item"),
         h.span([h.Class("fk-spacer")]),
         h.span([h.Class("fk-nav-item fk-muted")], [settings.theme]),
-        DiffPanel.navButton(Message.ClickedOpenChanges(), h),
+        DiffPanel.navButton(diffPanelModel, Message.ClickedOpenChanges(), h),
         h.submodel({ model: goalsModel, slotId: "goals-button", toParentMessage: toGotGoalsMessage, view: Goals.navButton }),
         h.submodel({ model: settingsModel, slotId: "settings-gear", toParentMessage: toGotSettingsMessage, view: Settings.gearButton }),
       ]);
@@ -199,7 +199,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
       slot("page-background", h, "fk-slot-bg"),
       Option.match(maybeSettings, {
         onNone: () => h.h1([h.Class("fk-visually-hidden")], ["Factory · Foldkit"]),
-        onSome: () => lazyNavbar(navbar, [model.settings, model.goals, model.workerPanel.workers, model.approvals, h]),
+        onSome: () => lazyNavbar(navbar, [model.settings, model.goals, model.diffPanel, model.workerPanel.workers, model.approvals, h]),
       }),
       ...Option.match(banner, { onNone: () => [], onSome: (text) => [h.div([h.Class("fk-banner"), h.Role("status")], [text])] }),
       slot("banner", h),
