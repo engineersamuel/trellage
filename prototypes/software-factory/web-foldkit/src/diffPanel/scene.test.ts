@@ -1,9 +1,11 @@
-import { Command, Mount, click, expect, given, keydown, label, role, scene } from "foldkit/scene";
+import { Command, Mount, Subscription, click, expect, given, keydown, label, role, scene } from "foldkit/scene";
 import { Dialog } from "@foldkit/ui";
-import { describe, test } from "vitest";
+import { describe, test, expect as vitestExpect } from "vitest";
+import type { FeedEvent } from "../../../shared/feed";
 import { FetchDiff, MountNativeDiff } from "./command";
 import { Message } from "./message";
 import { init, open, update } from "./update";
+import { changesFiles } from "./subscription";
 import { view } from "./view";
 
 const file = (path: string, status: "M" | "A" | "D" | "?") => ({
@@ -50,5 +52,27 @@ describe("worktree changes panel", () => {
       Command.resolve(FetchDiff, Message.SucceededFetchDiff({ diff: { ...diff, files: [] } })),
       expect(role("paragraph")).toHaveText("No changes against the base commit."),
     );
+  });
+
+  test("a file change reloads the panel", () => {
+    const edited = { ...diff, files: [{ ...diff.files[0]!, added: 3, patch: `${diff.files[0]!.patch}+d\n` }, ...diff.files.slice(1)] };
+    scene(
+      { update, view },
+      given(opened),
+      Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
+      click(role("button", { name: "Reload changes" })),
+      Command.resolve(FetchDiff, Message.SucceededFetchDiff({ diff })),
+      Mount.resolve(MountNativeDiff, Message.CompletedMountNativeDiff()),
+      Subscription.emit(Message.ReceivedFileChange()),
+      Command.resolve(FetchDiff, Message.SucceededFetchDiff({ diff: edited })),
+      expect(role("button", { name: /README\.md/ })).toContainText("+3"),
+    );
+  });
+
+  test("only file-changing feed events reload", () => {
+    const event = (type: string): FeedEvent => ({ seq: 1, workerId: "w", type, agentId: null, timestamp: "", data: {} });
+    vitestExpect(changesFiles(event("tool.execution_complete"))).toBe(true);
+    vitestExpect(changesFiles(event("factory.worktree_cleaned"))).toBe(true);
+    vitestExpect(changesFiles(event("assistant.message_delta"))).toBe(false);
   });
 });

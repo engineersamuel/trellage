@@ -9,8 +9,9 @@ import { chat } from "./chatProgram";
 import { feedEvents, fromCallback } from "./feed";
 import { Message } from "./message";
 import type { Model } from "./model";
+import * as DiffPanel from "./diffPanel";
 import * as Settings from "./settings";
-import { toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
+import { toGotDiffPanelMessage, toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
 import * as WorkerPanel from "./workerPanel";
 
 const decodeEvent = Schema.decodeUnknownOption(StoredEvent);
@@ -88,4 +89,9 @@ const settingsSubscriptions = Subscription.lift(Settings.subscriptions)<Model, M
   toParentMessage: toGotSettingsMessage,
 });
 
-export const subscriptions = Subscription.aggregate(chatSubscriptions, appSubscriptions, workerPanelSubscriptions, settingsSubscriptions);
+const diffPanelSubscriptions = Subscription.lift(DiffPanel.subscriptions)<Model, Message>({
+  read: (model) => Option.some(model.diffPanel),
+  toParentMessage: toGotDiffPanelMessage,
+});
+
+export const subscriptions = Subscription.aggregate(chatSubscriptions, appSubscriptions, workerPanelSubscriptions, settingsSubscriptions, diffPanelSubscriptions);

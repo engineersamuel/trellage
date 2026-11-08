@@ -39,7 +39,14 @@ const fileList = (diff: WorktreeDiff, maybeSelectedPath: Option.Option<string>, 
     ),
   ]);
 
-/** The selected file's diff. Keyed by file, so a new file is a new element and a fresh Mount. */
+/** Short hash of a patch. Mount args are read once, so a changed patch needs a new element key. */
+const patchKey = (patch: string): string => {
+  let hash = 5381;
+  for (let index = 0; index < patch.length; index++) hash = (hash * 33) ^ patch.charCodeAt(index);
+  return (hash >>> 0).toString(36);
+};
+
+/** The selected file's diff. Keyed by file and patch: a new file or a changed patch is a fresh Mount; an unchanged reload keeps the element and its scroll position. */
 const filePane = (model: Model, file: ChangedFile, h: HtmlBuilder<Message>): Html => {
   const note = file.binary ? "Binary file, no text diff." : file.tooLarge ? "Patch larger than 512 KB; not shown." : file.patch === "" ? "No text changes (mode only)." : "";
   return h.section([h.Class("fk-diff-pane"), h.AriaLabel(`Diff of ${file.path}`)], [
@@ -47,7 +54,7 @@ const filePane = (model: Model, file: ChangedFile, h: HtmlBuilder<Message>): Htm
     note
       ? h.p([h.Class("fk-muted")], [note])
       : // renderDiffs owns the inner element's class, so the scroll box is its parent.
-        h.div([h.Class("fk-diff-body")], [h.keyed("div")(file.path, [h.OnMount(MountNativeDiff({ patch: file.patch }))])]),
+        h.div([h.Class("fk-diff-body")], [h.keyed("div")(`${file.path}:${patchKey(file.patch)}`, [h.OnMount(MountNativeDiff({ patch: file.patch }))])]),
   ]);
 };
 

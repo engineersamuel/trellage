@@ -76,6 +76,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
     GotDialogMessage: ({ message }) => foldDialog(model, message),
     ClickedRefresh: () => fetch(model),
+    ReceivedFileChange: () => fetch(model),
     SucceededFetchDiff: ({ diff }) => ({ model: keepSelection(modifyFields(model, { diff: () => AsyncData.succeed(diff) })) }),
     FailedFetchDiff: ({ error }) => ({ model: modifyFields(model, { diff: (current) => AsyncData.settle(current, Result.fail(error)) }) }),
     ClickedFile: ({ path }) => select(model, Option.some(path)),
