@@ -17,6 +17,7 @@ type Json = (path: string, init?: RequestInit) => Effect.Effect<any, Error>
 type Ask = (prompt: string, folderId: string, base: string) => Effect.Effect<string, Error>
 
 const POLL = Duration.seconds(15)
+const STALE_GRACE = 3 * 60_000
 const enc = encodeURIComponent
 
 /** One line per run: when, factory commit, outcome, thread, PR, unmet count. */
@@ -129,8 +130,14 @@ const watch = (json: Json, spec: GoalSpec, threadId: string) =>
   Effect.gen(function* () {
     const deadline = Date.now() + spec.limits.minutesPerRun * 60_000
     const answered = new Set<string>()
+    // A resumed thread may still show the block it reported before the human's answer or message. Ignore that
+    // report until the thread has run again, or STALE_GRACE passed with no activity (then the block is real).
+    const started = Date.now()
+    let staleBlock: string | null | undefined
     while (true) {
       const run: Run = yield* json(`/api/runs/${enc(threadId)}`)
+      if (staleBlock === undefined) staleBlock = run.report?.status === "blocked" ? run.report.summary : null
+      if (run.status === "running" || Date.now() - started > STALE_GRACE) staleBlock = null
       const unmet = goalUnmet(run, spec.expect, spec.base)
       if (!unmet.length) return { run, unmet, outcome: "pass" as const, code: 0 }
       for (const a of splitPending(run, spec.approvals).auto.filter((a) => !answered.has(a.id))) {
@@ -141,7 +148,7 @@ const watch = (json: Json, spec: GoalSpec, threadId: string) =>
         })
         yield* Console.error(`auto-answered ${a.id} [${a.topic}] ${a.title}: ${a.options[0]}`)
       }
-      const stop = stopReason(run, spec.approvals)
+      const stop = stopReason(run, spec.approvals, staleBlock)
       if (stop?.code === 2) return { run, unmet, outcome: "waiting" as const, code: 2, reason: stop.reason }
       if (stop?.code === 3) return { run, unmet, outcome: "blocked" as const, code: 3, reason: stop.reason }
       if (Date.now() >= deadline) return { run, unmet, outcome: "timeout" as const, code: 1 }

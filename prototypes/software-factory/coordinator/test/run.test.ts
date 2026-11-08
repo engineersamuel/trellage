@@ -99,6 +99,10 @@ describe("approval policy", () => {
   })
   test("blocked report stops with 3", () => {
     expect(stopReason({ ...run, report: { status: "blocked", summary: "x", gaps: [] } }, spec.approvals)).toEqual({ code: 3, reason: "reported blocked: x" })
+    const blocked = { ...run, status: "idle", report: { status: "blocked", summary: "x", gaps: [] } }
+    expect(stopReason({ ...blocked, status: "running" }, spec.approvals)).toBeNull()
+    expect(stopReason(blocked, spec.approvals, "x")).toBeNull()
+    expect(stopReason(blocked, spec.approvals, "older")?.code).toBe(3)
   })
 })
 

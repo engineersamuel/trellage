@@ -199,10 +199,12 @@ export const splitPending = (run: Run, policy: Approvals): { auto: RunApproval[]
 }
 
 /** Why polling should stop before the expectation is met: a decision waits for the human, or the run reported blocked. */
-export const stopReason = (run: Run, policy?: Approvals): { code: 2 | 3; reason: string } | null => {
+/** `staleBlock`: summary of a blocked report that predates this watch; it does not stop the watch. A running thread is never blocked. */
+export const stopReason = (run: Run, policy?: Approvals, staleBlock?: string | null): { code: 2 | 3; reason: string } | null => {
   const waiting = policy ? splitPending(run, policy).human : run.approvals.filter((a) => a.status === "pending")
   if (waiting.length) return { code: 2, reason: `waiting for an answer: ${waiting.map((a) => `${a.id} [${a.topic}] ${a.title}`).join("; ")}` }
-  if (run.report?.status === "blocked") return { code: 3, reason: `reported blocked: ${run.report.summary}` }
+  if (run.report?.status === "blocked" && run.status !== "running" && run.report.summary !== staleBlock)
+    return { code: 3, reason: `reported blocked: ${run.report.summary}` }
   return null
 }
 
