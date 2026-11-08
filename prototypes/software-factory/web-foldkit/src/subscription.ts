@@ -1,5 +1,5 @@
 import { Filter, Match, Option, Schema, Stream } from "effect";
-import { Subscription } from "foldkit";
+import { AsyncData, Subscription } from "foldkit";
 import { changes as approvalChanges } from "../../shared/approvals";
 import { type FeedEvent, RESYNC } from "../../shared/feed";
 import { onProto } from "../../shared/protos";
@@ -89,9 +89,12 @@ const settingsSubscriptions = Subscription.lift(Settings.subscriptions)<Model, M
   toParentMessage: toGotSettingsMessage,
 });
 
-const diffPanelSubscriptions = Subscription.lift(DiffPanel.subscriptions)<Model, Message>({
-  read: (model) => Option.some(model.diffPanel),
-  toParentMessage: toGotDiffPanelMessage,
-});
+// The diff panel reloads for tool calls of agents in its worktree; the agent list lives in the worker panel.
+const diffPanelSubscriptions = Subscription.make<Model, Message>()((entry) => ({
+  diffPanelReload: entry(DiffPanel.ReloadDependencies, {
+    modelToDependencies: (model) => DiffPanel.reloadDependencies(model.diffPanel, AsyncData.getOrElse(model.workerPanel.workers, () => [])),
+    dependenciesToStream: (dependencies) => DiffPanel.reloadStream(dependencies).pipe(Stream.map(toGotDiffPanelMessage)),
+  }),
+}));
 
 export const subscriptions = Subscription.aggregate(chatSubscriptions, appSubscriptions, workerPanelSubscriptions, settingsSubscriptions, diffPanelSubscriptions);

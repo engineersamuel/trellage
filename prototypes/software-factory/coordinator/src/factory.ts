@@ -73,6 +73,8 @@ export type WorkerSummary = {
   owner: string
   /** SDLC step this agent runs, if any. */
   step: string | null
+  /** Directory the agent works in (a conversation or run worktree); null before its session starts. */
+  workdir: string | null
   /** When the factory started this agent (ms); gives the spawn order. */
   startedAt: number
 }
@@ -214,6 +216,7 @@ export class Worker {
       contextLimit: this.context?.[1] ?? null,
       owner: this.owner,
       step: this.spec?.step ?? null,
+      workdir: this.spec?.workdir ?? null,
       startedAt: this.startedAt,
     }
   }

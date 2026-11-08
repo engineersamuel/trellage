@@ -5,7 +5,7 @@ import type { FeedEvent } from "../../../shared/feed";
 import { FetchDiff, MountNativeDiff } from "./command";
 import { Message } from "./message";
 import { init, open, update } from "./update";
-import { changesFiles } from "./subscription";
+import { changesWorktree, reloadDependencies } from "./subscription";
 import { view } from "./view";
 
 const file = (path: string, status: "M" | "A" | "D" | "?") => ({
@@ -69,10 +69,18 @@ describe("worktree changes panel", () => {
     );
   });
 
-  test("only file-changing feed events reload", () => {
-    const event = (type: string): FeedEvent => ({ seq: 1, workerId: "w", type, agentId: null, timestamp: "", data: {} });
-    vitestExpect(changesFiles(event("tool.execution_complete"))).toBe(true);
-    vitestExpect(changesFiles(event("factory.worktree_cleaned"))).toBe(true);
-    vitestExpect(changesFiles(event("assistant.message_delta"))).toBe(false);
+  test("only tool calls of agents in the shown worktree reload, plus cleanups and gaps", () => {
+    const event = (type: string, workerId = "w"): FeedEvent => ({ seq: 1, workerId, type, agentId: null, timestamp: "", data: {} });
+    const inWorktree = changesWorktree(["sub-t1", "w1"]);
+    vitestExpect(inWorktree(event("tool.execution_complete", "w1"))).toBe(true);
+    vitestExpect(inWorktree(event("tool.execution_complete", "other"))).toBe(false);
+    vitestExpect(inWorktree(event("factory.worktree_cleaned"))).toBe(true);
+    vitestExpect(inWorktree(event("assistant.message_delta", "w1"))).toBe(false);
+  });
+
+  test("the agents whose workdir is the shown worktree", () => {
+    const loaded = update(opened, Message.SucceededFetchDiff({ diff })).model;
+    const worker = (id: string, workdir: string | null) => ({ id, name: id, role: "worker", status: "idle", auth: "native", model: "m", pid: null, rssKb: null, workdir });
+    vitestExpect(reloadDependencies(loaded, [worker("w1", "/w"), worker("w2", "/elsewhere"), worker("w3", null)])).toEqual({ isOpen: true, agentIds: ["w1"] });
   });
 });
