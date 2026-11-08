@@ -9,9 +9,10 @@ import { Message } from "./message";
 import { toGotChatMessage } from "./chat";
 import { chat } from "./chatProgram";
 import type { Model } from "./model";
+import * as DiffPanel from "./diffPanel";
 import * as Goals from "./goals";
 import * as Settings from "./settings";
-import { toGotGoalsMessage, toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
+import { toGotDiffPanelMessage, toGotGoalsMessage, toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
 import * as WorkerPanel from "./workerPanel";
 
 const BUSY_COLOR = "#f59e0b";
@@ -114,6 +115,7 @@ const navbar = (settingsModel: Settings.Model, goalsModel: Goals.Model, workers:
         slot("navbar", h, "fk-nav-item"),
         h.span([h.Class("fk-spacer")]),
         h.span([h.Class("fk-nav-item fk-muted")], [settings.theme]),
+        DiffPanel.navButton(Message.ClickedOpenChanges(), h),
         h.submodel({ model: goalsModel, slotId: "goals-button", toParentMessage: toGotGoalsMessage, view: Goals.navButton }),
         h.submodel({ model: settingsModel, slotId: "settings-gear", toParentMessage: toGotSettingsMessage, view: Settings.gearButton }),
       ]);
@@ -145,11 +147,15 @@ const lazyPanelLeft = createLazy();
 const lazyPanelRight = createLazy();
 const lazySettingsDrawer = createLazy();
 const lazyGoalsDialog = createLazy();
+const lazyDiffPanel = createLazy();
 const lazyClassicChat = createLazy();
 const lazyPrototypeChat = createLazy();
 
 const goalsDialog = (goalsModel: Goals.Model, h: HtmlBuilder<Message>): Html =>
   h.submodel({ model: goalsModel, slotId: "goals", toParentMessage: toGotGoalsMessage, view: Goals.view });
+
+const diffPanel = (diffPanelModel: DiffPanel.Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({ model: diffPanelModel, slotId: "diff-panel", toParentMessage: toGotDiffPanelMessage, view: DiffPanel.view });
 
 const gridColumns = (side: string, width: number): string =>
   Match.value(side).pipe(
@@ -203,6 +209,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
       slot("overlay", h, "fk-slot-overlay"),
       lazySettingsDrawer(settingsDrawer, [model.settings, h]),
       lazyGoalsDialog(goalsDialog, [model.goals, h]),
+      lazyDiffPanel(diffPanel, [model.diffPanel, h]),
     ]),
   };
 };

@@ -29,6 +29,7 @@ import { cardData, coordinatorTools, globalTools, spawnHealing, type Scope } fro
 import { DRAFT_NOTE, DraftError, draftNodeId, isUnstartedDraft, makeDrafts } from "./drafts.ts"
 import { enhanceWith, stopEnhance } from "./enhance.ts"
 import { Schema } from "effect"
+import { worktreeDiff } from "./worktreeDiff.ts"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
 const landing = asset("landing.html")
@@ -1319,6 +1320,18 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/api\/goals\/([^/]+)\/runs$/, (req, _url, [id]) => goalReply(async () => goals.appendRun(id!, { factoryCommit: checkoutCommit(FACTORY_DIR), ...(await req.json()) }))],
   ["GET", /^\/api\/threads\/get$/, () => json({ threads: threads.list(), folders: threads.folders() })],
   ["GET", /^\/api\/threads\/get\/([^/]+)$/, (_req, _url, [id]) => json(threads.messages(id!))],
+  // Diff panel: every change of the conversation's worktree against its base. A thread without a worktree
+  // (general chat) shows the factory run worktree. Paths come from the server only, never from the request.
+  ["GET", /^\/api\/threads\/([^/]+)\/diff$/, (_req, _url, [id]) => {
+    const t = threads.get(id!)
+    const wt = t?.worktree && !t.cleanedAt ? { worktree: t.worktree, base: t.base } : factory.run && { worktree: factory.run.worktree, base: factory.run.base }
+    if (!wt?.base) return new Response("no worktree for this conversation", { status: 404 })
+    try {
+      return json(worktreeDiff(wt.worktree, wt.base))
+    } catch (e) {
+      return new Response(`git diff failed: ${e instanceof Error ? e.message : String(e)}`, { status: 500 })
+    }
+  }],
   [
     "POST",
     /^\/api\/threads\/create$/,
