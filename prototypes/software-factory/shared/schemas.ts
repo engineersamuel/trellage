@@ -174,6 +174,8 @@ export const Settings = Schema.Struct({
   ),
   /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
   workers: Schema.Struct({ harness: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" }))),
+  /** Engine behind every factory decision (gates, lenses, findings, triage, next step). Hot-swappable: the next decision uses it. */
+  decisions: Schema.Struct({ engine: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ engine: "jev" }))),
   crons: Schema.Record(Schema.String, Cron),
   extensions: Schema.Record(Schema.String, Extension),
   repo: Schema.String,

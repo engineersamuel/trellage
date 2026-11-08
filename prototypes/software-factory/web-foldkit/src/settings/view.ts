@@ -11,6 +11,8 @@ import type { Model } from "./model";
 
 /** Worker agent SDK choices (coordinator/src/settings.ts WORKER_HARNESSES). */
 const WORKER_HARNESSES = ["auto", "copilot", "claude", "pi"] as const;
+/** Decision engine choices (coordinator/src/decide.ts DECISION_ENGINES). */
+const DECISION_ENGINES = ["jev", "gpt-6-luna-decisions", "microsoft-decision-1"] as const;
 const RECENT_DECISIONS = 5;
 const RECENT_REVIEWS = 3;
 const REQUEST_PREVIEW_LENGTH = 60;
@@ -262,6 +264,13 @@ const agentSection = (settings: Settings, options: SettingsOptions, h: HtmlBuild
         [h.Class("fk-chips")],
         Array.map(WORKER_HARNESSES, (harness) =>
           h.keyed("span")(harness, [], [chip(harness === "auto" ? "auto (step decides)" : harness, settings.workers.harness === harness, Message.ClickedWorkerHarness({ harness }), h)]),
+        ),
+      ),
+      h.h4([], ["Decision engine (gates, reviews, next step)"]),
+      h.div(
+        [h.Class("fk-chips")],
+        Array.map(DECISION_ENGINES, (engine) =>
+          h.keyed("span")(engine, [], [chip(engine, settings.decisions.engine === engine, Message.ClickedDecisionEngine({ engine }), h)]),
         ),
       ),
       h.h4([], ["Disabled built-in tools"]),

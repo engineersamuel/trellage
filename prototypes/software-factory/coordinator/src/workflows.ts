@@ -1,7 +1,8 @@
 import { Effect } from "effect"
-import { noul, TypeSafeClient } from "@typesafe-ai/sdk"
+import { noul } from "@typesafe-ai/sdk"
+import { decisionsAvailable, systemOne } from "./decide.ts"
 import { guideOptimizeSkills } from "../../../../packages/trellage-launcher/src/guide-optimize-catalog.ts"
-import { jevKey, optimizeStepId } from "./steps.ts"
+import { optimizeStepId } from "./steps.ts"
 
 /** Deliberation and research workflows; each is a step that runs its Claude profile (see steps.ts). */
 export const RESEARCH_WORKFLOWS = [
@@ -49,17 +50,9 @@ export const selectWorkflows = <C extends Choice>(
 const jevSelect = <C extends Choice>(catalog: ReadonlyArray<C>, request: string, question: (c: C) => string) =>
   Effect.runPromise(
     Effect.tryPromise(async () => {
-      const apiKey = jevKey()
-      if (!apiKey) throw new Error("Jev unavailable: no TYPESAFE_API_KEY")
-      const client = new TypeSafeClient({
-        apiKey,
-        defaultModel: "jev-1.13.0",
-        retry: { maxRetries: 0 },
-        timeout: 10_000,
-        logLevel: "off",
-      })
+      if (!decisionsAvailable()) throw new Error("Jev unavailable: no TYPESAFE_API_KEY")
       const questions = Object.fromEntries(catalog.map((c) => [c.id, noul(question(c))]))
-      const result = await client.systemOne({ model: "jev-1.13.0", state: JSON.stringify({ request }), questions })
+      const result = await systemOne({ state: JSON.stringify({ request }), questions })
       return selectWorkflows(Object.fromEntries(catalog.map(({ id }) => [id, result.answers[id]!.noul])), catalog)
     }),
   )

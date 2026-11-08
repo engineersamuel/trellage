@@ -18,6 +18,7 @@ export const document: SettingsDocument = {
     agent: { model: "gpt", reasoningEffort: "low", disabledTools: [], instructions: "" },
     subAgent: { model: "opus", reasoningEffort: "high" },
     workers: { harness: "auto" },
+    decisions: { engine: "jev" },
     crons: {},
     extensions: {},
     repo: "",

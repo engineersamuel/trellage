@@ -30,6 +30,7 @@ import { appendCompact } from "../../shared/feed.ts"
 import { ensureClones, prepareStepSkills, SKILL_REPOS, stepById, stepSetup, TOOL_REPOS, type HarnessSpec, type SkillCheck } from "./steps.ts"
 import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./claude.ts"
 import { composePi, withProxyModel, PiSession } from "./pi.ts"
+import { setDecisionEngine } from "./decide.ts"
 
 const LOG_CAP = 4000
 
@@ -421,6 +422,7 @@ export class Factory {
     this.proxyUrl = env.SF_PROXY_URL ?? "http://localhost:8080/v1"
     this.settingsFile = S.settingsPath(this.root)
     this.settings = S.loadSettings(this.settingsFile)
+    setDecisionEngine(this.settings.decisions.engine, this.proxyUrl)
     this.approvals = new Approvals(this.root)
     // SF_MODEL is the worker default; coordinators use the settings (agent: global, subAgent: repo conversations).
     if (this.settings.agent.model === "") this.settings = { ...this.settings, agent: { ...this.settings.agent, model: "gpt-6-astra" } }
@@ -740,6 +742,7 @@ export class Factory {
     // Code changed: old error reports no longer apply.
     this.clearChangedExtensionErrors(prev, next)
     this.settings = next
+    setDecisionEngine(next.decisions.engine)
     S.saveSettings(this.settingsFile, next)
     this.publish("coordinator", "factory.settings_updated", null, now(), { settings: next, css: S.css(next) })
     return next
