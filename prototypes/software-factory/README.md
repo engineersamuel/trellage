@@ -104,7 +104,7 @@ For comparative research, design decisions and find-optimizations requests, the 
 Copilot SDK is the default harness for every worker. A step that needs skills or plugins built for another harness names it (`harness` in `coordinator/src/steps.ts`), and `spawn_worker` takes `harness` (`claude` or `pi`) and `profiles`. The factory composes the trx profiles in process, as `trx run <harness> <profile>` would, and runs the worker in that harness's TypeScript SDK:
 
 - **Claude** (`src/claude.ts`, Claude Agent SDK): plugins, `CLAUDE_CONFIG_DIR` and copilot-proxy-rs env. Permission mode `default`, so every prompt goes through `canUseTool`, which denies merge, push and delete.
-- **Pi** (`src/pi.ts`, Pi SDK): skills, extensions, provider and model from the profile; an inline `tool_call` extension applies the same deny rule.
+- **Pi** (`src/pi.ts`, Pi SDK): skills, extensions, provider and model from the profile; an inline `tool_call` extension applies the same deny rule. Pi has no skill tool: a `read` of a loaded `SKILL.md`, or a `/skill:name` prompt, counts as `skill.invoked`.
 
 Both map their events to the Copilot event names, so the feed, `read_worker`, the supervisor and both UIs treat them like any other worker. Council, Six Hats and Hyperresearch run in Claude. Each saves a separate `reports/<step>.md`. Selection probabilities appear in `factory.workflows_selected`.
 
