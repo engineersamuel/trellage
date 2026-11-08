@@ -181,7 +181,15 @@ describe("gate settling", () => {
 
 describe("reviewer model", () => {
   test("the other family than the implementer; an env pin wins", async () => {
-    const { reviewModelFor } = await import("../src/review.ts")
+    const { reviewModelFor, lensModel, reviewModels, geminiReachable } = await import("../src/review.ts")
+    // Three frontier families; reviewers come from the two the implementer is not in.
+    expect(reviewModels("claude-opus-5.5")).toEqual(["gpt-6-astra", "gemini-4-argon"])
+    expect(reviewModels("gpt-6-astra")).toEqual(["claude-opus-5.5", "gemini-4-argon"])
+    expect(reviewModels("gemini-4-argon")).toEqual(["gpt-6-astra", "claude-opus-5.5"])
+    expect(reviewModels("claude-opus-5.5", false)).toEqual(["gpt-6-astra"])
+    // Two lenses read with two different models; a third wraps around.
+    expect([0, 1, 2].map((i) => lensModel("claude-opus-5.5", i, true, ""))).toEqual(["gpt-6-astra", "gemini-4-argon", "gpt-6-astra"])
+    expect(geminiReachable("auto") && geminiReachable("claude") && !geminiReachable("copilot") && !geminiReachable("pi")).toBe(true)
     expect(reviewModelFor("gpt-6-astra", "")).toBe("claude-opus-5.5")
     expect(reviewModelFor("gpt-6.1-sol", undefined)).toBe("claude-opus-5.5")
     expect(reviewModelFor("claude-opus-5.5", undefined)).toBe("gpt-6-astra")
