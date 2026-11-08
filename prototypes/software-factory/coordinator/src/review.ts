@@ -56,15 +56,15 @@ export const lensModel = (implementerModel: string | null | undefined, i: number
   return models[i % models.length]!
 }
 
-/** Gemini reviewers run in the Copilot SDK (proxy auth) or the Claude SDK (proxy base URL); not when Pi is forced. */
-export const geminiReachable = (workerHarness: string): boolean => workerHarness !== "pi"
+/** Gemini reviewers reach copilot-proxy-rs in every SDK: Copilot (proxy auth), Claude and Pi (proxy base URL). */
+export const geminiReachable = (_workerHarness: string): boolean => true
 
 /**
  * How a reviewer reaches its model. Gemini goes through copilot-proxy-rs: in the Copilot SDK as BYOK (`auth: proxy`;
- * native Copilot answers "model not available"), in the Claude SDK through its proxy base URL when Claude is forced.
+ * native Copilot answers "model not available"); Claude and Pi workers already use the proxy, so no change there.
  */
 export const reviewerRoute = (model: string, workerHarness: string): { auth?: "proxy"; harness?: { kind: "claude"; profiles: string[] } } =>
-  familyOf(model) !== "gemini" ? {} : workerHarness === "claude" ? { harness: { kind: "claude", profiles: ["default"] } } : { auth: "proxy" }
+  familyOf(model) !== "gemini" || workerHarness === "pi" ? {} : workerHarness === "claude" ? { harness: { kind: "claude", profiles: ["default"] } } : { auth: "proxy" }
 
 export const pickLenses = (p: Record<string, number> | null, tier?: string): LensId[] => {
   if (!p) return ["correctness", "tests"]

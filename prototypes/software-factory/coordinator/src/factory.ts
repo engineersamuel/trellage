@@ -28,7 +28,7 @@ import * as S from "./settings.ts"
 import { appendCompact } from "../../shared/feed.ts"
 import { ensureClones, prepareStepSkills, SKILL_REPOS, stepById, stepSetup, TOOL_REPOS, type HarnessSpec, type SkillCheck } from "./steps.ts"
 import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./claude.ts"
-import { composePi, PiSession } from "./pi.ts"
+import { composePi, withProxyModel, PiSession } from "./pi.ts"
 
 const LOG_CAP = 4000
 
@@ -533,8 +533,9 @@ export class Factory {
   private async piSession(spec: SpawnSpec, workdir: string, harness: HarnessSpec, emit: (ev: HarnessEvent) => void, stepSkills: { name: string; dir: string }[] = []) {
     const launch = await composePi(harness.profiles, workdir)
     launch.skills.push(...stepSkills.map((s) => s.dir))
-    if (spec.model) launch.model = spec.model
-    const session = await PiSession.start(launch, workdir, emit)
+    // A pinned model (e.g. a Gemini reviewer) is added to the proxy provider in this worker's own agent dir.
+    const ready = spec.model ? withProxyModel(launch, spec.model, path.join(this.root, "pi-agents", crypto.randomUUID().slice(0, 8))) : launch
+    const session = await PiSession.start(ready, workdir, emit)
     return { session, model: session.model, loaded: `skills ${launch.skills.map((p) => path.basename(p)).join(", ")}` }
   }
 

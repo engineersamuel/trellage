@@ -3,10 +3,13 @@
 import {
   createAgentSession,
   DefaultResourceLoader,
+  parseSkillBlock,
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent"
+import path from "node:path"
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { prepareRun } from "../../../../packages/trellage-runtime/src/native-run/run.ts"
 import type { HarnessEvent } from "./claude.ts"
 import { forbiddenCommand } from "./guard.ts"
@@ -41,11 +44,35 @@ export const composePi = async (profiles: string[], cwd: string): Promise<PiLaun
   }
 }
 
+/**
+ * An agent dir whose provider also lists `model`. The trx profile registers one model on the copilot-proxy-rs
+ * provider; the proxy serves every family (Claude, GPT, Gemini), so other ids get a copy of that entry. The copy is
+ * the worker's own (the composed dir is shared): `dest` is a folder in the worker's home.
+ */
+export const withProxyModel = (launch: PiLaunch, model: string, dest: string): PiLaunch => {
+  const file = path.join(launch.agentDir, "models.json")
+  if (!existsSync(file)) return { ...launch, model }
+  const doc = JSON.parse(readFileSync(file, "utf8"))
+  const provider = doc.providers?.[launch.provider]
+  if (!provider?.models?.length || provider.models.some((m: any) => m.id === model)) return { ...launch, model }
+  provider.models.push({ ...provider.models[0], id: model, name: model })
+  mkdirSync(dest, { recursive: true })
+  cpSync(launch.agentDir, dest, { recursive: true, dereference: false })
+  writeFileSync(path.join(dest, "models.json"), JSON.stringify(doc, null, 2))
+  return { ...launch, agentDir: dest, model }
+}
+
 const textOf = (c: unknown): string =>
   typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => (b?.type === "text" ? b.text : "")).join("") : ""
 
-/** One Pi session event as factory events. Calls made by another tool carry their parent as agentId. */
-export const piEvents = (e: AgentSessionEvent, at = new Date().toISOString()): HarnessEvent[] => {
+/** A skill the session loaded: Pi has no skill tool, the model reads `filePath` to use it. */
+export type PiSkill = { name: string; filePath: string }
+
+/**
+ * One Pi session event as factory events. Calls made by another tool carry their parent as agentId.
+ * A read of a loaded skill's SKILL.md, or a `/skill:name` prompt, is also `skill.invoked`, as Claude's Skill tool is.
+ */
+export const piEvents = (e: AgentSessionEvent, at = new Date().toISOString(), skills: PiSkill[] = [], cwd = process.cwd()): HarnessEvent[] => {
   const parent = (e as { parentToolCallId?: string }).parentToolCallId
   const ev = (type: string, data: any): HarnessEvent => ({ type, timestamp: at, ...(parent ? { agentId: parent } : {}), data })
   // One id per content block, the same in the deltas and the final message, so the feed drops the deltas.
@@ -61,6 +88,10 @@ export const piEvents = (e: AgentSessionEvent, at = new Date().toISOString()): H
     }
     case "message_end": {
       const m: any = e.message
+      if (m.role === "user") {
+        const block = parseSkillBlock(textOf(m.content))
+        return block ? [ev("skill.invoked", { name: block.name })] : []
+      }
       if (m.role !== "assistant") return []
       return [
         ...m.content.flatMap((b: any, i: number) =>
@@ -73,8 +104,14 @@ export const piEvents = (e: AgentSessionEvent, at = new Date().toISOString()): H
         ...(m.stopReason === "error" ? [ev("session.error", { message: m.errorMessage ?? "model error" })] : []),
       ]
     }
-    case "tool_execution_start":
-      return [ev("tool.execution_start", { toolCallId: e.toolCallId, toolName: e.toolName, arguments: e.args })]
+    case "tool_execution_start": {
+      const file = e.toolName === "read" && typeof e.args?.path === "string" ? path.resolve(cwd, e.args.path) : null
+      const skill = file && skills.find((s) => path.resolve(s.filePath) === file)
+      return [
+        ev("tool.execution_start", { toolCallId: e.toolCallId, toolName: e.toolName, arguments: e.args }),
+        ...(skill ? [ev("skill.invoked", { name: skill.name })] : []),
+      ]
+    }
     case "tool_execution_end":
       return [
         ev("tool.execution_complete", {
@@ -92,12 +129,17 @@ export const piEvents = (e: AgentSessionEvent, at = new Date().toISOString()): H
 
 /** A live Pi SDK session. It is both the worker's session and its client. */
 export class PiSession {
+  private readonly skills: PiSkill[]
+  private announced = false
+
   private constructor(
     private readonly s: AgentSession,
     private readonly emit: (ev: HarnessEvent) => void,
+    cwd: string,
   ) {
+    this.skills = s.resourceLoader.getSkills().skills.map(({ name, filePath }) => ({ name, filePath }))
     s.subscribe((e) => {
-      for (const ev of piEvents(e)) emit(ev)
+      for (const ev of piEvents(e, undefined, this.skills, cwd)) emit(ev)
     })
   }
 
@@ -132,7 +174,7 @@ export class PiSession {
     const model = session.modelRuntime.getModel(launch.provider, launch.model)
     if (!model) throw new Error(`Pi model ${launch.provider}/${launch.model} not found`)
     await session.setModel(model)
-    return new PiSession(session, emit)
+    return new PiSession(session, emit, cwd)
   }
 
   get model(): string {
@@ -142,6 +184,11 @@ export class PiSession {
   /** Runs in the background; a busy session queues the prompt as a follow-up. */
   async send(prompt: string): Promise<void> {
     const at = new Date().toISOString()
+    // Sent with the first prompt: events emitted while the session starts have no worker to reach yet.
+    if (!this.announced) {
+      this.announced = true
+      this.emit({ type: "session.skills_loaded", timestamp: at, data: { skills: this.skills.map((s) => ({ name: s.name, source: "pi", enabled: true, path: s.filePath })) } })
+    }
     this.emit({ type: "user.message", timestamp: at, data: { content: prompt } })
     this.emit({ type: "assistant.turn_start", timestamp: at, data: {} })
     const run = this.s.isStreaming ? this.s.followUp(prompt) : this.s.prompt(prompt)
