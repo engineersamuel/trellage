@@ -22,6 +22,7 @@ import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, type Run } from "./run.ts"
 import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { postMergeCheck } from "./postmerge.ts"
+import { ARTIFACTS_DIR, servableImage } from "./files.ts"
 import { checkoutCommit, GoalError, goalsDir, loopPrompt, makeGoals } from "./goals.ts"
 import { defineTool, type SessionEvent, type Tool } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
@@ -1308,6 +1309,10 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/runs\/([^/]+)$/, async (_req, _url, [id]) => {
     const run = await runRecord(id!)
     return run ? json(run) : json({ error: `no thread ${id}` }, 404)
+  }],
+  ["GET", /^\/api\/files\/image$/, (_req, url) => {
+    const r = servableImage(url.searchParams.get("path") ?? "", [factory.root, worktreeRoot(), ARTIFACTS_DIR])
+    return "error" in r ? json({ error: r.error }, 404) : new Response(Bun.file(r.path), { headers: { "content-type": r.type, "cache-control": "no-store" } })
   }],
   ["GET", /^\/api\/goals$/, () => goalReply(() => ({ dir: goals.dir, factoryCommit: checkoutCommit(FACTORY_DIR), goals: goals.list() }))],
   ["POST", /^\/api\/goals$/, (req) => goalReply(async () => goals.save(await req.json()))],

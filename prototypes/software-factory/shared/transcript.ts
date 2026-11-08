@@ -3,7 +3,7 @@ import { markdown } from "./decisions"
 import { appendCompact, onFeed, RESYNC, type FeedEvent } from "./feed"
 import { toolDiffs, type FileDiff } from "./diff"
 import { groupTools, type Group } from "./toolgroups"
-import { reconcile, ToolCard, ToolGroup, toolIcon, type CardInput } from "./toolcard"
+import { imagePaths, reconcile, ToolCard, ToolGroup, toolIcon, type CardInput } from "./toolcard"
 import { Schema } from "effect"
 import { json, runOr } from "./http"
 import { StoredEvent } from "./schemas"
@@ -291,6 +291,8 @@ const toCard = (t: Tool, stoppedAt: number | undefined): CardInput => {
     startedAt: t.startedAt,
     endedAt: t.endedAt ?? (t.done ? t.startedAt : stoppedAt),
     link: line.link?.worker || line.link?.decision ? linkEl(line.link) : undefined,
+    // Images appear once the call finished, so a file still being written is not fetched.
+    images: status === "success" ? imagePaths(t.args, t.result) : [],
   }
 }
 

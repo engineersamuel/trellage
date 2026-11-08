@@ -479,3 +479,9 @@
 
 /* Files a call changed (shared/diffview.ts), shown under the head even while the card is closed. */
 .ui-tcc__diffs { padding: 2px 12px 10px; }
+
+/* Images a tool call wrote or named (served by /api/files/image), always visible like diffs. */
+.ui-tcc__images { display: flex; flex-wrap: wrap; gap: 10px; padding: 4px 12px 10px; }
+.ui-tcc__image { display: flex; flex-direction: column; gap: 4px; max-width: 320px; color: inherit; text-decoration: none; font-size: 11px; opacity: 0.85; }
+.ui-tcc__image img { max-width: 320px; max-height: 320px; border-radius: 8px; border: 1px solid var(--sf-border, #333); object-fit: contain; background: #0002; }
+.ui-tcc__image:hover { opacity: 1; }

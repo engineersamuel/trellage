@@ -100,3 +100,12 @@ describe("streaming tool calls", () => {
     expect(full[0]).toMatchObject({ args: { input: "final" }, done: true })
   })
 })
+
+import { imagePaths } from "../toolcard"
+
+describe("tool call images", () => {
+  test("absolute image paths from args and result, once each", () => {
+    expect(imagePaths({ command: "python3 save.py > /tmp/sf-artifacts/demo.png" }, "Saved /tmp/sf-artifacts/demo.png (708227 bytes)\nalso /a/b/c.JPG and rel.png")).toEqual(["/tmp/sf-artifacts/demo.png", "/a/b/c.JPG"])
+    expect(imagePaths({}, "no images")).toEqual([])
+  })
+})

@@ -78,3 +78,19 @@ test("with a push branch, only a plain push of that branch to origin is allowed"
     expect([cmd, forbiddenCommand(cmd, b)]).toEqual([cmd, true])
   expect(forbiddenCommand(`git push -u origin ${b}`)).toBe(true)
 })
+
+test("agents never copy or move credential files; reading them in place is fine", () => {
+  for (const cmd of [
+    "cp ~/.config/copilot-proxy-rs/github_token /tmp/x/github_token",
+    'mkdir -p "$D" && cp ~/.config/copilot-proxy-rs/github_token "$D/github_token"',
+    "rsync -a ~/.config/gh/hosts.yml /tmp/",
+    "ln -s ~/.netrc /tmp/n",
+  ])
+    expect([cmd, forbiddenCommand(cmd)]).toEqual([cmd, true])
+  for (const cmd of [
+    "COPILOT_PROXY_RS_CONFIG_DIR=$HOME/.config/copilot-proxy-rs ./target/release/copilot-proxy-rs",
+    "ls ~/.config/copilot-proxy-rs/",
+    "cp README.md /tmp/x",
+  ])
+    expect([cmd, forbiddenCommand(cmd)]).toEqual([cmd, false])
+})
