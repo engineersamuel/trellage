@@ -189,7 +189,12 @@ describe("reviewer model", () => {
     expect(reviewModels("claude-opus-5.5", false)).toEqual(["gpt-6-astra"])
     // Two lenses read with two different models; a third wraps around.
     expect([0, 1, 2].map((i) => lensModel("claude-opus-5.5", i, true, ""))).toEqual(["gpt-6-astra", "gemini-4-argon", "gpt-6-astra"])
-    expect(geminiReachable("auto") && geminiReachable("claude") && !geminiReachable("copilot") && !geminiReachable("pi")).toBe(true)
+    expect(geminiReachable("auto") && geminiReachable("claude") && geminiReachable("copilot") && !geminiReachable("pi")).toBe(true)
+    const { reviewerRoute } = await import("../src/review.ts")
+    expect(reviewerRoute("gemini-4-argon", "copilot")).toEqual({ auth: "proxy" })
+    expect(reviewerRoute("gemini-4-argon", "auto")).toEqual({ auth: "proxy" })
+    expect(reviewerRoute("gemini-4-argon", "claude")).toEqual({ harness: { kind: "claude", profiles: ["default"] } })
+    expect(reviewerRoute("gpt-6-astra", "copilot")).toEqual({})
     expect(reviewModelFor("gpt-6-astra", "")).toBe("claude-opus-5.5")
     expect(reviewModelFor("gpt-6.1-sol", undefined)).toBe("claude-opus-5.5")
     expect(reviewModelFor("claude-opus-5.5", undefined)).toBe("gpt-6-astra")

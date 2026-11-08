@@ -29,7 +29,7 @@ export const WORTH_THRESHOLD = 0.7
 /** Findings below this severity are never fixed in the change (logged as dropped). */
 export const MIN_SEVERITY = ["medium", "high", "critical"]
 /** Model of the reviewers and the synthesis: a different family than the implementer, for a rubber-duck read. */
-/** Frontier model per family. Gemini is reached through copilot-proxy-rs, so it runs in the Claude Agent SDK. */
+/** Frontier model per family. Gemini is not a Copilot subscription model: it is reached through copilot-proxy-rs. */
 export const REVIEW_MODELS = { claude: "claude-opus-5.5", gpt: "gpt-6-astra", gemini: "gemini-4-argon" } as const
 type Family = keyof typeof REVIEW_MODELS
 
@@ -56,8 +56,15 @@ export const lensModel = (implementerModel: string | null | undefined, i: number
   return models[i % models.length]!
 }
 
-/** Gemini runs in the Claude Agent SDK (via copilot-proxy-rs); not when every worker is forced onto Copilot or Pi. */
-export const geminiReachable = (workerHarness: string): boolean => workerHarness === "auto" || workerHarness === "claude"
+/** Gemini reviewers run in the Copilot SDK (proxy auth) or the Claude SDK (proxy base URL); not when Pi is forced. */
+export const geminiReachable = (workerHarness: string): boolean => workerHarness !== "pi"
+
+/**
+ * How a reviewer reaches its model. Gemini goes through copilot-proxy-rs: in the Copilot SDK as BYOK (`auth: proxy`;
+ * native Copilot answers "model not available"), in the Claude SDK through its proxy base URL when Claude is forced.
+ */
+export const reviewerRoute = (model: string, workerHarness: string): { auth?: "proxy"; harness?: { kind: "claude"; profiles: string[] } } =>
+  familyOf(model) !== "gemini" ? {} : workerHarness === "claude" ? { harness: { kind: "claude", profiles: ["default"] } } : { auth: "proxy" }
 
 export const pickLenses = (p: Record<string, number> | null, tier?: string): LensId[] => {
   if (!p) return ["correctness", "tests"]
@@ -205,9 +212,8 @@ export const codeReview = async (
   const started: string[] = []
   const gemini = geminiReachable(f.settings.workers.harness)
   const spawn = async (name: string, step: string, task: string, model?: string) => {
-    // Gemini is not a Copilot subscription model: that reviewer runs in the Claude Agent SDK through the proxy.
-    const harness = model && familyOf(model) === "gemini" ? { harness: { kind: "claude" as const, profiles: ["default"] } } : {}
-    const w = await f.spawn({ name, role: "worker", auth: opts.auth, step, task, owner: scope.id, workdir: opts.workdir, ...(model ? { model } : {}), ...harness })
+    const route = model ? reviewerRoute(model, f.settings.workers.harness) : {}
+    const w = await f.spawn({ name, role: "worker", auth: opts.auth, step, task, owner: scope.id, workdir: opts.workdir, ...(model ? { model } : {}), ...route })
     started.push(w.id)
     set({ workerIds: [...r.workerIds, w.id], workerId: w.id })
     return w
