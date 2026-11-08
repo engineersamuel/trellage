@@ -494,7 +494,7 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         ...(a.step === "implement"
           ? { onDone: (w: { id: string }) => void afterImplement(f, scope, w.id, scopeAuth) }
           : a.step === "verify"
-            ? { onDone: () => afterVerify(f, scope.id) }
+            ? { onDone: () => void afterVerify(f, scope) }
             : {}),
       })
       countWorker(f, scope.id)

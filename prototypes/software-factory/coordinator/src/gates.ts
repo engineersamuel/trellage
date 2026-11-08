@@ -187,9 +187,16 @@ export const startFinalSecurity = (f: Factory, scope: Scope): string | null => {
   return "Everything else is ready, so the final security review started now (it reviews the whole diff last; Jev picks which findings to fix). Wait with next_step until it is done, then ask to ship again."
 }
 
-export const afterVerify = (f: Factory, scopeId: string) => {
-  const s = f.sdlc.get(scopeId)
-  if (s) publish(f, { ...s, verifyDoneAt: Date.now() })
+export const afterVerify = async (f: Factory, scope: Scope) => {
+  const s = f.sdlc.get(scope.id)
+  if (!s) return
+  publish(f, { ...s, verifyDoneAt: Date.now() })
+  // A failed supply-chain gate is scanned again, so a fixed lockfile or base clears it without another implement.
+  if (gate(s, "supplyChain")?.status === "failed" && scope.workdir && scope.base) {
+    setGate(f, scope.id, "supplyChain", "running")
+    const r = await supplyChainScan(scope.workdir, scope.base)
+    setGate(f, scope.id, "supplyChain", r.ok ? "done" : "failed", r.detail)
+  }
 }
 
 /** Count every worker the conversation starts (delivery metric). */

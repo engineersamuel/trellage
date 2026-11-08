@@ -203,3 +203,13 @@ describe("reviewer model", () => {
     expect(reviewModelFor("gpt-6-astra", "claude-sonnet-5.5")).toBe("claude-sonnet-5.5")
   })
 })
+
+test("osv flags: advisories and license violations per package", () => {
+  const { osvFlagsFrom } = require("../src/sdlc.ts")
+  const report = { results: [{ packages: [
+    { package: { name: "tokio", version: "1.0.0" }, vulnerabilities: [{ id: "RUSTSEC-1" }], license_violations: [] },
+    { package: { name: "subtle", version: "2.6.1" }, vulnerabilities: [], license_violations: ["BSD-3-Clause"] },
+    { package: { name: "toml", version: "1.2.1" } },
+  ] }] }
+  expect([...osvFlagsFrom(report)]).toEqual(["tokio@1.0.0: RUSTSEC-1", "subtle@2.6.1: license BSD-3-Clause"])
+})

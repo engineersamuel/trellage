@@ -2,7 +2,8 @@
 // probability per gate against its threshold); code holds the floors no answer can skip, and blocks shipping
 // until every chosen gate is done. Artifacts live in the worktree's `.factory/` (git-excluded, never committed).
 import { execFile, execFileSync } from "node:child_process"
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import { noul } from "@typesafe-ai/sdk"
 import { decisionLabel, decisionsAvailable, systemOne } from "./decide.ts"
@@ -326,10 +327,10 @@ const LICENSES = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "0
 const TOOLS_ROOT = path.resolve(new URL(".", import.meta.url).pathname, "../../../..")
 
 /** Run a scanner pinned by this repository's mise.toml, in `cwd`. Exit 127: mise or the tool is missing. */
-const run = (cmd: string, args: string[], cwd: string): Promise<{ code: number; out: string }> =>
+const run = (cmd: string, args: string[], cwd: string): Promise<{ code: number; out: string; stdout: string }> =>
   new Promise((resolve) =>
     execFile("mise", ["-C", TOOLS_ROOT, "x", "--", cmd, ...args], { cwd, timeout: 300_000, maxBuffer: 32 << 20 }, (err, stdout, stderr) =>
-      resolve({ code: err ? (typeof (err as any).code === "number" ? (err as any).code : 127) : 0, out: `${stdout}${stderr}` }),
+      resolve({ code: err ? (typeof (err as any).code === "number" ? (err as any).code : 127) : 0, out: `${stdout}${stderr}`, stdout }),
     ),
   )
 
@@ -340,13 +341,60 @@ export const supplyChainScan = async (workdir: string, base: string): Promise<{ 
   if (leaks.code === 127) return { ok: false, detail: "betterleaks not on PATH" }
   if (leaks.code === 3) problems.push("secret found in the new commits (betterleaks)")
   const lockfiles = diffFiles(workdir, base).filter((f) => DEPS.test(f.path) && /lock|sum$/i.test(f.path)).map((f) => f.path)
+  const preexisting: string[] = []
   for (const lf of lockfiles) {
-    const osv = await run("osv-scanner", ["scan", "source", "-L", path.join(workdir, lf), `--licenses=${LICENSES.join(",")}`], workdir)
-    if (osv.code === 127) return { ok: false, detail: "osv-scanner not on PATH" }
-    if (osv.code === 1) problems.push(`${lf}: vulnerable package or license outside the allowlist (osv-scanner)`)
-    else if (osv.code > 1) problems.push(`${lf}: osv-scanner failed (${osv.code})`)
+    const head = await osvFlags(path.join(workdir, lf), workdir)
+    if ("error" in head) {
+      if (head.error === "not on PATH") return { ok: false, detail: "osv-scanner not on PATH" }
+      problems.push(`${lf}: osv-scanner failed (${head.error})`)
+      continue
+    }
+    // Only flags this branch adds fail the gate; flags already in the base's lockfile are listed, not blocking.
+    const baseFile = baseLockfile(workdir, base, lf)
+    const before = baseFile ? await osvFlags(baseFile, workdir) : { flags: new Set<string>() }
+    const known = "flags" in before ? before.flags : new Set<string>()
+    const added = [...head.flags].filter((x) => !known.has(x))
+    preexisting.push(...[...head.flags].filter((x) => known.has(x)))
+    if (added.length) problems.push(`${lf}: new flags (osv-scanner): ${added.join(", ")}`)
   }
-  return problems.length ? { ok: false, detail: problems.join("; ") } : { ok: true, detail: `betterleaks clean; ${lockfiles.length} changed lockfile(s) scanned` }
+  const note = preexisting.length ? `; ${preexisting.length} flag(s) already on ${base}, not blocking: ${preexisting.slice(0, 20).join(", ")}` : ""
+  return problems.length ? { ok: false, detail: problems.join("; ") + note } : { ok: true, detail: `betterleaks clean; ${lockfiles.length} changed lockfile(s) scanned, no new flags${note}` }
+}
+
+/** osv-scanner flags for one lockfile: `name@version: ID` per advisory, `name@version: license X` per license outside the allowlist. */
+export const osvFlagsFrom = (report: any): Set<string> => {
+  const flags = new Set<string>()
+  for (const r of report?.results ?? [])
+    for (const p of r.packages ?? []) {
+      const id = `${p.package?.name}@${p.package?.version}`
+      for (const v of p.vulnerabilities ?? []) flags.add(`${id}: ${v.id}`)
+      for (const l of p.license_violations ?? []) flags.add(`${id}: license ${l}`)
+    }
+  return flags
+}
+
+const osvFlags = async (file: string, cwd: string): Promise<{ flags: Set<string> } | { error: string }> => {
+  const osv = await run("osv-scanner", ["scan", "source", "-L", file, `--licenses=${LICENSES.join(",")}`, "--format", "json"], cwd)
+  if (osv.code === 127) return { error: "not on PATH" }
+  if (osv.code > 1) return { error: String(osv.code) }
+  try {
+    return { flags: osvFlagsFrom(JSON.parse(osv.stdout)) }
+  } catch {
+    return { error: "unreadable JSON" }
+  }
+}
+
+/** The base's copy of a lockfile in a temp dir (same file name, so osv-scanner knows its type); null if the base has none. */
+const baseLockfile = (workdir: string, base: string, lf: string): string | null => {
+  try {
+    const text = execFileSync("git", ["-C", workdir, "show", `${base}:${lf}`], { encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] })
+    const dir = mkdtempSync(path.join(tmpdir(), "sf-base-lock-"))
+    const file = path.join(dir, path.basename(lf))
+    writeFileSync(file, text)
+    return file
+  } catch {
+    return null
+  }
 }
 
 // ---------- Lessons per repo folder ----------
