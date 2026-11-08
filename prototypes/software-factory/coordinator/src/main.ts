@@ -1418,10 +1418,12 @@ const server = Bun.serve({
 })
 console.error(`software-factory coordinator on http://${server.hostname}:${server.port}`)
 
-const shutdown = async () => {
+const shutdown = async (signal: string) => {
+  // Say who asked: a restart from process-compose, a human, or a stray group signal from a tool tree.
+  console.error(`coordinator: ${signal} received (ppid ${process.ppid}); stopping`)
   await stopLoops()
   await factory.stopAll()
   process.exit(0)
 }
-process.on("SIGINT", shutdown)
-process.on("SIGTERM", shutdown)
+process.on("SIGINT", () => void shutdown("SIGINT"))
+process.on("SIGTERM", () => void shutdown("SIGTERM"))

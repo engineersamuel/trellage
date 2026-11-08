@@ -1,6 +1,7 @@
 // Worker lifecycle: each worker is a separate agent process with its own home. Copilot SDK is the
 // default harness (a runtime over TCP); a step may name the Claude Agent SDK harness instead.
 import { readOnlyViolation, SUB_SHELL_FEEDBACK } from "./readonly.ts"
+import { isolatedLauncher, spawnIsolated } from "./isolate.ts"
 import { factoryMcpServer, gateFromPermissions, MCP_SERVER, mcpToolNames } from "./claudetools.ts"
 import type { CodeReview } from "./review.ts"
 import type { Sdlc } from "./sdlc.ts"
@@ -334,6 +335,18 @@ export const workerHarness = (setting: string, role: string, chosen: HarnessSpec
   return chosen?.kind === kind ? chosen : { kind, profiles: kind === "claude" ? ["default"] : [] }
 }
 
+/** The Copilot runtime binary the SDK would start (its bundled runtime for its pinned version), resolved once. */
+let runtimeBinary: Promise<string> | null = null
+const runtimePath = (): Promise<string> =>
+  (runtimeBinary ??= (async () => {
+    if (process.env.COPILOT_CLI_PATH) return process.env.COPILOT_CLI_PATH
+    // Not exported by the package; the same module the SDK's client uses to find its runtime.
+    const dist = path.join(path.dirname(require.resolve("@github/copilot-sdk")), "..")
+    const { ensureRuntimeBundle } = await import(path.join(dist, "runtimeArtifacts.js"))
+    const { COPILOT_CLI_VERSION } = await import(path.join(dist, "cliVersion.js"))
+    return ensureRuntimeBundle(COPILOT_CLI_VERSION)
+  })())
+
 /** The factory's stable session name as a Claude session UUID (deterministic, so a restart finds it). */
 export const claudeSessionId = (name: string): string => {
   const h = new Bun.CryptoHasher("sha256").update(`sf-claude:${name}`).digest("hex")
@@ -527,6 +540,8 @@ export class Factory {
         ...(spec.sessionId ? claudeSessionOption(launch.env.CLAUDE_CONFIG_DIR ?? path.join(homedir(), ".claude"), spec.sessionId) : {}),
         // Text and thinking stream to the feed as deltas, like Copilot workers.
         includePartialMessages: true,
+        // Own process group, like Copilot runtimes (src/isolate.ts).
+        spawnClaudeCodeProcess: spawnIsolated as never,
       },
       emit,
     )
@@ -571,7 +586,8 @@ export class Factory {
 
   private async startClient(home: string, workdir: string, auth: Auth, setup: ReturnType<typeof stepSetup>) {
     const client = new CopilotClient({
-      connection: RuntimeConnection.forTcp({ port: 0 }),
+      // Own process group: a group kill in a worker's tool tree cannot reach the coordinator.
+      connection: RuntimeConnection.forTcp({ port: 0, path: isolatedLauncher(path.join(this.root, "bin"), await runtimePath()) }),
       baseDirectory: home,
       workingDirectory: workdir,
       ...(auth === "native" ? { gitHubToken: githubToken() } : {}),
