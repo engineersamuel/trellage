@@ -44,3 +44,8 @@ test("a proxy error throws, so callers keep their fail-safe path", async () => {
   setDecisionEngine("microsoft-decision-1", `http://127.0.0.1:${server.port}/v1`)
   await expect(systemOne({ state: "fail", questions: { ship: noul("Ship?") } })).rejects.toThrow(/microsoft-decision-1 502/)
 })
+
+test("a declined question is dropped, so the caller takes its fail-safe path for that one only", () => {
+  const { withoutRefusals } = require("../src/decide.ts")
+  expect(withoutRefusals({ a: { type: "noul", noul: 0.7 }, b: { type: "refusal", refusal: "declined" } })).toEqual({ answers: { a: { type: "noul", noul: 0.7 } }, refused: ["b"] })
+})

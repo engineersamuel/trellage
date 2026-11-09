@@ -334,6 +334,7 @@ export const decideNext = async (state: {
     },
   })
   const a = res.answers
+  if (typeof a.more?.noul !== "number" || typeof a.next?.choice !== "string") throw new Error("next step not decided: the decision engine gave no answer")
   return {
     moreWork: a.more.noul,
     step: a.next.choice,

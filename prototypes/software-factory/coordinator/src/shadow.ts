@@ -56,7 +56,8 @@ export const predict = async (a: Approval, instructions: string): Promise<Shadow
         : {}),
     },
   })
-  return toShadow(a.options, res.answers.covered.noul, res.answers.next)
+  if (typeof res.answers.covered?.noul !== "number") return null
+  return toShadow(a.options, res.answers.covered.noul, typeof res.answers.next?.choice === "string" ? res.answers.next : undefined)
 }
 
 /** Agreement between Jev and the human over answered decisions, oldest first. */

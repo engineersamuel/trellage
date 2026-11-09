@@ -53,7 +53,7 @@ const jevSelect = <C extends Choice>(catalog: ReadonlyArray<C>, request: string,
       if (!decisionsAvailable()) throw new Error("Jev unavailable: no TYPESAFE_API_KEY")
       const questions = Object.fromEntries(catalog.map((c) => [c.id, noul(question(c))]))
       const result = await systemOne({ state: JSON.stringify({ request }), questions })
-      return selectWorkflows(Object.fromEntries(catalog.map(({ id }) => [id, result.answers[id]!.noul])), catalog)
+      return selectWorkflows(Object.fromEntries(catalog.map(({ id }) => [id, result.answers[id]?.noul ?? Number.NaN])), catalog)
     }),
   )
 

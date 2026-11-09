@@ -42,8 +42,15 @@ const askProxy = async (model: string, state: string, questions: Record<string, 
   return body?.answers ?? {}
 }
 
+/** copilot-proxy-rs returns a question the model declined as `{type: "refusal"}` (#63). It is no answer: drop it, so
+ * every caller sees a missing answer and takes its per-question fail-safe path. */
+export const withoutRefusals = (answers: Record<string, any>): { answers: Record<string, Answer>; refused: string[] } => {
+  const refused = Object.keys(answers).filter((k) => answers[k]?.type === "refusal")
+  return { answers: Object.fromEntries(Object.entries(answers).filter(([k]) => !refused.includes(k))), refused }
+}
+
 /** Ask the current engine. Throws when it is unavailable or fails; callers keep their fail-safe paths. */
-export const systemOne = async ({ state, questions, timeoutMs = 10_000 }: DecideRequest): Promise<{ answers: Record<string, Answer>; engine: DecisionEngine }> => {
+export const systemOne = async ({ state, questions, timeoutMs = 10_000 }: DecideRequest): Promise<{ answers: Record<string, Answer>; engine: DecisionEngine; refused?: string[] }> => {
   const e = engine
   if (e === "jev") {
     const apiKey = jevKey()
@@ -52,5 +59,5 @@ export const systemOne = async ({ state, questions, timeoutMs = 10_000 }: Decide
     const res: any = await client.systemOne({ model: "jev-1.13.0", state, questions: questions as any })
     return { answers: res.answers ?? {}, engine: e }
   }
-  return { answers: await askProxy(e, state, questions, Math.max(timeoutMs, 30_000)), engine: e }
+  return { ...withoutRefusals(await askProxy(e, state, questions, Math.max(timeoutMs, 30_000))), engine: e }
 }
