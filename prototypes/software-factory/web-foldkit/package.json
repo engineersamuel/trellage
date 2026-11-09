@@ -21,22 +21,15 @@
   "dependencies": {
     "@effect/platform-browser": "4.1.2",
     "@foldkit/ui": "0.170.0",
-    "@openuidev/react-headless": "0.18.1",
-    "@openuidev/react-lang": "1.0.2",
-    "@openuidev/react-ui": "0.18.1",
+    "@openuidev/lang-core": "1.0.1",
     "@plana-solutions/agent-interface": "0.5.0",
     "effect": "4.1.2",
     "foldkit": "0.170.0",
-    "highlight.js": "11.11.1",
-    "react": "19.3.1",
-    "react-dom": "19.3.1",
-    "zustand": "4.5.7"
+    "highlight.js": "11.11.1"
   },
   "devDependencies": {
     "@foldkit/oxlint-plugin": "0.15.4",
     "@foldkit/vite-plugin": "0.29.0",
-    "@types/react": "19.3.0",
-    "@types/react-dom": "19.3.0",
     "happy-dom": "21.0.4",
     "oxlint": "1.91.0",
     "patch-package": "8.0.1",

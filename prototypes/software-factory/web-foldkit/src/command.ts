@@ -4,7 +4,7 @@ import { ChatMessageSchema, ThreadSchema } from "@plana-solutions/agent-interfac
 import type { ChatMessage as ChatLine } from "@plana-solutions/agent-interface";
 import { attachSlot, setExtensionWorkers } from "../../shared/extensions";
 import { syncThreadUrl } from "../../shared/folders";
-import { isOpenUi } from "../../shared/protos/core";
+import { isOpenUi, setProto } from "../../shared/protos/core";
 import { getJson } from "./api";
 import { Worker } from "./domain";
 import { Message } from "./message";
@@ -20,7 +20,14 @@ export const markdownAsOpenUi = (messages: ReadonlyArray<ChatLine>): Array<ChatL
       : message,
   );
 
-// Threads started elsewhere (CopilotKit, the sf CLI) appear in the chat's thread list.
+/** Switch the prototype layout (shared/protos). It stores the choice and tells every listener, the host included. */
+export const SetLayout = Command.define("SetLayout", {
+  args: { layout: Schema.Number },
+  messages: [Message.CompletedSetLayout],
+  execute: ({ layout }) => Effect.sync(() => (setProto(layout), Message.CompletedSetLayout())),
+});
+
+// Threads started elsewhere (the sf CLI, the stream) appear in the chat's thread list.
 export const RefreshThreads = Command.define("RefreshThreads", {
   messages: [Message.SucceededRefreshThreads, Message.FailedRefreshThreads],
   execute: getJson("/api/threads/get", Schema.Struct({ threads: Schema.Array(ThreadSchema) })).pipe(

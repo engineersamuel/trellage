@@ -99,6 +99,130 @@ index 714da87..75b7975 100644
    const turn = assistantTurnView(segments, facts.isRunning, facts.maybeLastAssistantId);
    const [first] = turn.activeSegments;
    const activities = pairToolActivity({
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/features/genui/card.d.ts b/node_modules/@plana-solutions/agent-interface/dist/features/genui/card.d.ts
+new file mode 100644
+index 0000000..96e77a2
+--- /dev/null
++++ b/node_modules/@plana-solutions/agent-interface/dist/features/genui/card.d.ts
+@@ -0,0 +1,5 @@
++import type { Html } from "foldkit/html";
++import type { AppModel } from "../../client/model.ts";
++import type { H } from "../primitives.ts";
++/** software-factory patch: every assistant answer in `model.messages` as OpenUI GenUI, with its popover layers, outside the chat shell. */
++export declare const genUiCardView: (model: AppModel, h: H) => Html;
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/features/genui/card.js b/node_modules/@plana-solutions/agent-interface/dist/features/genui/card.js
+new file mode 100644
+index 0000000..8049212
+--- /dev/null
++++ b/node_modules/@plana-solutions/agent-interface/dist/features/genui/card.js
+@@ -0,0 +1,52 @@
++// software-factory patch: a public view that draws the chat's OpenUI answers outside the chat shell.
++import { brandViewResult as __foldkitBrandViewResult } from "foldkit/brand";
++import { queriesAt } from "../../client/genui/query-state.js";
++import { GENUI_LIBRARY_DEFAULT_MODE } from "../../client/theme.js";
++import { tooltipLayer } from "../tooltip.js";
++import { themeTokenStyle } from "../theme-tokens.js";
++import { genUiChartTooltips } from "./charts/index.js";
++import { citationTooltipLayers } from "./citation.js";
++import { genUiEditableTableLayers } from "./editable-table.js";
++import { genUiDatePickerLayers } from "./forms/date-picker.js";
++import { genUiSelectBackdrop, genUiSelectLayer } from "./forms/select.js";
++import { galleryModalLayer } from "./image-gallery.js";
++import { rendererView } from "./render.js";
++export const genUiCardView = (model, h) =>
++  __foldkitBrandViewResult(h.div(
++    [h.Class("openui-genui-card")],
++    [
++      ...model.messages
++        .filter((message) => message.role === "assistant")
++        // Without the chat's message wrapper: a card is drawn alone, as OpenUI's bare Renderer draws it.
++        .flatMap((answer) =>
++          rendererView(
++            {
++              charts: model.genuiCharts,
++              citation: model.genuiCitation,
++              copiedCodeBlocks: model.copiedCodeBlocks,
++              failedSourceIcons: model.failedSourceIcons,
++              genui: model.genui,
++              isStreaming: false,
++              lazyModules: model.lazyModules,
++              message: answer,
++              mode: GENUI_LIBRARY_DEFAULT_MODE,
++              overflow: model.genuiOverflow,
++              queries: queriesAt(model.genuiQueries, answer.id),
++              selectSearch: model.genuiSelectSearch,
++              tooltips: model.tooltips,
++              truncation: model.genuiTruncation,
++            },
++            h
++          )
++        ),
++      genUiSelectBackdrop(model, h),
++      genUiSelectLayer(model, h),
++      ...genUiDatePickerLayers(model, h),
++      ...genUiEditableTableLayers(model, h),
++      tooltipLayer(model, h),
++      ...citationTooltipLayers(model, h),
++      ...galleryModalLayer(model.genui, h),
++      themeTokenStyle(model, h),
++      ...genUiChartTooltips(model, h),
++    ]
++  ), "@plana-solutions/agent-interface/features/genui/card.js#genUiCardView");
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/features/genui/charts/legend.js b/node_modules/@plana-solutions/agent-interface/dist/features/genui/charts/legend.js
+index 24ecfdf..8df7041 100644
+--- a/node_modules/@plana-solutions/agent-interface/dist/features/genui/charts/legend.js
++++ b/node_modules/@plana-solutions/agent-interface/dist/features/genui/charts/legend.js
+@@ -69,7 +69,7 @@ const legendItem = (options, item, h) => __foldkitBrandViewResult((h.div([h.Clas
+   "background-color": item.color
+ })], []), h.div([h.Class("openui-chart-legend-item-label-container")], [h.span([h.Class("openui-chart-legend-item-label")], [item.label]), ...Option.match(item.maybePercentage, {
+   onNone: () => __foldkitBrandViewResult(([]), "@plana-solutions/agent-interface/features/genui/charts/legend.js#onNone~2"),
+-  onSome: percentage => __foldkitBrandViewResult(([h.span([h.Class("openui-chart-legend-item-percentage")], [`${percentage.toFixed(1)}%`])]), "@plana-solutions/agent-interface/features/genui/charts/legend.js#onSome~2")
++  onSome: percentage => __foldkitBrandViewResult(([h.span([h.Class("openui-chart-legend-item-percentage")], [percentage.toFixed(1), "%"])]), "@plana-solutions/agent-interface/features/genui/charts/legend.js#onSome~2")
+ })])])), "@plana-solutions/agent-interface/features/genui/charts/legend.js#legendItem");
+ const toggleButton = (options, shown, h) => {
+   const isExpanded = options.frame.chart.isLegendExpanded;
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/features/genui/forms/select.js b/node_modules/@plana-solutions/agent-interface/dist/features/genui/forms/select.js
+index a3a3554..3342a1e 100644
+--- a/node_modules/@plana-solutions/agent-interface/dist/features/genui/forms/select.js
++++ b/node_modules/@plana-solutions/agent-interface/dist/features/genui/forms/select.js
+@@ -204,7 +204,10 @@ export const genUiSelectBackdrop = (model, h) => __foldkitBrandViewResult((Optio
+ export const genUiSelectLayer = (model, h) => __foldkitBrandViewResult((Option.match(openSelectOf(model.genui), {
+   onNone: () => __foldkitBrandViewResult((h.empty), "@plana-solutions/agent-interface/features/genui/forms/select.js#onNone~7"),
+   onSome: ([key, open]) => __foldkitBrandViewResult((h.keyed("div")(contentIdOf(open.triggerId), [h.DataAttribute("radix-popper-content-wrapper", ""), h.Dir("ltr"), h.Style({
++    left: "0px",
+     "min-width": "max-content",
++    position: "absolute",
++    top: "0px",
+     "z-index": "99999"
+   }), h.OnMount(AnchorGenUiSelect({
+     focusSelector: `[id=${JSON.stringify(focusTarget(open))}]`,
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/features/genui/medium-card-blocks.js b/node_modules/@plana-solutions/agent-interface/dist/features/genui/medium-card-blocks.js
+index 34939dd..1d99d82 100644
+--- a/node_modules/@plana-solutions/agent-interface/dist/features/genui/medium-card-blocks.js
++++ b/node_modules/@plana-solutions/agent-interface/dist/features/genui/medium-card-blocks.js
+@@ -13,7 +13,7 @@ const compositeNode = (node, location) => {
+       size: "xs"
+     })), "@plana-solutions/agent-interface/features/genui/medium-card-blocks.js#compositeNode");
+   }
+-  if (isElementOf(node, ["AreaChartCondensed", "BarChartCondensed", "LineChartCondensed"])) {
++  if (isElementOf(node, ["AreaChart", "BarChart", "LineChart"])) {
+     return __foldkitBrandViewResult((withProps(node, {
+       height: COMPOSITE_CHART_HEIGHT
+     })), "@plana-solutions/agent-interface/features/genui/medium-card-blocks.js#compositeNode");
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/features/genui/render.js b/node_modules/@plana-solutions/agent-interface/dist/features/genui/render.js
+index 382e298..46415b8 100644
+--- a/node_modules/@plana-solutions/agent-interface/dist/features/genui/render.js
++++ b/node_modules/@plana-solutions/agent-interface/dist/features/genui/render.js
+@@ -51,7 +51,8 @@ const LOADER_STYLE = {
+ };
+ const SPIN_KEYFRAMES = "@keyframes openui-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }";
+ const queryLoader = h => __foldkitBrandViewResult((h.div([h.Role("status"), h.AriaLabel("Loading data"), h.Style(LOADER_STYLE)], [h.style([], [SPIN_KEYFRAMES])])), "@plana-solutions/agent-interface/features/genui/render.js#queryLoader");
+-const rendererView = (options, h) => {
++// software-factory patch: exported for genUiCardView (card.js).
++export const rendererView = (options, h) => {
+   const parsed = parseLang(options.message.content ?? "", options.isStreaming);
+   const store = storeAt(options.genui, options.message.id);
+   const queries = options.queries ?? NO_QUERIES;
 diff --git a/node_modules/@plana-solutions/agent-interface/dist/features/timeline.js b/node_modules/@plana-solutions/agent-interface/dist/features/timeline.js
 index 3deb196..6220039 100644
 --- a/node_modules/@plana-solutions/agent-interface/dist/features/timeline.js
@@ -126,3 +250,23 @@ index 3deb196..6220039 100644
  };
  //# sourceMappingURL=timeline.js.map
 \ No newline at end of file
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/index.d.ts b/node_modules/@plana-solutions/agent-interface/dist/index.d.ts
+index c071e6c..9a13839 100644
+--- a/node_modules/@plana-solutions/agent-interface/dist/index.d.ts
++++ b/node_modules/@plana-solutions/agent-interface/dist/index.d.ts
+@@ -48,4 +48,5 @@ export type { MessageFormat } from "./client/wire/message-format.ts";
+ export { openAiMessageFormat } from "./client/wire/openai-message-format.ts";
+ export { openAiConversationMessageFormat } from "./client/wire/conversation-message-format.ts";
+ export { vercelAiMessageFormat } from "./client/wire/vercel-message-format.ts";
++export { genUiCardView } from "./features/genui/card.ts";
+ //# sourceMappingURL=index.d.ts.map
+diff --git a/node_modules/@plana-solutions/agent-interface/dist/index.js b/node_modules/@plana-solutions/agent-interface/dist/index.js
+index 8b9dd48..efccabc 100644
+--- a/node_modules/@plana-solutions/agent-interface/dist/index.js
++++ b/node_modules/@plana-solutions/agent-interface/dist/index.js
+@@ -28,4 +28,5 @@ export { identityMessageFormat } from "./client/wire/message-format.js";
+ export { openAiMessageFormat } from "./client/wire/openai-message-format.js";
+ export { openAiConversationMessageFormat } from "./client/wire/conversation-message-format.js";
+ export { vercelAiMessageFormat } from "./client/wire/vercel-message-format.js";
++export { genUiCardView } from "./features/genui/card.js";
+ //# sourceMappingURL=index.js.map

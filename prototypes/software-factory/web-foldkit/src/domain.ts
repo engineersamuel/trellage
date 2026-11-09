@@ -25,7 +25,7 @@ export const COORDINATOR_ID = "coordinator";
 /** Name of the backend a worker talks to, from its auth mode. */
 export const backendName = (auth: string): string => (auth === "proxy" ? "copilot-proxy-rs" : "native Copilot");
 
-// Factory settings: shared with the CopilotKit UI (shared/schemas.ts).
+// Factory settings (shared/schemas.ts).
 export { Settings, SettingsDocument, SettingsOptions };
 
 export const SettingsAsyncData = AsyncData.Schema(SettingsDocument, Schema.String);

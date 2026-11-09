@@ -5,11 +5,12 @@ import type { ChatBackend, Flags } from "@plana-solutions/agent-interface";
 import { currentProto } from "../../shared/protos";
 import { foldChat, newThread, openThread, refreshCards, showRefreshedThreads, showReloadedThread, toGotChatMessage } from "./chat";
 import { chat } from "./chatProgram";
-import { RefreshThreads, ReloadThread, SyncExtensionWorkers, SyncThreadUrl } from "./command";
+import { RefreshThreads, ReloadThread, SetLayout, SyncExtensionWorkers, SyncThreadUrl } from "./command";
 import { COORDINATOR_ID } from "./domain";
 import { Message } from "./message";
 import type { Model } from "./model";
 import * as DiffPanel from "./diffPanel";
+import * as ReportViewer from "./reportViewer";
 import * as Goals from "./goals";
 import * as Settings from "./settings";
 import * as WorkerPanel from "./workerPanel";
@@ -21,6 +22,7 @@ export const toGotWorkerPanelMessage = (message: WorkerPanel.Message): Message =
 export const toGotSettingsMessage = (message: Settings.Message): Message => Message.GotSettingsMessage({ message });
 export const toGotGoalsMessage = (message: Goals.Message): Message => Message.GotGoalsMessage({ message });
 export const toGotDiffPanelMessage = (message: DiffPanel.Message): Message => Message.GotDiffPanelMessage({ message });
+export const toGotReportViewerMessage = (message: ReportViewer.Message): Message => Message.GotReportViewerMessage({ message });
 
 const readWorkerPanel = (model: Model) => Option.some(model.workerPanel);
 // An unchanged child keeps the parent Model: Foldkit renders only when the Model reference changes, and the panel
@@ -74,6 +76,15 @@ const openChanges: Step = (model) =>
     toParentMessage: toGotDiffPanelMessage,
   })(model);
 
+const readReportViewer = (model: Model) => Option.some(model.reportViewer);
+const writeReportViewer = (model: Model, next: ReportViewer.Model): Model =>
+  next === model.reportViewer ? model : modifyFields(model, { reportViewer: () => next });
+const foldReportViewer = Update.foldChild({ read: readReportViewer, write: writeReportViewer, toParentMessage: toGotReportViewerMessage, update: ReportViewer.update });
+
+/** Open the report viewer on `ref`. */
+const openReport = (ref: string, maybeAgent: Option.Option<string>): Step =>
+  Update.foldChildStep({ update: ReportViewer.open(ref, maybeAgent), read: readReportViewer, write: writeReportViewer, toParentMessage: toGotReportViewerMessage });
+
 const foldSettings = Update.foldChild({
   read: readSettings,
   write: writeSettings,
@@ -105,6 +116,7 @@ const handleMessage = (model: Model, message: Message) =>
     GotSettingsMessage: ({ message }) => foldSettings(model, message),
     GotGoalsMessage: ({ message }) => foldGoals(model, message),
     GotDiffPanelMessage: ({ message }) => foldDiffPanel(model, message),
+    GotReportViewerMessage: ({ message }) => foldReportViewer(model, message),
     ClickedOpenChanges: () => openChanges(model),
     ReceivedThreadUpdate: ({ threadId }) => Update.combine(model, [refreshThreads, reloadOpenThread(Option.fromNullishOr(threadId))]),
     // After a feed gap the open thread and the thread list may be stale. The panel and settings reload their own data.
@@ -113,7 +125,10 @@ const handleMessage = (model: Model, message: Message) =>
     RequestedOpenThread: ({ threadId }) => openThread(threadId)(model),
     RequestedNewThread: () => newThread(model),
     RequestedSelectWorker: ({ workerId }) => requestFocus(workerId)(model),
+    RequestedOpenReport: ({ ref, maybeAgent }) => openReport(ref, maybeAgent)(model),
     UpdatedProto: ({ proto }) => ({ model: modifyFields(model, { protoIndex: () => proto }) }),
+    ReceivedLayoutRequest: ({ layout }) => ({ model, commands: layout === model.protoIndex ? [] : [SetLayout({ layout })] }),
+    CompletedSetLayout: () => ({ model }),
     PressedKey: ({ key }) =>
       Option.match(
         Option.flatMap(Settings.maybeSettings(model.settings), (settings) => Option.fromNullishOr(settings.hotkeys[key])),
@@ -173,6 +188,7 @@ export const init = (flags: Flags, url: Parameters<typeof chat.init>[1], maybeTh
   const settings = Settings.init();
   const goals = Goals.init();
   const diffPanel = DiffPanel.init();
+  const reportViewer = ReportViewer.init();
   const app = Update.foldChildInit(chat.init(flags, url), {
     toParentMessage: toGotChatMessage,
     toParentModel: (chatModel): Model => ({
@@ -181,6 +197,7 @@ export const init = (flags: Flags, url: Parameters<typeof chat.init>[1], maybeTh
       settings: settings.model,
       goals: goals.model,
       diffPanel: diffPanel.model,
+      reportViewer: reportViewer.model,
       protoIndex: currentProto(),
       approvals: [],
     }),

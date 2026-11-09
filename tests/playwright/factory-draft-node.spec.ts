@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 import "../bun-runtime.setup.ts"
 
-// Org canvas (?proto=2, shared by Foldkit at / and CopilotKit at /copilotkit.html): the draft node's radial menu and slide-over. Every /api/** call is stubbed.
+// Org canvas (?proto=2, Foldkit at /): the draft node's radial menu and slide-over. Every /api/** call is stubbed.
 test.use({ channel: "chrome" })
 
 /** Page under test: FACTORY_PAGE, else the path of PLAYWRIGHT_BASE_URL, else "/". */
@@ -254,8 +254,8 @@ test("draft: ✕ deletes the draft after confirm, shows a failure, and does not 
   expect(agui).toEqual([])
 })
 
-test("draft: CopilotKit thread picker hides an unstarted draft", async ({ page }) => {
-  test.skip(!PAGE.includes("copilotkit"), "React-only thread picker")
+// The deleted CopilotKit picker hid unstarted drafts. The Foldkit thread list does not filter them yet.
+test.fixme("draft: the thread picker hides an unstarted draft", async ({ page }) => {
   const s: Stub = { thread: draftThread({ versions: [v1], current: "v1", reports: [] }), workers: [], posts: [], post: () => ({ status: 500, json: { error: "unexpected" } }) }
   const agui = await stub(page, s)
   await page.goto(`${PAGE}?proto=0`)

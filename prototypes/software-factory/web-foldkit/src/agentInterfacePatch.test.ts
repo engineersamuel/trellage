@@ -5,6 +5,10 @@ import timeline from "../node_modules/@plana-solutions/agent-interface/dist/feat
 import turnLayout from "../node_modules/@plana-solutions/agent-interface/dist/client/timeline.js?raw";
 import rendered from "../node_modules/@plana-solutions/agent-interface/dist/client/genui/rendered.js?raw";
 import threadScrollDom from "../node_modules/@plana-solutions/agent-interface/dist/client/thread-scroll-dom.js?raw";
+import index from "../node_modules/@plana-solutions/agent-interface/dist/index.js?raw";
+import compositeCards from "../node_modules/@plana-solutions/agent-interface/dist/features/genui/medium-card-blocks.js?raw";
+import legend from "../node_modules/@plana-solutions/agent-interface/dist/features/genui/charts/legend.js?raw";
+import select from "../node_modules/@plana-solutions/agent-interface/dist/features/genui/forms/select.js?raw";
 
 describe("agent-interface patch", () => {
   test("the chat timeline renders a diff slot per tool call", () => {
@@ -19,5 +23,12 @@ describe("agent-interface patch", () => {
 
   test("a user bubble does not read its layout on mount", () => {
     expect(threadScrollDom).toContain("software-factory patch: no read on mount");
+  });
+
+  test("OpenUI cards draw outside the chat, as OpenUI's React renderer draws them", () => {
+    expect(index).toContain('export { genUiCardView } from "./features/genui/card.js";');
+    expect(compositeCards).toContain('isElementOf(node, ["AreaChart", "BarChart", "LineChart"])');
+    expect(legend).toContain('[percentage.toFixed(1), "%"]');
+    expect(select).toContain('position: "absolute"');
   });
 });

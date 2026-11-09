@@ -5,19 +5,15 @@ version: "0.5"
 processes:
   coordinator:
     working_dir: coordinator
-    command: bun --watch src/main.ts
+    # No --watch by default: a reload stops running workers. SF_WATCH=1 mise run factory:up reloads on save;
+    # otherwise run `mise run factory:restart coordinator` after a coordinator change.
+    command: bun ${SF_BUN_WATCH} src/main.ts
     log_location: ${SF_LOGS}/coordinator.log
     availability: { restart: always, backoff_seconds: 2 }
     readiness_probe:
       http_get: { host: 127.0.0.1, port: 7700, path: /api/info }
       initial_delay_seconds: 2
       period_seconds: 10
-
-  copilotkit:
-    working_dir: web-react
-    command: npx vite --port 5173 --strictPort
-    log_location: ${SF_LOGS}/copilotkit.log
-    availability: { restart: always, backoff_seconds: 2 }
 
   foldkit:
     working_dir: web-foldkit

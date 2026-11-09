@@ -39,7 +39,15 @@ const openuiPrompt = asset("openui-prompt.txt")
 if (process.env.SF_DISABLE_STARTUP_CHILD_CLEANUP !== "1")
   Bun.spawnSync(["pkill", "-f", new URL("../node_modules/@github/copilot-sdk-", import.meta.url).pathname])
 
-const factory = new Factory()
+const factory = (() => {
+  try {
+    return new Factory()
+  } catch (e) {
+    // Another coordinator owns the state folder (statedir.ts acquireStateLock).
+    console.error(e instanceof Error ? e.message : e)
+    process.exit(1)
+  }
+})()
 // Gate state, code and security reviews survive a restart: the newest published copy of each wins. A review that
 // was mid-run when the process stopped lost its workers, so it is marked failed (the gate then blocks shipping).
 const restore = <T extends { at?: number; status?: string }>(type: string, key: (v: T) => string, into: Map<string, T>, unfinished?: (v: T) => boolean) => {
@@ -231,7 +239,7 @@ const newUserText = (input: any): string | null => {
   return null
 }
 
-/** AG-UI run input `context` (useAgentContext in CopilotKit) as a block the coordinator reads with the prompt. */
+/** AG-UI run input `context` as a block the coordinator reads with the prompt. */
 const uiContext = (context: unknown): string => {
   const items = (Array.isArray(context) ? context : []).filter((c: any) => typeof c?.description === "string" && c.value !== undefined)
   if (!items.length) return ""
@@ -538,7 +546,7 @@ const syncClientTools = async (w: Worker, tools: unknown): Promise<Set<string>> 
 }
 
 /**
- * Answer the decisions a resuming run answers (AG-UI `resume`, from CopilotKit's decision cards).
+ * Answer the decisions a resuming run answers (AG-UI `resume`).
  * A resolved entry answers the decision; a cancelled one leaves it open in the decision center.
  * Returns the answer prompts for the coordinator.
  */

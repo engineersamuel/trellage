@@ -186,6 +186,7 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
     ]),
     handler: () => json({ rendered: true }),
   }),
+  ...browserTools(f, scope),
   defineTool("get_settings", {
     description: "Read the factory settings (the same document the UI edits) and the allowed values for each field.",
     parameters: obj({}),
@@ -593,6 +594,69 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
     },
   })
 }
+
+/**
+ * Point the human at things in the UI. Each tool publishes a feed event every open UI applies, so it works with any
+ * frontend (or none: the call still succeeds). They do not wait for the human.
+ */
+const browserTools = (f: Factory, scope: Scope): Tool<any>[] => [
+  defineTool("focus_agent", {
+    description: "Show one agent (coordinator or worker id) in the human's side panel. Use it when you point the human at a worker.",
+    parameters: obj({ id: { type: "string", description: "Agent id, e.g. w-1a2b3c4d or coordinator." } }, ["id"]),
+    handler: async (a: any) => {
+      const id = str(a, "id")
+      if (!f.workers.has(id)) return json({ error: `unknown agent ${id}; use an id from list_workers` })
+      await f.updateSettings({ focus: id })
+      return json({ shown: id })
+    },
+  }),
+  defineTool("open_report", {
+    description: "Open a saved report (e.g. reports/synthesis.md) in the human's report viewer. A relative path is read in this conversation's worktree.",
+    parameters: obj({ path: { type: "string", description: "reports/<name>.md, or an absolute path ending in .md" } }, ["path"]),
+    handler: (a: any) => {
+      const p = str(a, "path")
+      if (!/^(?:\/[^\s`'"]+\/)?reports\/[\w.-]+\.mdx?$/.test(p)) return json({ error: "path must look like reports/<name>.md" })
+      f.publish(scope.id, "factory.ui_open_report", null, now(), { path: p, agent: scope.id, threadId: scope.threadId })
+      return json({ opened: p })
+    },
+  }),
+  defineTool("set_layout", {
+    description: "Switch the human's page layout: 0 = chat with agent panel, 2 = Org Canvas, 3 = Inbox. Only when the human asks.",
+    parameters: obj({ layout: { type: "number", enum: [0, 2, 3] } }, ["layout"]),
+    handler: (a: any) => {
+      const layout = Number(a?.layout)
+      if (![0, 2, 3].includes(layout)) return json({ error: "layout must be 0, 2 or 3" })
+      f.publish(scope.id, "factory.ui_set_layout", null, now(), { layout })
+      return json({ layout })
+    },
+  }),
+  defineTool("confirm_action", {
+    description:
+      "Ask the human for a quick yes/no before a destructive step they did not ask for in this turn (stopping several workers, abandoning a branch). Shown as a decision card with Confirm and Cancel. End your turn after calling it; the answer comes back as an [approval ID answered] message: Confirm means go on, Cancel means do not.",
+    parameters: obj(
+      {
+        title: { type: "string", description: "The step, in one short line." },
+        detail: { type: "string", description: "What it does and what cannot be undone." },
+        confirmLabel: { type: "string", description: "Label of the yes option. Default Confirm." },
+      },
+      ["title"],
+    ),
+    handler: (a: any) => {
+      const confirm = typeof a.confirmLabel === "string" && a.confirmLabel.trim() ? a.confirmLabel.trim() : "Confirm"
+      const item = f.approvals.open({
+        kind: "approval",
+        threadId: scope.threadId ?? f.currentThread,
+        title: str(a, "title"),
+        summary: typeof a.detail === "string" ? a.detail : "",
+        options: [confirm, "Cancel"],
+        context: scope.label ?? "coordinator",
+        topic: "other",
+      })
+      f.publish("coordinator", "factory.approval_requested", null, now(), item)
+      return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
+    },
+  }),
+]
 
 const list = { type: "array", items: { type: "string" } }
 

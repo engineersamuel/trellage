@@ -200,7 +200,7 @@ const merge = (target: unknown, patch: unknown): unknown => {
   return target
 }
 
-/** Theme CSS for both frontends: factory variables plus CopilotKit and OpenUI token overrides. */
+/** Theme CSS for the frontend: factory variables plus OpenUI token overrides. */
 export const css = (s: Settings): string => {
   const p = s.themes[s.theme]!
   const pulse = s.animations
@@ -210,11 +210,7 @@ export const css = (s: Settings): string => {
   return (
     `:root{--sf-bg:${bg};--sf-surface:${surface};--sf-border:${border};--sf-text:${text};--sf-muted:${muted};--sf-accent:${accent}}` +
     `html,body{background:var(--sf-bg)!important;color:var(--sf-text)!important}` +
-    `:root [data-copilotkit],:root.dark [data-copilotkit]{--background:${bg}!important;--foreground:${text}!important;--card:${surface}!important;--card-foreground:${text}!important;` +
-    `--popover:${surface}!important;--popover-foreground:${text}!important;--primary:${accent}!important;--primary-foreground:#fff!important;--secondary:${surface}!important;` +
-    `--secondary-foreground:${text}!important;--muted:${surface}!important;--muted-foreground:${muted}!important;--accent:${border}!important;--accent-foreground:${text}!important;` +
-    `--border:${border}!important;--input:${border}!important;--ring:${accent}!important}` +
-    `:root,[data-openui-theme],.openui-agent-container{--openui-background:${bg}!important;--openui-foreground:${surface}!important;--openui-popover-background:${surface}!important;` +
+    `:root,[data-openui-theme],.openui-agent-container,.openui-genui-card{--openui-background:${bg}!important;--openui-foreground:${surface}!important;--openui-popover-background:${surface}!important;` +
     `--openui-text-neutral-primary:${text}!important;--openui-text-neutral-secondary:${muted}!important;--openui-border-default:${border}!important;` +
     `--openui-interactive-accent-default:${accent}!important;--openui-text-brand:${accent}!important}${pulse}`
   )

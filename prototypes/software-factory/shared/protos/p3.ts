@@ -432,7 +432,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     s = st
     // The stream draws every agent's events, so it checks each update itself (it skips unchanged ones).
     stream?.render(st)
-    if (!st.threads.length) return
+    // Wait for the first thread list; an empty one (a new factory) still draws the Inbox.
+    if (!st.threadsLoaded) return
     if (!changed(st)) return
     const first = !ready
     ready = true

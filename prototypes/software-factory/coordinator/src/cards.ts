@@ -1,5 +1,5 @@
-// Data for the chat cards (show_* tools). Each tool returns a small JSON snapshot; the CopilotKit UI draws it
-// as a typed card and keeps it live from the factory feed. Pure helpers here, so tests need no git or factory.
+// Data for the chat cards (show_* tools). Each tool returns a small JSON snapshot; the Foldkit UI draws it as an
+// OpenUI card and keeps it live from the factory feed. Pure helpers here, so tests need no git or factory.
 import { execFileSync } from "node:child_process"
 
 export type DiffFile = { path: string; added: number; removed: number; binary: boolean }
@@ -47,7 +47,7 @@ export const reportFindings = (md: string): { rank: number; title: string; body:
 }
 
 // ---------- OpenUI programs (UIs that draw OpenUI Lang, e.g. Foldkit) ----------
-// The CopilotKit UI draws show_* results with React cards. UIs that draw only OpenUI get the same card as an OpenUI
+// The Foldkit UI draws only OpenUI: it gets each show_* card as an OpenUI
 // Lang program. Its data is a live OpenUI Query ("factory_card", refreshed every few seconds from GET /api/cards);
 // the tool's result is the Query's default, so the card shows at once and still renders without the live tool.
 // Rows, labels and metrics come from shared/cardviews.ts, the same view the React cards use.
@@ -70,7 +70,7 @@ const body = (name: string, c: string, x: string): { children: string[]; lines: 
   const table = (id: string, cols: string[]) => (L.push(`${x}${id} = Table([${cols.join(", ")}])`), `${x}${id}`)
   switch (name) {
     case "show_worker_board":
-      // A row's "Show" puts that agent in the side panel (the CopilotKit card does it on row click).
+      // A row's "Show" puts that agent in the side panel.
       L.push(`${x}focus = Mutation("focus_agent", {id: $${x}agent})`)
       return {
         lines: L,
@@ -124,7 +124,7 @@ const body = (name: string, c: string, x: string): { children: string[]; lines: 
     case "show_diff_summary":
       return { lines: L, children: [table("t", [col("p", "File", `${c}.rows.path`), col("a", "Added", `${c}.rows.added`), col("r", "Removed", `${c}.rows.removed`)])] }
     case "show_report_findings":
-      // "Start" opens a new conversation for the finding (as the CopilotKit card's Start button does).
+      // "Start" opens a new conversation for the finding.
       L.push(`${x}start = Mutation("start_finding", {path: ${c}.path, rank: $${x}rank, scope: $${x}scope})`)
       return {
         lines: L,
@@ -136,7 +136,7 @@ const body = (name: string, c: string, x: string): { children: string[]; lines: 
         ],
       }
     case "show_decisions":
-      // Each option answers in place (as in the CopilotKit decision queue), then the card refreshes.
+      // Each option answers in place, then the card refreshes.
       L.push(`${x}answer = Mutation("answer_decision", {pick: $${x}pick})`)
       return {
         lines: L,

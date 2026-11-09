@@ -7,29 +7,44 @@ Foldkit (TEA + Effect) host for the software factory. The live Foldkit source an
 
 Run all four before you finish: `npm run typecheck`, `npm run lint`, `npm run test`, `npx vite build`.
 
-## React islands
+## No React
 
-React is allowed only as an island inside the Foldkit view. These rules apply to every island:
+This app has no React and no CopilotKit. Do not add `react`, `react-dom`, `@copilotkit/*`, `@openuidev/react-*`,
+or `zustand`, and do not mount a React island. `npm ls react react-dom @copilotkit/react-core` must list nothing.
 
-1. **Foldkit owns all app state.** React never holds state the Model needs. If the app must know it, it lives in the Model.
-2. **An island is a leaf.** Props go in; events come out as Foldkit Messages. Mount it with `h.OnMount(...)` and a
-   `Mount.define`, the same way `MountTranscript` (`src/workerPanel/command.ts`) works: create the React root in
-   `Effect.acquireRelease` and unmount it in the release.
-3. **Use React only for libraries that exist only in React.** Examples: the OpenUI `Renderer`, a code editor, a chart.
-   Never use React for layout or flow.
-4. **Scene tests stub the island with `Mount.resolve`**, so the test story stays the same with or without React.
-5. **Use framework-free CopilotKit parts directly.** `@ag-ui/client` has no React dependency. For AG-UI features
-   (tool calls, state events), use the protocol, not `@copilotkit/react-core`.
+- App chrome (navbar, settings, worker panel, thread picker): Foldkit `view` + `@foldkit/ui`.
+- Chat shell (messages, composer, threads, streaming, tool rows): `@plana-solutions/agent-interface`.
+- A card whose layout we know: a Foldkit view, or an OpenUI program the coordinator builds (`coordinator/src/cards.ts`).
+- A card whose layout the agent invents (`render_ui`, answers that start with `root =`): OpenUI Lang, drawn by
+  agent-interface's Foldkit GenUI views. OpenUI Lang is the only agent UI format.
+- A third-party React component: do not wrap it. Port the behavior to Foldkit, or drop it.
+
+### OpenUI cards outside the chat
+
+`src/openUiCard.ts` draws OpenUI programs for the shared stream (`shared/protos`, `setOpenUiRenderer`). Each card is
+a small `Runtime.makeElement` program that embeds the chat Submodel with one answer and draws it with
+`genUiCardView` (added to agent-interface by the patch below). So a stream card has the same components, DOM,
+query tools and popovers as a chat card. "Continue the conversation" leaves the card through the `followUp` outbound
+Port; the host sends it to the agent that wrote the card. `src/openUiCard.test.ts` covers drawing and actions;
+`coordinator/test/openui-cards.test.ts` parses every coordinator card with the `openuiChat` catalog.
+
+`src/openUiParity.css` keeps the Select popover unclipped, as Radix does.
 
 ## Patched packages
 
 `patches/` holds `patch-package` patches; `postinstall` applies them with `--error-on-fail`, so `npm install` fails
-when a patch no longer fits. `@plana-solutions/agent-interface` is patched in five files: `client/flags.js` (Effect 4.1 Crypto),
+when a patch no longer fits. `@plana-solutions/agent-interface` is patched in these files: `client/flags.js` (Effect 4.1 Crypto),
 `features/timeline.js` (a `[data-sf-tool]` slot per finished tool call; `shared/diffview.ts` `startToolDiffs`
 draws the file diffs in it), and `client/timeline.js` + `client/genui/rendered.js` (cache each turn layout and
 the answer list per messages array, so one chat Message does not rebuild them 4-6 times), and
 `client/thread-scroll-dom.js` (`WatchUserBubble` does not read layout on mount; one forced layout per bubble made
 every thread switch a slow Patch, and the ResizeObserver's first report gives the same value).
+OpenUI parity with `@openuidev/react-ui@0.18.1` (the React renderer this replaced; proven pixel-equal on the catalog):
+`features/genui/card.js` + `index.js`/`index.d.ts` (public `genUiCardView`; `render.js` exports `rendererView`),
+`features/genui/medium-card-blocks.js` (composite card charts match `AreaChart`/`BarChart`/`LineChart`, as React
+does, so they get the 180 px card height), `features/genui/charts/legend.js` (percentage as two text nodes, as React
+renders it), and `features/genui/forms/select.js` (the popover wrapper is `position: absolute`, so it opens under
+its trigger).
 `src/agentInterfacePatch.test.ts` fails if any of these patches is missing.
 
 To upgrade agent-interface:
