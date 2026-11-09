@@ -13,16 +13,61 @@ browser ──AG-UI SSE──► coordinator (TypeScript, Bun, @github/copilot-s
 ## Run
 
 ```sh
-./start.sh          # native Copilot subscription (token from gh auth token)
-./start.sh proxy    # BYOK through copilot-proxy-rs at localhost:8080/v1
-SF_MODEL=claude-haiku-5.5 ./start.sh   # cheaper model
+mise run factory:up                    # native Copilot subscription (token from gh auth token)
+mise run factory:up proxy              # BYOK through copilot-proxy-rs at localhost:8080/v1
+SF_MODEL=claude-haiku-5.5 mise run factory:up   # cheaper model
+mise run factory:restart coordinator   # one service (coordinator | copilotkit | foldkit); no name restarts all
+mise run factory:status | factory:logs | factory:tui | factory:down
 ```
+
+The tasks are in the repository `mise.toml`. The services run detached under [process-compose](https://f1bonacc1.github.io/process-compose/) (`process-compose.yaml`; mise installs the pinned version). Each service restarts when it exits. `factory:tui` attaches the process-compose TUI (status and live logs; `q` leaves it, the services keep running). The API is the unix socket `$SF_STATE_DIR/pc.sock`, not TCP, because copilot-proxy-rs uses port 8080. Logs are in `$SF_STATE_DIR/logs` (default state dir: `$TMPDIR/software-factory`).
 
 | Option | URL |
 |---|---|
 | 1 React + CopilotKit 2.0 RC | http://localhost:5173/copilotkit.html |
 | 2 Foldkit + agent-interface | http://localhost:5174/ |
 | Coordinator API | http://127.0.0.1:7700/ |
+
+## SDLC gates
+
+Each change gets the smallest correct process. Code holds the floors; Jev decides the optional gates (one probability per gate against its threshold, `GATES` in `coordinator/src/sdlc.ts`); a risk tier can force a gate on. `request_approval ship=true` is refused while `sdlc_status` lists blockers.
+
+| Gate | When | What it checks |
+|---|---|---|
+| Criteria + evidence | always (floor) | `sdlc_plan` writes `.factory/acceptance.md`; verify writes `AC-n: PASS` lines to `.factory/evidence.md` |
+| Verify after implement | always (floor) | runs the repo's CI commands (`.github/workflows`, `AGENTS.md`) |
+| Security review | always (floor) | `security.ts` |
+| Design note | Jev ≥ 0.6 | `.factory/design.md` (decision, alternatives, rollback) |
+| Tests first | Jev ≥ 0.5 | a tests-only commit before the first code commit |
+| Code review | Jev ≥ 0.6, or tier T2 | `review.ts`: Jev picks ≤3 lenses, parallel reviewers, synthesis, Jev scores each finding (real ≥ 0.7 and worth ≥ 0.6), fix + verify |
+| Supply chain | Jev ≥ 0.5, or a dependency change | betterleaks on the new commits, osv-scanner (vulnerabilities, license allowlist) on changed lockfiles |
+| Docs | Jev ≥ 0.5 | the diff changes README, docs or CHANGELOG |
+| Post-merge | Jev ≥ 0.5 | after the human merges, the merge commit's checks on the default branch |
+
+Risk tier (`classify`): T0 small docs-only, T2 > 400 lines, dependency manifests or sensitive paths (auth, secrets, bind, CI, scripts, Docker, mise), else T1. `.factory/` is git-excluded; `.factory/pr.md` (criteria ✓, tier, gates, evidence, rollback) is the PR body. `report_up` saves up to 3 lessons per repo (`$SF_STATE_DIR/lessons/<folder>.md`), shown to the next sub-coordinator. The `show_sdlc` card shows it all live; `/api/runs/<thread>` has it under `sdlc` with metrics (minutes, workers, findings kept and dropped), and goal specs can require it (`expect.sdlc`: `criteriaProven`, `gatesRun`, `gatesSkipped`, `maxTier`).
+
+## Goals: the self-improve loop
+
+A goal is one test case for the factory: a prompt for a repo, and what the run must show. The loop runs the goal; when the run fails, an outer agent fixes the factory code, commits, restarts, and runs again until it passes. Agents open PRs; a human merges.
+
+| Part | Where |
+|---|---|
+| Spec Schema, scoring, form draft | `shared/goal.ts` (one Schema for the UI, the API and `sf`) |
+| Specs and run logs | `docs/goals/factory/<id>.json`, `<id>.runs.jsonl` (append only; each line has the factory commit) |
+| API | `GET/POST /api/goals`, `GET /api/goals/<id>`, `GET /api/goals/<id>/prompt`, `GET/POST /api/goals/<id>/runs`, `GET /api/runs/<thread>` |
+| Form | Foldkit navbar **◎ Goals**: steps and skills come from `/api/steps`, repos from `/api/folders` |
+| CLI | `sf goal list | show ID | new | save FILE | run ID [--thread T] | check ID THREAD | history ID` |
+| Loop protocol | `skills/factory-loop/SKILL.md`; `mise run factory:skill` links it so `/factory-loop <id>` works in Claude Code |
+
+A spec says:
+
+- `expect.steps`: step id → `{min, max}` workers on that step (e.g. `review: {min: 1}`, `finish: {min: 1, max: 1}`).
+- `expect.skills`: skills some worker must have invoked (`skill.invoked` events).
+- `expect.pr`: `state`, `checks`, `base` (defaults to the goal's base), `bodyIncludes`, `untouched` files.
+- `approvals`: per topic (`plan`, `findings`, `ship`, `other`) who answers: `auto` (the runner picks the first option) or `human` (`sf goal run` stops with exit 2). Approvals carry a `topic`; a ship request is always `ship`.
+- `limits`: runs per loop, minutes per run.
+
+Flow: fill the form (or `sf goal new`) → copy `/factory-loop <id>` → paste into Claude Code. `sf goal run` exits 0 pass, 1 fail/timeout, 2 waiting for the human, 3 blocked. `sf -f FOLDER -b BRANCH` branches the worktree from BRANCH and the finish worker opens the PR against it. `make factory-test` (also in CI) runs the coordinator type check and tests.
 
 ## Model routing
 
@@ -59,7 +104,7 @@ For comparative research, design decisions and find-optimizations requests, the 
 Copilot SDK is the default harness for every worker. A step that needs skills or plugins built for another harness names it (`harness` in `coordinator/src/steps.ts`), and `spawn_worker` takes `harness` (`claude` or `pi`) and `profiles`. The factory composes the trx profiles in process, as `trx run <harness> <profile>` would, and runs the worker in that harness's TypeScript SDK:
 
 - **Claude** (`src/claude.ts`, Claude Agent SDK): plugins, `CLAUDE_CONFIG_DIR` and copilot-proxy-rs env. Permission mode `default`, so every prompt goes through `canUseTool`, which denies merge, push and delete.
-- **Pi** (`src/pi.ts`, Pi SDK): skills, extensions, provider and model from the profile; an inline `tool_call` extension applies the same deny rule.
+- **Pi** (`src/pi.ts`, Pi SDK): skills, extensions, provider and model from the profile; an inline `tool_call` extension applies the same deny rule. Pi has no skill tool: a `read` of a loaded `SKILL.md`, or a `/skill:name` prompt, counts as `skill.invoked`.
 
 Both map their events to the Copilot event names, so the feed, `read_worker`, the supervisor and both UIs treat them like any other worker. Council, Six Hats and Hyperresearch run in Claude. Each saves a separate `reports/<step>.md`. Selection probabilities appear in `factory.workflows_selected`.
 

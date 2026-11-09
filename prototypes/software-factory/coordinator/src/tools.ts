@@ -1,6 +1,6 @@
 // Tools the coordinator session uses to run the factory.
 import { execFileSync } from "node:child_process"
-import { readFileSync, statSync } from "node:fs"
+import { readFileSync, statSync, existsSync } from "node:fs"
 import path from "node:path"
 import { defineTool, type Tool } from "@github/copilot-sdk"
 import { finishPermissions, MAX_FIX_ROUNDS, now, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
@@ -9,7 +9,10 @@ import type { ShipGrant } from "./approvals.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
 import { briefProblem } from "./reports.ts"
 import { diffSummary, reportFindings } from "./cards.ts"
-import { pendingReview, reviewIn, securityReview } from "./security.ts"
+import { pendingReview, reviewIn } from "./security.ts"
+import { codeReviewIn, pendingCodeReview } from "./review.ts"
+import { afterImplement, afterVerify, countWorker, planSdlc, sdlcBusy, sdlcShipBlockers, sdlcTask, startFinalSecurity } from "./gates.ts"
+import { addLessons, artifact, prBody, unprovenCriteria } from "./sdlc.ts"
 import { decideNext, SELECTABLE_STEPS, SkillPreflightError } from "./steps.ts"
 import { FANOUT_CATALOG, MAX_FANOUT, routeFanout, type FanoutSelection } from "./workflows.ts"
 
@@ -34,6 +37,7 @@ export type Scope = {
   workdir?: string
   /** Commit the worktree branched from; the security review diffs against it. */ base?: string
   /** Default decision context, e.g. the repo folder name. */ label?: string
+  /** Repo folder id; its lessons file is read at start and appended by report_up. */ folderId?: string
   /** Sends a sub-coordinator's report_up to the human. */ report?: (r: Report) => void | Promise<void>
   /** A conversation exists and is not cleaned up; checks request_approval's reportThreadId. */ knownThread?: (
     threadId: string,
@@ -63,6 +67,15 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
           securityReview: { id: pending.id, status: pending.status, workerId: pending.workerId ?? null },
           note: "The automatic security review of the last implement step is still running. Wait for its current worker with read_worker wait=true, then call next_step again.",
         })
+      const cr = pendingCodeReview(f.codeReviews.values(), scope.id)
+      if (cr)
+        return json({
+          step: "wait_code_review",
+          codeReview: { id: cr.id, status: cr.status, lenses: cr.lenses, workerId: cr.workerId ?? null },
+          note: "The code review gate is running (Jev-picked lenses, synthesis, Jev-scored fixes). Wait for its current worker with read_worker wait=true, then call next_step again.",
+        })
+      const busy = sdlcBusy(f, scope.id)
+      if (busy) return json({ step: "wait_gates", note: `${busy}. Call next_step again in a moment.` })
       const state = { request: str(a, "request"), progress: str(a, "progress"), lastOutput: str(a, "lastOutput") }
       try {
         const d = await decideNext(state)
@@ -135,6 +148,18 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
     parameters: obj({}),
     handler: (a: any) => json(cardData(f, scope, "show_security_review", a ?? {})),
   }),
+  defineTool("show_code_review", {
+    description:
+      "Show this conversation's latest code review as a live card: the Jev-picked reviewer lenses, every synthesized finding with severity, Jev's real/worth scores, and whether it was kept (fixed) or dropped. Use it when a code review finishes and when the human asks about the review.",
+    parameters: obj({}),
+    handler: (a: any) => json(cardData(f, scope, "show_code_review", a ?? {})),
+  }),
+  defineTool("show_sdlc", {
+    description:
+      "Show this conversation's SDLC gates as a live card: risk tier, each gate (floor or Jev probability vs threshold, status), criteria proven, review findings kept, and what still blocks shipping. Use it after sdlc_plan, after implement, and before asking to ship.",
+    parameters: obj({}),
+    handler: (a: any) => json(cardData(f, scope, "show_sdlc", a ?? {})),
+  }),
   defineTool("show_delivery_run", {
     description:
       "Show this conversation's delivery run as a live card: branch, Jev's step decisions with confidence, and how much work is left (moreWork). Only in a conversation that runs the delivery loop (next_step); in a General chat use factory_status instead.",
@@ -179,7 +204,7 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       }
     },
   }),
-  ...(scope.workdir ? [reportUp(f, scope, scope.workdir)] : []),
+  ...(scope.workdir ? [reportUp(f, scope, scope.workdir), sdlcPlanTool(f, scope), sdlcStatusTool(f, scope)] : []),
   defineTool("extension_errors", {
     description:
       "Runtime errors that UI extensions threw in the browsers (per extension and UI). Call this a few seconds after installing or changing an extension, and fix any error with update_settings.",
@@ -190,6 +215,54 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
     },
   }),
 ]
+
+/** sdlc_plan: acceptance criteria plus Jev's plan-phase gates (design note, tests first). */
+const sdlcPlanTool = (f: Factory, scope: Scope) =>
+  defineTool("sdlc_plan", {
+    description:
+      "Call once before the plan approval (and again if the plan changes). Saves numbered, testable acceptance criteria to .factory/acceptance.md, reads the repo's CI checks, and asks Jev which plan-phase gates this change needs (design note, tests first). Returns the gates and the checks verify will run.",
+    parameters: obj(
+      {
+        request: { type: "string", description: "The user's request, verbatim." },
+        plan: { type: "string", description: "The plan in a few bullets." },
+        criteria: { ...list, description: "2-8 testable acceptance criteria, each one observable with a command (e.g. 'GET /health on 18080 returns 200')." },
+      },
+      ["request", "plan", "criteria"],
+    ),
+    handler: async (a: any) => {
+      const criteria = Array.isArray(a.criteria) ? a.criteria.map(String).filter((c: string) => c.trim()) : []
+      if (!criteria.length) return json({ error: "criteria must have at least one item" })
+      const s = await planSdlc(f, scope, str(a, "request"), criteria, str(a, "plan"))
+      return json({
+        criteria: s.criteria.map((c, i) => `AC-${i + 1}: ${c}`),
+        checks: s.checks,
+        gates: s.gates,
+        next: [
+          s.gates.find((g) => g.id === "design")?.chosen ? "Design gate on: spawn step=plan to write .factory/design.md (decision, alternatives, rollback) before implement." : null,
+          "Put the criteria in the plan approval summary (request_approval topic=plan).",
+          "Implement and verify tasks get the criteria and gate rules appended by the factory.",
+        ].filter(Boolean),
+      })
+    },
+  })
+
+/** sdlc_status: tier, gates, what still blocks shipping, and the PR body to use. */
+const sdlcStatusTool = (f: Factory, scope: Scope) =>
+  defineTool("sdlc_status", {
+    description:
+      "The conversation's SDLC state: risk tier, each gate (chosen by Jev or a floor, with probability and status), and what still blocks shipping. With summary set, also writes .factory/pr.md (criteria with checks, tier, gates, evidence, rollback) for the finish worker's `gh pr create --body-file`.",
+    parameters: obj({ summary: { type: "string", description: "Optional PR summary in 1-3 sentences; writes .factory/pr.md." } }),
+    handler: async (a: any) => {
+      const s = f.sdlc.get(scope.id)
+      const blockers = sdlcShipBlockers(f, scope)
+      let prFile: string | null = null
+      if (s && typeof a.summary === "string" && a.summary.trim() && scope.workdir) {
+        prFile = `${scope.workdir}/.factory/pr.md`
+        await Bun.write(prFile, prBody(s, scope.workdir, a.summary))
+      }
+      return json({ tier: s?.risk ?? null, gates: s?.gates ?? [], criteria: s?.criteria ?? [], scopeWarning: s?.scopeWarning ?? null, blockers, readyToShip: blockers.length === 0, ...(prFile ? { prBody: prFile } : {}) })
+    },
+  })
 
 /** One doctor per broken skill set at a time; concurrent spawns share it. */
 const healing = new Map<string, Promise<string>>()
@@ -247,10 +320,10 @@ export const spawnHealing = async (
 /** Why no worker may start: a security review is unfinished in the same worktree. */
 const spawnBlocked = (f: Factory, scope: Scope): string | null => {
   const workdir = scope.workdir ?? f.run?.worktree
-  const r = workdir ? reviewIn(f.securityReviews.values(), workdir) : undefined
+  const r = workdir ? (reviewIn(f.securityReviews.values(), workdir) ?? codeReviewIn(f.codeReviews.values(), workdir)) : undefined
   if (!r) return null
   const wait = r.workerId ? `wait for worker ${r.workerId} with read_worker wait=true` : "call next_step to wait for it"
-  return `security review ${r.id} is ${r.status} in this worktree; ${wait}, then spawn again.`
+  return `${r.id.startsWith("cr-") ? "code" : "security"} review ${r.id} is ${r.status} in this worktree; ${wait}, then spawn again.`
 }
 
 const fanoutTool = (name: string, description: string, run: (request: string) => Promise<unknown>) =>
@@ -409,7 +482,7 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         role: "worker",
         auth,
         ...(typeof a.model === "string" ? { model: a.model } : {}),
-        task: str(a, "task"),
+        task: sdlcTask(f, scope, a.step, str(a, "task")),
         ...(typeof a.step === "string" ? { step: a.step } : {}),
         ...(ship ? { permissions: finishPermissions(ship, (g) => f.approvals.setPushes(g)) } : {}),
         ...(!ship && (a.harness === "claude" || a.harness === "pi")
@@ -417,11 +490,14 @@ const spawnWorker = (f: Factory, scope: Scope) =>
           : {}),
         owner: scope.id,
         ...(scope.workdir ? { workdir: scope.workdir } : {}),
-        // Review workers are spawned by securityReview directly, so a security fix never triggers another review.
+        // Review workers are spawned by the reviews directly, so a review fix never triggers another review.
         ...(a.step === "implement"
-          ? { onDone: (w: { id: string }) => void securityReview(f, scope, w.id, scopeAuth) }
-          : {}),
+          ? { onDone: (w: { id: string }) => void afterImplement(f, scope, w.id, scopeAuth) }
+          : a.step === "verify"
+            ? { onDone: () => void afterVerify(f, scope) }
+            : {}),
       })
+      countWorker(f, scope.id)
       return json({ ...w.summary(), ...(scope.workdir ? { worktree: scope.workdir } : { run: f.run }) })
     },
   })
@@ -456,6 +532,11 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
           description: "Optional, one per option: what happens next if the human picks it, in under 12 words.",
         },
         context: { type: "string", description: "Who asks and about what, e.g. 'coordinator · review of b39040eb'." },
+        topic: {
+          type: "string",
+          enum: ["plan", "findings", "other"],
+          description: "plan: approve a plan before implement. findings: apply review findings. other: anything else. A ship request is always topic ship.",
+        },
         ...(ships
           ? {
               ship: {
@@ -486,6 +567,10 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
       const shipBranch = ships && a.ship === true ? gitOr(scope.workdir!, "--abbrev-ref", "HEAD") : null
       if (shipBranch !== null && !shipBranch.startsWith("factory/"))
         return json({ error: `Only factory/* branches ship; this worktree is on ${shipBranch}` })
+      const security = shipBranch !== null ? startFinalSecurity(f, scope) : null
+      if (security) return json({ error: `Not ready to ship yet: ${security}` })
+      const blockers = shipBranch !== null ? sdlcShipBlockers(f, scope) : []
+      if (blockers.length) return json({ error: `Not ready to ship:\n- ${blockers.join("\n- ")}\nFix these (sdlc_status shows the gates), then ask again.` })
       const item = f.approvals.open({
         kind: name === "ask_user" ? "question" : "approval",
         threadId: scope.threadId ?? f.currentThread,
@@ -500,6 +585,7 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
         context: typeof a.context === "string" ? a.context : (scope.label ?? "coordinator"),
         ...(Array.isArray(a.optionDetails) ? { optionDetails: a.optionDetails.map(String) } : {}),
         ...(reportThreadId !== undefined ? { reportThreadId } : {}),
+        topic: shipBranch ? "ship" : a.topic === "plan" || a.topic === "findings" ? a.topic : "other",
       })
       if (shipBranch) f.approvals.addShip(item.id, scope.id, shipBranch)
       f.publish("coordinator", "factory.approval_requested", null, String(Date.now()), item)
@@ -529,6 +615,10 @@ const reportUp = (f: Factory, scope: Scope, workdir: string) =>
         },
         gaps: { ...list, description: "What is not done or not proven." },
         nextSteps: { ...list, description: "Options for the human; the first is your recommendation." },
+        lessons: {
+          ...list,
+          description: "0-3 short lessons about this repo for the next conversation (a check that failed in CI, a tool quirk, a convention). Saved per repo.",
+        },
       },
       ["status", "summary"],
     ),
@@ -556,6 +646,7 @@ const reportUp = (f: Factory, scope: Scope, workdir: string) =>
       }
       turn.reported = true
       f.lastReports.set(scope.id, key)
+      if (scope.folderId && Array.isArray(a.lessons) && a.lessons.length) addLessons(f.root, scope.folderId, a.lessons.map(String).slice(0, 3))
       f.publish(scope.id, "factory.report_up", null, now(), { threadId: scope.threadId, report: r })
       return json({ sent: true, note: "The human decides the next step. End your turn now." })
     },
@@ -682,6 +773,29 @@ export const cardData = (f: Factory, scope: Scope, name: string, a: Record<strin
       if (!r) return { reviewId: null, note: "No security review yet." }
       const findings = r.findings.map((x) => ({ title: x.title, severity: x.severity, file: x.file, verdict: x.verdict ?? "", reason: x.reason ?? "" }))
       return { reviewId: r.id, status: r.status, model: r.model, ...(r.error ? { error: r.error } : {}), findings }
+    }
+    case "show_code_review": {
+      const r = [...f.codeReviews.values()].filter((x) => x.scopeId === scope.id).at(-1)
+      if (!r) return { note: "No code review yet." }
+      return { reviewId: r.id, status: r.status, lenses: r.lenses, lensProbabilities: r.lensProbabilities, findings: r.findings, ...(r.error ? { error: r.error } : {}) }
+    }
+    case "show_sdlc": {
+      const s = f.sdlc.get(scope.id)
+      if (!s) return { note: "No SDLC plan yet (sdlc_plan)." }
+      const sec = [...f.securityReviews.values()].filter((r) => r.scopeId === scope.id).at(-1)
+      const evidence = scope.workdir && existsSync(artifact(scope.workdir, "evidence.md")) ? readFileSync(artifact(scope.workdir, "evidence.md"), "utf8") : null
+      return {
+        tier: s.risk?.tier ?? null,
+        reasons: s.risk?.reasons ?? [],
+        criteria: s.criteria,
+        unproven: unprovenCriteria(s.criteria, evidence),
+        gates: s.gates,
+        security: sec?.status ?? null,
+        verified: s.verifyDoneAt !== null && s.implementDoneAt !== null && s.verifyDoneAt >= s.implementDoneAt,
+        kept: s.findings.kept,
+        dropped: s.findings.dropped,
+        blockers: sdlcShipBlockers(f, scope),
+      }
     }
     case "show_delivery_run": {
       const wt = scope.workdir

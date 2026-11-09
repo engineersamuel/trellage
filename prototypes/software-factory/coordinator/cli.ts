@@ -14,7 +14,10 @@
 //   sf draft ID                         show the draft: versions, pending rewrites, reports
 //   sf draft ID enhance|council|debate|research|hyperresearch|dismiss|run
 //   sf draft ID pick N | use VERSION_ID | edit "prompt" | rm
+//   sf run THREAD                       delivery record: workers and steps, approvals, security reviews, PR
+//   sf goal ...                         goal specs: create, run, score, history (see goal-cli.ts)
 import { Console, Effect, Stream } from "effect"
+import { goalCommand } from "./goal-cli.ts"
 
 const base = process.env.SF_URL ?? "http://127.0.0.1:7700"
 
@@ -41,7 +44,8 @@ const events = (body: ReadableStream<Uint8Array>) =>
     Stream.map((l) => JSON.parse(l.slice(6)) as { type: string; [k: string]: any }),
   )
 
-const ask = (prompt: string, thread?: string, folderId = "general", base?: string) =>
+/** Send a prompt (new thread unless `thread`), stream the coordinator's answer to `out`, and return the thread id. */
+const ask = (prompt: string, thread?: string, folderId = "general", base?: string, out: NodeJS.WriteStream = process.stdout) =>
   Effect.gen(function* () {
     const threadId: string =
       thread ?? (yield* json("/api/threads/create", { method: "POST", body: JSON.stringify({ folderId, ...(base ? { base } : {}), messages: [{ role: "user", content: prompt }] }) })).id
@@ -53,13 +57,14 @@ const ask = (prompt: string, thread?: string, folderId = "general", base?: strin
     yield* events(r.body!).pipe(
       Stream.runForEach((e) =>
         Effect.sync(() => {
-          if (e.type === "TEXT_MESSAGE_CONTENT") process.stdout.write(e.delta)
-          else if (e.type === "TEXT_MESSAGE_END") process.stdout.write("\n")
+          if (e.type === "TEXT_MESSAGE_CONTENT") out.write(e.delta)
+          else if (e.type === "TEXT_MESSAGE_END") out.write("\n")
           else if (e.type === "TOOL_CALL_START") process.stderr.write(`· ${e.toolCallName}\n`)
           else if (e.type === "RUN_ERROR") process.stderr.write(`error: ${e.message}\n`)
         }),
       ),
     )
+    return threadId
   })
 
 /** A draft in short form: versions (current marked), waiting rewrites, reports. */
@@ -109,7 +114,11 @@ const program = (() => {
     case undefined:
     case "-h":
     case "--help":
-      return Console.log('usage: sf "prompt" | sf -t THREAD "prompt" | sf -f FOLDER [-b BASE] "prompt" | sf folders [PATH] | sf status | sf workers | sf threads | sf settings [PATCH_JSON] | sf approvals | sf approve ID "Option" [note] | sf draft FOLDER "prompt" | sf draft ID [enhance|council|debate|research|hyperresearch|dismiss|run|pick N|use VERSION|edit "prompt"|rm]')
+      return Console.log('usage: sf "prompt" | sf -t THREAD "prompt" | sf -f FOLDER [-b BASE] "prompt" | sf folders [PATH] | sf status | sf workers | sf threads | sf settings [PATCH_JSON] | sf run THREAD | sf goal [list|show ID|new|save FILE|run ID [--thread T]|check ID THREAD|history ID] | sf approvals | sf approve ID "Option" [note] | sf draft FOLDER "prompt" | sf draft ID [enhance|council|debate|research|hyperresearch|dismiss|run|pick N|use VERSION|edit "prompt"|rm]')
+    case "run":
+      return json(`/api/runs/${encodeURIComponent(rest[0] ?? "")}`).pipe(Effect.flatMap(print))
+    case "goal":
+      return goalCommand(json, (prompt, folderId, base) => ask(prompt, undefined, folderId, base, process.stderr), rest)
     case "status":
       return json("/api/steps").pipe(Effect.flatMap(print))
     case "workers":
@@ -149,7 +158,9 @@ const program = (() => {
   }
 })()
 
-Effect.runPromise(program).catch((e) => {
+Effect.runPromise(program as Effect.Effect<unknown, Error>).then((code) => {
+  if (typeof code === "number") process.exit(code)
+}).catch((e) => {
   console.error(String(e?.message ?? e))
   process.exit(1)
 })

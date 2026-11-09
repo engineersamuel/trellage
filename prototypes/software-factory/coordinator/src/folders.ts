@@ -32,7 +32,16 @@ export const addFolder = (folders: Folder[], p: string): Folder => {
 /** Default home of conversation worktrees: ~/.trellage/worktrees/<folder>/<id8>. */
 export const worktreeRoot = (env = process.env): string => env.SF_WORKTREES ?? path.join(homedir(), ".trellage", "worktrees")
 
-export type Worktree = { worktree: string; branch: string; base: string }
+export type Worktree = { worktree: string; branch: string; base: string; /** Branch the PR targets: the `baseRef` when it names a branch. */ prBase?: string }
+
+const branchExists = (repo: string, ref: string): boolean => {
+  try {
+    git(repo, "rev-parse", "--verify", "-q", ref.startsWith("origin/") ? `refs/remotes/${ref}` : `refs/heads/${ref}`)
+    return true
+  } catch {
+    return false
+  }
+}
 
 /** Create a worktree on a new branch from `baseRef`, else the remote default branch (or HEAD when there is none). */
 export const createWorktree = (repo: string, dir: string, branch: string, baseRef?: string): Worktree => {
@@ -49,7 +58,8 @@ export const createWorktree = (repo: string, dir: string, branch: string, baseRe
     base = git(repo, "rev-parse", "HEAD")
   }
   git(repo, "worktree", "add", "-q", "-b", branch, dir, base)
-  return { worktree: dir, branch, base }
+  const prBase = baseRef && branchExists(repo, baseRef) ? baseRef.replace(/^origin\//, "") : undefined
+  return { worktree: dir, branch, base, ...(prBase ? { prBase } : {}) }
 }
 
 const tryGit = (cwd: string, ...a: string[]): string | null => {

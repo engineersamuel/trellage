@@ -13,7 +13,7 @@ Done means:
 - `web-react/` is deleted, including its CopilotKit skills, `copilotkit.html`, and `package-lock.json`.
 - `web-foldkit/package.json` and `web-foldkit/src` contain no `react`, `react-dom`, `@copilotkit/*`, `@openuidev/react-*`, or `zustand`.
 - `npm ls react react-dom @copilotkit/react-core` from `web-foldkit` lists nothing.
-- `./start.sh` starts the coordinator and Foldkit only. The old Option 1 URL is gone.
+- `mise run factory:up` starts the coordinator and Foldkit only. The old Option 1 URL is gone.
 - Every behavior in the port table below either works on Foldkit or is explicitly dropped in the coordinator prompt, with the replacement named.
 - `web-foldkit/AGENTS.md` forbids React islands and CopilotKit imports.
 
@@ -95,7 +95,7 @@ Order:
 ## Delete list
 
 - Directory `prototypes/software-factory/web-react/`.
-- `start.sh` lines that `npm ci` and supervise `web-react`, and the Option 1 URL in `status` and the startup echo.
+- The `copilotkit` process in `process-compose.yaml`, and the `web-react` `npm ci`, the Option 1 URL and the `copilotkit` service name in the `factory:*` tasks of the repository `mise.toml`.
 - README row "1 React + CopilotKit 2.0 RC".
 - Coordinator CSS that exists only for `[data-copilotkit]` in `coordinator/src/settings.ts`, once no page emits that attribute.
 - Comments and prompts that tell the agent the human is looking at the CopilotKit page. Keep tools that both UIs already shared (`render_ui`, `show_worker_board`, `update_settings`).
@@ -119,7 +119,7 @@ Search the prototype for `copilotkit`, `@copilotkit`, `web-react`, `5173`, `crea
 4. Register the native stream renderer. Delete `src/openui-card.ts`.
 5. Wire interrupts, `focus_agent`, and context as chosen above. Update the coordinator prompt in the same change so it cannot call a deleted client tool.
 6. Remove React packages from `web-foldkit` and reinstall with npm (`patch-package` and the lockfile are npm). Commit the lockfile with the manifest.
-7. Delete `web-react`. Update `start.sh` and `README.md`.
+7. Delete `web-react`. Update `process-compose.yaml`, the `factory:*` tasks in `mise.toml`, and `README.md`.
 8. Rewrite `web-foldkit/AGENTS.md`: no React, no CopilotKit, known cards are Foldkit views, agent-invented cards are OpenUI Lang.
 
 ## Checks
@@ -141,10 +141,10 @@ From `prototypes/software-factory/coordinator`: run the existing test command fo
 From `prototypes/software-factory`:
 
 ```sh
-./start.sh status
+mise run factory:status
 ```
 
-After `./start.sh`, only the Foldkit URL and the coordinator API should be listed. `http://localhost:5173/copilotkit.html` must not be started.
+After `mise run factory:up`, only the Foldkit URL and the coordinator API should be listed. `http://localhost:5173/copilotkit.html` must not be started.
 
 Browser, on `http://localhost:5174/`:
 

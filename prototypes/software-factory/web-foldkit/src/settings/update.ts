@@ -69,7 +69,7 @@ const refreshSettings = Update.refresh<Model, Message, SettingsDocument, string>
 const foldDialog = Update.foldChild({
   update: Dialog.update,
   read: (model: Model) => Option.some(model.dialog),
-  write: (model: Model, dialog: Dialog.Model) => modifyFields(model, { dialog: () => dialog }),
+  write: (model: Model, dialog: Dialog.Model) => (dialog === model.dialog ? model : modifyFields(model, { dialog: () => dialog })),
   toParentMessage: (message: Dialog.Message) => Message.GotDialogMessage({ message }),
   foldOutMessage: Dialog.OutMessage.match<Step>({ Opened: () => (model) => ({ model }), Closed: () => (model) => ({ model }) }),
 });
@@ -78,7 +78,7 @@ const foldDialog = Update.foldChild({
 export const toggleDialog = Update.foldChildStep({
   update: (dialog: Dialog.Model) => (dialog.isOpen ? Dialog.close(dialog) : Dialog.open(dialog)),
   read: (model: Model) => Option.some(model.dialog),
-  write: (model: Model, dialog: Dialog.Model) => modifyFields(model, { dialog: () => dialog }),
+  write: (model: Model, dialog: Dialog.Model) => (dialog === model.dialog ? model : modifyFields(model, { dialog: () => dialog })),
   toParentMessage: (message: Dialog.Message) => Message.GotDialogMessage({ message }),
   foldOutMessage: Dialog.OutMessage.match<Step>({ Opened: () => (model) => ({ model }), Closed: () => (model) => ({ model }) }),
 });
@@ -86,7 +86,7 @@ export const toggleDialog = Update.foldChildStep({
 const foldPanelWidthSlider = Update.foldChild({
   update: Slider.update,
   read: (model: Model) => Option.some(model.panelWidthSlider),
-  write: (model: Model, slider: Slider.Model) => modifyFields(model, { panelWidthSlider: () => slider }),
+  write: (model: Model, slider: Slider.Model) => (slider === model.panelWidthSlider ? model : modifyFields(model, { panelWidthSlider: () => slider })),
   toParentMessage: (message: Slider.Message) => Message.GotPanelWidthSliderMessage({ message }),
   foldOutMessage: Slider.OutMessage.match<Step>({ ChangedValue: ({ value }) => patch({ layout: { panelWidth: value } }) }),
 });
@@ -144,6 +144,10 @@ export const update = (model: Model, message: Message) =>
     UpdatedRepo: ({ value }) => patch({ repo: value.trim() })(model),
     SelectedModel: ({ model: agentModel }) => patch({ agent: { model: agentModel } })(model),
     SelectedReasoningEffort: ({ effort }) => patch({ agent: { reasoningEffort: effort } })(model),
+    SelectedSubModel: ({ model: subModel }) => patch({ subAgent: { model: subModel } })(model),
+    SelectedSubEffort: ({ effort }) => patch({ subAgent: { reasoningEffort: effort } })(model),
+    ClickedWorkerHarness: ({ harness }) => patch({ workers: { harness } })(model),
+    ClickedDecisionEngine: ({ engine }) => patch({ decisions: { engine } })(model),
     ToggledDisabledTool: ({ tool }) =>
       withSettings(model, (settings) => ({ agent: { disabledTools: toggleMember(settings.agent.disabledTools, tool) } })),
     UpdatedInstructions: ({ value }) => patch({ agent: { instructions: value } })(model),

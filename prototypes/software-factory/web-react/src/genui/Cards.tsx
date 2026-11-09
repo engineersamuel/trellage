@@ -1,7 +1,7 @@
 // Typed chat cards (rule 13): our layouts, drawn with OpenUI's React components. Each card reads live data from the
 // store and falls back to the tool result (the snapshot at call time). View models are pure and tested.
 import { Button, Callout, Card, CardHeader, MetricIndicatorInline, Steps, StepsItem, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tag } from "@openuidev/react-ui"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { answer, runApprovals, type Decision } from "../../../shared/approvals"
 import { Effect } from "effect"
 import { json } from "../../../shared/http"
@@ -10,7 +10,7 @@ import { openThread } from "../state/chat"
 import { Action } from "../state/model"
 import { dispatch, useApp } from "../state/store"
 import { OpenUiTheme } from "./OpenUi"
-import { ownSteps, toReview, toRun, plainLine } from "../../../shared/cardviews"
+import { cardView, ownSteps, toReview, toRun, plainLine, type CardView } from "../../../shared/cardviews"
 
 type TagVariant = "neutral" | "info" | "success" | "warning" | "danger"
 
@@ -301,3 +301,69 @@ function QueueRow({ d }: { d: Decision }) {
     </div>
   )
 }
+
+// ---------- SDLC gates ----------
+
+/** Live SDLC card: the tool result first, then GET /api/cards every 5 s (the same view the Foldkit card reads). */
+function LiveCard({ name, title, result, scope }: { name: string; title: string; result: string | undefined; scope: string | undefined }) {
+  const snap = useMemo(() => (result ? cardView(name, parse<unknown>(result)) : null), [result, name])
+  const [live, setLive] = useState<CardView | null>(null)
+  useEffect(() => {
+    if (!scope) return
+    const load = () =>
+      fetch(`/api/cards?name=${name}&scope=${encodeURIComponent(scope)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((v) => v && setLive(v as CardView))
+        .catch(() => {})
+    void load()
+    const t = setInterval(load, 5000)
+    return () => clearInterval(t)
+  }, [scope, name])
+  const v = live ?? snap
+  if (!v) return <Waiting what={title} />
+  const rows = v.rows as Record<string, unknown>[]
+  const cols = rows.length ? Object.keys(rows[0]!).filter((k) => k !== "variant") : []
+  return (
+    <Frame title={v.title} subtitle={v.subtitle}>
+      <div className="sf-board-metrics">
+        {v.metrics.map((m) => (
+          <MetricIndicatorInline key={m.label} value={m.value} subtext={m.label} />
+        ))}
+      </div>
+      {v.note && <Callout variant={v.noteVariant === "error" ? "danger" : v.noteVariant} description={v.note} />}
+      {rows.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {cols.map((c) => (
+                <TableHead key={c}>{c}</TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r, i) => (
+              <TableRow key={i}>
+                {cols.map((c) =>
+                  c === "status" || c === "severity" ? (
+                    <TableCell key={c}>
+                      <Tag text={String(r[c])} variant={(r.variant as TagVariant) ?? "neutral"} size="sm" />
+                    </TableCell>
+                  ) : (
+                    <TableCell key={c}>
+                      <small>{String(r[c] ?? "")}</small>
+                    </TableCell>
+                  ),
+                )}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </Frame>
+  )
+}
+
+/** Live SDLC gates card. */
+export const SdlcCard = ({ result, scope }: { result: string | undefined; scope: string | undefined }) => <LiveCard name="show_sdlc" title="SDLC gates" result={result} scope={scope} />
+/** Live code review card: lenses, findings, Jev scores, kept or dropped. */
+export const CodeReviewCard = ({ result, scope }: { result: string | undefined; scope: string | undefined }) => <LiveCard name="show_code_review" title="code review" result={result} scope={scope} />

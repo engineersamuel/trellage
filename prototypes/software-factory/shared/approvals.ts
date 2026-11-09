@@ -30,7 +30,13 @@ export const Decision = Schema.Struct({
   answer: Schema.NullOr(Schema.String).pipe(withDefault(null)),
   note: Schema.NullOr(Schema.String).pipe(withDefault(null)),
   createdAt: Schema.Number,
+  /** When the answer came; null while pending and on rows from before this field. */
+  answeredAt: Schema.NullOr(Schema.Number).pipe(withDefault(null)),
+  /** Who answered when it was not the human, e.g. "goal cpr-x (policy plan=auto)"; null for the human. */
+  answeredBy: Schema.NullOr(Schema.String).pipe(withDefault(null)),
   reportThreadId: Schema.optionalKey(Schema.String),
+  /** What is decided: a plan before implement, review findings, shipping the branch, or anything else. */
+  topic: Schema.Literals(["plan", "findings", "ship", "other"]).pipe(withDefault("other")),
   /** Shadow mode: undefined while Jev predicts, null when no prediction is available. */
   shadow: Schema.optionalKey(Schema.NullOr(Shadow)),
 })

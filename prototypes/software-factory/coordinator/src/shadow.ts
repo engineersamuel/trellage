@@ -3,9 +3,9 @@
 // evidence for turning on auto-answer later.
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
-import { choice, noul, TypeSafeClient } from "@typesafe-ai/sdk"
+import { choice, noul } from "@typesafe-ai/sdk"
+import { decisionsAvailable, systemOne } from "./decide.ts"
 import type { Approval } from "./approvals.ts"
-import { jevKey } from "./steps.ts"
 
 export type Shadow = {
   /** Option Jev would pick, or null when the decision has no options. */
@@ -35,11 +35,9 @@ export const toShadow = (options: string[], covered: number, next: { choice: str
 
 /** Ask Jev what the human would answer. Null when Jev is not configured. */
 export const predict = async (a: Approval, instructions: string): Promise<Shadow | null> => {
-  const apiKey = jevKey()
-  if (!apiKey) return null
-  const client = new TypeSafeClient({ apiKey, defaultModel: "jev-1.13.0", retry: { maxRetries: 0 }, timeout: 15_000, logLevel: "off" })
-  const res: any = await client.systemOne({
-    model: "jev-1.13.0",
+  if (!decisionsAvailable()) return null
+  const res: any = await systemOne({
+    timeoutMs: 15_000,
     state: JSON.stringify({
       humanInstructions: instructions.slice(0, 12_000),
       decision: { kind: a.kind, title: a.title, context: a.context, summary: a.summary.slice(0, 4000), options: a.options, optionDetails: a.optionDetails },
@@ -58,7 +56,8 @@ export const predict = async (a: Approval, instructions: string): Promise<Shadow
         : {}),
     },
   })
-  return toShadow(a.options, res.answers.covered.noul, res.answers.next)
+  if (typeof res.answers.covered?.noul !== "number") return null
+  return toShadow(a.options, res.answers.covered.noul, typeof res.answers.next?.choice === "string" ? res.answers.next : undefined)
 }
 
 /** Agreement between Jev and the human over answered decisions, oldest first. */

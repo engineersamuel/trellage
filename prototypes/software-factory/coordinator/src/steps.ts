@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process"
 import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
 import path from "node:path"
 import { parseEnv } from "node:util"
-import { choice, noul, TypeSafeClient } from "@typesafe-ai/sdk"
+import { choice, noul } from "@typesafe-ai/sdk"
+import { decisionsAvailable, systemOne } from "./decide.ts"
 import { guideOptimizeSkills } from "../../../../packages/trellage-launcher/src/guide-optimize-catalog.ts"
 
 export type Step = {
@@ -291,17 +292,8 @@ export type Decision = {
 export const onTrack = async (
   items: { id: string; task: string; latest: string }[],
 ): Promise<Record<string, number>> => {
-  const apiKey = jevKey()
-  if (!apiKey || items.length === 0) return {}
-  const client = new TypeSafeClient({
-    apiKey,
-    defaultModel: "jev-1.13.0",
-    retry: { maxRetries: 0 },
-    timeout: 10_000,
-    logLevel: "off",
-  })
-  const res: any = await client.systemOne({
-    model: "jev-1.13.0",
+  if (!decisionsAvailable() || items.length === 0) return {}
+  const res: any = await systemOne({
     state: JSON.stringify(
       items.map(({ id, task, latest }) => ({ id, task: task.slice(0, 2000), latest: latest.slice(0, 2000) })),
     ),
@@ -323,23 +315,13 @@ export const decideNext = async (state: {
   progress: string
   lastOutput: string
 }): Promise<Decision> => {
-  const apiKey = jevKey()
-  if (!apiKey) throw new Error("Jev unavailable: no TYPESAFE_API_KEY")
-  const client = new TypeSafeClient({
-    apiKey,
-    defaultModel: "jev-1.13.0",
-    retry: { maxRetries: 0 },
-    timeout: 10_000,
-    logLevel: "off",
-  })
   const criteria = Object.fromEntries(
     SELECTABLE_STEPS.map((s) => [
       s.id,
       `${s.description} Best for: ${s.bestFor.join("; ")}. Avoid for: ${s.avoidFor.join("; ")}.`,
     ]),
   )
-  const res: any = await client.systemOne({
-    model: "jev-1.13.0",
+  const res: any = await systemOne({
     state: JSON.stringify(state),
     questions: {
       more: noul(
@@ -352,6 +334,7 @@ export const decideNext = async (state: {
     },
   })
   const a = res.answers
+  if (typeof a.more?.noul !== "number" || typeof a.next?.choice !== "string") throw new Error("next step not decided: the decision engine gave no answer")
   return {
     moreWork: a.more.noul,
     step: a.next.choice,

@@ -22,6 +22,8 @@ export type Pulse = { seq: number; agentId: string; type: string; text: string; 
 
 export type State = {
   agents: ReadonlyArray<Agent>
+  /** Stopped agents (status "stopped"), kept for the historical record. Not in `agents`. */
+  past: ReadonlyArray<Agent>
   /** Agents in tree order with depth: global → sub-coordinators → workers. */
   tree: { a: Agent; depth: number }[]
   threads: ReadonlyArray<Thread>
@@ -37,7 +39,7 @@ export { agentLabel }
 
 // ---------- store ----------
 
-const state: State = { agents: [], tree: [], threads: [], folders: [], decisions: [], reviews: [], activity: {}, pulses: [] }
+const state: State = { agents: [], past: [], tree: [], threads: [], folders: [], decisions: [], reviews: [], activity: {}, pulses: [] }
 const subs = new Set<(s: State) => void>()
 const logs = new Map<string, FeedEvent[]>()
 let frame = 0
@@ -57,7 +59,8 @@ const loadAgents = () =>
 const loadThreads = () =>
   runOr(json("/api/threads/get", Threads).pipe(Effect.map((v) => ((state.threads = v.threads), (state.folders = v.folders), emit()))), undefined)
 const loadReviews = () => runOr(json("/api/steps", Steps).pipe(Effect.map((v) => ((state.reviews = v.securityReviews), emit()))), undefined)
-const loadAll = () => Promise.all([loadAgents(), loadThreads(), loadReviews()])
+const loadPast = () => runOr(json("/api/workers/past", Schema.Array(Worker)).pipe(Effect.map((ws) => ((state.past = ws), emit()))), undefined)
+const loadAll = () => Promise.all([loadAgents(), loadPast(), loadThreads(), loadReviews()])
 
 const describe = (ev: FeedEvent): string | null => {
   const d = ev.data ?? {}
@@ -83,7 +86,7 @@ const start = () => {
   subscribeApprovals((a) => ((state.decisions = a.all), emit()))
   onFeed((ev) => {
     if (ev.type === RESYNC) return void loadAll()
-    if (ev.type === "factory.worker_started" || ev.type === "factory.worker_updated" || ev.type === "factory.worker_stopped") return void loadAgents()
+    if (ev.type === "factory.worker_started" || ev.type === "factory.worker_updated" || ev.type === "factory.worker_stopped") return void Promise.all([loadAgents(), loadPast()])
     if (ev.type === "factory.thread_updated") return void loadThreads()
     // Approvals come from the shared Effect store (subscribed in start).
     if (ev.type.startsWith("factory.approval_")) return
@@ -160,7 +163,7 @@ export const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text
   if (text) e.textContent = text
   return e
 }
-export const statusColor = (s: string) => (s === "running" ? "#f59e0b" : s === "error" ? "#ef4444" : "#22c55e")
+export const statusColor = (s: string) => (s === "running" ? "#f59e0b" : s === "error" ? "#ef4444" : s === "stopped" ? "#525252" : "#22c55e")
 
 // ---------- OpenUI Lang ----------
 

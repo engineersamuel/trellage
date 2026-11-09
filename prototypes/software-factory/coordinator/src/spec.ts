@@ -16,6 +16,8 @@ export const specView = (
   const start = last(log, "session.start")?.context ?? {}
   const loaded: any[] = last(log, "session.skills_loaded")?.skills ?? []
   const expected = new Set(spec?.skills.map((s) => s.name))
+  // Claude names plugin skills "plugin:skill"; match on the skill name.
+  const bare = (n: string) => n.slice(n.lastIndexOf(":") + 1)
   return {
     id: worker.id,
     name: worker.name,
@@ -36,11 +38,11 @@ export const specView = (
     },
     /** Skills the step asked for, and whether the runtime loaded each one for the model. */
     skills: (spec?.skills ?? []).map((s) => {
-      const l = loaded.find((x) => x.name === s.name)
+      const l = loaded.find((x) => bare(x.name) === s.name)
       return { ...s, loaded: !!l?.enabled }
     }),
     /** Every skill the runtime loaded, including built-in ones. */
-    loadedSkills: loaded.map((s) => ({ name: s.name, source: s.source, enabled: !!s.enabled, requested: expected.has(s.name), path: s.path ?? null })),
+    loadedSkills: loaded.map((s) => ({ name: s.name, source: s.source, enabled: !!s.enabled, requested: expected.has(bare(s.name)), path: s.path ?? null })),
     mcpServers: (last(log, "session.mcp_servers_loaded")?.servers ?? []).map((s: any) => ({ name: s.name, status: s.status, source: s.source ?? null })),
     plugins: [...new Set([...plugins, ...(last(log, "session.plugins_loaded")?.plugins ?? [])])],
     customTools: spec?.tools ?? [],

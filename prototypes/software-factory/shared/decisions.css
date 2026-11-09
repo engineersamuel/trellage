@@ -83,3 +83,7 @@
 .sfd-shadow:not(:empty) { margin: -6px 0 14px; padding: 8px 12px; border-radius: 8px; font-size: 12.5px; color: var(--sf-muted, #a3a3a3);
   border: 1px dashed color-mix(in srgb, #22d3ee 50%, var(--sf-border, #262626)); }
 .sfd-jev { position: absolute; right: 10px; top: 10px; font: 700 10.5px system-ui; padding: 2px 7px; border-radius: 999px; background: #22d3ee; color: #000; }
+.sfd-summary pre { background: var(--sf-surface, #171717); padding: 8px 10px; border-radius: 6px; overflow-x: auto; }
+.sfd-summary pre code { background: none; padding: 0; white-space: pre; }
+.sfd-summary table { border-collapse: collapse; margin: 6px 0; font-size: 13px; }
+.sfd-summary th, .sfd-summary td { border: 1px solid var(--sf-border, #262626); padding: 4px 8px; text-align: left; vertical-align: top; }

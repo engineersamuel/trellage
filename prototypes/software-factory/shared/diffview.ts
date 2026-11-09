@@ -201,17 +201,17 @@ const splitRows = (f: FileDiff, lines: readonly Line[]): HTMLElement => {
   return body
 }
 
-const fileView = (f: FileDiff, style: DiffStyle): HTMLElement => {
+const fileView = (f: FileDiff, style: DiffStyle, cap = CAP): HTMLElement => {
   const box = el("div", `dv-file dv-${style}`)
   let all = false
   let folded = false
   const draw = () => {
-    const shown = all ? f.lines : f.lines.slice(0, CAP)
+    const shown = all ? f.lines : f.lines.slice(0, cap)
     const parts: HTMLElement[] = [header(f, style, style === "github" ? () => ((folded = !folded), draw()) : undefined)]
     if (!folded && f.lines.length) {
       parts.push(style === "split" ? splitRows(f, shown) : unifiedRows(f, style, shown))
-      if (f.lines.length > CAP) {
-        const more = el("button", "dv-more", all ? "Show less" : `… +${f.lines.length - CAP} lines (show all)`)
+      if (f.lines.length > cap) {
+        const more = el("button", "dv-more", all ? "Show less" : `… +${f.lines.length - cap} lines (show all)`)
         more.type = "button"
         more.onclick = () => ((all = !all), draw())
         parts.push(more)
@@ -224,12 +224,12 @@ const fileView = (f: FileDiff, style: DiffStyle): HTMLElement => {
   return box
 }
 
-/** Fill `host` with the diffs and keep it in step with the chosen style. */
-export const renderDiffs = (host: HTMLElement, files: readonly FileDiff[]): void => {
+/** Fill `host` with the diffs and keep it in step with the chosen style. `cap`: lines shown before "show all". */
+export const renderDiffs = (host: HTMLElement, files: readonly FileDiff[], { cap = CAP }: { cap?: number } = {}): void => {
   const draw = () => {
     const style = currentStyle()
     host.className = `dv dv-style-${style}`
-    host.replaceChildren(...files.map((f) => fileView(f, style)))
+    host.replaceChildren(...files.map((f) => fileView(f, style, cap)))
   }
   draw()
   live.set(host, draw)

@@ -23,8 +23,12 @@ export type CardInput = {
   endedAt?: number
   /** The worker or decision the call points to, shown as a link at the top of the body. */
   link?: HTMLElement
+  /** A readable rendering of the call (e.g. a plan as markdown), shown above the raw arguments. */
+  doc?: HTMLElement
   /** Files the call changed. Shown under the head, always visible, like a coding CLI. */
   diffs?: readonly FileDiff[]
+  /** Image files the call wrote or named (absolute paths); shown under the head, served by /api/files/image. */
+  images?: readonly string[]
 }
 
 export type GroupInput = { id: string; label: string; cards: readonly CardInput[] }
@@ -59,6 +63,17 @@ const spinner = () => svg("ui-tcc__spinner", "0 0 16 16", [["circle", { cx: "8",
 const chevron = () => svg("ui-tcc__chevron", "0 0 12 12", [path("M3.5 5.25 6 7.75l2.5-2.5")])
 
 /** The glyph for a tool as an SVG element. */
+/** URL of an image file on the coordinator host (served only from the factory's allowed folders). */
+export const imageUrl = (file: string): string => `/api/files/image?path=${encodeURIComponent(file)}`
+
+const IMAGE_PATH = /(\/[\w.@+\-/]+\.(?:png|jpe?g|gif|webp))\b/gi
+
+/** Absolute image paths a tool call names in its arguments or result, once each, at most 6. */
+export const imagePaths = (args: unknown, result: unknown): string[] => {
+  const text = `${typeof args === "string" ? args : JSON.stringify(args ?? "")}\n${typeof result === "string" ? result : JSON.stringify(result ?? "")}`
+  return [...new Set([...text.matchAll(IMAGE_PATH)].map((m) => m[1]!))].slice(0, 6)
+}
+
 export const toolIcon = (name: string): SVGSVGElement => svg("", "0 0 16 16", toolGlyph(name))
 
 /** 0.4s, 12.3s, 2m 05s, 3h 12m, 2d 4h – the live timer always shows tenths below a minute */
@@ -201,6 +216,7 @@ export class ToolCard {
   private readonly sections = el("div", "ui-tcc__sections")
   private readonly body = el("div", "ui-tcc__body")
   private readonly diffBox = el("div")
+  private readonly imageBox = el("div", "ui-tcc__images")
   private statusEl: HTMLElement | null = null
   private timeEl: HTMLElement | null = null
   private bodyKey = ""
@@ -227,7 +243,8 @@ export class ToolCard {
     const clip = el("div", "ui-tcc__clip")
     clip.append(this.sections)
     this.body.append(clip)
-    this.el.append(this.announce, this.head, this.diffBox, this.body)
+    this.imageBox.hidden = true
+    this.el.append(this.announce, this.head, this.diffBox, this.imageBox, this.body)
     this.update(card)
   }
 
@@ -270,6 +287,27 @@ export class ToolCard {
     }
     this.tick()
     this.setOpen(this.isOpen())
+    const imgKey = (card.images ?? []).join("\n")
+    if (imgKey !== (prev?.images ?? []).join("\n") || !prev) {
+      this.imageBox.hidden = !card.images?.length
+      this.imageBox.replaceChildren(
+        ...(card.images ?? []).map((p) => {
+          const a = el("a", "ui-tcc__image")
+          a.href = imageUrl(p)
+          a.target = "_blank"
+          a.rel = "noopener"
+          a.title = p
+          const img = el("img")
+          img.src = imageUrl(p)
+          img.alt = p.slice(p.lastIndexOf("/") + 1)
+          img.loading = "lazy"
+          // A path the server will not serve (outside the allowed folders, or gone) drops its preview.
+          img.onerror = () => a.remove()
+          a.append(img, el("span", "", img.alt))
+          return a
+        }),
+      )
+    }
     if (prev?.diffs !== card.diffs || prev?.status !== status) {
       const files = status === "error" ? [] : (card.diffs ?? [])
       this.diffBox.hidden = !files.length
@@ -296,9 +334,10 @@ export class ToolCard {
   }
 
   private renderBody(): void {
-    const { status, error, args, result, link } = this.card
+    const { status, error, args, result, link, doc } = this.card
     const parts: HTMLElement[] = []
     if (link) parts.push(link)
+    if (doc) parts.push(doc)
     if (status === "error") {
       const box = el("div", "ui-tcc__error")
       box.append(errIcon(), el("p", "ui-tcc__error-text", error || "The tool call failed."))

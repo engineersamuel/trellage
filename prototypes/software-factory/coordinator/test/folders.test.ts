@@ -78,7 +78,11 @@ test("a conversation worktree can branch from a named base", () => {
   execFileSync("git", ["-C", r, "branch", "feature", "HEAD~1"])
   const want = execFileSync("git", ["-C", r, "rev-parse", "feature"], { encoding: "utf8" }).trim()
   const tmp = mkdtempSync(path.join(tmpdir(), "sf-wt-"))
-  expect(createWorktree(r, path.join(tmp, "a"), "factory/a", "feature").base).toBe(want)
+  const a = createWorktree(r, path.join(tmp, "a"), "factory/a", "feature")
+  expect(a.base).toBe(want)
+  expect(a.prBase).toBe("feature")
+  expect(createWorktree(r, path.join(tmp, "c"), "factory/c", want).prBase).toBeUndefined()
+  expect(createWorktree(r, path.join(tmp, "d"), "factory/d").prBase).toBeUndefined()
   expect(() => createWorktree(r, path.join(tmp, "b"), "factory/b", "nope")).toThrow("base 'nope'")
 })
 

@@ -75,3 +75,16 @@ test("only the newest 200 decisions are kept, with their ship grants", () => {
   const again = new Approvals(root)
   expect([again.list().length, again.get(first.id), again.acceptedShips("sub", "factory/x")]).toEqual([200, undefined, []])
 })
+
+test("an answer records when it came and who gave it; the human is null, and both survive a restart", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "sf-by-"))
+  const s = new Approvals(root)
+  const human = s.open({ threadId: "t", title: "Plan", summary: "", options: ["Approve"] })
+  const auto = s.open({ threadId: "t", title: "Plan 2", summary: "", options: ["Approve"] })
+  expect(human.answeredAt).toBeNull()
+  s.answer(human.id, "Approve", null)
+  s.answer(auto.id, "Approve", null, "goal cpr-x (policy plan=auto)")
+  const back = new Approvals(root)
+  expect(back.get(human.id)).toMatchObject({ answeredBy: null, answeredAt: expect.any(Number) })
+  expect(back.get(auto.id)).toMatchObject({ answeredBy: "goal cpr-x (policy plan=auto)", answeredAt: expect.any(Number) })
+})

@@ -13,6 +13,11 @@ export const Worker = Schema.Struct({
   role: Schema.String,
   status: Schema.String,
   model: Schema.String,
+  /** How the model was picked; older servers do not send it. */
+  modelSource: Schema.optionalKey(Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("routed"), by: Schema.String, confidence: Schema.Number }),
+    Schema.Struct({ kind: Schema.Literals(["pinned", "fallback", "default"]) }),
+  ])),
   auth: Schema.String,
   pid: NullableNumber,
   rssKb: NullableNumber,
@@ -25,6 +30,8 @@ export const Worker = Schema.Struct({
   eventCount: Schema.Number.pipe(withDefault(0)),
   contextTokens: NullableNumber,
   contextLimit: NullableNumber,
+  /** When the factory started this agent (ms); gives the spawn order. */
+  startedAt: Schema.optionalKey(Schema.Number),
 })
 export type Worker = typeof Worker.Type
 
@@ -161,6 +168,14 @@ export const Settings = Schema.Struct({
     disabledTools: Schema.Array(Schema.String),
     instructions: Schema.String,
   }),
+  /** Model and effort of the repo sub-coordinators (the delivery loops); the global ones use `agent`. */
+  subAgent: Schema.Struct({ model: Schema.String, reasoningEffort: Schema.String }).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed({ model: "claude-opus-5.5", reasoningEffort: "high" })),
+  ),
+  /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
+  workers: Schema.Struct({ harness: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" }))),
+  /** Engine behind every factory decision (gates, lenses, findings, triage, next step). Hot-swappable: the next decision uses it. */
+  decisions: Schema.Struct({ engine: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ engine: "jev" }))),
   crons: Schema.Record(Schema.String, Cron),
   extensions: Schema.Record(Schema.String, Extension),
   repo: Schema.String,

@@ -10,6 +10,9 @@ export const NAVBAR_ITEMS = ["status", "workers", "model", "context", "auth", "c
 export const PANEL_POSITIONS = ["right", "left", "hidden"]
 export const HOTKEY_ACTIONS = ["toggleSettings", "togglePanel", "cycleTheme", "focusCoordinator", "abortCoordinator"]
 export const EFFORTS = ["default", "low", "medium", "high", "xhigh"]
+export const WORKER_HARNESSES = ["auto", "copilot", "claude", "pi"]
+/** Who answers factory decisions: Jev, or a copilot-proxy-rs decision model. */
+export const DECISION_ENGINES = ["jev", "gpt-6-luna-decisions", "microsoft-decision-1"]
 export const TOOL_KINDS = ["shell", "write", "read", "url", "mcp"]
 export const MIN_CRON_SECONDS = 30
 /** Named mount points both UIs expose to extensions. */
@@ -57,6 +60,14 @@ const SettingsSchema = Schema.Struct({
     disabledTools: Schema.Array(Schema.String),
     instructions: Schema.String,
   }),
+  /** Model and effort of the repo sub-coordinators (the delivery loops); the global ones use `agent`. */
+  subAgent: Schema.Struct({ model: Schema.String, reasoningEffort: Schema.String }).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed({ model: "claude-opus-5.5", reasoningEffort: "high" })),
+  ),
+  /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
+  workers: Schema.Struct({ harness: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" }))),
+  /** Engine behind every factory decision (gates, lenses, findings, triage, next step). Hot-swappable: the next decision uses it. */
+  decisions: Schema.Struct({ engine: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ engine: "jev" }))),
   crons: Schema.Record(Schema.String, Cron),
   extensions: Schema.Record(Schema.String, Extension),
   /** Absolute path of the git repository the factory works on. Empty = no target. */
@@ -83,9 +94,10 @@ const palette = (bg: string, surface: string, border: string, text: string, mute
 })
 
 export const defaultSettings = (): Settings => ({
-  theme: "default",
+  theme: "slate",
   themes: {
     default: palette("#0a0a0a", "#171717", "#262626", "#e5e5e5", "#a3a3a3", "#6366f1"),
+    slate: palette("#121318", "#1b1c22", "#2a2b33", "#e6e7ec", "#8b8d98", "#7f72e5"),
     midnight: palette("#0b1020", "#121a33", "#1f2a4d", "#dbe4ff", "#8b9bc8", "#60a5fa"),
     dracula: palette("#282a36", "#343746", "#44475a", "#f8f8f2", "#a9adc1", "#bd93f9"),
     nord: palette("#2e3440", "#3b4252", "#4c566a", "#eceff4", "#a3acbd", "#88c0d0"),
@@ -99,7 +111,10 @@ export const defaultSettings = (): Settings => ({
   hotkeys: { ",": "toggleSettings", p: "togglePanel", t: "cycleTheme", ".": "focusCoordinator" },
   focus: "coordinator",
   banner: null,
-  agent: { model: "", reasoningEffort: "default", disabledTools: [], instructions: "" },
+  agent: { model: "gpt-6-astra", reasoningEffort: "high", disabledTools: [], instructions: "" },
+  subAgent: { model: "claude-opus-5.5", reasoningEffort: "high" },
+  workers: { harness: "auto" },
+  decisions: { engine: "jev" },
   crons: {},
   extensions: {},
   repo: "",
@@ -157,6 +172,9 @@ const validate = (s: Settings): void => {
   for (const item of s.navbar) oneOf("navbar", item, NAVBAR_ITEMS)
   for (const action of Object.values(s.hotkeys)) oneOf("hotkeys", action, HOTKEY_ACTIONS)
   oneOf("agent.reasoningEffort", s.agent.reasoningEffort, EFFORTS)
+  oneOf("subAgent.reasoningEffort", s.subAgent.reasoningEffort, EFFORTS)
+  oneOf("workers.harness", s.workers.harness, WORKER_HARNESSES)
+  oneOf("decisions.engine", s.decisions.engine, DECISION_ENGINES)
   for (const kind of s.agent.disabledTools) oneOf("agent.disabledTools", kind, TOOL_KINDS)
   for (const [name, x] of Object.entries(s.extensions)) {
     oneOf(`extensions.${name}.slot`, x.slot, SLOTS)

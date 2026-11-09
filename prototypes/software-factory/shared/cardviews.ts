@@ -147,6 +147,23 @@ const view = (title: string, subtitle: string, metrics: Metric[], rows: Record<s
   metricsText: metrics.map((m) => `**${m.value}**\u00a0${m.label}`).join("\u2003\u2003"),
 })
 
+// ---------- SDLC gates ----------
+
+type G = { id: string; chosen: boolean; probability: number | null; threshold: number; reason: string; status: string; detail?: string }
+const GATE_STATUS: Record<string, TagVariant> = { done: "success", running: "info", pending: "warning", failed: "danger", skipped: "neutral" }
+
+export type SdlcRow = { gate: string; status: string; variant: TagVariant; why: string }
+
+/** Gates → rows: floors (security, verify) first, then each gate with Jev's probability against its threshold. */
+export const toSdlc = (d: { gates?: G[]; security?: string | null; verified?: boolean }): SdlcRow[] => [
+  { gate: "verify", status: d.verified ? "done" : "pending", variant: d.verified ? "success" : "warning", why: "floor: after every implement" },
+  { gate: "security", status: d.security ?? "pending", variant: GATE_STATUS[d.security ?? "pending"] ?? "info", why: "floor: every code change" },
+  ...(d.gates ?? []).map((g) => {
+    const status = g.chosen ? g.status : "skipped"
+    return { gate: g.id, status, variant: GATE_STATUS[status] ?? "neutral", why: `${g.reason}${g.detail ? ` · ${g.detail}` : ""}` }
+  }),
+]
+
 /** A show_* tool's data → the card's view. Same rows as the CopilotKit React cards. */
 export const cardView = (name: string, data: any): CardView => {
   const d = data ?? {}
@@ -167,6 +184,43 @@ export const cardView = (name: string, data: any): CardView => {
         "Security review",
         `${v.status}${d.model ? ` · ${d.model}` : ""}`,
         [{ value: String(v.total), label: "findings" }, { value: String(v.kept), label: "kept (fixed)" }, { value: String(v.discarded), label: "discarded" }],
+        v.rows,
+        d.error ?? (v.rows.length ? null : "No findings."),
+        d.error ? "error" : "success",
+      )
+    }
+    case "show_sdlc": {
+      if (!d.criteria) return view("SDLC gates", "", [], [], d.note ?? "No SDLC plan yet (sdlc_plan).")
+      const rows = toSdlc(d)
+      const proven = d.criteria.length - (d.unproven?.length ?? 0)
+      return view(
+        "SDLC gates",
+        `tier ${d.tier ?? "?"}${d.reasons?.length ? ` · ${d.reasons.join("; ")}` : ""}`,
+        [
+          { value: `${proven}/${d.criteria.length}`, label: "criteria proven" },
+          { value: String(rows.filter((r) => r.status !== "skipped").length), label: "gates on" },
+          { value: `${d.kept ?? 0}/${(d.kept ?? 0) + (d.dropped ?? 0)}`, label: "review findings kept" },
+        ],
+        rows,
+        d.blockers?.length ? `Not ready to ship: ${d.blockers.join("; ")}` : "Ready to ship.",
+        d.blockers?.length ? "warning" : "success",
+      )
+    }
+    case "show_code_review": {
+      if (!d.status) return view("Code review", "", [], [], d.note ?? "No code review yet.")
+      const findings = (d.findings ?? []).map((f: any) => ({
+        title: f.title,
+        severity: f.severity,
+        file: f.file,
+        verdict: f.keep ? "keep" : "drop",
+        reason: `${f.real === null ? "" : `real ${Number(f.real).toFixed(2)} · worth ${Number(f.worth).toFixed(2)} · `}${f.problem}${f.fix ? ` → ${f.fix}` : ""}`,
+      }))
+      const v = toReview({ status: d.status, findings })
+      const lenses = (d.lenses ?? []).map((l: string) => `${l}${d.lensProbabilities?.[l] !== undefined ? ` ${Number(d.lensProbabilities[l]).toFixed(2)}` : ""}`).join(", ")
+      return view(
+        "Code review",
+        `${v.status}${lenses ? ` · lenses ${lenses}` : ""}`,
+        [{ value: String(d.lenses?.length ?? 0), label: "reviewers" }, { value: String(v.total), label: "findings" }, { value: String(v.kept), label: "kept (fixed)" }, { value: String(v.discarded), label: "dropped by Jev" }],
         v.rows,
         d.error ?? (v.rows.length ? null : "No findings."),
         d.error ? "error" : "success",

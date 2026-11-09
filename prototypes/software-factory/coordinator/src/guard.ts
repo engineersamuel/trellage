@@ -81,7 +81,14 @@ const parse = (line: string): string[][] => {
 /** A word that is itself a shell line, such as the script of `bash -c "git status; git push"`. */
 const isLine = (w: string) => /[\s;&|()`$]/.test(w)
 
+/** Credential files agents may read in place (e.g. COPILOT_PROXY_RS_CONFIG_DIR) but never copy or move. */
+const CREDENTIAL = /(^|\/)(github_token|\.git-credentials|hosts\.yml|auth\.json|\.netrc|credentials(\.json)?|id_(rsa|ed25519|ecdsa))$/
+
+const copiesCredential = (command: string, rest: string[]): boolean =>
+  ["cp", "mv", "rsync", "scp", "install", "ditto", "ln"].includes(command) && rest.some((w) => !w.startsWith("-") && CREDENTIAL.test(w))
+
 const forbiddenAfter = (command: string, rest: string[], pushBranch?: string): boolean =>
+  copiesCredential(command, rest) ||
   (command === "git" && forbiddenGit(gitArgs(rest), pushBranch)) ||
   (command === "gh" && forbiddenGh(rest)) ||
   (command === "rm" && recursiveForce(rest))

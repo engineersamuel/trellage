@@ -1,0 +1,3 @@
+{"at":1794108664000,"factoryCommit":"9fda0b0dc9ab","threadId":"bdbacfce-6fdc-4a67-9f5c-ea1d8db61109","outcome":"fail","unmet":["coordinator restarted at 22:28 during implement; sub-coordinator and workers stopped and were not resumed"],"prUrl":null}
+{"at":1794115117241,"factoryCommit":"9fda0b0dc9ab","threadId":"732d73de-74be-43e6-8d09-3dd04dd5ed1d","outcome":"pass","unmet":[],"prUrl":"https://github.com/engineersamuel/copilot-proxy-rs/pull/60"}
+{"at":1794153034077,"factoryCommit":"0d84ca9b93d0","threadId":"732d73de-74be-43e6-8d09-3dd04dd5ed1d","outcome":"timeout","unmet":["step finish ran 2x, expected at most 1"],"prUrl":"https://github.com/engineersamuel/copilot-proxy-rs/pull/60"}

@@ -1,0 +1,56 @@
+{
+  "id": "cpr-process-compose",
+  "title": "copilot-proxy-rs: process-compose with mise tasks",
+  "repo": "/Users/smendenh/projects/copilot-proxy-rs",
+  "base": "main",
+  "prompt": "Integrate process-compose (https://github.com/F1bonacc1/process-compose) into copilot-proxy-rs and operate it with mise tasks. Install mise if it needs to be installed.\n- Pin `process-compose` in `mise.toml` `[tools]`.\n- Add `process-compose.yaml` that runs the proxy with a readiness probe on `/health`. The proxy keeps listening on TCP 8080 by default (port from `COPILOT_PROXY_RS_PORT`).\n- process-compose's own control API must use a unix socket (`-U` / `PC_SOCKET_PATH`), never TCP, so it never takes port 8080 from the proxy.\n- mise tasks: `proxy:up` (detached), `proxy:down`, `proxy:restart`, `proxy:status`, `proxy:logs`.\n- `scripts/bootstrap.sh`: installs mise when it is missing, then `mise install`. Document it and the tasks in README.\n- Keep `compose.yaml` as it is.\n- Proof: run `COPILOT_PROXY_RS_PORT=18080 mise run proxy:up`, `curl -fsS 127.0.0.1:18080/health`, `mise run proxy:status`, `mise run proxy:down`, and put that output in the PR body. Never stop, restart, or bind the instance already running on port 8080.\n- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test --locked` pass.\n- This is a repeatable factory test: other open PRs for this feature are earlier test runs. Ignore them and build a new PR.",
+  "expect": {
+    "steps": {
+      "implement": {
+        "min": 1
+      },
+      "verify": {
+        "min": 1
+      },
+      "security": {
+        "min": 1
+      },
+      "finish": {
+        "min": 1,
+        "max": 1
+      }
+    },
+    "skills": [
+      "ub-mode",
+      "security-audit"
+    ],
+    "pr": {
+      "state": "OPEN",
+      "checks": "SUCCESS",
+      "bodyIncludes": [
+        "18080"
+      ],
+      "untouched": [
+        "compose.yaml"
+      ]
+    },
+    "sdlc": {
+      "criteriaProven": true,
+      "gatesRun": [
+        "codeReview",
+        "supplyChain"
+      ],
+      "gatesSkipped": []
+    }
+  },
+  "approvals": {
+    "plan": "auto",
+    "findings": "auto",
+    "ship": "auto",
+    "other": "human"
+  },
+  "limits": {
+    "runs": 5,
+    "minutesPerRun": 90
+  }
+}

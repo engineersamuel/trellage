@@ -15,6 +15,8 @@ export const Worker = Schema.Struct({
   contextTokens: Schema.optional(Schema.NullOr(Schema.Number)),
   contextLimit: Schema.optional(Schema.NullOr(Schema.Number)),
   owner: Schema.optional(Schema.NullOr(Schema.String)),
+  /** Directory the agent works in; the diff panel reloads for tool calls of agents in its worktree. */
+  workdir: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type Worker = typeof Worker.Type;
 

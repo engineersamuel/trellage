@@ -9,8 +9,10 @@ import { Message } from "./message";
 import { toGotChatMessage } from "./chat";
 import { chat } from "./chatProgram";
 import type { Model } from "./model";
+import * as DiffPanel from "./diffPanel";
+import * as Goals from "./goals";
 import * as Settings from "./settings";
-import { toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
+import { toGotDiffPanelMessage, toGotGoalsMessage, toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
 import * as WorkerPanel from "./workerPanel";
 
 const BUSY_COLOR = "#f59e0b";
@@ -98,7 +100,7 @@ const approvalsLink = (pending: ReadonlyArray<Approval>, h: HtmlBuilder<Message>
 const EMPTY_WORKERS: ReadonlyArray<Worker> = [];
 
 /** The navbar reads only settings, workers and approvals, so a chat Message reuses the cached subtree. */
-const navbar = (settingsModel: Settings.Model, workers: WorkerPanel.Model["workers"], approvals: ReadonlyArray<Approval>, h: HtmlBuilder<Message>): Html =>
+const navbar = (settingsModel: Settings.Model, goalsModel: Goals.Model, diffPanelModel: DiffPanel.Model, workers: WorkerPanel.Model["workers"], approvals: ReadonlyArray<Approval>, h: HtmlBuilder<Message>): Html =>
   Option.match(Settings.maybeSettings(settingsModel), {
     onNone: () => h.empty,
     onSome: (settings) => {
@@ -113,6 +115,8 @@ const navbar = (settingsModel: Settings.Model, workers: WorkerPanel.Model["worke
         slot("navbar", h, "fk-nav-item"),
         h.span([h.Class("fk-spacer")]),
         h.span([h.Class("fk-nav-item fk-muted")], [settings.theme]),
+        DiffPanel.navButton(diffPanelModel, Message.ClickedOpenChanges(), h),
+        h.submodel({ model: goalsModel, slotId: "goals-button", toParentMessage: toGotGoalsMessage, view: Goals.navButton }),
         h.submodel({ model: settingsModel, slotId: "settings-gear", toParentMessage: toGotSettingsMessage, view: Settings.gearButton }),
       ]);
     },
@@ -120,11 +124,12 @@ const navbar = (settingsModel: Settings.Model, workers: WorkerPanel.Model["worke
 
 // ---------- Layout ----------
 
-const chatView = (model: Model, h: HtmlBuilder<Message>): Html =>
+/** Reads only the chat Model, so a worker, settings or approvals Message reuses the cached chat subtree. */
+const chatView = (chatModel: Model["chat"], h: HtmlBuilder<Message>): Html =>
   // .sf-chat is the stable hook extension CSS targets in both UIs.
   h.keyed("div")("chat", [h.Class("fk-chat sf-chat")], [
     slot("chat-background", h, "fk-slot-bg"),
-    h.div([h.Class("fk-chat-body")], [h.submodel({ model: model.chat, slotId: "chat", toParentMessage: toGotChatMessage, view: chat.view })]),
+    h.div([h.Class("fk-chat-body")], [h.submodel({ model: chatModel, slotId: "chat", toParentMessage: toGotChatMessage, view: chat.view })]),
   ]);
 
 const workerPanel = (workerPanelModel: WorkerPanel.Model, h: HtmlBuilder<Message>): Html =>
@@ -141,6 +146,16 @@ const lazyNavbar = createLazy();
 const lazyPanelLeft = createLazy();
 const lazyPanelRight = createLazy();
 const lazySettingsDrawer = createLazy();
+const lazyGoalsDialog = createLazy();
+const lazyDiffPanel = createLazy();
+const lazyClassicChat = createLazy();
+const lazyPrototypeChat = createLazy();
+
+const goalsDialog = (goalsModel: Goals.Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({ model: goalsModel, slotId: "goals", toParentMessage: toGotGoalsMessage, view: Goals.view });
+
+const diffPanel = (diffPanelModel: DiffPanel.Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({ model: diffPanelModel, slotId: "diff-panel", toParentMessage: toGotDiffPanelMessage, view: DiffPanel.view });
 
 const gridColumns = (side: string, width: number): string =>
   Match.value(side).pipe(
@@ -152,9 +167,9 @@ const gridColumns = (side: string, width: number): string =>
 const classicLayout = (model: Model, layout: SettingsDocument["layout"], h: HtmlBuilder<Message>): Html => {
   const { panel: side, panelWidth } = layout;
   const cells = Match.value(side).pipe(
-    Match.when("hidden", () => [chatView(model, h)]),
-    Match.when("left", () => [lazyPanelLeft(workerPanel, [model.workerPanel, h]), chatView(model, h)]),
-    Match.orElse(() => [chatView(model, h), lazyPanelRight(workerPanel, [model.workerPanel, h])]),
+    Match.when("hidden", () => [lazyClassicChat(chatView, [model.chat, h])]),
+    Match.when("left", () => [lazyPanelLeft(workerPanel, [model.workerPanel, h]), lazyClassicChat(chatView, [model.chat, h])]),
+    Match.orElse(() => [lazyClassicChat(chatView, [model.chat, h]), lazyPanelRight(workerPanel, [model.workerPanel, h])]),
   );
   return h.main([h.Class("fk-layout"), h.Style({ "grid-template-columns": gridColumns(side, panelWidth) })], cells);
 };
@@ -162,7 +177,7 @@ const classicLayout = (model: Model, layout: SettingsDocument["layout"], h: Html
 /** Prototype layout: shared/protos owns .sfp-host's children and places the chat cell. */
 const prototypeLayout = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.main([h.Class("sfp-stage"), h.DataAttribute("proto", String(model.protoIndex))], [
-    h.keyed("div")("sfp-chat", [h.Class("sfp-chat")], [chatView(model, h)]),
+    h.keyed("div")("sfp-chat", [h.Class("sfp-chat")], [lazyPrototypeChat(chatView, [model.chat, h])]),
     h.keyed("div")(`sfp-host-${model.protoIndex}`, [h.Class("sfp-host"), h.DataAttribute("proto", String(model.protoIndex))]),
   ]);
 
@@ -184,7 +199,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
       slot("page-background", h, "fk-slot-bg"),
       Option.match(maybeSettings, {
         onNone: () => h.h1([h.Class("fk-visually-hidden")], ["Factory · Foldkit"]),
-        onSome: () => lazyNavbar(navbar, [model.settings, model.workerPanel.workers, model.approvals, h]),
+        onSome: () => lazyNavbar(navbar, [model.settings, model.goals, model.diffPanel, model.workerPanel.workers, model.approvals, h]),
       }),
       ...Option.match(banner, { onNone: () => [], onSome: (text) => [h.div([h.Class("fk-banner"), h.Role("status")], [text])] }),
       slot("banner", h),
@@ -193,6 +208,8 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
         : classicLayout(model, Option.match(maybeSettings, { onNone: () => LOADING_LAYOUT, onSome: ({ layout }) => layout }), h),
       slot("overlay", h, "fk-slot-overlay"),
       lazySettingsDrawer(settingsDrawer, [model.settings, h]),
+      lazyGoalsDialog(goalsDialog, [model.goals, h]),
+      lazyDiffPanel(diffPanel, [model.diffPanel, h]),
     ]),
   };
 };

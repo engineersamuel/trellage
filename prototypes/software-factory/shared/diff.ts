@@ -143,7 +143,8 @@ const EDIT_TOOLS = new Set(["edit", "multiedit", "str_replace_editor", "str_repl
 /** The file changes of one tool call, or [] when it changed no file we can show. */
 export const toolDiffs = (name: string, args: unknown, result: string | undefined): FileDiff[] => {
   if (result && hasUnified(result)) {
-    const d = parseUnified(result)
+    // A read tool (Copilot `view`) reports the file it read as a diff of context lines only: that is no change.
+    const d = parseUnified(result).filter((f) => f.op !== "edited" || f.added || f.removed)
     if (d.length) return d
   }
   const tool = name.toLowerCase()

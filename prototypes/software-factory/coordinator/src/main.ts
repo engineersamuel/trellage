@@ -1,9 +1,9 @@
 // Software factory coordinator: HTTP API, raw feed, and AG-UI over SSE.
 import { KEEP_PER_WORKER } from "./events.ts"
-import { readdirSync, readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Translator } from "./agui.ts"
-import { Factory, now, type FeedEvent, type Worker } from "./factory.ts"
+import { Factory, now, type FeedEvent, type Worker, type WorkerSummary } from "./factory.ts"
 import { createWorktree, discardWorktree, fullyMerged, GENERAL, removeWorktree, worktreeRoot, type Worktree } from "./folders.ts"
 import { CARDS_PROMPT, COORDINATOR_PROMPT, DESK_PROMPT, GLOBAL_PROMPT, RESEARCH_PROMPT, subPrompt } from "./prompts.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
@@ -19,12 +19,18 @@ import { loop, stopLoops } from "./loops.ts"
 import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, REPORT_NUDGE, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
+import { branchPr, pastWorkers, runWorkers, type Run } from "./run.ts"
+import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
+import { postMergeCheck } from "./postmerge.ts"
+import { ARTIFACTS_DIR, servableImage } from "./files.ts"
+import { checkoutCommit, GoalError, goalsDir, loopPrompt, makeGoals } from "./goals.ts"
 import { defineTool, type SessionEvent, type Tool } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
 import { cardData, coordinatorTools, globalTools, spawnHealing, type Scope } from "./tools.ts"
 import { DRAFT_NOTE, DraftError, draftNodeId, isUnstartedDraft, makeDrafts } from "./drafts.ts"
 import { enhanceWith, stopEnhance } from "./enhance.ts"
 import { Schema } from "effect"
+import { worktreeDiff } from "./worktreeDiff.ts"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
 const landing = asset("landing.html")
@@ -34,6 +40,17 @@ if (process.env.SF_DISABLE_STARTUP_CHILD_CLEANUP !== "1")
   Bun.spawnSync(["pkill", "-f", new URL("../node_modules/@github/copilot-sdk-", import.meta.url).pathname])
 
 const factory = new Factory()
+// Gate state, code and security reviews survive a restart: the newest published copy of each wins. A review that
+// was mid-run when the process stopped lost its workers, so it is marked failed (the gate then blocks shipping).
+const restore = <T extends { at?: number; status?: string }>(type: string, key: (v: T) => string, into: Map<string, T>, unfinished?: (v: T) => boolean) => {
+  for (const v of factory.store.latest(type, 2000) as T[]) into.set(key(v), v)
+  if (unfinished) for (const [k, v] of into) if (unfinished(v)) into.set(k, { ...v, status: "failed", error: "coordinator restarted" } as T)
+}
+restore("factory.sdlc", (s: any) => s.scopeId, factory.sdlc as Map<string, any>)
+restore("factory.code_review", (r: any) => r.id, factory.codeReviews as Map<string, any>, (r) => r.status !== "done" && r.status !== "failed")
+restore("factory.security_review", (r: any) => r.id, factory.securityReviews as Map<string, any>, (r) => r.status !== "done" && r.status !== "failed")
+for (const [k, s] of factory.sdlc)
+  factory.sdlc.set(k, { ...s, gates: s.gates.map((g) => (g.status === "running" ? { ...g, status: "failed", detail: "coordinator restarted" } : g)) })
 const threads = new Threads(factory.root)
 const instructions = readInstructions()
 console.error(
@@ -268,23 +285,25 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
         name: `${folder.name} · ${t.title}`.slice(0, 60),
         role: "coordinator",
         ...(t.parentThreadId ? { owner: genId(t.parentThreadId) } : {}),
-        system: `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!)}\n\n${RESEARCH_PROMPT}\n\n# OpenUI Lang\n${openuiPrompt}`,
+        system: `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!, t.prBase, readLessons(factory.root, folder.id))}\n\n${RESEARCH_PROMPT}\n\n# OpenUI Lang\n${openuiPrompt}`,
         tools: coordinatorTools(factory, {
           id,
           threadId: t.id,
           workdir: t.worktree,
           ...(t.base ? { base: t.base } : {}),
           label: folder.name,
+          folderId: folder.id,
           report: (r) => reportToGeneral(folder.name, threads.get(t.id) ?? t, r),
         }),
         permissions: factory.subPermissions,
         workdir: t.worktree,
-        model: factory.settings.agent.model,
+        model: factory.settings.subAgent.model,
         sessionId: `sf-${id}`,
       })
       .then(async (w) => {
-        const { model, reasoningEffort } = factory.settings.agent
-        if (reasoningEffort !== "default") await w.setModel(model, reasoningEffort).catch(() => {})
+        // Resumed sessions keep their old model: always apply the sub-coordinator model and effort.
+        const { model, reasoningEffort } = factory.settings.subAgent
+        await w.setModel(model, reasoningEffort).catch((e) => console.error(`sub-coordinator model ${model}/${reasoningEffort} not applied: ${e}`))
         w.events.subscribe((ev) => watchSub(w, t.id, ev))
         return w
       })
@@ -427,6 +446,12 @@ const cleanMergedThread = async (t: Thread): Promise<void> => {
   if (!t.worktree || t.cleanedAt || conversationBusy(t.id)) return
   const repo = threads.folder(t.folderId)?.path
   if (!repo || !fullyMerged(repo, t as Worktree)) return
+  const s = factory.sdlc.get(subId(t.id))
+  if (s?.gates.some((g) => g.id === "postMerge" && g.chosen))
+    void postMergeCheck(repo, t.branch!).then((r) => {
+      factory.publish(subId(t.id), "factory.post_merge", null, now(), { threadId: t.id, ...r })
+      if (!r.ok) deliverAndLog(reportTarget(t, threads.list(), deskThread().id), `[post-merge ${t.title}] ${r.detail}`)
+    })
   try {
     await stopConversationWorkers(t.id)
     removeWorktree(repo, t as Worktree)
@@ -914,6 +939,71 @@ const cardScope = (id: string): Scope => {
   return { id, threadId: t?.id ?? null }
 }
 
+const goals = makeGoals(goalsDir(), STEPS.map((s) => s.id))
+/** prototypes/software-factory: its commit (and dirty flag) is the factory version a goal run ran on. */
+const FACTORY_DIR = path.resolve(new URL(".", import.meta.url).pathname, "../..")
+
+/** JSON reply for a goal route: GoalError is 400, anything else 500. */
+const goalReply = async (run: () => unknown): Promise<Response> => {
+  try {
+    const v = await run()
+    return v === null ? json({ error: "not found" }, 404) : json(v)
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, e instanceof GoalError || e instanceof SyntaxError ? 400 : 500)
+  }
+}
+
+/** SDLC record of a conversation: tier, criteria and which lack PASS evidence, gates, code reviews, metrics. */
+const runSdlc = (scopeId: string, workdir: string | undefined): Run["sdlc"] => {
+  const s = factory.sdlc.get(scopeId)
+  if (!s) return null
+  const evidence = workdir && existsSync(artifact(workdir, "evidence.md")) ? readFileSync(artifact(workdir, "evidence.md"), "utf8") : null
+  return {
+    tier: s.risk?.tier ?? null,
+    criteria: s.criteria,
+    unproven: unprovenCriteria(s.criteria, evidence),
+    gates: s.gates,
+    codeReviews: [...factory.codeReviews.values()]
+      .filter((r) => r.scopeId === scopeId)
+      .map((r) => ({ id: r.id, status: r.status, lenses: r.lenses, kept: r.findings.filter((x) => x.keep).length, dropped: r.findings.filter((x) => !x.keep).length })),
+    metrics: { minutes: Math.round((Date.now() - s.startedAt) / 60_000), workers: s.workers, findingsKept: s.findings.kept, findingsDropped: s.findings.dropped },
+  }
+}
+
+/** Newest report_up of a conversation, from the event store. */
+const latestReport = (threadId: string): Run["report"] => {
+  const all = factory.store.latest("factory.report_up", 500) as { threadId: string | null; report: Report }[]
+  const r = all.filter((e) => e.threadId === threadId).at(-1)?.report
+  return r ? { status: r.status, summary: r.summary, gaps: r.gaps } : null
+}
+
+/** The delivery record of a repo conversation; null when the thread does not exist. */
+const runRecord = async (threadId: string): Promise<Run | null> => {
+  const t = threads.get(threadId)
+  if (!t) return null
+  const started = factory.store.latest("factory.worker_started", 100_000) as Parameters<typeof runWorkers>[0]
+  const listed = runWorkers(started, subId(t.id), (id) => factory.workers.get(id)?.status)
+  const invoked = factory.store.skillsInvoked(listed.map((w) => w.id))
+  const workers = listed.map((w) => ({ ...w, skills: invoked.get(w.id) ?? [] }))
+  const repo = threads.folders().find((f) => f.id === t.folderId)?.path
+  return {
+    threadId: t.id,
+    status: statusOf(t.id),
+    branch: t.branch ?? null,
+    base: t.base ?? null,
+    workers,
+    steps: [...new Set(workers.flatMap((w) => (w.step ? [w.step] : [])))],
+    approvals: factory.approvals
+      .list()
+      .filter((a) => a.threadId === t.id || a.reportThreadId === t.id)
+      .map((a) => ({ id: a.id, title: a.title, topic: a.topic ?? "other", status: a.status, answer: a.answer, options: a.options })),
+    securityReviews: [...factory.securityReviews.values()].filter((r) => r.threadId === t.id).map((r) => ({ id: r.id, status: r.status })),
+    report: latestReport(t.id),
+    sdlc: runSdlc(subId(t.id), t.worktree),
+    pr: repo && t.branch ? await branchPr(repo, t.branch) : null,
+  }
+}
+
 const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/$/, () => new Response(landing, { headers: { "content-type": "text/html" } })],
   [
@@ -1044,6 +1134,7 @@ const routes: [string, RegExp, Handler][] = [
           id!,
           String(b.answer),
           typeof b.note === "string" && b.note.trim() ? b.note.trim() : null,
+          typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 200) : null,
         )
         factory.publish("coordinator", "factory.approval_answered", null, now(), a)
         answerApproval(a)
@@ -1069,6 +1160,12 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/workers$/, () => json(factory.summaries())],
+  // Stopped agents, for a historical record (live ones are in /api/workers). Their transcripts stay in the event store.
+  [
+    "GET",
+    /^\/api\/workers\/past$/,
+    () => json(pastWorkers(factory.store.latestTimed("factory.worker_started", 100_000) as { ts: number; data: WorkerSummary }[], (id) => factory.workers.has(id))),
+  ],
   [
     "DELETE",
     /^\/api\/workers\/([^/]+)$/,
@@ -1210,8 +1307,37 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/agui\/capabilities$/, () => json(CAPABILITIES)],
   ["POST", /^\/api\/agui$/, (req, url) => aguiRun(null, url, req)],
   ["POST", /^\/api\/agui\/([^/]+)$/, (req, url, [id]) => aguiRun(id!, url, req)],
+  ["GET", /^\/api\/runs\/([^/]+)$/, async (_req, _url, [id]) => {
+    const run = await runRecord(id!)
+    return run ? json(run) : json({ error: `no thread ${id}` }, 404)
+  }],
+  ["GET", /^\/api\/files\/image$/, (_req, url) => {
+    const r = servableImage(url.searchParams.get("path") ?? "", [factory.root, worktreeRoot(), ARTIFACTS_DIR])
+    return "error" in r ? json({ error: r.error }, 404) : new Response(Bun.file(r.path), { headers: { "content-type": r.type, "cache-control": "no-store" } })
+  }],
+  ["GET", /^\/api\/goals$/, () => goalReply(() => ({ dir: goals.dir, factoryCommit: checkoutCommit(FACTORY_DIR), goals: goals.list() }))],
+  ["POST", /^\/api\/goals$/, (req) => goalReply(async () => goals.save(await req.json()))],
+  ["GET", /^\/api\/goals\/([^/]+)$/, (_req, _url, [id]) => goalReply(() => goals.get(id!))],
+  ["GET", /^\/api\/goals\/([^/]+)\/prompt$/, (_req, _url, [id]) => goalReply(() => {
+    const spec = goals.get(id!)
+    return spec && { skill: `/factory-loop ${spec.id}`, prompt: loopPrompt(readFileSync(path.join(FACTORY_DIR, "skills/factory-loop/SKILL.md"), "utf8"), spec) }
+  })],
+  ["GET", /^\/api\/goals\/([^/]+)\/runs$/, (_req, _url, [id]) => goalReply(() => goals.runs(id!))],
+  ["POST", /^\/api\/goals\/([^/]+)\/runs$/, (req, _url, [id]) => goalReply(async () => goals.appendRun(id!, { factoryCommit: checkoutCommit(FACTORY_DIR), ...(await req.json()) }))],
   ["GET", /^\/api\/threads\/get$/, () => json({ threads: threads.list(), folders: threads.folders() })],
   ["GET", /^\/api\/threads\/get\/([^/]+)$/, (_req, _url, [id]) => json(threads.messages(id!))],
+  // Diff panel: every change of the conversation's worktree against its base. A thread without a worktree
+  // (general chat) shows the factory run worktree. Paths come from the server only, never from the request.
+  ["GET", /^\/api\/threads\/([^/]+)\/diff$/, (_req, _url, [id]) => {
+    const t = threads.get(id!)
+    const wt = t?.worktree && !t.cleanedAt ? { worktree: t.worktree, base: t.base } : factory.run && { worktree: factory.run.worktree, base: factory.run.base }
+    if (!wt?.base) return new Response("no worktree for this conversation", { status: 404 })
+    try {
+      return json(worktreeDiff(wt.worktree, wt.base))
+    } catch (e) {
+      return new Response(`git diff failed: ${e instanceof Error ? e.message : String(e)}`, { status: 500 })
+    }
+  }],
   [
     "POST",
     /^\/api\/threads\/create$/,
@@ -1293,10 +1419,12 @@ const server = Bun.serve({
 })
 console.error(`software-factory coordinator on http://${server.hostname}:${server.port}`)
 
-const shutdown = async () => {
+const shutdown = async (signal: string) => {
+  // Say who asked: a restart from process-compose, a human, or a stray group signal from a tool tree.
+  console.error(`coordinator: ${signal} received (ppid ${process.ppid}); stopping`)
   await stopLoops()
   await factory.stopAll()
   process.exit(0)
 }
-process.on("SIGINT", shutdown)
-process.on("SIGTERM", shutdown)
+process.on("SIGINT", () => void shutdown("SIGINT"))
+process.on("SIGTERM", () => void shutdown("SIGTERM"))

@@ -3,12 +3,14 @@ import { AsyncData, Command, Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
 import type { ChatBackend, Flags } from "@plana-solutions/agent-interface";
 import { currentProto } from "../../shared/protos";
-import { foldChat, newThread, openThread, refreshCards, showReloadedThread, toGotChatMessage } from "./chat";
+import { foldChat, newThread, openThread, refreshCards, showRefreshedThreads, showReloadedThread, toGotChatMessage } from "./chat";
 import { chat } from "./chatProgram";
 import { RefreshThreads, ReloadThread, SyncExtensionWorkers, SyncThreadUrl } from "./command";
 import { COORDINATOR_ID } from "./domain";
 import { Message } from "./message";
 import type { Model } from "./model";
+import * as DiffPanel from "./diffPanel";
+import * as Goals from "./goals";
 import * as Settings from "./settings";
 import * as WorkerPanel from "./workerPanel";
 
@@ -17,11 +19,16 @@ type Step = Update.Step<Model, Message, ChatBackend>;
 
 export const toGotWorkerPanelMessage = (message: WorkerPanel.Message): Message => Message.GotWorkerPanelMessage({ message });
 export const toGotSettingsMessage = (message: Settings.Message): Message => Message.GotSettingsMessage({ message });
+export const toGotGoalsMessage = (message: Goals.Message): Message => Message.GotGoalsMessage({ message });
+export const toGotDiffPanelMessage = (message: DiffPanel.Message): Message => Message.GotDiffPanelMessage({ message });
 
 const readWorkerPanel = (model: Model) => Option.some(model.workerPanel);
-const writeWorkerPanel = (model: Model, next: WorkerPanel.Model): Model => modifyFields(model, { workerPanel: () => next });
+// An unchanged child keeps the parent Model: Foldkit renders only when the Model reference changes, and the panel
+// ignores most feed events (stream deltas, other workers).
+const writeWorkerPanel = (model: Model, next: WorkerPanel.Model): Model =>
+  next === model.workerPanel ? model : modifyFields(model, { workerPanel: () => next });
 const readSettings = (model: Model) => Option.some(model.settings);
-const writeSettings = (model: Model, next: Settings.Model): Model => modifyFields(model, { settings: () => next });
+const writeSettings = (model: Model, next: Settings.Model): Model => (next === model.settings ? model : modifyFields(model, { settings: () => next }));
 
 /** Ask the server to focus a worker; the settings broadcast that follows moves the panel. */
 const requestFocus = (workerId: string): Step =>
@@ -45,6 +52,27 @@ const foldWorkerPanel = Update.foldChild({
   // The user picked a worker: the focus setting decides which worker every UI shows.
   foldOutMessage: WorkerPanel.OutMessage.match<Step>({ SelectedWorker: ({ workerId }) => requestFocus(workerId) }),
 });
+
+const foldGoals = Update.foldChild({
+  read: (model: Model) => Option.some(model.goals),
+  write: (model: Model, next: Goals.Model): Model => (next === model.goals ? model : modifyFields(model, { goals: () => next })),
+  toParentMessage: toGotGoalsMessage,
+  update: Goals.update,
+});
+
+const readDiffPanel = (model: Model) => Option.some(model.diffPanel);
+const writeDiffPanel = (model: Model, next: DiffPanel.Model): Model => (next === model.diffPanel ? model : modifyFields(model, { diffPanel: () => next }));
+
+const foldDiffPanel = Update.foldChild({ read: readDiffPanel, write: writeDiffPanel, toParentMessage: toGotDiffPanelMessage, update: DiffPanel.update });
+
+/** Open the diff panel on the open conversation's worktree, or the factory run worktree when none is open. */
+const openChanges: Step = (model) =>
+  Update.foldChildStep({
+    update: DiffPanel.open(Option.getOrElse(model.chat.maybeSelectedThreadId, () => DiffPanel.RUN_WORKTREE)),
+    read: readDiffPanel,
+    write: writeDiffPanel,
+    toParentMessage: toGotDiffPanelMessage,
+  })(model);
 
 const foldSettings = Update.foldChild({
   read: readSettings,
@@ -75,6 +103,9 @@ const handleMessage = (model: Model, message: Message) =>
     GotChatMessage: ({ message }) => foldChat(model, message),
     GotWorkerPanelMessage: ({ message }) => foldWorkerPanel(model, message),
     GotSettingsMessage: ({ message }) => foldSettings(model, message),
+    GotGoalsMessage: ({ message }) => foldGoals(model, message),
+    GotDiffPanelMessage: ({ message }) => foldDiffPanel(model, message),
+    ClickedOpenChanges: () => openChanges(model),
     ReceivedThreadUpdate: ({ threadId }) => Update.combine(model, [refreshThreads, reloadOpenThread(Option.fromNullishOr(threadId))]),
     // After a feed gap the open thread and the thread list may be stale. The panel and settings reload their own data.
     ReceivedFeedGap: () => Update.combine(model, [refreshThreads, reloadOpenThread(Option.none()), refreshCards]),
@@ -91,10 +122,12 @@ const handleMessage = (model: Model, message: Message) =>
           onSome: (action) => (action === "abortCoordinator" ? abortWorker(COORDINATOR_ID)(model) : pressSettingsHotkey(action)(model)),
         },
       ),
-    UpdatedApprovals: ({ pending }) => ({ model: modifyFields(model, { approvals: () => pending }) }),
+    // The approvals store sends a new list on every reload; the same decisions keep the same Model.
+    UpdatedApprovals: ({ pending }) => ({ model: Equal.equals(model.approvals, pending) ? model : modifyFields(model, { approvals: () => pending }) }),
     SucceededReloadThread: ({ threadId, messages }) => showReloadedThread(threadId, messages)(model),
     // The chat keeps what it shows; the next feed event or feed gap retries.
     FailedReloadThread: () => ({ model }),
+    SucceededRefreshThreads: ({ threads }) => showRefreshedThreads(threads)(model),
     FailedRefreshThreads: () => ({ model }),
     CompletedSyncThreadUrl: () => ({ model }),
     CompletedSyncExtensionWorkers: () => ({ model }),
@@ -117,8 +150,17 @@ const syncOutside =
     ],
   });
 
+/** The diff panel (and its navbar counts) follows the open conversation, or the run worktree when none is open. */
+const followThread: Step = (model) =>
+  Update.foldChildStep({
+    update: DiffPanel.follow(Option.getOrElse(model.chat.maybeSelectedThreadId, () => DiffPanel.RUN_WORKTREE)),
+    read: readDiffPanel,
+    write: writeDiffPanel,
+    toParentMessage: toGotDiffPanelMessage,
+  })(model);
+
 export const update = (model: Model, message: Message): UpdateReturn =>
-  Update.combine(model, [(stepModel) => handleMessage(stepModel, message), syncOutside(model)]);
+  Update.combine(model, [(stepModel) => handleMessage(stepModel, message), followThread, syncOutside(model)]);
 
 /** ?thread=<id> in the address bar opens that conversation on load. */
 const openThreadFromUrl =
@@ -129,12 +171,16 @@ const openThreadFromUrl =
 export const init = (flags: Flags, url: Parameters<typeof chat.init>[1], maybeThreadId: Option.Option<string>): UpdateReturn => {
   const workerPanel = WorkerPanel.init(COORDINATOR_ID);
   const settings = Settings.init();
+  const goals = Goals.init();
+  const diffPanel = DiffPanel.init();
   const app = Update.foldChildInit(chat.init(flags, url), {
     toParentMessage: toGotChatMessage,
     toParentModel: (chatModel): Model => ({
       chat: chatModel,
       workerPanel: workerPanel.model,
       settings: settings.model,
+      goals: goals.model,
+      diffPanel: diffPanel.model,
       protoIndex: currentProto(),
       approvals: [],
     }),
@@ -149,5 +195,6 @@ export const init = (flags: Flags, url: Parameters<typeof chat.init>[1], maybeTh
       ],
     }),
     openThreadFromUrl(maybeThreadId),
+    followThread,
   ]);
 };

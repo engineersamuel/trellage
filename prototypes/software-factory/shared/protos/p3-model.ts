@@ -4,7 +4,7 @@
 import type { Agent, Decision, Thread } from "./core"
 
 export type Kind = "desk" | "chat" | "sub" | "worker" | "draft"
-export type Status = "running" | "idle" | "error" | "needs" | "dormant" | "draft"
+export type Status = "running" | "idle" | "error" | "needs" | "dormant" | "draft" | "stopped"
 export type Node = {
   id: string
   kind: Kind
@@ -28,7 +28,7 @@ const draftPrompt = (t: Thread) => t.draft?.versions.find((v) => v.id === t.draf
 /** Agent id of a thread's coordinator. */
 export const agentIdOf = (t: Thread): string => (t.desk ? "coordinator" : isDraft(t) ? `draft-${short(t.id)}` : `${t.worktree ? "sub" : "gen"}-${short(t.id)}`)
 
-const agentStatus = (a: Agent | undefined): Status => (!a ? "dormant" : a.status === "running" ? "running" : a.status === "error" ? "error" : "idle")
+const agentStatus = (a: Agent | undefined): Status => (!a ? "dormant" : a.status === "running" ? "running" : a.status === "error" ? "error" : a.status === "stopped" ? "stopped" : "idle")
 
 /** Build every conversation tree from the live agents, the saved threads and the open decisions. Archived threads are left out unless `archived`. */
 export const build = (agents: readonly Agent[], threads: readonly Thread[], decisions: readonly Decision[], archived = false): Model => {
@@ -52,13 +52,18 @@ export const build = (agents: readonly Agent[], threads: readonly Thread[], deci
     if (n.kind === "desk") continue
     const pt = n.thread?.parentThreadId ? threads.find((t) => t.id === n.thread!.parentThreadId) : undefined
     let owner = pt ? agentIdOf(pt) : n.kind === "worker" ? n.agent?.owner ?? "coordinator" : null
-    // A worker whose owner is gone (archived chat, stopped run) still shows, under the desk.
-    if (n.kind === "worker" && (!owner || !nodes.has(owner))) owner = "coordinator"
+    // A live worker whose owner is gone (archived chat, stopped run) still shows, under the desk.
+    // A stopped one belongs to its conversation's record only: it shows when that conversation does.
+    if (n.kind === "worker" && (!owner || !nodes.has(owner))) {
+      if (n.status === "stopped") continue
+      owner = "coordinator"
+    }
     if (owner && owner !== n.id && nodes.has(owner)) {
       n.parent = owner
       nodes.get(owner)!.children.push(n.id)
     }
   }
+  for (const n of [...nodes.values()]) if (n.kind === "worker" && n.status === "stopped" && !n.parent) nodes.delete(n.id)
   for (const d of pending) {
     const t = d.threadId ? threads.find((x) => x.id === d.threadId) : threads.find((x) => x.desk)
     const n = t ? nodes.get(agentIdOf(t)) : undefined
@@ -70,8 +75,8 @@ export const build = (agents: readonly Agent[], threads: readonly Thread[], deci
       const k = roll(nodes.get(c)!)
       agg.running += k.running; agg.error += k.error; agg.needs += k.needs; agg.desc += k.desc + 1
     }
-    // Sub-coordinators before workers, then newest first.
-    n.children.sort((x, y) => rank(nodes.get(x)!) - rank(nodes.get(y)!))
+    // Sub-coordinators before workers, then in spawn order (oldest first).
+    n.children.sort((x, y) => rank(nodes.get(x)!) - rank(nodes.get(y)!) || bornAt(nodes.get(x)!) - bornAt(nodes.get(y)!))
     return (n.agg = agg)
   }
   const roots = [...nodes.values()].filter((n) => !n.parent).map((n) => n.id)
@@ -80,6 +85,8 @@ export const build = (agents: readonly Agent[], threads: readonly Thread[], deci
 }
 const ORDER: Record<Kind, number> = { desk: 0, chat: 1, sub: 2, draft: 3, worker: 4 }
 const rank = (n: Node) => ORDER[n.kind]
+/** When a node was spawned: its agent's start, else its thread's creation; 0 when unknown. */
+export const bornAt = (n: Node): number => n.agent?.startedAt ?? n.thread?.createdAt ?? 0
 
 export const rootOf = (m: Model, id: string): string => {
   let n = m.nodes.get(id)
@@ -114,6 +121,21 @@ export const subtree = (m: Model, id: string): Node[] => {
 /** One inbox row = one conversation tree. `focus` is the node the row is about (selected on click). */
 export type Row = { root: Node; focus: Node; reason: string; tone: Node["status"] }
 const newest = (m: Model, r: Node) => Math.max(0, ...subtree(m, r.id).map((n) => n.thread?.createdAt ?? 0))
+/** Header text for how an agent's model was picked, with a tooltip that explains it. Null when the server did not say. */
+export const modelReason = (a: Agent): { text: string; title: string } | null => {
+  const s = a.modelSource
+  if (!s) return null
+  switch (s.kind) {
+    case "routed":
+      return { text: `${s.by} ${Math.round(s.confidence * 100)}%`, title: s.by === "ui-rule" ? "Jev saw UI work; the UI rule forced the latest Opus" : s.by === "jev" ? "Jev picked this model for the task" : "Jev's top pick is not usable with this auth; next usable model in Jev's ranking" }
+    case "pinned":
+      return { text: "set by spawner", title: "The coordinator or the factory named this model; Jev was not asked" }
+    case "fallback":
+      return { text: "default · Jev unavailable", title: "Jev routing failed or gave no usable model; SF_MODEL was used" }
+    case "default":
+      return { text: "default", title: "Not routed (coordinator, or no task); settings or SF_MODEL" }
+  }
+}
 const name = (n: Node) => (n.kind === "worker" ? n.agent?.name ?? n.title : n.title)
 
 /** Why the conversation is in the inbox. The view's own reason leads (Failed shows the failure); else open questions, failures, running work. */

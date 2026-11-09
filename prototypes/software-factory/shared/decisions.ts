@@ -18,7 +18,7 @@ const URGENT_MIN = 10
 const announced = new Set<string>()
 let root: HTMLElement
 
-/** Escape, then format a small safe markdown subset: headings, bullets, bold, italics, code, links. */
+/** Escape, then format a small safe markdown subset: headings, bullets, bold, italics, code, code fences, tables, links. */
 export const markdown = (src: string): string => {
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
   const inline = (s: string) =>
@@ -26,11 +26,34 @@ export const markdown = (src: string): string => {
       .replace(/`([^`]+)`/g, "<code>$1</code>")
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
-      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+      .replace(/(<code>.*?<\/code>)|\[([^\]]+)\]\((https?:[^)\s]+)\)|https?:\/\/[^\s<]*[^\s<.,;:!?)]/g, (m, code, text, href) =>
+        code ? code : `<a href="${href ?? m}" target="_blank" rel="noreferrer">${text ?? m}</a>`,
+      )
   const out: string[] = []
   let list: "ul" | "ol" | null = null
   const close = () => list && (out.push(`</${list}>`), (list = null))
-  for (const line of src.split("\n")) {
+  const lines = src.split("\n")
+  const cells = (l: string) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim())
+  const isRule = (l: string | undefined) => !!l && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(l) && l.includes("-")
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!
+    const fence = line.match(/^\s*(```+|~~~+)/)
+    if (fence) {
+      close()
+      const body: string[] = []
+      while (++i < lines.length && !lines[i]!.trim().startsWith(fence[1]!)) body.push(lines[i]!)
+      out.push(`<pre><code>${esc(body.join("\n"))}</code></pre>`)
+      continue
+    }
+    if (line.includes("|") && isRule(lines[i + 1])) {
+      close()
+      const row = (l: string, tag: string) => `<tr>${cells(l).map((c) => `<${tag}>${inline(c)}</${tag}>`).join("")}</tr>`
+      const rows: string[] = []
+      for (i += 2; i < lines.length && lines[i]!.includes("|") && lines[i]!.trim(); i++) rows.push(row(lines[i]!, "td"))
+      i--
+      out.push(`<table><thead>${row(line, "th")}</thead><tbody>${rows.join("")}</tbody></table>`)
+      continue
+    }
     const b = line.match(/^\s*[-*]\s+(.*)/), n = line.match(/^\s*\d+[.)]\s+(.*)/), h = line.match(/^#{1,4}\s+(.*)/)
     if (b || n) {
       const want = b ? "ul" : "ol"

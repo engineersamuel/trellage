@@ -1,5 +1,5 @@
 import { Filter, Match, Option, Schema, Stream } from "effect";
-import { Subscription } from "foldkit";
+import { AsyncData, Subscription } from "foldkit";
 import { changes as approvalChanges } from "../../shared/approvals";
 import { type FeedEvent, RESYNC } from "../../shared/feed";
 import { onProto } from "../../shared/protos";
@@ -9,8 +9,9 @@ import { chat } from "./chatProgram";
 import { feedEvents, fromCallback } from "./feed";
 import { Message } from "./message";
 import type { Model } from "./model";
+import * as DiffPanel from "./diffPanel";
 import * as Settings from "./settings";
-import { toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
+import { toGotDiffPanelMessage, toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
 import * as WorkerPanel from "./workerPanel";
 
 const decodeEvent = Schema.decodeUnknownOption(StoredEvent);
@@ -28,7 +29,7 @@ export const feedEventToMessage = (raw: FeedEvent): Option.Option<Message> =>
   );
 
 /** Feed events that change what a chat card shows. Workers report often while busy, so changes are coalesced. */
-const CARD_EVENTS = /^factory\.(worker_(started|updated|stopped)|approval_|security_review|step_decided)/;
+const CARD_EVENTS = /^factory\.(worker_(started|updated|stopped)|approval_|security_review|code_review|sdlc|step_decided)/;
 /** One card refresh per burst of feed events (a busy worker sends several per second). */
 const CARD_REFRESH_DEBOUNCE = "150 millis";
 
@@ -88,4 +89,12 @@ const settingsSubscriptions = Subscription.lift(Settings.subscriptions)<Model, M
   toParentMessage: toGotSettingsMessage,
 });
 
-export const subscriptions = Subscription.aggregate(chatSubscriptions, appSubscriptions, workerPanelSubscriptions, settingsSubscriptions);
+// The diff panel reloads for tool calls of agents in its worktree; the agent list lives in the worker panel.
+const diffPanelSubscriptions = Subscription.make<Model, Message>()((entry) => ({
+  diffPanelReload: entry(DiffPanel.ReloadDependencies, {
+    modelToDependencies: (model) => DiffPanel.reloadDependencies(model.diffPanel, AsyncData.getOrElse(model.workerPanel.workers, () => [])),
+    dependenciesToStream: (dependencies) => DiffPanel.reloadStream(dependencies).pipe(Stream.map(toGotDiffPanelMessage)),
+  }),
+}));
+
+export const subscriptions = Subscription.aggregate(chatSubscriptions, appSubscriptions, workerPanelSubscriptions, settingsSubscriptions, diffPanelSubscriptions);

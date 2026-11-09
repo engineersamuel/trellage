@@ -90,3 +90,19 @@ test("patchOf: Claude Edit/Write structuredPatch becomes a unified diff", () => 
   const msg = { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "c", content: "ok" }] }, tool_use_result: { filePath: "/r", structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ["-a", "+b"] }] } }
   expect(toEvents(msg as any, "t")[0]!.data.result.detailedContent).toContain("@@ -1,1 +1,1 @@")
 })
+
+test("Claude tool_use input streams as tool_call_delta", () => {
+  const s = new ClaudeStream()
+  const se = (event: any) => ({ type: "stream_event", event, parent_tool_use_id: null, uuid: "u", session_id: "s" }) as any
+  s.map(se({ type: "message_start", message: { id: "m1" } }))
+  s.map(se({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu1", name: "Write" } }))
+  const out = s.map(se({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"file_path":"a' } }), "t")
+  expect(out).toEqual([{ type: "assistant.tool_call_delta", timestamp: "t", data: { toolCallId: "tu1", toolName: "Write", inputDelta: '{"file_path":"a' } }])
+  s.map(se({ type: "content_block_stop", index: 0 }))
+  expect(s.map(se({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "x" } }))).toEqual([])
+})
+
+test("Claude Skill tool use is a skill.invoked event", () => {
+  const m = { type: "assistant", uuid: "u", parent_tool_use_id: null, message: { id: "m", content: [{ type: "tool_use", id: "t1", name: "Skill", input: { skill: "factory-step:ub-mode" } }] } } as any
+  expect(toEvents(m, "t").map((e) => [e.type, e.data.name ?? e.data.toolName])).toEqual([["tool.execution_start", "Skill"], ["skill.invoked", "ub-mode"]])
+})

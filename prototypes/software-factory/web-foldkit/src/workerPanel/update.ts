@@ -1,4 +1,4 @@
-import { Array, Option, Result, String } from "effect";
+import { Array, Equal, Option, Result, String } from "effect";
 import { AsyncData, Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
 import { Dialog } from "@foldkit/ui";
@@ -27,6 +27,8 @@ const upsertWorker = (workers: ReadonlyArray<Worker>, worker: Worker): ReadonlyA
     ? Array.map(workers, (current) => (current.id === worker.id ? worker : current))
     : Array.append(workers, worker);
 
+const listedWorkers = (model: Model): ReadonlyArray<Worker> => AsyncData.getOrElse(model.workers, (): ReadonlyArray<Worker> => []);
+
 const refreshWorkers = Update.refresh<Model, Message, ReadonlyArray<Worker>, string>({
   read: (model) => Option.some(model.workers),
   revalidate: AsyncData.revalidateOrLoad,
@@ -39,13 +41,13 @@ const showError = (model: Model, error: string): Model => modifyFields(model, { 
 /** The name the list shows for a worker; its id when it is not in the list. */
 export const workerName = (model: Model, workerId: string): string =>
   Option.match(
-    Array.findFirst(AsyncData.getOrElse(model.workers, (): ReadonlyArray<Worker> => []), ({ id }) => id === workerId),
+    Array.findFirst(listedWorkers(model), ({ id }) => id === workerId),
     { onNone: () => workerId, onSome: ({ name }) => name },
   );
 
 const removeDialogFold = {
   read: (model: Model) => Option.some(model.removeDialog),
-  write: (model: Model, removeDialog: Dialog.Model) => modifyFields(model, { removeDialog: () => removeDialog }),
+  write: (model: Model, removeDialog: Dialog.Model) => (removeDialog === model.removeDialog ? model : modifyFields(model, { removeDialog: () => removeDialog })),
   toParentMessage: (message: Dialog.Message) => Message.GotRemoveDialogMessage({ message }),
   // However the dialog closes (Cancel, Escape, backdrop, confirm), nothing waits for removal any more.
   foldOutMessage: Dialog.OutMessage.match<Update.Step<Model, Message>>({
@@ -95,16 +97,21 @@ export const update = (model: Model, message: Message) =>
         ? { model: modifyFields(model, { logLines: (logLines) => mergeLines(logLines, lines) }) }
         : { model },
     FailedFetchBacklog: ({ error }) => ({ model: showError(model, error) }),
-    ReceivedWorkerUpdate: ({ worker }) => ({
-      model: modifyFields(model, { workers: AsyncData.map((workers) => upsertWorker(workers, worker)) }),
-    }),
-    ReceivedWorkerStopped: ({ workerId }) => ({
-      model: modifyFields(model, { workers: AsyncData.map(Array.filter(({ id }) => id !== workerId)) }),
-    }),
-    ReceivedWorkerEvent: ({ event }) =>
-      event.workerId === model.selectedWorkerId
-        ? { model: modifyFields(model, { logLines: (logLines) => mergeLines(logLines, toEventLines(event)) }) }
+    // The coordinator reports a worker after every model call; an identical report keeps the same Model.
+    ReceivedWorkerUpdate: ({ worker }) =>
+      Array.some(listedWorkers(model), (current) => Equal.equals(current, worker))
+        ? { model }
+        : { model: modifyFields(model, { workers: AsyncData.map((workers) => upsertWorker(workers, worker)) }) },
+    ReceivedWorkerStopped: ({ workerId }) =>
+      Array.some(listedWorkers(model), ({ id }) => id === workerId)
+        ? { model: modifyFields(model, { workers: AsyncData.map(Array.filter(({ id }) => id !== workerId)) }) }
         : { model },
+    // Deltas and events of other workers add no line: the same Model, so the page does not render again.
+    ReceivedWorkerEvent: ({ event }) => {
+      if (event.workerId !== model.selectedWorkerId) return { model };
+      const logLines = mergeLines(model.logLines, toEventLines(event));
+      return { model: logLines === model.logLines ? model : modifyFields(model, { logLines: () => logLines }) };
+    },
     // After a feed gap the worker list and the log may be stale: reload both.
     ReceivedFeedGap: () =>
       Update.combine(model, [refreshWorkers, (stepModel) => ({ model: stepModel, commands: [FetchBacklog({ workerId: stepModel.selectedWorkerId })] })]),

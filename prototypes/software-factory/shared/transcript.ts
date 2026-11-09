@@ -1,9 +1,10 @@
 import "./transcript.css"
 import { markdown } from "./decisions"
+import { approvalMarkdown, planMarkdown } from "./timeline"
 import { appendCompact, onFeed, RESYNC, type FeedEvent } from "./feed"
 import { toolDiffs, type FileDiff } from "./diff"
 import { groupTools, type Group } from "./toolgroups"
-import { reconcile, ToolCard, ToolGroup, toolIcon, type CardInput } from "./toolcard"
+import { imagePaths, reconcile, ToolCard, ToolGroup, toolIcon, type CardInput } from "./toolcard"
 import { Schema } from "effect"
 import { json, runOr } from "./http"
 import { StoredEvent } from "./schemas"
@@ -30,11 +31,34 @@ const time = (ev: FeedEvent): number | undefined => {
   return Number.isNaN(t) ? undefined : t
 }
 
+/**
+ * Arguments of a tool call that is still streaming. Custom tools (apply_patch) stream raw text: it is the input.
+ * Function tools stream JSON: string values are recovered from the unfinished text so a file body or patch shows.
+ */
+export const partialArgs = (input: string): Record<string, unknown> => {
+  const t = input.trimStart()
+  if (!t.startsWith("{")) return { input }
+  try {
+    return JSON.parse(t)
+  } catch {}
+  const out: Record<string, unknown> = {}
+  for (const m of t.matchAll(/"([A-Za-z_][\w]*)"\s*:\s*"((?:[^"\\]|\\.)*)("?)/g)) {
+    try {
+      out[m[1]!] = JSON.parse(`"${m[2]!.replace(/\\$/, "")}"`)
+    } catch {
+      out[m[1]!] = m[2]
+    }
+  }
+  return out
+}
+
 /** Fold raw Copilot SDK events into transcript items. Sub-agent and nested tool events are skipped. */
 export const toTranscript = (events: readonly FeedEvent[]): Item[] => {
   const out: Item[] = []
   const tools = new Map<string, Extract<Item, { kind: "tool" }>>()
   const streams = new Map<string, Extract<Item, { kind: "assistant" }>>()
+  /** Raw streamed input of tool calls the model is still writing. */
+  const raw = new Map<string, string>()
   for (const ev of events) {
     const d = ev.data ?? {}
     if (ev.agentId || (d.parentToolCallId !== undefined && d.parentToolCallId !== null)) continue
@@ -57,7 +81,29 @@ export const toTranscript = (events: readonly FeedEvent[]): Item[] => {
         else if (d.content) out.push({ kind: "assistant", text: d.content })
         break
       }
+      case "assistant.tool_call_delta": {
+        // The model is still writing the call: show its input as it streams (an apply_patch diff grows line by line).
+        let t = tools.get(d.toolCallId)
+        if (!t) {
+          t = { kind: "tool" as const, id: d.toolCallId, name: d.toolName ?? "tool", args: {}, done: false, ok: true, result: "", startedAt: time(ev) }
+          tools.set(t.id, t)
+          raw.set(t.id, "")
+          out.push(t)
+        }
+        if (!raw.has(t.id)) break
+        const input = raw.get(t.id)! + String(d.inputDelta ?? "")
+        raw.set(t.id, input)
+        if (d.toolName) t.name = d.toolName
+        t.args = partialArgs(input)
+        break
+      }
       case "tool.execution_start": {
+        const streamed = tools.get(d.toolCallId)
+        if (streamed && raw.has(streamed.id)) {
+          raw.delete(streamed.id)
+          Object.assign(streamed, { name: d.toolName, args: d.arguments ?? streamed.args, startedAt: time(ev) })
+          break
+        }
         const t = { kind: "tool" as const, id: d.toolCallId, name: d.toolName, args: d.arguments ?? {}, done: false, ok: true, result: "", startedAt: time(ev) }
         tools.set(t.id, t)
         out.push(t)
@@ -173,6 +219,8 @@ export const toolLine = (t: Extract<Item, { kind: "tool" }>): { icon: string; te
     case "request_approval":
     case "ask_user":
       return { icon: t.name === "ask_user" ? "?" : "✓", text: t.name === "ask_user" ? "Question for you" : "Approval requested", link: { decision: r?.id, label: a.title ?? "decision" } }
+    case "sdlc_plan":
+      return { icon: "📝", text: `Plan · ${Array.isArray(a.criteria) ? a.criteria.length : 0} acceptance criteria · ${String(a.request ?? "").split("\n")[0]!.slice(0, 100)}` }
     case "next_step":
       return { icon: "◆", text: r?.step ? `Jev: next step ${r.step} (${Math.round((r.confidence ?? 0) * 100)}%)` : "Asking Jev for the next step" }
     default: {
@@ -230,6 +278,25 @@ const linkEl = (link: NonNullable<ReturnType<typeof toolLine>["link"]>): HTMLEle
 
 type Tool = Extract<Item, { kind: "tool" }>
 
+/** The plan or decision of a tool call as readable markdown, with a link to it in the Timeline (only where a Timeline exists). */
+const docEl = (t: Tool): HTMLElement | undefined => {
+  const plan = t.name === "sdlc_plan"
+  if (!plan && t.name !== "request_approval" && t.name !== "ask_user") return undefined
+  const box = el("div", "ui-tcc__section")
+  const head = el("div", "ui-tcc__section-head")
+  head.append(el("span", "ui-tcc__label", plan ? "Plan" : "Request"))
+  if (document.querySelector(".sfp-p3")) {
+    const a = el("a", "ui-tcc__link", "Open in timeline")
+    a.href = "#"
+    a.onclick = (e) => (e.preventDefault(), window.dispatchEvent(new CustomEvent("sf:open-timeline", { detail: t.id })))
+    head.append(a)
+  }
+  const body = el("div", "sfd-summary")
+  body.innerHTML = markdown(plan ? planMarkdown(t.args, t.done && t.ok ? parse(t.result) : null) : approvalMarkdown(t.args))
+  box.append(head, body)
+  return box
+}
+
 /** A tool item as card input. `stoppedAt`: the agent stopped, so a call that never finished stops its timer there. */
 const toCard = (t: Tool, stoppedAt: number | undefined): CardInput => {
   const line = toolLine(t)
@@ -246,6 +313,9 @@ const toCard = (t: Tool, stoppedAt: number | undefined): CardInput => {
     startedAt: t.startedAt,
     endedAt: t.endedAt ?? (t.done ? t.startedAt : stoppedAt),
     link: line.link?.worker || line.link?.decision ? linkEl(line.link) : undefined,
+    doc: docEl(t),
+    // Images appear once the call finished, so a file still being written is not fetched.
+    images: status === "success" ? imagePaths(t.args, t.result) : [],
   }
 }
 
@@ -338,6 +408,14 @@ export const mount = (host: HTMLElement, id: string, opts: MountOptions = {}): (
     if (!live && timer) (clearInterval(timer), (timer = 0))
     return live
   }
+  // The activity line and message bubbles stay in the page between renders: a new element would restart the
+  // spinner animation and rebuild every bubble's markdown on each streamed event.
+  const spin = el("span", "sft-spin")
+  const label = el("b")
+  const detail = el("span", "sft-detail")
+  const act = el("div", "sft-activity")
+  act.append(spin, label)
+  let shown = new Map<string, HTMLElement>()
   const render = () => {
     frame = 0
     const scroller = host.closest<HTMLElement>("[data-transcript-scroll]") ?? host
@@ -345,17 +423,26 @@ export const mount = (host: HTMLElement, id: string, opts: MountOptions = {}): (
     const now = opts.stopped ? null : activity(events)
     const live: HTMLElement[] = []
     if (now) {
-      const a = el("div", "sft-activity")
-      a.append(el("span", "sft-spin"), el("b", "", `${now.label}…`))
-      if (now.detail) a.append(el("span", "sft-detail", now.detail))
-      live.push(a)
+      const text = `${now.label}…`
+      if (label.textContent !== text) label.textContent = text
+      if (detail.textContent !== now.detail) detail.textContent = now.detail
+      if (now.detail && !detail.isConnected) act.append(detail)
+      else if (!now.detail && detail.isConnected) detail.remove()
+      live.push(act)
     }
     const stoppedAt = opts.stopped ? Date.parse(events.at(-1)?.timestamp ?? "") || undefined : undefined
+    const next = new Map<string, HTMLElement>()
     const nodes = groupTools(toTranscript(events)).map((i): HTMLElement => {
       if (i.kind === "group") return seqOf(tools.group(i, stoppedAt).el, i.items[0]?.seq)
       if (i.kind === "tool") return seqOf(tools.card(i, stoppedAt).el, i.seq)
-      return renderItem(i)
+      const base = `${i.kind}:${i.seq ?? ""}:${i.text}`
+      let key = base
+      for (let n = 1; next.has(key); n++) key = `${base}#${n}`
+      const e = shown.get(key) ?? renderItem(i)
+      next.set(key, e)
+      return e
     })
+    shown = next
     tools.sweep()
     reconcile(host, [...nodes, ...live])
     // A 100ms timer keeps the live durations moving while any call runs.

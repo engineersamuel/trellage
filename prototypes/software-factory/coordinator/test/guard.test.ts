@@ -55,7 +55,10 @@ test("sub-coordinator permissions reject forbidden shell commands and keep the s
   const ask = (request: any) => f.subPermissions(request, { sessionId: "s" } as any)
   expect(await ask({ kind: "shell", fullCommandText: "git push -u origin factory/x" })).toMatchObject({ kind: "reject" })
   expect(await ask({ kind: "shell", fullCommandText: "git worktree remove ../wt" })).toMatchObject({ kind: "reject" })
-  expect(await ask({ kind: "shell", fullCommandText: "git commit -m x" })).toEqual({ kind: "approve-once" })
+  // Coordinate, do not do: writes and non-read-only shell go to workers; reading stays allowed.
+  expect(await ask({ kind: "shell", fullCommandText: "git commit -m x" })).toMatchObject({ kind: "reject" })
+  expect(await ask({ kind: "write", fileName: "mise.toml" })).toMatchObject({ kind: "reject" })
+  expect(await ask({ kind: "shell", fullCommandText: "git status && cat README.md" })).toEqual({ kind: "approve-once" })
   f.settings = { ...f.settings, agent: { ...f.settings.agent, disabledTools: ["shell"] } }
   expect(await ask({ kind: "shell", fullCommandText: "git status" })).toMatchObject({ kind: "reject" })
 })
@@ -74,4 +77,20 @@ test("with a push branch, only a plain push of that branch to origin is allowed"
   for (const cmd of [`git push --force origin ${b}`, `git push -f origin ${b}`, `git push origin +${b}`, `git push --force-with-lease origin ${b}`, "git push origin main", `git push origin ${b}:main`, `git push origin :${b}`, `git push --delete origin ${b}`, `git push upstream ${b}`, "git push", `git push origin ${b} main`, `git push -u origin ${b} && git merge main`, `gh pr merge --auto`])
     expect([cmd, forbiddenCommand(cmd, b)]).toEqual([cmd, true])
   expect(forbiddenCommand(`git push -u origin ${b}`)).toBe(true)
+})
+
+test("agents never copy or move credential files; reading them in place is fine", () => {
+  for (const cmd of [
+    "cp ~/.config/copilot-proxy-rs/github_token /tmp/x/github_token",
+    'mkdir -p "$D" && cp ~/.config/copilot-proxy-rs/github_token "$D/github_token"',
+    "rsync -a ~/.config/gh/hosts.yml /tmp/",
+    "ln -s ~/.netrc /tmp/n",
+  ])
+    expect([cmd, forbiddenCommand(cmd)]).toEqual([cmd, true])
+  for (const cmd of [
+    "COPILOT_PROXY_RS_CONFIG_DIR=$HOME/.config/copilot-proxy-rs ./target/release/copilot-proxy-rs",
+    "ls ~/.config/copilot-proxy-rs/",
+    "cp README.md /tmp/x",
+  ])
+    expect([cmd, forbiddenCommand(cmd)]).toEqual([cmd, false])
 })
