@@ -10,18 +10,149 @@ import {
   type HerdrContext,
 } from "../packages/trellage-launcher/src/guide-launch.ts"
 import { createGuideReviewServices } from "../packages/trellage-launcher/src/review-services.ts"
-import { reviewCatalog, fleetLenses, reviewModels } from "../packages/trellage-launcher/src/review-catalog.ts"
+import { reviewCatalog, fleetLenses } from "../packages/trellage-launcher/src/review-catalog.ts"
 import {
   assertGuideReviewTargetCurrent,
   type GuideReviewScope,
+  type GuideReviewTarget,
 } from "../packages/trellage-launcher/src/review-target.ts"
 import { assertGuideReviewExecution } from "./exhaustive-guide-review-execution.ts"
 import { assertGuideInteractiveIntent } from "./exhaustive-guide-interactive.ts"
 import type { createGuideWorld } from "./exhaustive-guide-world.ts"
 
+type ReviewServices = ReturnType<typeof createGuideReviewServices>
+type GuideWorld = Awaited<ReturnType<typeof createGuideWorld>>
+type ReviewFixture = {
+  readonly root: string
+  readonly cwd: string
+  readonly head: string
+  readonly base: string
+  readonly runner: CommandRunner
+  readonly signal: AbortSignal
+}
+
+const assertReviewAssignments = (
+  services: ReviewServices,
+  model: ReturnType<typeof resolveGuideModelRouting>["optimize"],
+  id: string,
+): void => {
+  assert.deepEqual(services.coordinator, model, id)
+  assert.deepEqual(
+    services.assignments?.map((assignment) => assignment.id),
+    reviewCatalog.map((check) => check.id),
+    id,
+  )
+  for (const assignment of services.assignments!) {
+    const check = reviewCatalog.find((entry) => entry.id === assignment.id)!
+    assert.deepEqual(assignment.model, model, id)
+    assert.deepEqual(
+      assignment.workers,
+      check.kind === "fleet"
+        ? fleetLenses.map((name) => ({ name, model }))
+        : check.kind === "two-axis"
+          ? [{ name: "Standards", model }]
+          : [],
+      id,
+    )
+  }
+}
+
+const assertRejectedReviewBase = async (
+  services: ReviewServices,
+  scope: GuideReviewScope,
+  requested: string | undefined,
+  signal: AbortSignal,
+  id: string,
+): Promise<boolean> => {
+  if (requested === undefined) return false
+  if (/[\uD800-\uDFFF]/u.test(requested)) {
+    await assert.rejects(
+      () => services.inspect(scope, signal),
+      { name: "GuideValidationError", message: "Comparison base: must not contain unpaired Unicode surrogates" },
+      id,
+    )
+    return true
+  }
+  if (["origin/main", "main", "refs/heads/main", "refs/remotes/origin/main"].includes(requested)) return false
+  await assert.rejects(
+    () => services.inspect(scope, signal),
+    (error: unknown) =>
+      error instanceof CommandRunnerError && error.kind === "exited" && error.args.includes(`${requested}^{commit}`),
+    id,
+  )
+  return true
+}
+
+const assertReviewChanges = (
+  target: GuideReviewTarget,
+  scope: GuideReviewScope,
+  fixture: ReviewFixture,
+  id: string,
+): void => {
+  const { cwd, head, base } = fixture
+  assert.equal(target.cwd, cwd, id)
+  assert.equal(target.gitDirectory, path.join(cwd, ".git"), id)
+  assert.equal(target.head, head, id)
+  const branch = scope.kind !== "uncommitted"
+  const requested = scope.kind === "branch" ? scope.baseRef.trim() : "refs/remotes/origin/main"
+  assert.deepEqual(target.base, branch ? { ref: requested, commit: base, mergeBase: base } : undefined, id)
+  assert.deepEqual(
+    target.changes.map(({ path: name, staged, unstaged, untracked, committed, kind }) => ({
+      name,
+      staged,
+      unstaged,
+      untracked,
+      committed,
+      kind,
+    })),
+    [
+      ...(branch
+        ? [{ name: "committed.ts", staged: false, unstaged: false, untracked: false, committed: true, kind: "file" }]
+        : []),
+      { name: "deleted.ts", staged: false, unstaged: true, untracked: false, committed: false, kind: "deleted" },
+      { name: "staged.ts", staged: true, unstaged: false, untracked: false, committed: false, kind: "file" },
+      { name: "unstaged.ts", staged: false, unstaged: true, untracked: false, committed: false, kind: "file" },
+      { name: "untracked.ts", staged: false, unstaged: false, untracked: true, committed: false, kind: "file" },
+    ],
+    id,
+  )
+}
+
+const assertReviewScopes = async (
+  args: GuideHeadlessArgs,
+  world: GuideWorld,
+  services: ReviewServices,
+  context: HerdrContext | null,
+  fixture: ReviewFixture,
+  id: string,
+): Promise<void> => {
+  const { root, cwd, runner, signal } = fixture
+  const scopes: GuideReviewScope[] =
+    args.reviewBase === undefined
+      ? [{ kind: "uncommitted" }, { kind: "current-branch" }]
+      : [{ kind: "branch", baseRef: args.reviewBase }]
+  for (const scope of scopes) {
+    const requested = scope.kind === "branch" ? scope.baseRef.trim() : undefined
+    if (await assertRejectedReviewBase(services, scope, requested, signal, id)) continue
+    const target = await services.inspect(scope, signal)
+    assertReviewChanges(target, scope, fixture, id)
+    assert.deepEqual(await assertGuideReviewTargetCurrent(runner, target, signal), target, id)
+    // Execution does not depend on the scope: run it for the first scope only.
+    if (scope === scopes[0] && (context === null || context.surface === "popup"))
+      await assertGuideReviewExecution(args, world, id, { root, runner, target, context })
+    await writeFile(path.join(cwd, "untracked.ts"), "changed during review\n")
+    await assert.rejects(
+      () => assertGuideReviewTargetCurrent(runner, target, signal),
+      /worktree or comparison base changed/,
+      id,
+    )
+    await writeFile(path.join(cwd, "untracked.ts"), "untracked change\n")
+  }
+}
+
 export const assertGuideReviewTarget = async (
   args: GuideHeadlessArgs,
-  world: Awaited<ReturnType<typeof createGuideWorld>>,
+  world: GuideWorld,
   id: string,
 ): Promise<"review-target"> => {
   assert.equal(process.env.TRELLAGE_TEST_OFFLINE, "1", "use scripts/test-offline.sh")
@@ -89,14 +220,25 @@ export const assertGuideReviewTarget = async (
       run: async (executable, argv, options) => {
         assert.equal(executable, "git", `${id}: unexpected external boundary`)
         assert.equal(options?.cwd, cwd, `${id}: escaped fixture`)
-        const prefix = argv[0] === "--no-optional-locks"
-          ? ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"]
-          : ["-c", "core.fsmonitor=false"]
+        const prefix =
+          argv[0] === "--no-optional-locks"
+            ? ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"]
+            : ["-c", "core.fsmonitor=false"]
         assert.deepEqual(argv.slice(0, prefix.length), prefix, id)
         assert(
-          ["rev-parse", "for-each-ref", "branch", "worktree", "merge-base", "diff", "status", "ls-files", "ls-tree", "show", "log"].includes(
-            argv[prefix.length]!,
-          ),
+          [
+            "rev-parse",
+            "for-each-ref",
+            "branch",
+            "worktree",
+            "merge-base",
+            "diff",
+            "status",
+            "ls-files",
+            "ls-tree",
+            "show",
+            "log",
+          ].includes(argv[prefix.length]!),
           id,
         )
         options?.signal?.throwIfAborted()
@@ -151,113 +293,8 @@ export const assertGuideReviewTarget = async (
           .map((entry) => entry.ref),
         id,
       )
-      assert.deepEqual(services.coordinator, { model: args.model ?? "gpt-6-astra", effort: args.effort ?? "max" }, id)
-      assert.deepEqual(
-        services.assignments?.map((assignment) => assignment.id),
-        reviewCatalog.map((check) => check.id),
-        id,
-      )
-      for (const assignment of services.assignments!) {
-        const check = reviewCatalog.find((check) => check.id === assignment.id)!
-        const model = {
-          model: args.model ?? check.model,
-          effort: args.effort ?? (check.kind === "fleet" || check.id === "ponytail" ? "high" : "low"),
-        }
-        assert.deepEqual(assignment.model, model, id)
-        assert.deepEqual(
-          assignment.workers,
-          check.kind === "fleet"
-            ? fleetLenses.map((name, index) => ({
-                name,
-                model: { model: args.model ?? reviewModels[index % reviewModels.length], effort: args.effort ?? "low" },
-              }))
-            : check.kind === "two-axis"
-              ? [{ name: "Standards", model }]
-              : [],
-          id,
-        )
-      }
-      const scopes: GuideReviewScope[] =
-        args.reviewBase === undefined
-          ? [{ kind: "uncommitted" }, { kind: "current-branch" }]
-          : [{ kind: "branch", baseRef: args.reviewBase }]
-      for (const scope of scopes) {
-        const requested = scope.kind === "branch" ? scope.baseRef.trim() : undefined
-        if (requested !== undefined && /[\uD800-\uDFFF]/u.test(requested)) {
-          await assert.rejects(
-            () => services.inspect(scope, signal),
-            {
-              name: "GuideValidationError",
-              message: "Comparison base: must not contain unpaired Unicode surrogates",
-            },
-            id,
-          )
-          continue
-        }
-        if (
-          requested !== undefined &&
-          !["origin/main", "main", "refs/heads/main", "refs/remotes/origin/main"].includes(requested)
-        ) {
-          await assert.rejects(
-            () => services.inspect(scope, signal),
-            (error: unknown) =>
-              error instanceof CommandRunnerError &&
-              error.kind === "exited" &&
-              error.args.includes(`${requested}^{commit}`),
-            id,
-          )
-          continue
-        }
-        const target = await services.inspect(scope, signal)
-        assert.equal(target.cwd, cwd, id)
-        assert.equal(target.gitDirectory, path.join(cwd, ".git"), id)
-        assert.equal(target.head, head, id)
-        const branch = scope.kind !== "uncommitted"
-        assert.deepEqual(
-          target.base,
-          branch ? { ref: requested ?? "refs/remotes/origin/main", commit: base, mergeBase: base } : undefined,
-          id,
-        )
-        assert.deepEqual(
-          target.changes.map(({ path: name, staged, unstaged, untracked, committed, kind }) => ({
-            name,
-            staged,
-            unstaged,
-            untracked,
-            committed,
-            kind,
-          })),
-          [
-            ...(branch
-              ? [
-                  {
-                    name: "committed.ts",
-                    staged: false,
-                    unstaged: false,
-                    untracked: false,
-                    committed: true,
-                    kind: "file",
-                  },
-                ]
-              : []),
-            { name: "deleted.ts", staged: false, unstaged: true, untracked: false, committed: false, kind: "deleted" },
-            { name: "staged.ts", staged: true, unstaged: false, untracked: false, committed: false, kind: "file" },
-            { name: "unstaged.ts", staged: false, unstaged: true, untracked: false, committed: false, kind: "file" },
-            { name: "untracked.ts", staged: false, unstaged: false, untracked: true, committed: false, kind: "file" },
-          ],
-          id,
-        )
-        assert.deepEqual(await assertGuideReviewTargetCurrent(runner, target, signal), target, id)
-        // Execution does not depend on the scope: run it for the first scope only.
-        if (scope === scopes[0] && (context === null || context.surface === "popup")) await assertGuideReviewExecution(args, world, id, { root, runner, target, context })
-        await writeFile(path.join(cwd, "untracked.ts"), "changed during review\n")
-        await assert.rejects(
-          () => assertGuideReviewTargetCurrent(runner, target, signal),
-          /worktree or comparison base changed/,
-          id,
-        )
-        await writeFile(path.join(cwd, "untracked.ts"), "untracked change\n")
-      }
+      assertReviewAssignments(services, routing.optimize, id)
+      await assertReviewScopes(args, world, services, context, { root, cwd, head, base, runner, signal }, id)
     }
     return "review-target"
   } finally {

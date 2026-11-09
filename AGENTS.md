@@ -7,16 +7,42 @@ host through `trx run HARNESS [PROFILE...] [-- AGENT_ARGS]`.
 
 - `trx` is the only Trellage entrypoint. The former Trellage Sandbox CLI
   (`trellage`), its container profile compiler, and `prototypes/trellage` are retired.
-- Trellage Native profiles isolate agent state but are not containers or security boundaries. Composed Grok (`trx run grok`) enables its native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed). `trx run codex` uses Full Access by default: no command approval prompts and no Codex OS sandbox, for both interactive and non-interactive launches. See `docs/native-sandbox-research.md`.
-- The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `empryo`, `jcode`, `omp`, `pi`, `prime`, `grok`, and `uji`. Six private backends provide launch-time admission, setup, or executable resolution outside `PATH`.
-- `trx run HARNESS clean` launches `claude`, `codex`, `copilot`, or `pi` with no skills, MCP servers, instructions, hooks, or plugins from trx, the repository, or the host, and installs nothing. Other harnesses refuse a clean run.
-- `trx run claude firstmate` and `trx run pi firstmate` run [Firstmate](https://github.com/kunchenguid/firstmate) from its own clone at `~/.local/share/trellage/firstmate`, cloned when missing and rebased onto the latest `main` before every launch. Its workers get the same copilot-proxy-rs setup through files Firstmate passes on (Claude `settings.json` `env`, Pi `config/pi-account` and `config/crew-dispatch.json`). Before launch it offers to install missing tools (`treehouse`, `gh-axi`, `tasks-axi`, ...). Other harnesses refuse the profile, and the `trx run` menu shows it dimmed for them. `trx guide` → Augment → **Firstmate** rewrites a draft as a Firstmate message.
+- Trellage Native profiles isolate agent state but are not containers or security boundaries. Composed Grok
+  (`trx run grok`) enables its native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed).
+  `trx run codex` uses Full Access by default: no command approval prompts and no Codex OS sandbox, for both interactive
+  and non-interactive launches. See `docs/native-sandbox-research.md`.
+- The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `empryo`, `jcode`,
+  `omp`, `pi`, `prime`, `grok`, and `uji`. Six private backends provide launch-time admission, setup, or executable
+  resolution outside `PATH`.
+- `trx run HARNESS clean` launches `claude`, `codex`, `copilot`, or `pi` with no skills, MCP servers, instructions,
+  hooks, or plugins from trx, the repository, or the host, and installs nothing. Other harnesses refuse a clean run.
+- `trx run claude firstmate` and `trx run pi firstmate` run [Firstmate](https://github.com/kunchenguid/firstmate) from
+  its own clone at `~/.local/share/trellage/firstmate`, cloned when missing and rebased onto the latest `main` before
+  every launch. Its workers get the same copilot-proxy-rs setup through files Firstmate passes on (Claude
+  `settings.json` `env`, Pi `config/pi-account` and
+  `config/crew-dispatch.json`). <!-- agnix: noqa: CDX-AG-005 -->
+  These paths are in the external Firstmate clone. Before launch it offers to install missing tools (`treehouse`,
+  `gh-axi`, `tasks-axi`, ...). Other harnesses refuse the profile, and the `trx run` menu
+  shows it dimmed for them. `trx guide` → Augment → **Firstmate** rewrites a draft as a Firstmate message.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
 - Generated evidence is normalized for later grading; the harness does not select a winner.
 
 ## Build and test
 
-- Run the full repository suite with `make test`.
+- Run `mise trust`, then `mise run quality:setup` once in a new worktree.
+  Keep Lefthook as the only Git-hook runner; do not add hk beside it.
+- Use `mise run quality:changed` for affected checks, or a narrow Make target
+  while developing. `mise run quality:plan` shows the selection without running it.
+  Unknown paths and missing comparison bases select the full offline suite.
+- Run the full repository suite with `make test` for shared-gate changes and
+  full validation. CI also runs it after merge and on its weekly schedule.
+- Pre-commit checks staged bytes without changing the index or worktree.
+  Pre-push checks the actual pushed refs, requires their commit to be checked out,
+  and refuses dirty or untracked source files rather than testing different code.
+- `mise run quality:static` covers maintained code, agent/config files, and docs.
+  `mise run quality:analysis` checks imports and dependency consistency.
+  Exact-content legacy exceptions live in `.quality/baseline.json`; never
+  expand them to hide new or edited-file findings. See `docs/verification.md`.
 - When working on `trx guide` code, always run `mise run trx-guide-test` and
   ensure it passes before completing the work.
 - Run native profile matrix contracts with `make profile-matrix-test`.
@@ -103,8 +129,15 @@ host through `trx run HARNESS [PROFILE...] [-- AGENT_ARGS]`.
 - `packages/trellage-runtime` contains shared Bun execution and source-runtime support.
 - `prototypes/trellage-router` and the retained `prototypes/trellage-*-profiles`
   directories contain the Native router, adapters, private backends, and catalogs.
-- Uji runs through `trx run uji default` and routes to the local `copilot-proxy-rs` endpoint; its generated config, selected skills, custom tools, and session database are profile-scoped, while Uji credentials remain in its normal data directory. The tracked Lua tools are copied from `packages/trellage-runtime/src/native-run/uji-tools.lua`; their content hash invalidates the generated configuration when they change. Uji defaults to `uji.tool.policy({ default = "allow" })`, so its tools run without per-call approval and are not sandboxed.
-- Empryo runs through `trx run empryo default`. Before each launch trx writes a `copilot-proxy-rs` custom provider, `defaultModel` (default `copilot-proxy-rs/gpt-6.1-sol`), and `performance.effort` into the host `~/.empryo/config.json`, preserving other keys; Empryo state is not profile-scoped. Install with `curl -fsSL empryo.com/install.sh | bash`.
+- Uji runs through `trx run uji default` and routes to the local `copilot-proxy-rs` endpoint; its generated config,
+  selected skills, custom tools, and session database are profile-scoped, while Uji credentials remain in its normal
+  data directory. The tracked Lua tools are copied from `packages/trellage-runtime/src/native-run/uji-tools.lua`; their
+  content hash invalidates the generated configuration when they change. Uji defaults to
+  `uji.tool.policy({ default = "allow" })`, so its tools run without per-call approval and are not sandboxed.
+- Empryo runs through `trx run empryo default`. Before each launch trx writes a `copilot-proxy-rs` custom provider,
+  `defaultModel` (default `copilot-proxy-rs/gpt-6.1-sol`), and `performance.effort` into the host
+  `~/.empryo/config.json`, preserving other keys; Empryo state is not profile-scoped. Install with
+  `curl -fsSL empryo.com/install.sh | bash`.
 - `scripts` contains repository orchestration and profile verification tools.
 - `tests` contains shell contracts for manifests, adapters, runners, sessions, workspaces, and evidence.
 - `harnesses` contains comparison manifests consumed by `scripts/harness`.
@@ -127,9 +160,13 @@ host through `trx run HARNESS [PROFILE...] [-- AGENT_ARGS]`.
 ## Composed Grok
 
 - Launch Grok through `mise run trx -- run grok PROFILE`.
-- The adapter routes model traffic through `copilot-proxy-rs`, pins API-key authentication in generated `config.toml`, and supplies a non-secret local proxy token through `XAI_API_KEY`. It does not create, copy, repair, or modify `auth.json`.
-- NEVER run `grok login`, delete authentication paths, follow authentication symlinks, or weaken authentication permissions without explicit user authorization.
-- Grok always launches with its native workspace sandbox. Repository compatibility resources can still load, so selected-only configuration isolation remains unproven.
+- The adapter routes model traffic through `copilot-proxy-rs`, pins API-key authentication in generated `config.toml`,
+  and supplies a non-secret local proxy token through `XAI_API_KEY`. It does not create, copy, repair, or modify
+  `auth.json`.
+- NEVER run `grok login`, delete authentication paths, follow authentication symlinks, or weaken authentication
+  permissions without explicit user authorization.
+- Grok always launches with its native workspace sandbox. Repository compatibility resources can still load, so
+  selected-only configuration isolation remains unproven.
 
 ## Package feeds on Microsoft-managed devices
 
@@ -168,10 +205,12 @@ endpoints. Use Central Feed Services (CFS) packagefeedproxy instead:
 - Keep static verification free of model inference and paid calls.
 - Do not weaken or skip repository contracts to make a change pass.
 - Keep changes scoped and preserve unrelated dirty-worktree edits.
-- Every new harness profile MUST mount the host `~/.copilot/models.json` read-only at `/home/agent/.copilot-models.json`.
-- `~/.config/trellage/config.toml` is the only skill-source allowlist; `config.example.toml` contains shipped defaults. Sources may use an explicit commit or tag; omitted refs track the default branch.
-  Resolved commits, digests, and fetch timestamps belong in derived cache receipts. Third-party selections
-  MUST be explicit. Wildcards require `allowWildcard = true`.
+- Every new harness profile MUST mount the host `~/.copilot/models.json` read-only at
+  `/home/agent/.copilot-models.json`. <!-- agnix: noqa: XP-003 -->
+- `~/.config/trellage/config.toml` is the only skill-source allowlist; `config.example.toml` contains shipped defaults.
+  Sources may use an explicit commit or tag; omitted refs track the default branch. Resolved commits, digests, and fetch
+  timestamps belong in derived cache receipts. Third-party selections MUST be explicit. Wildcards require
+  `allowWildcard = true`.
 - Native skill selections MUST derive from the selected user config profiles,
   including their explicit always-profile selection. Every comparison image MUST use the single
   `comparison-common` snapshot staged for that build operation. These common

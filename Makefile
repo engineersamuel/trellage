@@ -19,6 +19,7 @@ TIMING_SENSITIVE_TEST_TARGETS := native-omp-profile native-claude-profile native
 FINAL_TEST_TARGETS := native-profile-router
 PARALLEL_TEST_TARGETS += cli-matrix-contract
 PARALLEL_TEST_TARGETS += source-checks
+PARALLEL_TEST_TARGETS += quality-contract script-tests shell-syntax profile-matrix-test
 
 test: quality-static
 	+$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-llm-contract
@@ -64,24 +65,29 @@ test-offline-workload:
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 $(TIMING_SENSITIVE_TEST_TARGETS)
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j$(TEST_JOBS) $(FINAL_TEST_TARGETS)
 
-test-pr: quality-static
-	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-llm-contract test-command agent-harness trellage-identity manifest
-	bun run check
-	bun run test
-	bash tests/source_startup_contract.sh
-	bun --no-install --no-env-file tests/profile_guides_contract.ts
+test-pr:
+	mise run quality:changed
+
+.PHONY: quality-contract script-tests publication-policy
+quality-contract:
+	uv run --offline --no-project python -m unittest discover -s tests -p 'test_quality*.py'
+
+script-tests:
+	bash scripts/test-offline.sh --native-sources bun test --isolate scripts/*.test.ts
+	uv run --offline --no-project python tests/test_benchmark_tests.py
+	uv run --offline --no-project python tests/test_exhaustive_guide_process.py
+	uv run --offline --no-project python tests/test_exhaustive_terminal.py
+	uv run --offline --no-project python tests/test_exhaustive_runner.py
+
+publication-policy:
+	bash tests/publication_contract.sh --policy-only
 
 quality-static:
-	jactionlint --profile default --strict-exit
-	$(MAKE) --no-print-directory shell-syntax
-	bun run lint
-	bun run format:check
-	bun run check:changed-quality
-	bun run check:architecture
-	bun run check:unused
+	mise run quality:static
+	mise run quality:analysis
 
 factory-test:
-	cd prototypes/software-factory/coordinator && bun install --frozen-lockfile && bunx tsc --noEmit && bun test && bun test ../shared/test
+	uv run --offline --no-project python scripts/quality_prototypes.py coordinator
 
 shell-syntax:
 	bash scripts/check-shell-syntax.sh

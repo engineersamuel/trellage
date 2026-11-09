@@ -69,3 +69,34 @@ test("repository source identity ignores generated native contract fixtures whil
     }
   }
 })
+
+test("tracked repository links retain target and link identity without allowing external or untracked links", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "trx-linked-source-identity-"))
+  try {
+    expect(Bun.spawnSync(["git", "init", "-q", root]).exitCode).toBe(0)
+    for (const name of ["first", "second"]) {
+      await mkdir(path.join(root, "skills", name), { recursive: true })
+      await writeFile(path.join(root, "skills", name, "SKILL.md"), "original")
+    }
+    const link = path.join(root, "alias")
+    await symlink("skills/first", link)
+    expect(Bun.spawnSync(["git", "add", "."], { cwd: root }).exitCode).toBe(0)
+    const identity = captureSourceIdentity(root)
+    await writeFile(path.join(root, "skills/first/SKILL.md"), "edited")
+    expect(() => identity.assertUnchanged()).toThrow("Source changed")
+    await writeFile(path.join(root, "skills/first/SKILL.md"), "original")
+    identity.assertUnchanged()
+    await rm(link)
+    await symlink("skills/second", link)
+    expect(() => identity.assertUnchanged()).toThrow("Source changed")
+    await rm(link)
+    await symlink("../outside", link)
+    expect(() => captureSourceIdentity(root)).toThrow("symbolic link")
+    await rm(link)
+    await symlink("skills/first", link)
+    await symlink("skills/first", path.join(root, "untracked"))
+    expect(() => captureSourceIdentity(root)).toThrow("symbolic link")
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

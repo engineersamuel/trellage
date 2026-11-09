@@ -11,7 +11,6 @@ fixture_home="$fixture_root/home"
 fixture_bin="$fixture_home/.local/bin"
 runtime_parent="$fixture_home/.local/share/trellage"
 argument_log="$fixture_root/arguments.bin"
-inventory_log="$fixture_root/inventory.log"
 upgrade_log="$fixture_root/upgrade.log"
 skills_update_log="$fixture_root/skills-update.log"
 skills_cache_log="$fixture_root/skills-cache.jsonl"
@@ -69,10 +68,9 @@ assert_native_skills_refreshed() {
   jq -se --arg router "$runtime_parent/trx/bin/trx" '
     length == 1 and all(.[]; .args == [] and .routerCommandPath == $router)
   ' "$skills_cache_log" >/dev/null || fail 'unified update did not refresh the configured skill maintenance once through its own router'
-  [[ "$(wc -l <"$skills_update_log" | tr -d ' ')" == 21 ]] \
-    || fail 'unified update did not copy every managed composition exactly once'
-  [[ "$(sort -u "$skills_update_log" | wc -l | tr -d ' ')" == 21 ]] \
-    || fail 'unified update copied a managed composition more than once'
+  LC_ALL=C sort "$skills_update_log" >"$fixture_root/actual-skills-updates"
+  cmp -s "$fixture_root/expected-skills-updates" "$fixture_root/actual-skills-updates" \
+    || fail 'unified update did not copy each declared managed composition exactly once'
 }
 
 mkdir -p "$fixture_home" "$fixture_bin"
@@ -518,12 +516,10 @@ for retired_args in '--profile agency' '--profile=agency'; do
   [[ "$status" == 1 ]] || fail "retired route succeeded: $retired_args"
   assert_contains 'use: trx run HARNESS [PROFILE...] [-- ARGS...]' "$fixture_root/retired-route.out"
 done
-for retired_harness in cpx; do
-  status=0
-  "$fixture_bin/trx" run "$retired_harness" default >"$fixture_root/retired-harness.out" 2>&1 || status=$?
-  [[ "$status" == 1 ]] || fail "retired harness succeeded: $retired_harness"
-  assert_contains "unknown harness: $retired_harness" "$fixture_root/retired-harness.out"
-done
+status=0
+"$fixture_bin/trx" run cpx default >"$fixture_root/retired-harness.out" 2>&1 || status=$?
+[[ "$status" == 1 ]] || fail 'retired harness succeeded: cpx'
+assert_contains 'unknown harness: cpx' "$fixture_root/retired-harness.out"
 
 "$fixture_bin/trx" guide --help >"$fixture_root/guide-help.out"
 assert_contains 'PROFILE_REF is native:<harness>/<profile>[+<profile>...].' \
@@ -1092,7 +1088,22 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_DISCOVERY_LOG="$discovery_log" \
 [[ "$status" == 0 ]] || fail "upgrade dry-run failed (got $status): $(<"$fixture_root/upgrade-dry-run.out")"
 assert_no_upgrade_mutation 'upgrade dry-run'
 [[ ! -s "$discovery_log" ]] || fail 'upgrade dry-run executed a lifecycle backend during catalog loading'
-assert_contains '36 catalog compositions' "$fixture_root/upgrade-dry-run.out"
+expected_composition_count="$(jq '
+  [.profiles[] | select(.always) | .name] as $always
+  | [.harnesses[] | (.profiles - $always) | length] | add
+' "$fixture_root/list.json")"
+assert_contains "$expected_composition_count catalog compositions" "$fixture_root/upgrade-dry-run.out"
+jq -r '
+  {agency: "agx", claude: "cldx", copilot: "cpx", jcode: "jcx", omp: "omp", prime: "prx"} as $runtimes
+  | .harnesses[]
+  | select($runtimes[.harness] != null)
+  | .harness as $harness
+  | .presets[]
+  | (if $harness == "agency" and . == "azure" then "trellage-azure"
+     elif $harness == "omp" and . == "default" then "copilot"
+     else . end) as $profile
+  | "\($runtimes[$harness]):skills-update \($profile)"
+' "$fixture_root/list.json" | LC_ALL=C sort >"$fixture_root/expected-skills-updates"
 assert_contains 'Scope: 6 Native runtime updates.' "$fixture_root/upgrade-dry-run.out"
 assert_contains 'Externally managed codex: installed and updated outside Trellage.' "$fixture_root/upgrade-dry-run.out"
 assert_contains 'Externally managed pi: installed and updated outside Trellage.' "$fixture_root/upgrade-dry-run.out"

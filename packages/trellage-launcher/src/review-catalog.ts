@@ -17,7 +17,7 @@ export const fleetLenses = [
   "SDK/API Consistency & Maintainability",
 ] as const
 
-export const reviewModels = ["claude-opus-5.5", "gpt-6-sol", "grok-4.7"] as const
+const reviewModels = ["claude-opus-5.5", "gpt-6-sol", "grok-4.7"] as const
 
 export const reviewCoordinatorModel = (override: Partial<GuideModelConfig> = {}): GuideModelConfig => ({
   ...defaultGuideModelRouting.optimize,
@@ -78,10 +78,7 @@ export const selectReviews = (ids: ReadonlyArray<string>, catalog = reviewCatalo
   })
 }
 
-export type ReviewCheckId =
-  | "ponytail"
-  | "fleet"
-  | "matt-code-review"
+export type ReviewCheckId = "ponytail" | "fleet" | "matt-code-review"
 
 export interface ReviewCheckDefinition {
   readonly id: ReviewCheckId

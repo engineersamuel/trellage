@@ -174,10 +174,62 @@ run = "tail -n 30 -F '{{vars.sf_state}}'/logs/{coordinator,foldkit}.log"
 bun = "1.4.2"
 process-compose = "1.124.0"
 "github:PrimeIntellect-ai/prime-agent" = "latest"
-uv = "latest"
-jactionlint = "2.5.0"
-betterleaks = "1.10.0"
-osv-scanner = "2.7.0"
+node = "26.3.0"
+python = "3.13.9"
+uv = "0.13.7"
 shellcheck = "0.11.0"
+ruff = "0.17.4"
+"github:jdx/jactionlint" = "2.5.0"
+"github:betterleaks/betterleaks" = "1.10.0"
+"github:agent-sh/agnix" = "0.61.0"
 typos = "1.52.0"
-rumdl = "0.3.2"
+"github:rvben/rumdl" = "0.3.2"
+hadolint = "2.15.1"
+"github:google/osv-scanner" = "2.7.1"
+lychee = "0.24.2"
+"npm:syncpack" = "15.3.3"
+rust = "1.96.0"
+
+[tasks."quality:setup"]
+description = "Install pinned quality tools and prepare the frozen workspace"
+run = "bash scripts/install-quality-tools.sh all && scripts/install-source-runtime.sh --prepare && bash scripts/install-lefthook-hook.sh"
+
+[tasks."quality:staged"]
+description = "Check staged content without changing the index or working tree"
+run = "uv run --offline --no-project python scripts/quality.py staged"
+
+[tasks."quality:push"]
+description = "Check the actual pushed range and its affected offline contracts"
+run = "uv run --offline --no-project python scripts/quality.py push"
+
+[tasks."quality:changed"]
+description = "Check changes against a base revision, including dependent contracts"
+run = "uv run --offline --no-project python scripts/quality.py changed"
+
+[tasks."quality:plan"]
+description = "Print the conservative affected-check plan without running checks"
+run = "uv run --offline --no-project python scripts/quality.py plan"
+
+[tasks."quality:all"]
+description = "Run all maintained static checks and the complete offline contract suite"
+run = "uv run --offline --no-project python scripts/quality.py all"
+
+[tasks."quality:static"]
+description = "Run all maintained static checks with explicit legacy baselines"
+run = "uv run --offline --no-project python scripts/quality_checks.py --all"
+
+[tasks."quality:analysis"]
+description = "Check unused dependencies, package boundaries, and shared versions"
+run = "uv run --offline --no-project python scripts/quality_checks.py --analysis"
+
+[tasks."quality:network"]
+description = "Check dependency advisories and external documentation links"
+run = "uv run --offline --no-project python scripts/quality.py network"
+
+[tasks."quality:coverage"]
+description = "Collect offline Bun and Vitest coverage and report changed-line coverage"
+run = "uv run --offline --no-project python scripts/quality.py coverage"
+
+[tasks."quality:test"]
+description = "Test check selection, staged snapshots, baselines, and gate failures"
+run = "uv run --offline --no-project python -m unittest discover -s tests -p 'test_quality*.py'"

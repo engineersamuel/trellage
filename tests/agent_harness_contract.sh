@@ -60,8 +60,8 @@ jq -e '
   .devDependencies.oxfmt and
   (.devDependencies["@biomejs/biome"] | not) and
   .devDependencies.lefthook and
-  (.scripts.lint | startswith("oxlint ")) and
-  (.scripts["format:check"] | startswith("oxfmt --check "))
+  (.scripts.lint | contains("quality_checks.py --check oxlint --all")) and
+  (.scripts["format:check"] | contains("quality_checks.py --check oxfmt --all"))
 ' package.json >/dev/null || fail "root package scripts or dependencies do not use Oxc"
 
 jq -e '
@@ -77,33 +77,13 @@ jq -e '.mcpServers["codebase-memory"].command == "codebase-memory-mcp"' \
   .agents/mcp_config.json >/dev/null || fail "generic MCP configuration is invalid"
 
 
-# shellcheck disable=SC2016 # literal shell text that the CI file must contain
-ci_tool_probe='for tool in jq curl git make fish rg bun node python3; do command -v "$tool" >/dev/null; done'
-# shellcheck disable=SC2016 # literal workflow text, not shell expansions
-for required_ci_line in \
-  '          ref: ${{ github.event.pull_request.head.sha || github.sha }}' \
-  '          fetch-depth: 2' \
-  '        run: sudo apt-get install --yes --no-install-recommends fish ripgrep libseccomp2' \
-  "        run: ${ci_tool_probe}" \
-  '          bun-version: 1.4.2' \
-  '        run: bash scripts/install-source-runtime.sh --prepare' \
-  '        run: make test-prepare' \
-  '    runs-on: macos-latest' \
-  '        run: make launcher conversation-source source-runtime profile-guide-contract' \
-  "        if: github.event_name == 'pull_request'" \
-  "        if: github.event_name != 'pull_request'" \
-  '        run: make test-pr' \
-  '        run: make test'; do
-  grep -Fxq -- "$required_ci_line" .github/workflows/ci.yml \
-    || fail "CI is missing a required regression check or setup: $required_ci_line"
-done
 if (
   ci_tool_probe_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-ci-tool-probe.XXXXXX")"
   trap 'rm -rf -- "${ci_tool_probe_root}"' EXIT
-  for tool in jq git make fish rg bun node python3; do
+  for tool in jq git make fish rg bun node uv; do
     ln -s /usr/bin/true "${ci_tool_probe_root}/${tool}"
   done
-  PATH="${ci_tool_probe_root}" /bin/bash -e -c "${ci_tool_probe}"
+  PATH="${ci_tool_probe_root}" /bin/bash "${ROOT}/scripts/check-quality-prerequisites.sh"
 ); then
   fail 'CI system-tool probe does not fail when an intermediate tool is missing'
 fi
@@ -236,6 +216,9 @@ mkdir -p "${lefthook_fake_dir}"
 cat >"${lefthook_fake_dir}/lefthook" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$@" >"${LEFTHOOK_CONTRACT_ARGS:?}"
+if [ "$2" = pre-push ]; then
+  printf '%s\n%s\n' "$TRELLAGE_PUSH_REMOTE" "$TRELLAGE_PUSH_REFS" >"${LEFTHOOK_CONTRACT_ARGS}.refs"
+fi
 EOF
 chmod +x "${lefthook_fake_dir}/lefthook"
 (
@@ -250,13 +233,17 @@ cmp -s "${lefthook_regression_root}/expected-args" "${lefthook_args}" \
 
 (
   cd "${lefthook_primary}"
-  LEFTHOOK_CONTRACT_ARGS="${lefthook_args}" \
+  printf 'refs/heads/topic local-sha refs/heads/topic remote-sha\n' | LEFTHOOK_CONTRACT_ARGS="${lefthook_args}" \
     "${pre_push_hook}" "origin" "git@example.invalid:trellage.git"
 )
 printf 'run\npre-push\n--no-auto-install\norigin\ngit@example.invalid:trellage.git\n' \
   >"${lefthook_regression_root}/expected-args"
 cmp -s "${lefthook_regression_root}/expected-args" "${lefthook_args}" \
   || fail "installed pre-push hook did not forward Lefthook command and arguments"
+printf 'origin\nrefs/heads/topic local-sha refs/heads/topic remote-sha\n' \
+  >"${lefthook_regression_root}/expected-refs"
+cmp -s "${lefthook_regression_root}/expected-refs" "${lefthook_args}.refs" \
+  || fail "installed pre-push hook lost the remote or pushed ref input"
 
 refresh_args="${lefthook_regression_root}/refresh-args"
 mkdir -p "${lefthook_primary}/scripts"

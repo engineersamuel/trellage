@@ -2,146 +2,281 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
+  merge_group:
   workflow_dispatch:
+  schedule:
+    - cron: "23 5 * * 2"
 
 permissions:
   contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  BUN_INSTALL_CACHE_DIR: ${{ github.workspace }}/.quality-results/bun-cache
+  TRELLAGE_TEST_PACKAGE_CACHE: ${{ github.workspace }}/.quality-results/bun-cache
+  npm_config_cache: ${{ github.workspace }}/.quality-results/npm-cache
 
 jobs:
-  # Keep this legacy key because branch protection requires its status context.
-  deterministic-contracts:
-    runs-on: ubuntu-latest
-    timeout-minutes: ${{ github.event_name == 'pull_request' && 15 || 90 }}
-    env:
-      BUN_INSTALL_CACHE_DIR: /tmp/trellage-bun-cache
-      TRELLAGE_TEST_PACKAGE_CACHE: /tmp/trellage-bun-cache
-      npm_config_cache: /tmp/trellage-npm-cache
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
     steps:
-      - name: Check out repository
+      - name: Check out the merge result
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Set up Node.js for external tooling
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - name: Prepare the shared toolchain
+        uses: ./.github/actions/quality-setup
         with:
-          node-version: 26.3.0
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.2
-      - name: Set up pinned quality tools
-        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
-        with:
-          version: 2026.10.24
-          install: false
-      - name: Install quality tools
-        run: mise install jactionlint betterleaks osv-scanner shellcheck typos rumdl
-      - name: Set quality-gate diff base
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
-        run: echo "QUALITY_BASE_SHA=${{ github.event.pull_request.base.sha || github.event.before }}" >> "$GITHUB_ENV"
-      - name: Cache dependency downloads
-        id: dependency-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            /tmp/trellage-bun-cache
-            /tmp/trellage-npm-cache/_cacache
-          key: ${{ runner.os }}-${{ runner.arch }}-node-26.3.0-bun-1.4.2-deps-v1-${{ hashFiles('bun.lock', 'tests/playwright/package-lock.json') }}-${{ github.event_name == 'pull_request' && 'source' || 'full' }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-node-26.3.0-bun-1.4.2-deps-v1-
-      - name: Install required system tools
-        run: sudo apt-get install --yes --no-install-recommends fish ripgrep libseccomp2
-      - name: Verify required system tools
-        run: for tool in jq curl git make fish rg bun node python3; do command -v "$tool" >/dev/null; done
-      - name: Require a checkout without installed dependencies
+          prepare: "false"
+      - name: Select affected checks
+        id: plan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          FULL: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' }}
         run: |
-          if [[ -n "$(find . -name node_modules -print -quit)" ]]; then
-            echo "::error::Clean preparation requires a checkout without node_modules."
-            exit 1
-          fi
-      - name: Prepare frozen source workspace dependencies
-        run: bash scripts/install-source-runtime.sh --prepare
-      - name: Require an unchanged lockfile and workspace manifests
-        run: git diff --exit-code -- bun.lock package.json 'packages/*/package.json'
-      - name: Prepare offline test package cache and browser dependencies
-        if: github.event_name != 'pull_request'
-        run: make test-prepare
-      - name: Save dependency download cache
-        if: steps.dependency-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+          mkdir -p .quality-results
+          args=(plan --base "$BASE_SHA")
+          if [[ "$FULL" == true ]]; then args+=(--full); fi
+          uv run --offline --no-project python scripts/quality.py "${args[@]}" > .quality-results/plan.json
+          printf 'plan=%s\n' "$(jq -c . .quality-results/plan.json)" >> "$GITHUB_OUTPUT"
+          {
+            printf '### Selected checks\n\n```json\n'
+            cat .quality-results/plan.json
+            printf '\n```\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Save the exact check plan
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          path: |
-            /tmp/trellage-bun-cache
-            /tmp/trellage-npm-cache/_cacache
-          key: ${{ steps.dependency-cache.outputs.cache-primary-key }}
-      - name: Run fast PR regression checks
-        if: github.event_name == 'pull_request'
-        run: make test-pr
-      - name: Run software factory type check and tests
-        run: make factory-test
-      - name: Run full source and contract suite after merge or on demand
-        if: github.event_name != 'pull_request'
-        run: make test
+          name: quality-plan
+          path: .quality-results/plan.json
+          include-hidden-files: true
+          retention-days: 7
 
-  macos-source-contracts:
-    runs-on: macos-latest
+  static:
+    needs: plan
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      BUN_INSTALL_CACHE_DIR: /tmp/trellage-bun-cache
-      npm_config_cache: /tmp/trellage-npm-cache
     steps:
-      - name: Check out repository
+      - name: Check out the merge result and commit range
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
-      - name: Set up Node.js for external tooling
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - name: Prepare static tools and frozen dependencies
+        uses: ./.github/actions/quality-setup
         with:
-          node-version: 26.3.0
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.2
-      - name: Cache dependency downloads
-        id: dependency-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            /tmp/trellage-bun-cache
-            /tmp/trellage-npm-cache/_cacache
-          key: ${{ runner.os }}-${{ runner.arch }}-node-26.3.0-bun-1.4.2-deps-v1-${{ hashFiles('bun.lock', 'tests/playwright/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-node-26.3.0-bun-1.4.2-deps-v1-
-      - name: Verify source test runtimes
-        run: for tool in bun node python3; do command -v "$tool" >/dev/null; done
-      - name: Require a checkout without installed dependencies
+          tools: static
+      - name: Check maintained files and publication policy
         run: |
-          if [[ -n "$(find . -name node_modules -print -quit)" ]]; then
-            echo "::error::Clean preparation requires a checkout without node_modules."
-            exit 1
-          fi
-      - name: Prepare frozen source workspace dependencies
-        run: bash scripts/install-source-runtime.sh --prepare
-      - name: Require an unchanged lockfile and workspace manifests
-        run: git diff --exit-code -- bun.lock package.json 'packages/*/package.json'
-      - name: Save dependency download cache
-        if: steps.dependency-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+          mise run quality:static
+          make publication-policy quality-contract
+      - name: Check secrets without live credential validation
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: uv run --offline --no-project python scripts/quality.py secrets --base "$BASE_SHA"
+      - name: Check dependency and architecture contracts
+        if: fromJSON(needs.plan.outputs.plan).analysis
+        run: |
+          bash scripts/install-quality-tools.sh analysis
+          mise run quality:analysis
+      - name: Prove configured tools reject invalid fixtures
+        env:
+          QUALITY_TOOL_PROBES: "1"
+        run: mise run quality:test
+      - name: Preserve static diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
+          name: quality-static
           path: |
-            /tmp/trellage-bun-cache
-            /tmp/trellage-npm-cache/_cacache
-          key: ${{ steps.dependency-cache.outputs.cache-primary-key }}
-      - name: Run source checks and native PTY integration suites
-        run: make launcher conversation-source source-runtime profile-guide-contract
+            .quality-results/*.json
+            .quality-results/*.log
+          include-hidden-files: true
+          retention-days: 7
+
+  linux:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out the merge result
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare source test tools
+        uses: ./.github/actions/quality-setup
+        with:
+          tools: static
+      - name: Install system test prerequisites
+        run: sudo apt-get update -qq && sudo apt-get install --yes --no-install-recommends fish ripgrep libseccomp2
+      - name: Verify system test prerequisites
+        run: bash scripts/check-quality-prerequisites.sh
+      - name: Load the exact check plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: quality-plan
+          path: .quality-results
+      - name: Prepare full-suite analysis tools
+        if: fromJSON(needs.plan.outputs.plan).full
+        run: bash scripts/install-quality-tools.sh analysis
+      - name: Run affected or full offline contracts
+        run: uv run --offline --no-project python scripts/quality.py ci --plan-file .quality-results/plan.json
+      - name: Preserve contract diagnostics and timings
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quality-linux
+          path: |
+            .quality-results/*.json
+            .quality-results/*.log
+          include-hidden-files: true
+          retention-days: 7
+
+  macos-tests:
+    needs: plan
+    if: fromJSON(needs.plan.outputs.plan).macos
+    runs-on: macos-15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [macos-launcher, macos-runtime]
+    steps:
+      - name: Check out the merge result
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare source test tools
+        uses: ./.github/actions/quality-setup
+      - name: Load the exact check plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: quality-plan
+          path: .quality-results
+      - name: Run macOS source and PTY contracts
+        env:
+          LANE: ${{ matrix.lane }}
+        run: uv run --offline --no-project python scripts/quality.py ci --plan-file .quality-results/plan.json --lane "$LANE"
+      - name: Preserve macOS diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quality-${{ matrix.lane }}
+          path: |
+            .quality-results/*.json
+            .quality-results/*.log
+          include-hidden-files: true
+          retention-days: 7
+
+  dependencies:
+    needs: plan
+    if: fromJSON(needs.plan.outputs.plan).dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out dependency metadata
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare advisory tools
+        uses: ./.github/actions/quality-setup
+        with:
+          tools: network
+          prepare: "false"
+      - name: Scan tracked dependency locks
+        run: mise run quality:network -- --kind dependencies
+      - name: Preserve advisory diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quality-dependencies
+          path: |
+            .quality-results/*.log
+            .quality-results/advisories.json
+          include-hidden-files: true
+          retention-days: 7
+
+  prototypes:
+    needs: plan
+    if: toJSON(fromJSON(needs.plan.outputs.plan).prototypes) != '[]'
+    runs-on: ${{ matrix.prototype == 'swift' && 'macos-15' || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        prototype: ${{ fromJSON(needs.plan.outputs.plan).prototypes }}
+    steps:
+      - name: Check out the affected prototype
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare prototype runtimes
+        uses: ./.github/actions/quality-setup
+        with:
+          prepare: ${{ matrix.prototype == 'coordinator' && 'true' || 'false' }}
+      - name: Check the isolated prototype
+        env:
+          PROTOTYPE: ${{ matrix.prototype }}
+        run: uv run --offline --no-project python scripts/quality_prototypes.py "$PROTOTYPE"
+      - name: Preserve prototype diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quality-prototype-${{ matrix.prototype }}
+          path: |
+            .quality-results/*.json
+            .quality-results/*.log
+          include-hidden-files: true
+          retention-days: 7
+
+  macos-source-contracts:
+    needs: [plan, macos-tests]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require all selected macOS lanes
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          REQUIRED: ${{ needs.plan.outputs.plan != '' && fromJSON(needs.plan.outputs.plan).macos }}
+          RESULT: ${{ needs.macos-tests.result }}
+        run: |
+          [[ "$PLAN_RESULT" == success ]]
+          if [[ "$REQUIRED" == true ]]; then
+            [[ "$RESULT" == success ]]
+          else
+            [[ "$RESULT" == skipped || "$RESULT" == success ]]
+          fi
+
+  deterministic-contracts:
+    needs: [plan, static, linux, macos-tests, dependencies, prototypes]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the gate evaluator
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare the shared gate runtime
+        uses: ./.github/actions/quality-setup
+        with:
+          prepare: "false"
+      - name: Load the exact check plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: quality-plan
+          path: .quality-results
+      - name: Require every selected check to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: uv run --offline --no-project python scripts/quality.py gate --plan-file .quality-results/plan.json --results "$RESULTS"

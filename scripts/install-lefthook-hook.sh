@@ -23,6 +23,11 @@ active_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 
 case "$hook_name" in
   pre-commit|pre-push)
+    if [ "$hook_name" = pre-push ]; then
+      TRELLAGE_PUSH_REFS="$(cat)"
+      TRELLAGE_PUSH_REMOTE="${1-}"
+      export TRELLAGE_PUSH_REFS TRELLAGE_PUSH_REMOTE
+    fi
     lefthook="${active_root}/node_modules/.bin/lefthook"
     if [ ! -x "$lefthook" ]; then
       printf '%s\n' \

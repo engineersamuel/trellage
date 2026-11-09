@@ -1,0 +1,15 @@
+name: Maintained Native sources
+queries:
+  - uses: security-and-quality
+paths:
+  - bin
+  - scripts
+  - packages
+  - prototypes/trellage-claude-common
+  - prototypes/trellage-codex-common
+  - prototypes/trellage-prime-profiles/assets
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/*.test.ts"

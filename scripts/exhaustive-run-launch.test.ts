@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { readFile } from "node:fs/promises"
+import { readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { adapters, parseRunArguments, runNative } from "@trellage/runtime/native-run"
 import { createRunWorld } from "./exhaustive-run-world.ts"
@@ -38,12 +38,20 @@ for (const harness of Object.keys(adapters).sort())
       world.launches[0]!.launch = { ...original, args: original.args.slice(0, -1) }
       await expect(check()).rejects.toThrow()
       const key = (
-        { fx: "FX_MODEL", headlong: "SHELLM_MODEL", jcode: "JCODE_MODEL", uji: "TRX_UJI_MODEL" } as Record<
-          string,
-          string
-        >
+        {
+          fx: "FX_MODEL",
+          headlong: "SHELLM_MODEL",
+          jcode: "JCODE_MODEL",
+          nodecode: "NODECODE_MODEL",
+          uji: "TRX_UJI_MODEL",
+        } as Record<string, string>
       )[harness]
-      if (key) world.launches[0]!.launch = { ...original, env: { ...original.env, [key]: "substituted" } }
+      const configFile = harness === "empryo" ? path.join(world.home, ".empryo/config.json") : undefined
+      const originalConfig = configFile ? await readFile(configFile, "utf8") : undefined
+      if (configFile && originalConfig) {
+        world.launches[0]!.launch = original
+        await writeFile(configFile, JSON.stringify({ ...JSON.parse(originalConfig), defaultModel: "substituted" }))
+      } else if (key) world.launches[0]!.launch = { ...original, env: { ...original.env, [key]: "substituted" } }
       else {
         const args = [...original.args],
           flag = harness === "codex" ? "-m" : "--model"
@@ -53,6 +61,7 @@ for (const harness of Object.keys(adapters).sort())
       }
       await expect(check()).rejects.toThrow()
       world.launches[0]!.launch = original
+      if (configFile && originalConfig) await writeFile(configFile, originalConfig)
       await check()
       expect(world.unexpected).toEqual([])
     } finally {
