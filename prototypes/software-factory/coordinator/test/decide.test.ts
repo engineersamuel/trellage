@@ -1,21 +1,9 @@
 import { afterAll, expect, test } from "bun:test"
 import { choice, noul } from "@typesafe-ai/sdk"
-import { decisionEngine, decisionLabel, parseProxyAnswer, proxyPrompt, setDecisionEngine, systemOne } from "../src/decide.ts"
+import { decisionEngine, decisionLabel, setDecisionEngine, systemOne } from "../src/decide.ts"
 import { patched, defaultSettings } from "../src/settings.ts"
 
 const sec = choice("Fix it?", { keep: "Real, fix now.", drop: "Low risk." })
-
-test("choice criteria become lettered options the proxy expands", () => {
-  expect(proxyPrompt(sec)).toEqual({ text: "Fix it?\nOption A: Real, fix now.\nOption B: Low risk.", keys: ["keep", "drop"] })
-  expect(proxyPrompt(noul("Ship?")).text).toBe("Ship?")
-})
-
-test("proxy replies map back to Jev's answer shape", () => {
-  expect(parseProxyAnswer(noul("q"), [], "Yes (probability 0.82)").noul).toBe(0.82)
-  const a = parseProxyAnswer(sec, ["keep", "drop"], "Option B (0.72); Option A 0.28\nReason: Option B is favored.")
-  expect([a.choice, a.confidence, a.probabilities]).toEqual(["drop", 0.72, { keep: 0.28, drop: 0.72 }])
-  expect(() => parseProxyAnswer(noul("q"), [], "maybe")).toThrow(/unparsed/)
-})
 
 test("settings accept only known engines; default is jev", () => {
   expect(defaultSettings().decisions.engine).toBe("jev")
@@ -23,14 +11,14 @@ test("settings accept only known engines; default is jev", () => {
   expect(() => patched(defaultSettings(), { decisions: { engine: "gpt-5" } })).toThrow(/decisions.engine/)
 })
 
-const seen: { model: string; system: string; user: string }[] = []
+const seen: { path: string; body: any }[] = []
 const server = Bun.serve({
   port: 0,
   async fetch(req) {
-    const b: any = await req.json()
-    seen.push({ model: b.model, system: b.messages[0].content, user: b.messages[1].content })
-    const content = b.messages[1].content.includes("Option A") ? "Option A (0.90); Option B 0.10" : "No (probability 0.20)"
-    return Response.json({ choices: [{ message: { content } }] })
+    const body: any = await req.json()
+    seen.push({ path: new URL(req.url).pathname, body })
+    if (body.state === "fail") return new Response("upstream down", { status: 502 })
+    return Response.json({ model: body.model, answers: { ship: { type: "noul", noul: 0.2 }, fix: { type: "choice", choice: "keep", confidence: 0.9, probabilities: { keep: 0.9, drop: 0.1 } } } })
   },
 })
 afterAll(() => {
@@ -38,7 +26,7 @@ afterAll(() => {
   setDecisionEngine("jev")
 })
 
-test("swapping the engine changes the next decision with no restart", async () => {
+test("proxy engines get all questions in one /v1/systemone call; swapping applies to the next decision", async () => {
   setDecisionEngine("gpt-6-luna-decisions", `http://127.0.0.1:${server.port}/v1`)
   const q = { state: '{"x":1}', questions: { ship: noul("Ship?"), fix: sec } }
   const a = await systemOne(q)
@@ -46,8 +34,13 @@ test("swapping the engine changes the next decision with no restart", async () =
   setDecisionEngine("microsoft-decision-1")
   expect(decisionLabel()).toBe("microsoft-decision-1")
   await systemOne(q)
-  expect(seen.map((s) => s.model).sort()).toEqual(["gpt-6-luna-decisions", "gpt-6-luna-decisions", "microsoft-decision-1", "microsoft-decision-1"])
-  expect(seen.every((s) => s.system === '{"x":1}')).toBe(true)
+  expect(seen.map((s) => [s.path, s.body.model])).toEqual([["/v1/systemone", "gpt-6-luna-decisions"], ["/v1/systemone", "microsoft-decision-1"]])
+  expect(seen[0]!.body).toEqual({ model: "gpt-6-luna-decisions", state: '{"x":1}', questions: q.questions })
   setDecisionEngine("nonsense")
   expect(decisionEngine()).toBe("jev")
+})
+
+test("a proxy error throws, so callers keep their fail-safe path", async () => {
+  setDecisionEngine("microsoft-decision-1", `http://127.0.0.1:${server.port}/v1`)
+  await expect(systemOne({ state: "fail", questions: { ship: noul("Ship?") } })).rejects.toThrow(/microsoft-decision-1 502/)
 })
