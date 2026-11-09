@@ -410,16 +410,18 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     if (autoView) view = count(build(st.agents, st.threads, st.decisions), "needs") ? "needs" : "chats"
     // The conversation the host already shows (?thread=) stays selected: the desk opens as the desk,
     // an archived conversation opens in "Marked done", any other in the view that lists it.
+    // It counts as a pick, so the view stops following: a decision that arrives later must not move it to "Needs me".
     if (first) {
       const t = new URL(location.href).searchParams.get("thread")
       const thread = t ? st.threads.find((x) => x.id === t) : undefined
-      if (thread?.desk) (autoView = false), (sel = cur = "coordinator")
+      if (thread) autoView = false
+      if (thread?.desk) sel = cur = "coordinator"
       else if (thread) {
-        if (thread.archivedAt) (autoView = false), (view = "archived")
+        if (thread.archivedAt) view = "archived"
         const shown = build(st.agents, st.threads, st.decisions, view === "archived")
         const hit = [...shown.nodes.values()].find((n) => n.thread?.id === t)
         const inView = hit && items(shown, view).find((x) => x.root.id === rootOf(shown, hit.id))
-        if (hit && !inView && view !== "archived") (autoView = false), (view = "chats")
+        if (hit && !inView && view !== "archived") view = "chats"
         const r = hit && items(shown, view).find((x) => x.root.id === rootOf(shown, hit.id))
         if (r) (sel = r.root.id), (cur = hit.id)
       }
