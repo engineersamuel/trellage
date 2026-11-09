@@ -32,3 +32,33 @@ test("streamed events keep the spinner and the message bubbles in the page", asy
   expect(host.querySelector(".sft-user")).toBe(bubble);
   stop();
 });
+
+// The plan a coordinator records and the decision it opens read as markdown in the tool card, not only as JSON.
+test("sdlc_plan and request_approval cards show readable markdown and, in the Inbox layout, a timeline link", async () => {
+  const stage = document.createElement("div");
+  stage.className = "sfp-p3";
+  const host = document.createElement("div");
+  stage.append(host);
+  document.body.append(stage);
+  const stop = mount(host, "w");
+  await vi.waitFor(() => expect(feed.subs.size).toBe(1));
+  await new Promise((resolve) => setTimeout(resolve));
+  push(10, "tool.execution_start", { toolCallId: "p1", toolName: "sdlc_plan", arguments: { request: "Fix X", plan: "- remove the line", criteria: ["`curl` returns 200"] } });
+  push(11, "tool.execution_complete", { toolCallId: "p1", success: true, result: { content: JSON.stringify({ gates: [{ id: "design", chosen: false, probability: 0.4, status: "skipped" }], checks: ["cargo test"] }) } });
+  push(12, "tool.execution_start", { toolCallId: "a1", toolName: "request_approval", arguments: { title: "Approve plan", summary: "- **do** X", options: ["Approve", "Revise"], optionDetails: ["Implement"] } });
+  await vi.waitFor(() => expect(host.querySelectorAll(".ui-tcc .sfd-summary").length).toBe(2));
+  const [plan, approval] = [...host.querySelectorAll(".ui-tcc .sfd-summary")];
+  expect(plan!.innerHTML).toContain("<li>remove the line</li>");
+  expect(plan!.innerHTML).toContain("<li><code>curl</code> returns 200</li>");
+  expect(plan!.querySelector("table")).not.toBeNull();
+  expect(approval!.innerHTML).toContain("<strong>do</strong> X");
+  expect(approval!.innerHTML).toContain("<strong>Approve</strong> (recommended) — Implement");
+  const opened: string[] = [];
+  const on = (event: Event) => opened.push(event instanceof CustomEvent ? String(event.detail) : "");
+  window.addEventListener("sf:open-timeline", on);
+  host.querySelectorAll<HTMLAnchorElement>(".ui-tcc__link").forEach((link) => link.textContent === "Open in timeline" && link.click());
+  expect(opened).toEqual(["p1", "a1"]);
+  window.removeEventListener("sf:open-timeline", on);
+  stop();
+  stage.remove();
+});

@@ -144,7 +144,7 @@ const watch = (json: Json, spec: GoalSpec, threadId: string) =>
         answered.add(a.id)
         yield* json(`/api/approvals/${enc(a.id)}`, {
           method: "POST",
-          body: JSON.stringify({ answer: a.options[0], note: `Answered by goal ${spec.id} (policy ${a.topic}=auto).` }),
+          body: JSON.stringify({ answer: a.options[0], note: `Answered by goal ${spec.id} (policy ${a.topic}=auto).`, by: `goal ${spec.id} (policy ${a.topic}=auto)` }),
         })
         yield* Console.error(`auto-answered ${a.id} [${a.topic}] ${a.title}: ${a.options[0]}`)
       }

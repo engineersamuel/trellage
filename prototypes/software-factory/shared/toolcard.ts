@@ -23,6 +23,8 @@ export type CardInput = {
   endedAt?: number
   /** The worker or decision the call points to, shown as a link at the top of the body. */
   link?: HTMLElement
+  /** A readable rendering of the call (e.g. a plan as markdown), shown above the raw arguments. */
+  doc?: HTMLElement
   /** Files the call changed. Shown under the head, always visible, like a coding CLI. */
   diffs?: readonly FileDiff[]
   /** Image files the call wrote or named (absolute paths); shown under the head, served by /api/files/image. */
@@ -332,9 +334,10 @@ export class ToolCard {
   }
 
   private renderBody(): void {
-    const { status, error, args, result, link } = this.card
+    const { status, error, args, result, link, doc } = this.card
     const parts: HTMLElement[] = []
     if (link) parts.push(link)
+    if (doc) parts.push(doc)
     if (status === "error") {
       const box = el("div", "ui-tcc__error")
       box.append(errIcon(), el("p", "ui-tcc__error-text", error || "The tool call failed."))

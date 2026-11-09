@@ -31,7 +31,7 @@ const loaded: Model = modifyFields(init(flags, url, Option.none()).model, {
 });
 const approval: Decision = {
   id: "d1", kind: "approval", threadId: null, title: "Ship?", summary: "", options: [], optionDetails: [], allowText: false,
-  context: "coordinator", status: "pending", answer: null, note: null, createdAt: 1, topic: "other",
+  context: "coordinator", status: "pending", answer: null, note: null, createdAt: 1, answeredAt: null, answeredBy: null, topic: "other",
 };
 
 describe("root view memo", () => {

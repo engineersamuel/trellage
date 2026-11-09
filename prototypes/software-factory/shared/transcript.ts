@@ -1,5 +1,6 @@
 import "./transcript.css"
 import { markdown } from "./decisions"
+import { approvalMarkdown, planMarkdown } from "./timeline"
 import { appendCompact, onFeed, RESYNC, type FeedEvent } from "./feed"
 import { toolDiffs, type FileDiff } from "./diff"
 import { groupTools, type Group } from "./toolgroups"
@@ -218,6 +219,8 @@ export const toolLine = (t: Extract<Item, { kind: "tool" }>): { icon: string; te
     case "request_approval":
     case "ask_user":
       return { icon: t.name === "ask_user" ? "?" : "✓", text: t.name === "ask_user" ? "Question for you" : "Approval requested", link: { decision: r?.id, label: a.title ?? "decision" } }
+    case "sdlc_plan":
+      return { icon: "📝", text: `Plan · ${Array.isArray(a.criteria) ? a.criteria.length : 0} acceptance criteria · ${String(a.request ?? "").split("\n")[0]!.slice(0, 100)}` }
     case "next_step":
       return { icon: "◆", text: r?.step ? `Jev: next step ${r.step} (${Math.round((r.confidence ?? 0) * 100)}%)` : "Asking Jev for the next step" }
     default: {
@@ -275,6 +278,25 @@ const linkEl = (link: NonNullable<ReturnType<typeof toolLine>["link"]>): HTMLEle
 
 type Tool = Extract<Item, { kind: "tool" }>
 
+/** The plan or decision of a tool call as readable markdown, with a link to it in the Timeline (only where a Timeline exists). */
+const docEl = (t: Tool): HTMLElement | undefined => {
+  const plan = t.name === "sdlc_plan"
+  if (!plan && t.name !== "request_approval" && t.name !== "ask_user") return undefined
+  const box = el("div", "ui-tcc__section")
+  const head = el("div", "ui-tcc__section-head")
+  head.append(el("span", "ui-tcc__label", plan ? "Plan" : "Request"))
+  if (document.querySelector(".sfp-p3")) {
+    const a = el("a", "ui-tcc__link", "Open in timeline")
+    a.href = "#"
+    a.onclick = (e) => (e.preventDefault(), window.dispatchEvent(new CustomEvent("sf:open-timeline", { detail: t.id })))
+    head.append(a)
+  }
+  const body = el("div", "sfd-summary")
+  body.innerHTML = markdown(plan ? planMarkdown(t.args, t.done && t.ok ? parse(t.result) : null) : approvalMarkdown(t.args))
+  box.append(head, body)
+  return box
+}
+
 /** A tool item as card input. `stoppedAt`: the agent stopped, so a call that never finished stops its timer there. */
 const toCard = (t: Tool, stoppedAt: number | undefined): CardInput => {
   const line = toolLine(t)
@@ -291,6 +313,7 @@ const toCard = (t: Tool, stoppedAt: number | undefined): CardInput => {
     startedAt: t.startedAt,
     endedAt: t.endedAt ?? (t.done ? t.startedAt : stoppedAt),
     link: line.link?.worker || line.link?.decision ? linkEl(line.link) : undefined,
+    doc: docEl(t),
     // Images appear once the call finished, so a file still being written is not fetched.
     images: status === "success" ? imagePaths(t.args, t.result) : [],
   }

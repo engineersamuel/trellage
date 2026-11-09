@@ -1,0 +1,23 @@
+/* Timeline of a sub-coordinator (shared/protos/timeline-view.ts): milestone list left, markdown panel right. */
+.sfp-p3 .p3-tl { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(240px, 38%) minmax(0, 1fr); }
+.sfp-p3 .p3-tl-list { margin: 0; padding: 8px 10px 56px; list-style: none; overflow: auto; border-right: 1px solid var(--sf-border); display: flex; flex-direction: column; gap: 4px; position: relative; }
+.sfp-p3 .p3-tl-item { padding: 6px 8px; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; border-left: 3px solid var(--p3-line); }
+.sfp-p3 .p3-tl-item:hover { background: var(--p3-raised); }
+.sfp-p3 .p3-tl-item.on { background: var(--p3-sel); }
+.sfp-p3 .p3-tl-item.k-plan, .sfp-p3 .p3-tl-item.k-approval, .sfp-p3 .p3-tl-item.k-ship, .sfp-p3 .p3-tl-item.k-question { border-left-color: var(--sf-accent); }
+.sfp-p3 .p3-tl-item.k-report { border-left-color: var(--p3-done); }
+.sfp-p3 .p3-tl-icon { flex: none; width: 18px; text-align: center; }
+.sfp-p3 .p3-tl-badge { flex: none; padding: 0 6px; border-radius: 8px; font-size: 10px; font-weight: 600; background: var(--p3-line); color: var(--sf-text); }
+.sfp-p3 .p3-tl-badge.t-human { background: color-mix(in srgb, var(--p3-done) 25%, transparent); }
+.sfp-p3 .p3-tl-badge.t-auto { background: color-mix(in srgb, #a78bfa 30%, transparent); }
+.sfp-p3 .p3-tl-badge.t-pending, .sfp-p3 .p3-tl-badge.t-warn { background: color-mix(in srgb, var(--p3-needs) 30%, transparent); }
+.sfp-p3 .p3-tl-badge.t-ok { background: color-mix(in srgb, var(--p3-done) 20%, transparent); }
+.sfp-p3 .p3-tl-badge.t-fail { background: color-mix(in srgb, var(--p3-err) 30%, transparent); }
+.sfp-p3 .p3-tl-badge.t-info { background: color-mix(in srgb, var(--p3-run) 25%, transparent); }
+.sfp-p3 .p3-tl-panel { overflow: auto; padding: 10px 16px 56px; min-width: 0; }
+.sfp-p3 .p3-tl-head h3 { margin: 0 0 4px; font-size: 15px; }
+.sfp-p3 .p3-tl-head .p3-row { flex-wrap: wrap; }
+.sfp-p3 .p3-tl-head button { font-size: 11px; padding: 1px 8px; }
+.sfp-p3 .p3-tl-doc { margin: 10px 0; overflow-wrap: anywhere; }
+.sfp-p3 .p3-tl-doc table { display: block; overflow-x: auto; }
+@media (max-width: 900px) { .sfp-p3 .p3-tl { grid-template-columns: 1fr; grid-template-rows: 40% 1fr; } .sfp-p3 .p3-tl-list { border-right: 0; border-bottom: 1px solid var(--sf-border); } }

@@ -1,0 +1,68 @@
+[
+{
+"id": "5ea8a9ed",
+"kind": "approval",
+"threadId": "8963188e-49a0-4a9f-89df-3ebf9267906e",
+"title": "Approve process-compose + mise integration plan",
+"summary": "- `mise.toml`: pin `process-compose = \"1.124.0\"`; `PC_SOCKET_PATH` per-port socket under gitignored `.process-compose/`; tasks `proxy:up` (`up -D -U`), `proxy:down`, `proxy:restart`, `proxy:status`, `proxy:logs` \u2014 never `--port`.\n- `process-compose.yaml`: runs the proxy (port defaults to 8080 from `COPILOT_PROXY_RS_PORT`), readiness probe on `/health`, restart on failure.\n- `scripts/bootstrap.sh` \u2026",
+"options": [
+"Approve",
+"Revise"
+],
+"optionDetails": [
+"Spawn implement worker (tests-first gate on)",
+"Tell me what to change"
+],
+"allowText": false,
+"context": "coordinator \u00b7 copilot-proxy-rs process-compose",
+"status": "answered",
+"answer": "Approve",
+"note": "Answered by goal cpr-process-compose (policy plan=auto).",
+"createdAt": 1794066285491,
+"answeredAt": null,
+"answeredBy": null,
+"topic": "plan",
+"shadow": {
+"pick": "Approve",
+"confidence": 0.64,
+"covered": 0.58,
+"probabilities": {
+"Approve": 0.82,
+"Revise": 0.18
+}
+}
+},
+{
+"id": "f01b154c",
+"kind": "approval",
+"threadId": "8963188e-49a0-4a9f-89df-3ebf9267906e",
+"title": "Ship process-compose + mise integration PR?",
+"summary": "- process-compose 1.124.0 + jq 1.7.1 pinned in `mise.toml`; tasks `proxy:up/down/restart/status/logs`; `/health` readiness probe; control API uses a project-scoped Unix socket only (an ambient `PC_SOCKET_PATH` is ignored; override with `COPILOT_PROXY_RS_PC_SOCKET`).\n- `scripts/bootstrap.sh`, README, CHANGELOG; `compose.yaml` unchanged.\n- AC-1\u2013AC-7 PASS; fmt/clippy/403 tests green; security, code r\u2026",
+"options": [
+"Ship",
+"Hold"
+],
+"optionDetails": [
+"Push branch, open PR with proof, loop until checks green",
+"Keep branch local"
+],
+"allowText": false,
+"context": "coordinator \u00b7 copilot-proxy-rs process-compose",
+"status": "answered",
+"answer": "Ship",
+"note": "Answered by goal cpr-process-compose (policy ship=auto).",
+"createdAt": 1794069149052,
+"answeredAt": null,
+"answeredBy": null,
+"topic": "ship",
+"shadow": {
+"pick": "Hold",
+"confidence": 0.34,
+"covered": 0.52,
+"probabilities": {
+"Ship": 0.33,
+"Hold": 0.67
+}
+}
+}
+]

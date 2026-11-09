@@ -1134,6 +1134,7 @@ const routes: [string, RegExp, Handler][] = [
           id!,
           String(b.answer),
           typeof b.note === "string" && b.note.trim() ? b.note.trim() : null,
+          typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 200) : null,
         )
         factory.publish("coordinator", "factory.approval_answered", null, now(), a)
         answerApproval(a)

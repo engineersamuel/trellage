@@ -27,6 +27,9 @@ export type Approval = {
   answer: string | null
   note: string | null
   createdAt: number
+  answeredAt: number | null
+  /** Who answered when it was not the human (a goal runner); null for the human. */
+  answeredBy: string | null
   /** Conversation whose report this decision answers; the answer is relayed to it. */
   reportThreadId?: string
   /** What is decided; goal runs answer by topic. */
@@ -135,7 +138,7 @@ export class Approvals {
     const kind = a.kind ?? "approval"
     if (a.optionDetails && a.optionDetails.length && a.optionDetails.length !== a.options.length)
       throw new Error("optionDetails must have one entry per option")
-    const item: Approval = { kind, allowText: kind === "question" || (a.allowText ?? false), context: a.context ?? "coordinator", ...a, optionDetails: a.optionDetails ?? [], id: crypto.randomUUID().slice(0, 8), status: "pending", answer: null, note: null, createdAt: Date.now() }
+    const item: Approval = { kind, allowText: kind === "question" || (a.allowText ?? false), context: a.context ?? "coordinator", ...a, optionDetails: a.optionDetails ?? [], id: crypto.randomUUID().slice(0, 8), status: "pending", answer: null, note: null, createdAt: Date.now(), answeredAt: null, answeredBy: null }
     this.items.push(item)
     this.save(item)
     this.prune()
@@ -149,13 +152,13 @@ export class Approvals {
   }
 
   /** Record the answer. Throws on an unknown id, a closed approval, or an option that was not offered. */
-  answer(id: string, answer: string, note: string | null): Approval {
+  answer(id: string, answer: string, note: string | null, by: string | null = null): Approval {
     const a = this.items.find((x) => x.id === id)
     if (!a) throw new Error(`unknown approval ${id}`)
     if (a.status !== "pending") throw new Error(`approval ${id} is already answered: ${a.answer}`)
     if (!answer.trim()) throw new Error("answer is empty")
     if (!a.allowText && !a.options.includes(answer)) throw new Error(`answer must be one of ${JSON.stringify(a.options)}`)
-    Object.assign(a, { status: "answered", answer, note })
+    Object.assign(a, { status: "answered", answer, note, answeredAt: Date.now(), answeredBy: by })
     this.save(a)
     return a
   }
