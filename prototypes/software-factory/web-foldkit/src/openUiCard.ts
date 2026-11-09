@@ -12,7 +12,7 @@ import type { HtmlBuilder } from "foldkit/html";
 import { defineMessageUnion } from "foldkit/message";
 import { modifyFields } from "foldkit/struct";
 import { setOpenUiRenderer } from "../../shared/protos";
-import { BACKEND_URLS } from "./backend";
+import { chatBackendLayer } from "./backend";
 import { chat } from "./chatProgram";
 
 /** The one answer a card shows. */
@@ -146,7 +146,7 @@ export const mountCard = (el: HTMLElement, program: string, onFollowUp: (message
       subscriptions,
       container,
       ports,
-      resources: ChatBackend.layer(BACKEND_URLS),
+      resources: chatBackendLayer,
       devTools: false,
     }),
   );

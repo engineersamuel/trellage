@@ -11,7 +11,6 @@ import "./diffHighlight";
 import { Option } from "effect";
 import { Runtime } from "foldkit";
 import {
-  ChatBackend,
   FlagsSchema,
   NO_ARTIFACTS,
   ThemeSetting,
@@ -22,7 +21,7 @@ import type { AgentConfig } from "@plana-solutions/agent-interface";
 import { startDecisionCenter } from "../../shared/decisions";
 import { startFolderSidebar } from "../../shared/folders";
 import { startPrototypes } from "../../shared/protos";
-import { BACKEND_URLS } from "./backend";
+import { chatBackendLayer } from "./backend";
 import { changedUrl, requestedUrl } from "./chat";
 import { Model } from "./model";
 import { onSlow } from "./slowWarnings";
@@ -56,7 +55,7 @@ const application = Runtime.makeApplication({
   Model,
   container: document.querySelector("#root")!,
   init: (flags, url) => init(flags, url, maybeThreadFromUrl),
-  resources: ChatBackend.layer(BACKEND_URLS),
+  resources: chatBackendLayer,
   routing: {
     onUrlChange: changedUrl,
     onUrlRequest: requestedUrl,

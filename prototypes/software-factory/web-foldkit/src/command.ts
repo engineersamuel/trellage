@@ -1,11 +1,12 @@
 import { Effect, Option, Schema } from "effect";
 import { Command, Mount } from "foldkit";
-import { ChatMessageSchema, ThreadSchema } from "@plana-solutions/agent-interface";
+import { ChatMessageSchema } from "@plana-solutions/agent-interface";
 import type { ChatMessage as ChatLine } from "@plana-solutions/agent-interface";
 import { attachSlot, setExtensionWorkers } from "../../shared/extensions";
 import { syncThreadUrl } from "../../shared/folders";
 import { isOpenUi, setProto } from "../../shared/protos/core";
 import { getJson } from "./api";
+import { fetchChatThreads } from "./threads";
 import { Worker } from "./domain";
 import { Message } from "./message";
 
@@ -30,8 +31,8 @@ export const SetLayout = Command.define("SetLayout", {
 // Threads started elsewhere (the sf CLI, the stream) appear in the chat's thread list.
 export const RefreshThreads = Command.define("RefreshThreads", {
   messages: [Message.SucceededRefreshThreads, Message.FailedRefreshThreads],
-  execute: getJson("/api/threads/get", Schema.Struct({ threads: Schema.Array(ThreadSchema) })).pipe(
-    Effect.map(({ threads }) => Message.SucceededRefreshThreads({ threads })),
+  execute: fetchChatThreads.pipe(
+    Effect.map((threads) => Message.SucceededRefreshThreads({ threads })),
     Effect.catch((error) => Effect.succeed(Message.FailedRefreshThreads({ error }))),
   ),
 });
