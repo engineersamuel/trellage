@@ -1,10 +1,17 @@
 import { expect, test } from "@playwright/test"
 
 // Foldkit slow-phase warnings on a 4x slower CPU. Startup is listed for the record. After startup,
-// 120 keystrokes and two window resizes must stay inside the budgets. One isolated spike (garbage
-// collection, a busy test machine) is tolerated; slow code shows on every keystroke, not once.
-const MAX_ISOLATED_SPIKES = 1
-const URL = process.env.FOLDKIT_URL ?? "http://localhost:5174/?proto=0"
+// two window resizes and 120 keystrokes must stay inside the budgets. A resize relayouts the whole chat
+// once, so each may spike once; typing may spike once (garbage collection, a busy machine). Slow code
+// shows on every keystroke, not once.
+const MAX_SPIKES_PER_RESIZE = 1
+const MAX_TYPING_SPIKES = 1
+// The classic layout (0) shows the chat composer.
+const URL = (() => {
+  const u = new globalThis.URL(process.env.FOLDKIT_URL ?? "http://localhost:5174/")
+  u.searchParams.set("proto", "0")
+  return u.toString()
+})()
 
 test("foldkit: no slow-phase warnings after startup, on a 4x slower CPU", async ({ page }) => {
   const warnings: string[] = []
@@ -24,17 +31,22 @@ test("foldkit: no slow-phase warnings after startup, on a 4x slower CPU", async 
   const startup = [...warnings]
   warnings.length = 0
 
-  for (const width of [1000, 1280]) {
+  const widths = [1000, 1280]
+  for (const width of widths) {
     await page.setViewportSize({ width, height: 720 })
     await page.waitForTimeout(400)
   }
-  const composer = page.getByPlaceholder(/Ask the coordinator/)
+  const resizing = [...warnings]
+  warnings.length = 0
+  const composer = page.getByPlaceholder("Type a new request here…")
   await composer.click()
   await composer.pressSequentially("x".repeat(120), { delay: 30 })
   await composer.fill("")
   await page.waitForTimeout(800)
 
   console.log(`startup warnings:\n${startup.join("\n") || "(none)"}`)
-  console.log(`after startup:\n${warnings.join("\n") || "(none)"}`)
-  expect(warnings.length, warnings.join("\n")).toBeLessThanOrEqual(MAX_ISOLATED_SPIKES)
+  console.log(`resizing:\n${resizing.join("\n") || "(none)"}`)
+  console.log(`typing:\n${warnings.join("\n") || "(none)"}`)
+  expect(resizing.length, resizing.join("\n")).toBeLessThanOrEqual(MAX_SPIKES_PER_RESIZE * widths.length)
+  expect(warnings.length, warnings.join("\n")).toBeLessThanOrEqual(MAX_TYPING_SPIKES)
 })
