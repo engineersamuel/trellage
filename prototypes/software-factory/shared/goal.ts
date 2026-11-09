@@ -183,7 +183,7 @@ export const goalUnmet = (run: Run, expect: Expect, base?: string): string[] => 
       const wantBase = want.base ?? base
       if (wantBase && pr.base !== wantBase) out.push(`${tag} targets ${pr.base}, expected ${wantBase}`)
       for (const t of want.bodyIncludes) if (!pr.body.includes(t)) out.push(`${tag} body lacks ${JSON.stringify(t)}`)
-      for (const f of want.untouched) if (pr.files.includes(f)) out.push(`${tag} changes ${f}, expected untouched`)
+      for (const f of want.untouched) if (pr.files.some((p) => (f.endsWith("/") ? p.startsWith(f) : p === f))) out.push(`${tag} changes ${f}, expected untouched`)
     }
   }
   return out

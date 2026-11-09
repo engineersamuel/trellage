@@ -81,6 +81,11 @@ describe("goalUnmet", () => {
       "PR #7 changes compose.yaml, expected untouched",
     ])
   })
+  test("untouched entries ending in / match a folder", () => {
+    const pr = { ...run.pr!, files: ["src/a.rs", "reports/x/y.json"] }
+    const want = { ...spec.expect, pr: { ...spec.expect.pr!, untouched: ["reports/", "src/"+"b.rs"] } }
+    expect(goalUnmet({ ...run, pr }, want, spec.base).filter((u) => u.includes("untouched"))).toEqual(["PR #7 changes reports/, expected untouched"])
+  })
   test("PR base defaults to the goal base", () => {
     expect(goalUnmet(run, { steps: {}, skills: [], pr: { state: "OPEN", bodyIncludes: [], untouched: [] } }, "dev")).toEqual(["PR #7 targets main, expected dev"])
     expect(goalUnmet({ ...run, pr: null }, { steps: {}, skills: [], pr: { state: "OPEN", bodyIncludes: [], untouched: [] } })).toEqual(["no PR for the branch"])
