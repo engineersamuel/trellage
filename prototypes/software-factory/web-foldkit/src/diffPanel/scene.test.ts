@@ -17,8 +17,10 @@ const file = (path: string, status: "M" | "A" | "D" | "?") => ({
   binary: false,
   patch: `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1,2 @@\n-a\n+b\n+c\n`,
   tooLarge: false,
+  committed: status !== "?",
+  local: status === "?",
 });
-const diff = { worktree: "/w", base: "abcdef1234", files: [file("README.md", "M"), file("src/new.ts", "?"), file("src/pi.ts", "M")] };
+const diff = { worktree: "/w", base: "abcdef1234", unpushed: 0, files: [file("README.md", "M"), file("src/new.ts", "?"), file("src/pi.ts", "M")] };
 // `given` starts from the Model `open` returns; its Commands are dropped, so the test reloads to fetch.
 const opened = open("t1")(init().model).model;
 
@@ -35,12 +37,17 @@ describe("worktree changes panel", () => {
       expect(label("Diff of README.md")).toExist(),
       Mount.resolve(MountNativeDiff, Message.CompletedMountNativeDiff()),
       // Scene tracks a Mount by name and position, so the next file's diff reuses the resolved MountNativeDiff.
+      // Committed files come first, then files only on disk.
+      expect(label("In the branch (committed)")).toContainText("pi.ts"),
+      expect(label("Only on disk (not committed)")).toContainText("new.ts"),
+      keydown(".fk-diff-panel", "j"),
+      expect(label("Diff of src/pi.ts")).toExist(),
       keydown(".fk-diff-panel", "j"),
       expect(label("Diff of src/new.ts")).toExist(),
       keydown(".fk-diff-panel", "k"),
-      expect(label("Diff of README.md")).toExist(),
-      click(role("button", { name: /pi\.ts/ })),
       expect(label("Diff of src/pi.ts")).toExist(),
+      click(role("button", { name: /README\.md/ })),
+      expect(label("Diff of README.md")).toExist(),
     );
   });
 

@@ -12,8 +12,13 @@ export type ChangedFile = {
   /** Unified diff of this file; empty when binary or larger than MAX_PATCH_BYTES. */
   patch: string
   tooLarge: boolean
+  /** Changed by the branch's commits (base..HEAD): part of the branch, so of its PR once pushed. */
+  committed: boolean
+  /** Has changes on disk that are not committed (staged, unstaged or untracked): not in any PR. */
+  local: boolean
 }
-export type WorktreeDiff = { worktree: string; base: string; files: ChangedFile[] }
+/** `unpushed`: commits on HEAD not on its upstream; null when the branch has no upstream. */
+export type WorktreeDiff = { worktree: string; base: string; files: ChangedFile[]; unpushed: number | null }
 
 /** Bytes of patch text sent per file; a larger file shows only its counts. */
 export const MAX_PATCH_BYTES = 512 * 1024
@@ -62,18 +67,30 @@ export const worktreeDiff = (worktree: string, base: string): WorktreeDiff => {
     counts.set(p!, { added: a === "-" ? 0 : Number(a), removed: r === "-" ? 0 : Number(r), binary: a === "-" })
   }
   const patches = splitPatch(run(worktree, ["diff", ...flags, base]))
+  const committed = new Set(lines(run(worktree, ["diff", ...flags, "--name-only", base, "HEAD"])))
+  const local = new Set(lines(run(worktree, ["diff", ...flags, "--name-only", "HEAD"])))
   const files: ChangedFile[] = [...status].map(([path, s]) => ({
     path,
     status: s,
     ...(counts.get(path) ?? { added: 0, removed: 0, binary: false }),
     ...limit(patches.get(path) ?? ""),
+    committed: committed.has(path),
+    local: local.has(path),
   }))
   for (const path of lines(run(worktree, ["ls-files", "--others", "--exclude-standard"])).slice(0, MAX_UNTRACKED)) {
     const patch = runDiffNoIndex(worktree, ["diff", "--no-index", "--no-color", "--", "/dev/null", path])
     const binary = /^Binary files /m.test(patch)
     const added = binary ? 0 : patch.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).length
-    files.push({ path, status: "?", added, removed: 0, binary, ...limit(patch) })
+    files.push({ path, status: "?", added, removed: 0, binary, ...limit(patch), committed: false, local: true })
   }
   files.sort((a, b) => a.path.localeCompare(b.path))
-  return { worktree, base, files }
+  return { worktree, base, files, unpushed: unpushedCount(worktree) }
+}
+
+const unpushedCount = (worktree: string): number | null => {
+  try {
+    return Number(run(worktree, ["rev-list", "--count", "@{upstream}..HEAD"]).trim())
+  } catch {
+    return null
+  }
 }

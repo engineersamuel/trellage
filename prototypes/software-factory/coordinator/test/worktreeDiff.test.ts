@@ -36,4 +36,9 @@ test("lists committed, unstaged, deleted and untracked changes with patches, and
   expect(by["fresh.ts"]!.patch).toContain("+++ b/fresh.ts")
   expect(by["big.txt"]).toMatchObject({ status: "?", tooLarge: true, patch: "" })
   expect(git("diff", "--cached", "--name-only")).toBe(indexBefore)
+  // committed = in the branch (its PR once pushed); local = on disk only.
+  expect(by["committed.ts"]).toMatchObject({ committed: true, local: false })
+  expect(by["keep.ts"]).toMatchObject({ committed: false, local: true })
+  expect(by["fresh.ts"]).toMatchObject({ committed: false, local: true })
+  expect(d.unpushed).toBeNull()
 })

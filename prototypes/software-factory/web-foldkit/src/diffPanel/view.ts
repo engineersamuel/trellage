@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html";
 import { Button, Dialog } from "@foldkit/ui";
 import { MountNativeDiff } from "./command";
 import { totals as lineTotals } from "./update";
-import { type ChangedFile, type WorktreeDiff, fileGroups } from "./domain";
+import { type ChangedFile, type WorktreeDiff, fileGroups, sections } from "./domain";
 import { Message } from "./message";
 import type { Model } from "./model";
 
@@ -25,17 +25,26 @@ const fileRow = (file: ChangedFile, isSelected: boolean, h: HtmlBuilder<Message>
       [
         h.span([h.Class(`fk-diff-status fk-diff-status-${file.status === "?" ? "U" : file.status}`), h.Title(STATUS_TITLE[file.status])], [file.status]),
         h.span([h.Class("fk-diff-name")], [fileName(file.path)]),
+        ...(file.committed && file.local ? [h.span([h.Class("fk-diff-edited"), h.Title("Committed, with more uncommitted edits on disk")], ["+edits"])] : []),
         h.span([h.Class("fk-diff-count")], file.binary ? ["bin"] : [h.span([h.Class("dv-plus")], [`+${file.added}`]), " ", h.span([h.Class("dv-minus")], [`-${file.removed}`])]),
       ],
     ),
   ]);
 
+const sectionTotals = (files: ReadonlyArray<ChangedFile>): string =>
+  `${files.length} · +${Array.reduce(files, 0, (n, f) => n + f.added)} -${Array.reduce(files, 0, (n, f) => n + f.removed)}`;
+
 const fileList = (diff: WorktreeDiff, maybeSelectedPath: Option.Option<string>, h: HtmlBuilder<Message>): Html =>
   h.nav([h.Class("fk-diff-files"), h.AriaLabel("Changed files")], [
-    ...Array.map(fileGroups(diff.files), ([folder, files]) =>
-      h.keyed("section")(`dir-${folder}`, [], [
-        h.h4([h.Class("fk-diff-dir"), h.Title(folder || "/")], [folder ? `${folder}/` : "./"]),
-        h.ul([], Array.map(files, (file) => fileRow(file, Option.contains(maybeSelectedPath, file.path), h))),
+    ...Array.map(sections(diff.files), (section) =>
+      h.keyed("section")(`part-${section.id}`, [h.Class(`fk-diff-part fk-diff-part-${section.id}`), h.AriaLabel(section.title)], [
+        h.h3([h.Class("fk-diff-part-title")], [section.title, " ", h.span([h.Class("fk-muted")], [sectionTotals(section.files)])]),
+        ...Array.map(fileGroups(section.files), ([folder, files]) =>
+          h.keyed("section")(`dir-${section.id}-${folder}`, [], [
+            h.h4([h.Class("fk-diff-dir"), h.Title(folder || "/")], [folder ? `${folder}/` : "./"]),
+            h.ul([], Array.map(files, (file) => fileRow(file, Option.contains(maybeSelectedPath, file.path), h))),
+          ]),
+        ),
       ]),
     ),
   ]);
@@ -62,7 +71,8 @@ const filePane = (model: Model, file: ChangedFile, h: HtmlBuilder<Message>): Htm
 const totals = (diff: WorktreeDiff): string => {
   const added = Array.reduce(diff.files, 0, (n, f) => n + f.added);
   const removed = Array.reduce(diff.files, 0, (n, f) => n + f.removed);
-  return `${diff.files.length} files · +${added} -${removed} · base ${diff.base.slice(0, 8)}`;
+  const unpushed = diff.unpushed === null ? " · no upstream" : diff.unpushed > 0 ? ` · ${diff.unpushed} commit${diff.unpushed === 1 ? "" : "s"} not pushed` : "";
+  return `${diff.files.length} files · +${added} -${removed} · base ${diff.base.slice(0, 8)}${unpushed}`;
 };
 
 const body = (model: Model, diff: WorktreeDiff, h: HtmlBuilder<Message>): Html =>

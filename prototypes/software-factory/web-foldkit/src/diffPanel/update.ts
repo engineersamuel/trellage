@@ -3,7 +3,7 @@ import { AsyncData, Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
 import { Dialog } from "@foldkit/ui";
 import { FetchDiff } from "./command";
-import { fileGroups } from "./domain";
+import { orderedPaths } from "./domain";
 import { Message } from "./message";
 import type { Model } from "./model";
 
@@ -66,7 +66,7 @@ export const open =
     ]);
 
 const paths = (model: Model): ReadonlyArray<string> =>
-  Option.match(AsyncData.getData(model.diff), { onNone: () => [], onSome: ({ files }) => Array.flatMap(fileGroups(files), ([, group]) => Array.map(group, ({ path }) => path)) });
+  Option.match(AsyncData.getData(model.diff), { onNone: () => [], onSome: ({ files }) => orderedPaths(files) });
 
 /** Keep the selection when the file is still changed, else pick the first file. */
 const keepSelection = (model: Model): Model => {

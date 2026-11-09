@@ -170,3 +170,7 @@ kbd { border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 5px; ma
 .fk-diff-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; font-size: 12px; }
 .fk-nav-plus { color: #3fb950; }
 .fk-nav-minus { color: #f85149; }
+.fk-diff-part + .fk-diff-part { margin-top: .6rem; padding-top: .4rem; border-top: 1px solid var(--sf-border); }
+.fk-diff-part-title { font-size: .8rem; margin: .2rem 0; text-transform: uppercase; letter-spacing: .03em; }
+.fk-diff-part-local .fk-diff-name { opacity: .8; }
+.fk-diff-edited { font-size: .7rem; color: #d29922; margin-left: .3rem; }
