@@ -249,6 +249,9 @@ repository = "ericlitman/open-pstack"
 [native.sources.ponytail]
 repository = "dietrichgebert/ponytail"
 
+[native.sources.ub-mode]
+repository = "unclebob/ub-mode"
+
 [native.profiles.base]
 label = "Configured Native defaults"
 always = true
@@ -284,6 +287,12 @@ names = [ "antislop" ]
 [[native.profiles.base.skills]]
 source = "antislop-addons"
 names = [ "antislop-ui", "antislop-copywriting", "antislop-human", "antislop-layoutmobile", "antislop-code" ]
+
+[native.profiles.claude-ub-mode]
+label = "Claude ub-mode"
+always = true
+harnesses = [ "claude" ]
+skills = [{ source = "ub-mode", names = ["ub-mode"] }]
 
 [native.profiles.superpowers]
 label = "Superpowers"
