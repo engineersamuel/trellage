@@ -439,6 +439,20 @@ cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
   || fail 'failed reinstall did not restore the usable router'
 [[ ! -e "$runtime_parent/.trx-install.lock" ]] \
   || fail 'failed reinstall left the router install lock behind'
+if TRX_INSTALL_TEST_FAIL_AT=after-runtime-swap \
+  "$prototype_root/install.sh" >"$fixture_root/reinstall-after-swap-failure.out" 2>&1; then
+  fail 'injected post-swap failure unexpectedly succeeded'
+fi
+assert_contains \
+  'injected failure at after-runtime-swap' \
+  "$fixture_root/reinstall-after-swap-failure.out"
+[[ "$("$fixture_bin/trx" --version)" == trx-v3-fixture ]] \
+  || fail 'failed post-swap install did not restore the usable router'
+if [[ -n "$(find "$runtime_parent" -maxdepth 1 -name '.trx-install.*' -print)" ]]; then
+  cat "$fixture_root/reinstall-after-swap-failure.out" >&2
+  find "$runtime_parent" -maxdepth 1 -name '.trx-install.*' -print >&2
+  fail 'failed post-swap install left staging behind'
+fi
 if TRX_INSTALL_TEST_FAIL_AT=during-runtime-publication \
   "$prototype_root/install.sh" >"$fixture_root/reinstall-swap-failure.out" 2>&1; then
   fail 'injected router swap failure unexpectedly succeeded'

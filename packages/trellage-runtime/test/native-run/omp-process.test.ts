@@ -26,7 +26,11 @@ const waitForLeafExit = async (ready: string): Promise<void> => {
   for (;;) {
     const status = Bun.spawnSync(["ps", "-p", pid, "-o", "stat="], { stdout: "pipe", stderr: "pipe" })
     const state = status.stdout.toString().trim()
-    if ((status.exitCode === 1 && state === "" && status.stderr.length === 0) || (status.exitCode === 0 && state.startsWith("Z"))) return
+    if (
+      (status.exitCode === 1 && state === "" && status.stderr.length === 0) ||
+      (status.exitCode === 0 && state.startsWith("Z"))
+    )
+      return
     if (status.exitCode !== 0) throw new Error(`fixture process check failed: ${status.stderr}`)
     if (Date.now() >= deadline) throw new Error(`fixture leaf ${pid} did not exit`)
     await Bun.sleep(25)
@@ -38,7 +42,9 @@ const admissionFixture = async (mode: "orphan" | "cancel") => {
   const ready = path.join(root, "ready")
   const late = path.join(root, "late")
   const lifecycle = path.join(root, "admission")
-  await writeFile(lifecycle, `#!${process.execPath}
+  await writeFile(
+    lifecycle,
+    `#!${process.execPath}
 import { spawn } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 if (process.argv[2] === "leaf") {
@@ -52,9 +58,11 @@ if (process.argv[2] === "leaf") {
   process.on("SIGTERM", () => process.exit(143));
   spawn(process.execPath, [import.meta.filename, "leaf"], { stdio: ${JSON.stringify(mode === "orphan" ? "ignore" : "inherit")} });
   while (!existsSync(${JSON.stringify(ready)})) await Bun.sleep(5);
-  ${mode === "orphan" ? 'process.stdout.write("invalid admission JSON\\n"); process.exit(0);' : 'setTimeout(() => process.exit(0), 4_000);'}
+  ${mode === "orphan" ? 'process.stdout.write("invalid admission JSON\\n"); process.exit(0);' : "setTimeout(() => process.exit(0), 4_000);"}
 }
-`, { mode: 0o755 })
+`,
+    { mode: 0o755 },
+  )
   const config = path.join(root, "config.toml")
   await writeFile(config, "schema_version = 1\n[native.sources]\n[native.profiles]\n")
   const environment = {
@@ -63,33 +71,58 @@ if (process.argv[2] === "leaf") {
     TRELLAGE_CONFIG: config,
     TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
   }
-  const prepared = await prepareRun({
-    harness: "omp", profiles: ["default"], forwardedArgs: [], dryRun: false,
-    allowUnprovenIsolation: true, noAlways: true,
-  }, { environment, paths: await fixturePaths(root), cwd: root })
+  const prepared = await prepareRun(
+    {
+      harness: "omp",
+      profiles: ["default"],
+      forwardedArgs: [],
+      dryRun: false,
+      allowUnprovenIsolation: true,
+      noAlways: true,
+    },
+    { environment, paths: await fixturePaths(root), cwd: root },
+  )
   const guard = acquireProfileGuard("omp", ["default"], "run", root)
   let admissionPid: number | undefined
   const signals: NodeJS.Signals[] = []
-  const admission = ompAdapter.resolveLaunch!({
-    layout: prepared.layout, plan: prepared.plan, resumeArgs: [], forwardedArgs: [],
-    environment, workspace: root,
-    guard: {
-      ...guard,
-      attachChild: (pid, grouped) => {
-        admissionPid = pid
-        guard.attachChild(pid, grouped)
-      },
-      signalTree: (pid, signal) => {
-        signals.push(signal)
-        guard.signalTree(pid, signal)
+  const admission = ompAdapter.resolveLaunch!(
+    {
+      layout: prepared.layout,
+      plan: prepared.plan,
+      resumeArgs: [],
+      forwardedArgs: [],
+      environment,
+      workspace: root,
+      guard: {
+        ...guard,
+        attachChild: (pid, grouped) => {
+          admissionPid = pid
+          guard.attachChild(pid, grouped)
+        },
+        signalTree: (pid, signal) => {
+          signals.push(signal)
+          guard.signalTree(pid, signal)
+        },
       },
     },
-  }, prepared.launch)
-  const outcome = admission.then(() => "unexpected success", (error) => String(error))
+    prepared.launch,
+  )
+  const outcome = admission.then(
+    () => "unexpected success",
+    (error) => String(error),
+  )
   let released = false
   return {
-    root, ready, late, guard, outcome, signals,
-    release: () => { guard.release(); released = true },
+    root,
+    ready,
+    late,
+    guard,
+    outcome,
+    signals,
+    release: () => {
+      guard.release()
+      released = true
+    },
     cleanup: async () => {
       if (!released && admissionPid !== undefined) {
         guard.signalTree(admissionPid, "SIGKILL")
@@ -120,33 +153,43 @@ test("OMP admission settles a descendant whose root exited before the first clea
 }, 12_000)
 
 test("OMP cancellation escalates while a TERM-ignoring descendant holds admission stdout", async () => {
+  const cancellationBudgetMs = 3_000
   const fixture = await admissionFixture("cancel")
   try {
     await waitForFile(fixture.ready)
     const started = Date.now()
     process.emit("SIGTERM")
-    expect(await Promise.race([fixture.outcome, Bun.sleep(2_700).then(() => "still waiting")]))
-      .toContain("OMP admission failed")
-    expect(Date.now() - started).toBeLessThan(2_700)
+    expect(
+      await Promise.race([fixture.outcome, Bun.sleep(cancellationBudgetMs).then(() => "still waiting")]),
+    ).toContain("OMP admission failed")
+    expect(Date.now() - started).toBeLessThan(cancellationBudgetMs)
     expect(await Bun.file(fixture.late).exists()).toBe(false)
   } finally {
     await fixture.cleanup()
   }
 }, 12_000)
 
-test.each(["SIGINT", "SIGHUP"] as const)("OMP forwards %s before bounded cancellation cleanup", async (signal) => {
-  const fixture = await admissionFixture("cancel")
-  try {
-    await waitForFile(fixture.ready)
-    process.emit(signal)
-    expect(await fixture.outcome).toContain("OMP admission failed")
-    expect(fixture.signals[0]).toBe(signal)
-  } finally {
-    await fixture.cleanup()
-  }
-}, 12_000)
+test.each(["SIGINT", "SIGHUP"] as const)(
+  "OMP forwards %s before bounded cancellation cleanup",
+  async (signal) => {
+    const fixture = await admissionFixture("cancel")
+    try {
+      await waitForFile(fixture.ready)
+      process.emit(signal)
+      expect(await fixture.outcome).toContain("OMP admission failed")
+      expect(fixture.signals[0]).toBe(signal)
+    } finally {
+      await fixture.cleanup()
+    }
+  },
+  12_000,
+)
 
-test.each([["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]] as const)(
+test.each([
+  ["SIGINT", 130],
+  ["SIGTERM", 143],
+  ["SIGHUP", 129],
+] as const)(
   "OMP main preserves %s exit status after admission cleanup",
   async (signal, status) => {
     const root = await tempRoot("omp-cancellation-status")
@@ -156,13 +199,19 @@ test.each([["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]] as const)(
     const config = path.join(root, "config.toml")
     const driver = path.join(root, "driver.ts")
     await writeFile(config, "schema_version = 1\n[native.sources]\n[native.profiles]\n")
-    await writeFile(lifecycle, `#!${process.execPath}
+    await writeFile(
+      lifecycle,
+      `#!${process.execPath}
 import { writeFileSync } from "node:fs";
 writeFileSync(${JSON.stringify(ready)}, "ready");
 setTimeout(() => process.exit(0), 4_000);
-`, { mode: 0o755 })
+`,
+      { mode: 0o755 },
+    )
     const runModule = new URL("../../src/native-run/run.ts", import.meta.url).href
-    await writeFile(driver, `
+    await writeFile(
+      driver,
+      `
 import { main } from ${JSON.stringify(runModule)};
 const result = main(["omp", "default", "--no-always"]);
 const deadline = Date.now() + 2_000;
@@ -172,18 +221,24 @@ while (!(await Bun.file(${JSON.stringify(ready)}).exists())) {
 }
 process.emit(${JSON.stringify(signal)});
 process.exitCode = await result;
-`)
+`,
+    )
     const child = spawn(process.execPath, [driver], {
       cwd: root,
       env: {
-        PATH: process.env.PATH ?? "", HOME: root, TRELLAGE_CONFIG: config,
-        TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle, XDG_STATE_HOME: path.join(root, "state"),
+        PATH: process.env.PATH ?? "",
+        HOME: root,
+        TRELLAGE_CONFIG: config,
+        TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+        XDG_STATE_HOME: path.join(root, "state"),
       },
       stdio: ["ignore", "pipe", "pipe"],
     })
     child.stdout!.resume()
     let stderr = ""
-    child.stderr!.on("data", (chunk) => { stderr += String(chunk) })
+    child.stderr!.on("data", (chunk) => {
+      stderr += String(chunk)
+    })
     const [code] = await once(child, "close")
     expect(stderr).toContain(`cancelled by ${signal}`)
     expect(code).toBe(status)
@@ -205,7 +260,9 @@ test("final host-child attachment failure rejects only after the real child sett
   const driver = path.join(root, "driver.ts")
   const runModule = new URL("../../src/native-run/run.ts", import.meta.url).href
   const guardModule = new URL("../../src/native-run/lifecycle-guard.ts", import.meta.url).href
-  await writeFile(driver, `
+  await writeFile(
+    driver,
+    `
 import { Database } from "bun:sqlite";
 import { writeFileSync } from "node:fs";
 import { spawnInherited } from ${JSON.stringify(runModule)};
@@ -223,13 +280,18 @@ try {
   writeFileSync(${JSON.stringify(result)}, JSON.stringify({ error: String(error), settled, rows: db.query("SELECT * FROM owners").all() }));
 }
 db.close();
-`)
+`,
+  )
   const child = spawn(process.execPath, [driver], { stdio: ["ignore", "pipe", "pipe"] })
   let stderr = ""
-  child.stderr!.on("data", (chunk) => { stderr += String(chunk) })
+  child.stderr!.on("data", (chunk) => {
+    stderr += String(chunk)
+  })
   const [code] = await once(child, "close")
   expect({ code, stderr }).toEqual({ code: 0, stderr: "" })
   expect(JSON.parse(await readFile(result, "utf8"))).toEqual({
-    error: expect.stringContaining("final child attachment failed"), settled: true, rows: [],
+    error: expect.stringContaining("final child attachment failed"),
+    settled: true,
+    rows: [],
   })
 }, 8_000)
