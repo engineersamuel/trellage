@@ -383,7 +383,8 @@ REBUILD
 printf '%s\n' 'installed' >"${refresh_home}/.local/share/trellage/.native-stack-sources"
 concurrent_refresh() {
   HOME="${refresh_home}" SOURCE_CONTRACT_ARGS="${source_args}" NATIVE_CONTRACT_COUNT="${rebuild_count}" \
-    NATIVE_CONTRACT_BUSY="${lefthook_regression_root}/rebuild-busy" "${refresh_fixture}/scripts/refresh-native-if-stale.sh"
+    NATIVE_CONTRACT_BUSY="${lefthook_regression_root}/rebuild-busy" PS4='+ $$ $(date +%s.%N) ' \
+    bash -x "${refresh_fixture}/scripts/refresh-native-if-stale.sh"
 }
 concurrent_refresh_failed() {
   printf '%s\n' "--- first refresh:" >&2; cat "${lefthook_regression_root}/refresh-first.err" >&2
