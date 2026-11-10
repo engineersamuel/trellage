@@ -34,7 +34,7 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { copySources } from "@trellage/runtime/workspace"
 
-assert.equal(process.versions.bun, "1.4.2")
+assert.equal(process.versions.bun, "1.4.4")
 const [repository, fixture] = process.argv.slice(2)
 const installed = path.join(fixture, "lib", "trellage source")
 mkdirSync(installed, { recursive: true, mode: 0o700 })
@@ -50,7 +50,7 @@ for (const location of ["cwd", "cwd-with-home", "cwd-with-xdg"]) {
   writeFileSync(preload, `
 import assert from "node:assert/strict"
 import { appendFileSync } from "node:fs"
-assert.equal(process.versions.bun, "1.4.2")
+assert.equal(process.versions.bun, "1.4.4")
 const log = process.env.TRELLAGE_TEST_PRELOAD_LOG
 if (log === undefined) throw new Error("Missing preload fixture log")
 appendFileSync(log, process.versions.bun + "\\n")
@@ -165,8 +165,8 @@ for location in cwd cwd-with-home cwd-with-xdg; do
   fi
   grep -Fq 'TRELLAGE_CALLER_BUNFIG_PRELOAD' "$case_root/control.err" \
     || fail "the $location control did not execute the throwing preload"
-  [[ "$(<"$preload_log")" == 1.4.2 ]] \
-    || fail "the $location control did not execute under Bun 1.4.2"
+  [[ "$(<"$preload_log")" == 1.4.4 ]] \
+    || fail "the $location control did not execute under Bun 1.4.4"
   rm -- "$preload_log"
   printf 'source startup contract: PASS: unprotected Bun executes %s preload control\n' "$location"
 

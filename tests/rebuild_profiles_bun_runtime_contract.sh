@@ -31,7 +31,7 @@ EOF
 
 cat >"$new_bin/bun" <<'EOF'
 #!/usr/bin/env bash
-printf '1.4.2\n'
+printf '1.4.4\n'
 EOF
 
 cat >"$old_bin/mise" <<'EOF'
@@ -40,10 +40,10 @@ set -Eeuo pipefail
 printf '%s\n' "$*" >>"${TRELLAGE_TEST_MISE_CALL_LOG:?}"
 case "${1-}" in
   install)
-    [[ "${2-}" == bun@1.4.2 && "$#" == 2 ]]
+    [[ "${2-}" == bun@1.4.4 && "$#" == 2 ]]
     ;;
   exec)
-    [[ "${2-}" == bun@1.4.2 && "${3-}" == -- ]]
+    [[ "${2-}" == bun@1.4.4 && "${3-}" == -- ]]
     shift 3
     PATH="${TRELLAGE_TEST_NEW_BIN:?}:$PATH" exec "$@"
     ;;
@@ -72,13 +72,13 @@ output="$(
     "$probe"
 )" || fail 'old Bun was not upgraded'
 
-[[ "$output" == 1.4.2 ]] || fail "expected Bun 1.4.2 after re-exec, found: $output"
+[[ "$output" == 1.4.4 ]] || fail "expected Bun 1.4.4 after re-exec, found: $output"
 call_count="$(wc -l <"$call_log" | tr -d ' ')"
 install_call="$(sed -n '1p' "$call_log")"
 exec_call="$(sed -n '2p' "$call_log")"
 [[ "$call_count" == 2 ]] || fail "expected two Mise calls, found $call_count"
-[[ "$install_call" == 'install bun@1.4.2' ]] || fail "unexpected install call: $install_call"
-[[ "$exec_call" == "exec bun@1.4.2 -- $probe" ]] \
+[[ "$install_call" == 'install bun@1.4.4' ]] || fail "unexpected install call: $install_call"
+[[ "$exec_call" == "exec bun@1.4.4 -- $probe" ]] \
   || fail "unexpected exec call: $exec_call"
 
 : >"$call_log"
@@ -91,7 +91,7 @@ output="$(
     "$probe"
 )" || fail 'current Bun was rejected'
 
-[[ "$output" == 1.4.2 ]] || fail "current Bun returned unexpected output: $output"
+[[ "$output" == 1.4.4 ]] || fail "current Bun returned unexpected output: $output"
 [[ ! -s "$call_log" ]] || fail 'current Bun invoked Mise'
 
 workspace="$fixture_root/worktree"

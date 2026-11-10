@@ -163,7 +163,7 @@ import sys
 
 args = sys.argv[1:]
 if args == ["--version"]:
-    print("1.4.2")
+    print("1.4.4")
     sys.exit(0)
 source = Path(os.environ["FIXTURE_ROOT"]) / "opt/trellage-source"
 opt = source.parent

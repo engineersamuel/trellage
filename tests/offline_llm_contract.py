@@ -17,23 +17,26 @@ class OfflineContract(unittest.TestCase):
     def run_offline(self, source):
         return subprocess.run(
             [sys.executable, str(RUNNER), "--", sys.executable, "-c", source],
-            text=True, capture_output=True, timeout=15,
+            text=True,
+            capture_output=True,
+            timeout=15,
         )
 
     def test_command_result_and_explicit_configuration(self):
-        result = self.run_offline(
-            "import os; assert os.environ['TRELLAGE_TEST_OFFLINE'] == '1'; print('protected')"
-        )
+        result = self.run_offline("import os; assert os.environ['TRELLAGE_TEST_OFFLINE'] == '1'; print('protected')")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "protected")
         self.assertEqual(self.run_offline("raise SystemExit(23)").returncode, 23)
 
     def test_host_agent_context_is_not_inherited_by_test_processes(self):
-        with patch.dict(os.environ, {
-            "HERDR_SOCKET_PATH": "/host-agent/control.sock",
-            "HERDR_PANE_ID": "host-pane",
-            "HERDR_ENV": "1",
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "HERDR_SOCKET_PATH": "/host-agent/control.sock",
+                "HERDR_PANE_ID": "host-pane",
+                "HERDR_ENV": "1",
+            },
+        ):
             result = self.run_offline(
                 "import os; "
                 "assert not any(key.startswith('HERDR_') for key in os.environ), "
@@ -95,7 +98,7 @@ class OfflineContract(unittest.TestCase):
             "d=tempfile.mkdtemp(); "
             "r=subprocess.run(['bun','--version'],env={**os.environ,'HOME':d,'XDG_CONFIG_HOME':d},"
             "capture_output=True,text=True); "
-            "assert r.returncode == 0, r.stderr; assert r.stdout.strip() == '1.4.2', r.stdout"
+            "assert r.returncode == 0, r.stderr; assert r.stdout.strip() == '1.4.4', r.stdout"
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -104,10 +107,7 @@ class OfflineContract(unittest.TestCase):
             listener.bind(("127.0.0.1", 0))
             listener.listen()
             port = listener.getsockname()[1]
-            probe = (
-                "import socket; s=socket.socket(); s.settimeout(1); "
-                f"s.connect(('127.0.0.1', {port}))"
-            )
+            probe = f"import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', {port}))"
             result = self.run_offline(
                 "import subprocess,sys; "
                 f"r=subprocess.run([sys.executable,'-c',{probe!r}],env={{}},capture_output=True); "

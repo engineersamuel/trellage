@@ -1,15 +1,15 @@
 {
-  "version": "1.4.2",
+  "version": "1.4.4",
   "platforms": {
     "linux/arm64": {
       "package": "@oven/bun-linux-aarch64",
-      "sha256": "9ab3970a19660b5cd089f17fb021d900e1ca1b988dafd461d66d0a0ff4d6eac4",
-      "size": 37629062
+      "sha256": "ab95e7e692a53d25a1baa98ee395a17f5f264aedfb3cb15811432d54142f70eb",
+      "size": 53132992
     },
     "linux/amd64": {
       "package": "@oven/bun-linux-x64-baseline",
-      "sha256": "129ae8dfaca565e8008735e3d6adae7515421c5b226d6f1f90c4bcb35803a647",
-      "size": 37119716
+      "sha256": "2ce69fadd00b741513c52adb8aad3fbee93170d0abaa3b6d04df47ca8659bd40",
+      "size": 52418564
     }
   }
 }

@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "@vitest/coverage-istanbul": "5.0.3",
-    "@types/bun": "1.4.2",
+    "@types/bun": "1.4.4",
     "@types/node": "26.5.1",
     "@types/proper-lockfile": "4.1.4",
     "@types/react": "19.2.14",
@@ -40,7 +40,7 @@
     "vitest": "5.0.3"
   },
   "engines": {
-    "bun": "1.4.2",
+    "bun": "1.4.4",
     "node": ">=22"
   }
 }

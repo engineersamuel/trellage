@@ -8,7 +8,7 @@
     "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml test ./test"
   },
   "engines": {
-    "bun": "1.4.2"
+    "bun": "1.4.4"
   },
   "dependencies": {
     "@trellage/conversation-source": "link:@trellage/conversation-source",
@@ -17,7 +17,7 @@
     "proper-lockfile": "4.1.2"
   },
   "devDependencies": {
-    "@types/bun": "1.4.2",
+    "@types/bun": "1.4.4",
     "@types/node": "24.10.1",
     "@types/proper-lockfile": "4.1.4",
     "typescript": "7.0.2"

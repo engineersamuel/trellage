@@ -13,11 +13,13 @@ const commands = [...plugin.actions, ...plugin.events, ...plugin.panes].map((ent
 
 const fixtureTree = async (root: string) => {
   const entries = (await readdir(root, { recursive: true })).sort()
-  return Promise.all(entries.map(async (entry) => {
-    const target = path.join(root, entry)
-    const status = await lstat(target)
-    return { path: entry, mode: status.mode, content: status.isFile() ? await readFile(target) : null }
-  }))
+  return Promise.all(
+    entries.map(async (entry) => {
+      const target = path.join(root, entry)
+      const status = await lstat(target)
+      return { path: entry, mode: status.mode, content: status.isFile() ? await readFile(target) : null }
+    }),
+  )
 }
 
 test("PoC launch commands isolate Bun before plugin-relative source execution", async (t) => {
@@ -42,7 +44,9 @@ test("PoC launch commands isolate Bun before plugin-relative source execution", 
   await writeFile(path.join(cwd, "bunfig.toml"), config)
   await writeFile(path.join(cwd, ".env"), "CONVERSATION_TEST_ENV_SENTINEL=must-not-load\n")
   for (const name of new Set(commands.map((command) => command.at(-2)))) {
-    await writeFile(path.join(cwd, name), `
+    await writeFile(
+      path.join(cwd, name),
+      `
 const message: string = "owned-plugin-fixture"
 process.stdout.write(JSON.stringify({
   message,
@@ -51,7 +55,8 @@ process.stdout.write(JSON.stringify({
   cache: process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH,
   environmentLoaded: process.env.CONVERSATION_TEST_ENV_SENTINEL !== undefined,
 }))
-`)
+`,
+    )
   }
   const before = await fixtureTree(root)
   const forwarded = ["--eval", "throw new Error('arguments executed')", "--config=/does-not-exist"]
@@ -73,7 +78,7 @@ process.stdout.write(JSON.stringify({
     assert.deepEqual(JSON.parse(result.stdout), {
       message: "owned-plugin-fixture",
       argv: forwarded,
-      bun: "1.4.2",
+      bun: "1.4.4",
       cache: "0",
       environmentLoaded: false,
     })

@@ -16,7 +16,7 @@ comparison harness or services that use Docker.
 brew install mise
 
 # 2. Bun (Trellage source runtime) and Node.js (external agent tools)
-mise use --global bun@1.4.2
+mise use --global bun@1.4.4
 brew install node
 
 # 3. GitHub CLI, authenticated

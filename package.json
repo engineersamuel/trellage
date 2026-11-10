@@ -4,7 +4,7 @@
   "description": "Rich launchers for Trellage Native agent profiles",
   "license": "MIT",
   "type": "module",
-  "packageManager": "bun@1.4.2",
+  "packageManager": "bun@1.4.4",
   "workspaces": [
     "packages/*"
   ],
@@ -59,7 +59,7 @@
     "@effect/sql-libsql": "4.1.2"
   },
   "engines": {
-    "bun": "1.4.2",
+    "bun": "1.4.4",
     "node": ">=22"
   },
   "repository": {
@@ -68,7 +68,7 @@
   },
   "devDependencies": {
     "@swc/core": "1.16.22",
-    "@types/bun": "1.4.2",
+    "@types/bun": "1.4.4",
     "@types/node": "26.5.1",
     "@xterm/headless": "6.0.0",
     "dependency-cruiser": "18.7.2",

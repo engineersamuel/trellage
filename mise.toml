@@ -171,7 +171,7 @@ raw = true
 run = "tail -n 30 -F '{{vars.sf_state}}'/logs/{coordinator,foldkit}.log"
 
 [tools]
-bun = "1.4.2"
+bun = "1.4.4"
 process-compose = "1.124.0"
 "github:PrimeIntellect-ai/prime-agent" = "latest"
 node = "26.3.0"
