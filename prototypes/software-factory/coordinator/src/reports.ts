@@ -4,7 +4,14 @@ import path from "node:path"
 import type { Thread } from "./threads.ts"
 import { loadPrompt } from "./prompt.ts"
 
-export type ReportFile = { threadId: string; folderId: string; title: string; path: string; file: string; content: string }
+export type ReportFile = {
+  threadId: string
+  folderId: string
+  title: string
+  path: string
+  file: string
+  content: string
+}
 
 const inside = (root: string, file: string) => {
   const rel = path.relative(root, file)
@@ -27,13 +34,23 @@ export const findReport = (threads: readonly Thread[], ref: string, threadId?: s
     if (!existsSync(raw)) continue
     const file = realpathSync(raw)
     if (!inside(root, file) || !statSync(file).isFile()) continue
-    return { threadId: t.id, folderId: t.folderId, title: t.title, path: path.relative(root, file), file, content: readFileSync(file, "utf8") }
+    return {
+      threadId: t.id,
+      folderId: t.folderId,
+      title: t.title,
+      path: path.relative(root, file),
+      file,
+      content: readFileSync(file, "utf8"),
+    }
   }
   return null
 }
 
 /** Task for a new conversation that implements one finding from a report. */
-export const findingTask = (r: { path: string; file: string; title: string }, finding: { title: string; body: string }) =>
+export const findingTask = (
+  r: { path: string; file: string; title: string },
+  finding: { title: string; body: string },
+) =>
   loadPrompt("tasks/finding", { file: r.file, conversation: r.title, title: finding.title, body: finding.body.trim() })
 
 /** Ranked `## <rank>. <title>` headings outside code fences. */

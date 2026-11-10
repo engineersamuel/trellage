@@ -49,7 +49,13 @@ const setGate = (f: Factory, scopeId: string, id: GateId, status: GateStatus, de
 }
 
 /** sdlc_plan: save the criteria, read the repo's CI checks, ask Jev which plan-phase gates this change needs. */
-export const planSdlc = async (f: Factory, scope: Scope, request: string, criteria: string[], plan: string): Promise<Sdlc> => {
+export const planSdlc = async (
+  f: Factory,
+  scope: Scope,
+  request: string,
+  criteria: string[],
+  plan: string,
+): Promise<Sdlc> => {
   const workdir = scope.workdir!
   ensureFactoryDir(workdir)
   writeFileSync(artifact(workdir, "acceptance.md"), criteriaMarkdown(criteria))
@@ -58,7 +64,10 @@ export const planSdlc = async (f: Factory, scope: Scope, request: string, criter
   const configId = prev.configId ?? snapshotConfig(f.root)
   const c = pinnedConfig(f.root, configId)
   const { probabilities, error } = await askGates("plan", { request, plan, criteria }, c)
-  const s: Sdlc = withGates({ ...prev, request, criteria, checks: repoChecks(workdir), configId }, decide("plan", probabilities, null, error, c))
+  const s: Sdlc = withGates(
+    { ...prev, request, criteria, checks: repoChecks(workdir), configId },
+    decide("plan", probabilities, null, error, c),
+  )
   publish(f, s)
   return s
 }
@@ -91,7 +100,7 @@ const head = (workdir: string): string | null => {
 const growthNeeded = async (state: Record<string, unknown>): Promise<number | null> => {
   if (!decisionsAvailable()) return null
   try {
-    const res: any = await systemOne({
+    const res = await systemOne({
       state: JSON.stringify(state),
       questions: { needed: noul(loadPrompt("jev/growth")) },
     })
@@ -107,7 +116,12 @@ const growthNeeded = async (state: Record<string, unknown>): Promise<number | nu
  * supply-chain scan, and one code review round. A later implement re-reviews only the lines since the last review,
  * and only when they are rereviewLines() or more. The security review is not here: it runs last, at ship time.
  */
-export const afterImplement = async (f: Factory, scope: Scope, implementWorkerId: string, scopeAuth: Auth | undefined) => {
+export const afterImplement = async (
+  f: Factory,
+  scope: Scope,
+  implementWorkerId: string,
+  scopeAuth: Auth | undefined,
+) => {
   const s0prev = f.sdlc.get(scope.id) ?? newSdlc(scope.id, scope.threadId)
   const s0 = { ...s0prev, implementerModel: f.workers.get(implementWorkerId)?.model ?? s0prev.implementerModel ?? null }
   const c = pinnedConfig(f.root, s0.configId)
@@ -117,27 +131,68 @@ export const afterImplement = async (f: Factory, scope: Scope, implementWorkerId
   if (!workdir || !base) return
   const files = diffFiles(workdir, base)
   const risk = classify(files)
-  const diffStat = files.map((x) => `${x.path} +${x.added} -${x.removed}`).join("\n").slice(0, 4000)
+  const diffStat = files
+    .map((x) => `${x.path} +${x.added} -${x.removed}`)
+    .join("\n")
+    .slice(0, 4000)
   const first = s0.firstLines === null
   const gates = first
-    ? decide("diff", (await askGates("diff", { request: s0.request, criteria: s0.criteria, tier: risk.tier, reasons: risk.reasons, diff: diffStat }, c)).probabilities, risk, undefined, c)
-    : s0.gates.filter((g) => gateDefs(c).some((d) => d.id === g.id && d.phase === "diff")).map((g) => (floorReason(g.id, risk) && !g.chosen ? { ...g, chosen: true, status: "pending" as const, reason: floorReason(g.id, risk)! } : g))
+    ? decide(
+        "diff",
+        (
+          await askGates(
+            "diff",
+            { request: s0.request, criteria: s0.criteria, tier: risk.tier, reasons: risk.reasons, diff: diffStat },
+            c,
+          )
+        ).probabilities,
+        risk,
+        undefined,
+        c,
+      )
+    : s0.gates
+        .filter((g) => gateDefs(c).some((d) => d.id === g.id && d.phase === "diff"))
+        .map((g) =>
+          floorReason(g.id, risk) && !g.chosen
+            ? { ...g, chosen: true, status: "pending" as const, reason: floorReason(g.id, risk)! }
+            : g,
+        )
   let scopeWarning = s0.scopeWarning
   if (!first && s0.firstLines !== null && risk.lines > 2 * s0.firstLines && risk.lines > 200) {
-    const p = await growthNeeded({ request: s0.request, criteria: s0.criteria, firstLines: s0.firstLines, lines: risk.lines, diff: diffStat })
-    scopeWarning = p !== null && p < 0.5 ? `diff grew from ${s0.firstLines} to ${risk.lines} lines; ${decisionLabel()} ${p.toFixed(2)} says the growth is not needed for the criteria. Trim it.` : null
+    const p = await growthNeeded({
+      request: s0.request,
+      criteria: s0.criteria,
+      firstLines: s0.firstLines,
+      lines: risk.lines,
+      diff: diffStat,
+    })
+    scopeWarning =
+      p !== null && p < 0.5
+        ? `diff grew from ${s0.firstLines} to ${risk.lines} lines; ${decisionLabel()} ${p.toFixed(2)} says the growth is not needed for the criteria. Trim it.`
+        : null
   }
-  publish(f, withGates({ ...f.sdlc.get(scope.id)!, risk, firstLines: s0.firstLines ?? risk.lines, scopeWarning }, gates))
+  publish(
+    f,
+    withGates({ ...f.sdlc.get(scope.id)!, risk, firstLines: s0.firstLines ?? risk.lines, scopeWarning }, gates),
+  )
   const auth = f.workers.get(implementWorkerId)?.auth ?? scopeAuth ?? f.defaultAuth
   const jobs: Promise<unknown>[] = []
   if (gate(f.sdlc.get(scope.id)!, "supplyChain")?.chosen) {
     setGate(f, scope.id, "supplyChain", "running")
-    jobs.push(supplyChainScan(workdir, base).then((r) => setGate(f, scope.id, "supplyChain", r.ok ? "done" : "failed", r.detail)))
+    jobs.push(
+      supplyChainScan(workdir, base).then((r) =>
+        setGate(f, scope.id, "supplyChain", r.ok ? "done" : "failed", r.detail),
+      ),
+    )
   }
   const cr = gate(f.sdlc.get(scope.id)!, "codeReview")
   const since = s0.reviewedCommit ?? base
   // Re-reviews count only non-test lines: tests added for review findings do not earn another round.
-  const newLines = s0.reviewedCommit ? diffFiles(workdir, s0.reviewedCommit).filter((x) => !isTestPath(x.path)).reduce((n, x) => n + x.added + x.removed, 0) : risk.lines
+  const newLines = s0.reviewedCommit
+    ? diffFiles(workdir, s0.reviewedCommit)
+        .filter((x) => !isTestPath(x.path))
+        .reduce((n, x) => n + x.added + x.removed, 0)
+    : risk.lines
   const rounds = s0.reviewRounds ?? 0
   const rereview = s0.reviewedCommit !== null
   if (cr?.chosen && rounds < maxReviewRounds(c) && (!rereview || newLines >= rereviewLines(c))) {
@@ -163,19 +218,32 @@ export const afterImplement = async (f: Factory, scope: Scope, implementWorkerId
         },
       }).then((r) => {
         // Review fixes are part of the review: the next re-review starts after them.
-        publish(f, { ...f.sdlc.get(scope.id)!, reviewedCommit: r.status === "done" ? (head(workdir) ?? reviewed) : s0.reviewedCommit })
+        publish(f, {
+          ...f.sdlc.get(scope.id)!,
+          reviewedCommit: r.status === "done" ? (head(workdir) ?? reviewed) : s0.reviewedCommit,
+        })
         setGate(f, scope.id, "codeReview", r.status === "done" ? "done" : "failed", r.error)
       }),
     )
   } else if (cr?.chosen)
-    setGate(f, scope.id, "codeReview", "done", rounds >= maxReviewRounds(c) ? `review round limit (${maxReviewRounds(c)}) reached; verify only` : `${newLines} non-test lines since the last review (< ${rereviewLines(c)}); verify only`)
+    setGate(
+      f,
+      scope.id,
+      "codeReview",
+      "done",
+      rounds >= maxReviewRounds(c)
+        ? `review round limit (${maxReviewRounds(c)}) reached; verify only`
+        : `${newLines} non-test lines since the last review (< ${rereviewLines(c)}); verify only`,
+    )
   await Promise.all(jobs)
 }
 
 /** Ship blockers other than the security review (it runs last, once everything else is ready). */
 const blockersBeforeSecurity = (f: Factory, scope: Scope): string[] => {
   const s = f.sdlc.get(scope.id)
-  const crDone = codeReviewDoneSince(f.codeReviews.values(), scope.id, 0) || s?.gates.find((g) => g.id === "codeReview")?.status === "done"
+  const crDone =
+    codeReviewDoneSince(f.codeReviews.values(), scope.id, 0) ||
+    s?.gates.find((g) => g.id === "codeReview")?.status === "done"
   return shipBlockers(s, scope.workdir!, scope.base, true, crDone)
 }
 
@@ -188,9 +256,16 @@ export const startFinalSecurity = (f: Factory, scope: Scope): string | null => {
   const s = f.sdlc.get(scope.id)
   if (!s || blockersBeforeSecurity(f, scope).length || sdlcBusy(f, scope.id)) return null
   const last = [...f.securityReviews.values()].filter((r) => r.scopeId === scope.id).at(-1)
-  if (last && (last.status !== "done" && last.status !== "failed")) return `final security review ${last.id} is ${last.status}; wait for it, then ask to ship again.`
+  if (last && last.status !== "done" && last.status !== "failed")
+    return `final security review ${last.id} is ${last.status}; wait for it, then ask to ship again.`
   if (last?.status === "done" && last.at >= (s.implementDoneAt ?? 0)) return null
-  void securityReview(f, scope, s.scopeId, f.workers.get(scope.id)?.auth, reviewModelFor(s.implementerModel, process.env.SF_SECURITY_MODEL, true, pinnedConfig(f.root, s.configId)))
+  void securityReview(
+    f,
+    scope,
+    s.scopeId,
+    f.workers.get(scope.id)?.auth,
+    reviewModelFor(s.implementerModel, process.env.SF_SECURITY_MODEL, true, pinnedConfig(f.root, s.configId)),
+  )
   return "Everything else is ready, so the final security review started now (it reviews the whole diff last; Jev picks which findings to fix). Wait with next_step until it is done, then ask to ship again."
 }
 
@@ -216,8 +291,12 @@ export const countWorker = (f: Factory, scopeId: string) => {
 export const sdlcShipBlockers = (f: Factory, scope: Scope): string[] => {
   if (!scope.workdir) return []
   const s = f.sdlc.get(scope.id)
-  const securityDone = [...f.securityReviews.values()].some((r) => r.scopeId === scope.id && r.status === "done" && r.at >= (s?.implementDoneAt ?? 0))
-  const crDone = codeReviewDoneSince(f.codeReviews.values(), scope.id, 0) || s?.gates.find((g) => g.id === "codeReview")?.status === "done"
+  const securityDone = [...f.securityReviews.values()].some(
+    (r) => r.scopeId === scope.id && r.status === "done" && r.at >= (s?.implementDoneAt ?? 0),
+  )
+  const crDone =
+    codeReviewDoneSince(f.codeReviews.values(), scope.id, 0) ||
+    s?.gates.find((g) => g.id === "codeReview")?.status === "done"
   const blockers = shipBlockers(s, scope.workdir, scope.base, securityDone, crDone)
   if (s) {
     const settled = settleGates(s, blockers)

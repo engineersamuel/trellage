@@ -584,7 +584,9 @@ export class Factory {
     const skillRoot = stepSkills.length ? stepSkillDir(path.join(home, "step-skills"), stepSkills) : null
     // Claude SDK prefers Anthropic models; an explicit model (reviewers use another family on purpose) wins.
     const model =
-      spec.model ?? launch.model ?? (/^claude/.test(this.defaultModel) ? this.defaultModel : factoryConfig().models.claude_worker)
+      spec.model ??
+      launch.model ??
+      (/^claude/.test(this.defaultModel) ? this.defaultModel : factoryConfig().models.claude_worker)
     const session = new ClaudeSession(
       {
         cwd: workdir,

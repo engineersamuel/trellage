@@ -17,7 +17,11 @@ test("independent probabilities allow multiple workflows or no match", () => {
 test("Claude-built workflows run in the Claude harness with their trx profile and entry command", () => {
   expect(stepById("council").harness).toEqual({ kind: "claude", profiles: ["council"], entry: "/council" })
   expect(stepById("six-hats").harness?.entry).toBe("/six-hats:decide")
-  expect(stepById("hyperresearch").harness).toEqual({ kind: "claude", profiles: ["research"], entry: "/hyperresearch:deep-research" })
+  expect(stepById("hyperresearch").harness).toEqual({
+    kind: "claude",
+    profiles: ["research"],
+    entry: "/hyperresearch:deep-research",
+  })
   expect(stepById("implement").harness).toBeUndefined()
 })
 
@@ -40,11 +44,20 @@ test("researchTask names its report file", () => {
 test(`selection keeps at most ${4} workers, the most probable first`, () => {
   const p = Object.fromEntries(fanoutCatalog().map((e, i) => [e.id, 0.66 + i * 0.01]))
   const { selected } = selectWorkflows(p, fanoutCatalog())
-  expect(selected).toEqual(fanoutCatalog().slice(-4).map((e) => e.id))
+  expect(selected).toEqual(
+    fanoutCatalog()
+      .slice(-4)
+      .map((e) => e.id),
+  )
 })
 
 test("Optimize selection uses the trx guide --optimize catalog", () => {
-  const all = { "first-principles": 0.9, "behavior-preservation": 0.7, "improve-codebase-architecture": 0.8, "ui-css": 0.1 }
+  const all = {
+    "first-principles": 0.9,
+    "behavior-preservation": 0.7,
+    "improve-codebase-architecture": 0.8,
+    "ui-css": 0.1,
+  }
   expect(selectWorkflows(all, OPTIMIZE_SKILLS).selected).toEqual([
     "first-principles",
     "behavior-preservation",

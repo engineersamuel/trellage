@@ -103,7 +103,9 @@ const threads = new Threads(factory.root)
 const instructions = readInstructions()
 const config = configStore()
 console.error(`factory config: ${config.user}${config.error ? ` (invalid, using defaults: ${config.error})` : ""}`)
-config.watch((c) => console.error(c.error ? `factory config: keeping the last good config; ${c.error}` : "factory config reloaded"))
+config.watch((c) =>
+  console.error(c.error ? `factory config: keeping the last good config; ${c.error}` : "factory config reloaded"),
+)
 console.error(
   `global instructions: ${instructionsPath()} (${instructions ? `${instructions.length} chars` : "missing"})`,
 )

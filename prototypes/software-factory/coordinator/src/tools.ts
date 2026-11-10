@@ -60,7 +60,11 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
   spawnWorker(f, scope),
   fanoutTool(
     "fanout",
-    `For a research, design-decision or find-optimizations request, ask Jev which workers fit, then start each selected worker (at most ${factoryConfig().fanout.max_workers}) in this conversation's worktree. Workers: ${fanoutCatalog().map((e) => e.id).join(", ")}. Each saves reports/<step>.md. Takes the exact user request, not worker names. Read every returned worker with wait=true before spawning a synthesis worker.`,
+    `For a research, design-decision or find-optimizations request, ask Jev which workers fit, then start each selected worker (at most ${factoryConfig().fanout.max_workers}) in this conversation's worktree. Workers: ${fanoutCatalog()
+      .map((e) => e.id)
+      .join(
+        ", ",
+      )}. Each saves reports/<step>.md. Takes the exact user request, not worker names. Read every returned worker with wait=true before spawning a synthesis worker.`,
     (request) => fanout(f, scope, request),
   ),
   defineTool("next_step", {
@@ -536,7 +540,9 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         ...(typeof a.model === "string" ? { model: a.model } : {}),
         task: sdlcTask(f, scope, a.step as string | undefined, str(a, "task")),
         ...(typeof a.step === "string" ? { step: a.step } : {}),
-        ...(ship ? { permissions: finishPermissions(ship, (g) => f.approvals.setPushes(g), runFixRounds(f, scope)) } : {}),
+        ...(ship
+          ? { permissions: finishPermissions(ship, (g) => f.approvals.setPushes(g), runFixRounds(f, scope)) }
+          : {}),
         ...(!ship && (a.harness === "claude" || a.harness === "pi")
           ? { harness: { kind: a.harness, profiles: Array.isArray(a.profiles) ? a.profiles.map(String) : [] } }
           : {}),

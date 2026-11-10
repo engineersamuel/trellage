@@ -46,7 +46,15 @@ const configSteps = (c: FactoryConfig): Step[] =>
     ...(x.instructions ? { instructions: x.instructions } : {}),
     ...(x.gate_tools !== undefined ? { gateTools: x.gate_tools } : {}),
     ...(x.factory_only ? { factoryOnly: true } : {}),
-    ...(x.harness ? { harness: { kind: x.harness.kind, profiles: [...x.harness.profiles], ...(x.harness.entry ? { entry: x.harness.entry } : {}) } } : {}),
+    ...(x.harness
+      ? {
+          harness: {
+            kind: x.harness.kind,
+            profiles: [...x.harness.profiles],
+            ...(x.harness.entry ? { entry: x.harness.entry } : {}),
+          },
+        }
+      : {}),
   }))
 
 /** Skill directories (under the skills directory) for the GitHub repos Optimize skills come from. */
@@ -229,12 +237,7 @@ export const onTrack = async (
       items.map(({ id, task, latest }) => ({ id, task: task.slice(0, 2000), latest: latest.slice(0, 2000) })),
     ),
     questions: Object.fromEntries(
-      items.map((x) => [
-        x.id.replace(/\W/g, "_"),
-        noul(
-          loadPrompt("jev/progress", { worker: x.id }),
-        ),
-      ]),
+      items.map((x) => [x.id.replace(/\W/g, "_"), noul(loadPrompt("jev/progress", { worker: x.id }))]),
     ),
   })
   return Object.fromEntries(items.map((x) => [x.id, res.answers[x.id.replace(/\W/g, "_")]?.noul ?? 1]))
@@ -255,13 +258,8 @@ export const decideNext = async (state: {
   const res = await systemOne({
     state: JSON.stringify(state),
     questions: {
-      more: noul(
-        loadPrompt("jev/more-work"),
-      ),
-      next: choice(
-        loadPrompt("jev/next-step"),
-        criteria,
-      ),
+      more: noul(loadPrompt("jev/more-work")),
+      next: choice(loadPrompt("jev/next-step"), criteria),
     },
   })
   const a = res.answers

@@ -12,7 +12,6 @@ export const researchWorkflows = (c: FactoryConfig = factoryConfig()) =>
 
 type Choice = { readonly id: string; readonly description: string }
 
-
 export const selectWorkflows = <C extends Choice>(
   probabilities: Record<string, number>,
   catalog: ReadonlyArray<C> = researchWorkflows() as unknown as ReadonlyArray<C>,
@@ -39,7 +38,10 @@ const jevSelect = <C extends Choice>(catalog: ReadonlyArray<C>, request: string,
       if (!decisionsAvailable()) throw new Error("Jev unavailable: no TYPESAFE_API_KEY")
       const questions = Object.fromEntries(catalog.map((c) => [c.id, noul(question(c))]))
       const result = await systemOne({ state: JSON.stringify({ request }), questions })
-      return selectWorkflows(Object.fromEntries(catalog.map(({ id }) => [id, result.answers[id]?.noul ?? Number.NaN])), catalog)
+      return selectWorkflows(
+        Object.fromEntries(catalog.map(({ id }) => [id, result.answers[id]?.noul ?? Number.NaN])),
+        catalog,
+      )
     }),
   )
 
@@ -52,7 +54,13 @@ export const researchTask = (id: string, request: string, report?: string): stri
 }
 
 /** One fan-out option. `step` decides harness and skills; the worker saves reports/<step>.md. */
-export type FanoutEntry = { id: string; kind: "research" | "optimize"; description: string; step: string; task: (request: string) => string }
+export type FanoutEntry = {
+  id: string
+  kind: "research" | "optimize"
+  description: string
+  step: string
+  task: (request: string) => string
+}
 
 /** Research workflows (from the config) and Optimize lenses, read at use time. */
 export const fanoutCatalog = (c: FactoryConfig = factoryConfig()): FanoutEntry[] => [
@@ -76,12 +84,7 @@ export type FanoutSelection = { selected: string[]; probabilities: Record<string
 
 /** One independent Jev judgment per catalog entry, research and optimize together. */
 export const routeFanout = (request: string): Promise<FanoutSelection> =>
-  jevSelect(
-    fanoutCatalog(),
-    request,
-    ({ description }) =>
-      loadPrompt("jev/fanout", { worker: description }),
-  )
+  jevSelect(fanoutCatalog(), request, ({ description }) => loadPrompt("jev/fanout", { worker: description }))
 
 /** Read-only task for one Optimize skill: find and rank, never edit. */
 export const optimizeTask = (id: string, request: string): string => {

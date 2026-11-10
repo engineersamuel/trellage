@@ -67,7 +67,9 @@ const SettingsSchema = Schema.Struct({
   }),
   /** Model and effort of the repo sub-coordinators (the delivery loops); the global ones use `agent`. */
   subAgent: Schema.Struct({ model: Schema.String, reasoningEffort: Schema.String }).pipe(
-    Schema.withDecodingDefaultKey(Effect.sync(() => ({ model: factoryConfig().models.sub_coordinator, reasoningEffort: "high" }))),
+    Schema.withDecodingDefaultKey(
+      Effect.sync(() => ({ model: factoryConfig().models.sub_coordinator, reasoningEffort: "high" })),
+    ),
   ),
   /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
   workers: Schema.Struct({ harness: Schema.String }).pipe(
