@@ -1,6 +1,18 @@
 # Verification
 
-Use Bun 1.4.2 and prepare the source workspace from the repository root:
+Use the quality tool versions in `mise.toml` and `package.json`. From a new worktree:
+
+```bash
+mise trust
+mise run quality:setup
+```
+
+This installs the pinned quality tools, prepares frozen workspace dependencies,
+and installs worktree-aware Lefthook hooks. It does not install or update agent
+harnesses. Lefthook remains the only hook runner; hk is not installed.
+Rust is installed separately, only for the Rust prototype lane.
+
+To prepare only the source workspace, use Bun 1.4.2 and run:
 
 ```bash
 scripts/install-source-runtime.sh --prepare
@@ -48,20 +60,146 @@ current checkout. Tests that explicitly override `BUN_INSTALL_CACHE_DIR` remain
 isolated from this CI cache by design. CI saves the download cache immediately
 after successful dependency installation, before the test suites run, so a
 later test failure does not discard a usable dependency cache.
-Pull requests run `make test-pr` on Linux and the source/PTY suites on macOS,
-with a 15-minute job timeout on each platform. The PR gate checks shell syntax,
-repository identity and harness configuration, compiler lint and formatting,
-all workspace TypeScript checks and tests, source startup, and profile guides.
-Its checks run sequentially and stop at the first failing command. This keeps
-the gate independent of slower installer, Docker, and native lifecycle suites.
+Pull requests test GitHub's merge result, not only the PR head. One shared planner
+selects Linux contracts, macOS source/PTY lanes, dependency scans, and independent
+prototype jobs. Shared runtime, router, toolchain, or gate changes select the full
+Native suite. Unknown paths or an unavailable comparison base also select the
+full suite. Renames include both paths; deletions remain inputs.
 
-Pushes to `main` run the complete `make test` suite, including those integration
-contracts, with a 90-minute Linux timeout. The CI workflow can also be dispatched
-manually on a branch to run the full suite before merging a high-risk change.
-Browser contract dependencies are installed only for full-suite runs. Both
-lanes retain the `deterministic-contracts` check name required by branch protection.
-The fast gate reduces regression risk; it does not cover every integration
-failure that the full post-merge suite can detect.
+The macOS launcher and runtime lanes run in parallel on separate runners. They
+retain the former macOS checks. Timing-sensitive Native contracts remain serial
+inside each Linux run. The default suite also covers root script tests, shell
+syntax, the profile matrix, and gate behavior.
+Offline macOS tests check that their private, non-setuid copy of `ps` can inspect
+real process identities inside Seatbelt. If the re-signed native slice cannot run,
+they try its Intel slice through Rosetta 2. Hosted macOS images include Rosetta;
+local Apple Silicon systems may need it. Neither path removes network isolation.
+Script contracts seed declared local skill sources and inject deterministic model
+selection. Provider isolation stays active. The exhaustive test source fingerprint
+hashes tracked repository-local links without following them; external or
+untracked links still fail. Native installation and launch safety checks are
+unchanged.
+
+Pushes to `main`, manual dispatches, and the weekly schedule run the full Native
+`make test` suite and all prototype jobs, with a 90-minute Linux limit. PRs select
+prototype jobs when their paths, shared inputs, or quality tools change. The stable
+`deterministic-contracts` and `macos-source-contracts` jobs always run. Failure,
+cancellation, an absent required job, or an unexpected skip fails the final gate.
+An intentional skip is accepted only when the saved plan did not select that job.
+
+Jobs save timing summaries, the exact plan, and diagnostic logs in GitHub
+artifacts. There are no blanket test retries. Warm pre-commit checks should stay
+within a few seconds; ordinary package PRs should stay below the previous
+six-minute macOS critical path. These are targets, not claimed measurements.
+
+## Local gate selection
+
+| Command | Scope |
+|---|---|
+| `mise run quality:staged` | Index contents only; no typecheck or tests |
+| `mise run quality:plan` | Explain the selected checks |
+| `mise run quality:changed` or `make test-pr` | Affected checks, including unstaged and untracked source |
+| `mise run quality:all` | All maintained static checks, dependency analysis, full offline Native tests, and host-supported prototypes |
+| `mise run quality:static` | Oxc, Ruff, ShellCheck, workflow, agent/config, spelling, Markdown, Docker, and syntax checks |
+| `mise run quality:analysis` | Knip, dependency-cruiser, and Syncpack |
+| `mise run quality:network` | Dependency advisories and public documentation links |
+| `mise run quality:coverage` | Offline source coverage and the measured coverage floor |
+| `mise run quality:test` | Gate behavior contracts |
+| `make quality-static` | Maintained static checks and dependency analysis |
+| `make factory-test` | Coordinator type checks, coordinator tests, and shared factory tests, with offline guards |
+
+The existing `check:changed-quality`, `check:architecture`, and `check:unused`
+package commands use these shared gates. Dependency analysis runs its three tools
+together. CI runs factory checks when factory files or linked Native sources change.
+The former separate security workflow and graph baseline are replaced by the
+shared CI jobs and exact-content policy below.
+
+Use `-- --base REF` with `quality:changed` or `quality:plan` when the remote
+default-branch ref is unavailable. Git hooks pass push ref updates through the
+installed wrapper. New branches use the remote's symbolic default branch;
+deletions alone need no source tests. Annotated tags resolve to their commit.
+Pushed commits must be checked out, and the worktree must have no changed or
+untracked source files. Push separate checked-out commits
+separately. Hooks never stash, reset, auto-stage, or rewrite user files.
+Full pre-push checks can outlast an idle SSH connection. If the remote closes it,
+retry with keepalives rather than disabling the hook:
+
+```bash
+env GIT_SSH_COMMAND="ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=6" git push
+```
+
+If you already use a custom SSH command, add those options to that command instead.
+All Git-local environment variables are cleared before nested test commands.
+The commit snapshot still respects an alternate `GIT_INDEX_FILE`.
+It includes unchanged indexed context for local action and agent-document links.
+Local runs execute selected prototype checks. Swift requires macOS; other hosts
+report that requirement, and the required CI matrix supplies the macOS check.
+Swift checks retain the outer offline sandbox and use native SwiftPM to find CLT
+Testing macros. The generated test runner receives the same framework search path;
+the gate requires Swift Testing to report at least one executed case. The existing
+standalone assertion runner also executes.
+
+Static tools run on maintained files, not vendored Foldkit reference sources,
+verbatim shadcn components, dependencies, or generated artifacts. Knip analyzes
+the production workspace and its test/CLI entry points. Shell-launched runtime
+dependencies and Prime-provided extension modules have explicit configuration;
+the independently installed Playwright workspace is analyzed without executing
+its configuration. Syncpack keeps shared workspace versions consistent while
+preserving the intentional Effect 3 runtime and Effect 4 root split.
+Dependency-cruiser and its SWC parser are locked together in the root workspace.
+SWC supplies the parser API that TypeScript 7 does not expose. The graph gate
+fails if it omits any maintained input, even when the tool exits successfully.
+Rust build outputs go under `.quality-results`, outside published Native sources.
+
+## Legacy findings and security
+
+`.quality/baseline.json` records existing static findings by file hash and
+tool/config hash. Any file or configuration change removes its exemption.
+New files cannot enter an adoption baseline. Logic-oriented exceptions have
+review deadlines. Graph exceptions identify exact findings and complete cycle
+paths, not whole packages. Recording one requires all affected source files to
+match the committed version.
+Normal checks never grow a baseline. To review a baseline deliberately:
+
+```bash
+uv run --offline --no-project python scripts/quality_checks.py --record-baseline --check shellcheck
+uv run --offline --no-project python scripts/quality_checks.py --analysis --record-baseline
+```
+
+Fix new and edited files before recording. Review every baseline diff; do not
+lower a gate to make a change pass. Syntax, configuration, workflows, and secrets
+cannot use the static baseline.
+
+Betterleaks runs with redaction and live credential validation disabled. Full
+scans include vendored sources; only reviewed public fixtures with exact hashes
+in `.quality/secret-fixtures.json` are excluded. Changing an exempt fixture
+requires a new review. Known public test fixtures are not deployment credentials.
+Inline ignore comments and local ignore files cannot suppress findings. History
+exceptions require the exact reviewed blob in each reported commit; removing a
+secret in a later commit does not hide it.
+Publication checks reject private state before inspecting the npm package.
+Authored skills and skill-source lock metadata are allowed; vendored reference
+trees and temporary contract fixtures do not ship in the Native npm package.
+
+OSV scans tracked lockfiles. Reviewed prototype advisories are scoped to a lock,
+package, version, and advisory ID in `.quality/advisory-exceptions.json`, with a
+review deadline. A new advisory, changed version, expired exception, or incomplete
+scan fails. Native workspace dependencies have no advisory exception.
+Dependabot is the only dependency update bot: weekly grouped compatible updates,
+limited open PRs, and a seven-day release delay. It covers Bun, npm prototypes,
+Cargo, and Actions; it does not auto-merge. Bun security-update PR support is not
+assumed. OSV supplies the advisory gate.
+
+Weekly maintenance checks links, reports available mise pin updates without
+changing them, and collects source-only LCOV. The deterministic guide-core
+coverage floor comes from an actual measurement. Other package metrics remain
+reports until hosted runs establish stable floors; there is no invented
+repository-wide percentage. CodeQL checks maintained JavaScript/TypeScript and
+Python without executing agent harnesses.
+
+GitHub enforcement must require PRs and the two stable check names above,
+preserve deletion protection, and reject force pushes. New workflow files,
+Dependabot, and CodeQL become active only after they reach the default branch.
 
 Keep `bun.lock` committed during development. Use normal `bun install`,
 `bun add`, `bun update`, and `bun remove` commands with the mise-pinned Bun.
@@ -210,18 +348,14 @@ AppArmor setting changes or privileged test execution are needed. `make test-pr`
 also runs the isolation and ownership canaries so setup regressions are caught
 before merge.
 
-Tests require Python 3.11 or newer on `PATH`. Run `make test-prepare` once after changing locked dependencies to populate
-`.test-performance/package-cache` using the repository's frozen source preparer
-and the configured package feed, and install the separately locked Playwright
-test dependencies with `npm ci`. This is setup, measured separately from warm
-tests. Fixtures still execute the frozen installer and receive independent
-dependency files; they reuse downloaded package bytes through
-`TRELLAGE_TEST_PACKAGE_CACHE`. Tests never fall back to an unrestricted network.
-Preparation installs into a source-only copy: staging an already prepared
-workspace can reuse `node_modules` without filling the download cache.
-`make test` checks a fresh offline installation before starting the parallel
-contracts, so an incomplete cache fails immediately. Lint, formatting, and root
-TypeScript checks also run in the full suite.
+Tests require Python 3.11 or newer on `PATH`. Run `make test-prepare` once after changing locked dependencies to
+populate `.test-performance/package-cache` using the repository's frozen source preparer and the configured package
+feed, and install the separately locked Playwright test dependencies with `npm ci`. This is setup, measured separately
+from warm tests. Fixtures still execute the frozen installer and receive independent dependency files; they reuse
+downloaded package bytes through `TRELLAGE_TEST_PACKAGE_CACHE`. Tests never fall back to an unrestricted network.
+Preparation installs into a source-only copy: staging an already prepared workspace can reuse `node_modules` without
+filling the download cache. `make test` checks a fresh offline installation before starting the parallel contracts, so
+an incomplete cache fails immediately. Lint, formatting, and root TypeScript checks also run in the full suite.
 
 Codex uses the shared Native source installer and composition adapter. Its
 installation coverage lives in `packages/trellage-runtime/test/runtime.test.ts`;
@@ -355,12 +489,11 @@ inside their test subshell. Nested Git fixtures must not inherit the hook's
 repository or index. `tests/source_startup_contract.sh` verifies this boundary
 and confirms that the caller repository remains unchanged.
 
-Each commit runs staged whitespace validation plus profile compiler lint,
-format, and type checks in parallel. Each push runs only changed-path checks:
-whitespace, launcher source tests and type checks, profile compiler typechecking, and
-shell syntax. These jobs run concurrently and should complete in seconds;
-GitHub Actions remains authoritative for broad deterministic and lifecycle
-contracts.
+Each commit checks staged whitespace, secrets, and applicable static rules
+without running type checks or tests. Each push checks the actual pushed ranges
+and selected dependent contracts. Independent static tools run with bounded
+parallelism; timing-sensitive lifecycle contracts remain serial. GitHub Actions
+also checks the merge result and supplies the cross-platform lanes.
 
 The installed `post-commit`, `post-merge`, and `post-rewrite` hooks prepare the
 active Trellage worktree and compare its source receipt with
@@ -394,10 +527,12 @@ cd tests/playwright && npm ci && cd ../..
 ./tests/playwright_matrix.sh
 ```
 
-Live Docker verification is explicit because it builds images, invokes coding agents, and mutates retained contestant resources:
+Live Docker verification is explicit because it builds images, invokes coding agents, and mutates retained contestant
+resources:
 
 ```bash
 make compare HARNESS=harnesses/todo-side-by-side/harness.json
 ```
 
-The resulting `comparison.json` records prompt parity and contestant pass/fail status. It intentionally does not select a winner.
+The resulting `comparison.json` records prompt parity and contestant pass/fail status. It intentionally does not select
+a winner.

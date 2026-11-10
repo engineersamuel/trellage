@@ -18,44 +18,9 @@ fail() {
   exit 1
 }
 
-hook_fixture="$fixture_root/hook"
-mkdir -p "$hook_fixture/bin" "$hook_fixture/caller"
-git init --quiet "$hook_fixture/caller"
-cp "$hook_fixture/caller/.git/config" "$hook_fixture/config-before"
-cat >"$hook_fixture/bin/git" <<'SH'
-#!/usr/bin/env bash
-if [[ "$1" == diff ]]; then exit 1; fi
-exec "$HOOK_REAL_GIT" "$@"
-SH
-cat >"$hook_fixture/bin/bun" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-[[ -z "${GIT_DIR+x}${GIT_WORK_TREE+x}${GIT_COMMON_DIR+x}${GIT_INDEX_FILE+x}${GIT_PREFIX+x}" ]] || {
-  printf 'Git hook repository variables leaked into source tests\n' >&2
-  exit 1
-}
-printf '%s\n' "$*" >>"$HOOK_CALLS"
-if [[ "$*" == 'run test' ]]; then git init --quiet --bare "$HOOK_NESTED"; fi
-SH
-chmod 0755 "$hook_fixture/bin/git" "$hook_fixture/bin/bun"
-hook_command="$(awk '
-  /name: source workspace checks/ { found = 1; next }
-  found && /^[[:space:]]+run:/ {
-    sub(/^[[:space:]]+run: /, ""); print; exit
-  }
-' "$repo_root/lefthook.yml")"
-[[ -n "$hook_command" ]] || fail 'missing source workspace pre-push command'
-HOOK_REAL_GIT="$(command -v git)" HOOK_CALLS="$hook_fixture/calls" \
-  HOOK_NESTED="$hook_fixture/nested" PATH="$hook_fixture/bin:$PATH" \
-  GIT_DIR="$hook_fixture/caller/.git" GIT_WORK_TREE="$hook_fixture/caller" \
-  GIT_COMMON_DIR="$hook_fixture/caller/.git" GIT_INDEX_FILE="$hook_fixture/index" \
-  GIT_PREFIX=fixture/ bash -c "$hook_command" \
-  || fail 'source workspace hook did not isolate nested Git fixtures'
-[[ "$(<"$hook_fixture/calls")" == $'run check\nrun test' ]] \
-  || fail 'source workspace hook did not run both checks'
-cmp -s "$hook_fixture/config-before" "$hook_fixture/caller/.git/config" \
-  || fail 'source workspace hook changed its caller repository'
-[[ -f "$hook_fixture/nested/HEAD" ]] || fail 'nested Git fixture was not initialized'
+uv run --offline --no-project python "$repo_root/tests/test_quality.py" \
+  RepositoryTests.test_nested_git_commands_clear_all_repository_variables \
+  || fail 'quality hook did not isolate nested Git fixtures'
 printf 'source startup contract: PASS: pre-push isolates nested Git fixtures\n'
 
 
@@ -104,9 +69,7 @@ JS
 
 mkdir -p -- "$fixture_bin"
 ln -s "$bun_executable" "$fixture_bin/bun"
-for command_name in trx; do
-  ln -s "../lib/trellage source/bin/$command_name" "$fixture_bin/$command_name"
-done
+ln -s "../lib/trellage source/bin/trx" "$fixture_bin/trx"
 for command_name in node npm npx pnpm yarn docker gh curl; do
   cat >"$fixture_bin/$command_name" <<'SH'
 #!/bin/sh
@@ -207,12 +170,10 @@ for location in cwd cwd-with-home cwd-with-xdg; do
   rm -- "$preload_log"
   printf 'source startup contract: PASS: unprotected Bun executes %s preload control\n' "$location"
 
-  for command_name in trx; do
-    assert_help "source-shell-$command_name" "$command_name" "$repo_root/bin/$command_name"
-    assert_help "source-ts-$command_name" "$command_name" "$repo_root/bin/$command_name.ts"
-    assert_help "installed-shell-$command_name" "$command_name" "$fixture_bin/$command_name"
-    assert_help "installed-ts-$command_name" "$command_name" "$installed_root/bin/$command_name.ts"
-  done
+  assert_help source-shell-trx trx "$repo_root/bin/trx"
+  assert_help source-ts-trx trx "$repo_root/bin/trx.ts"
+  assert_help installed-shell-trx trx "$fixture_bin/trx"
+  assert_help installed-ts-trx trx "$installed_root/bin/trx.ts"
   assert_installer_refusal source-installer "$repo_root/scripts/install-source-runtime.sh"
   assert_installer_refusal installed-installer "$installed_root/scripts/install-source-runtime.sh"
 done

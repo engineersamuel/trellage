@@ -24,7 +24,7 @@ refuse() {
 }
 
 canonical_directory() {
-  (CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P)
+  (CDPATH='' cd -P -- "$1" >/dev/null 2>&1 && pwd -P)
 }
 
 require_safe_directory() {
@@ -45,6 +45,7 @@ require_owned_runtime_contents() {
   local installed_ownership
   installed_ownership="$(<"$ownership_marker")"
   if [[ "$installed_ownership" == "$ownership_value" ]]; then
+    # shellcheck disable=SC2154 # Initialized by bun-runtime.sh before this function runs.
     "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
       validate-replaceable-owned "$installed_source" \
       || refuse "unsafe owned source workspace: $installed_source"
@@ -138,7 +139,6 @@ done < <(find "$source_guides" -mindepth 1 -print)
 
 staging_root=''
 publication_active=false
-runtime_old_intent=false
 runtime_publish_intent=false
 runtime_swapped=false
 command_publish_intent=false
@@ -184,20 +184,56 @@ release_install_lock() {
 
 rollback() {
   local ok=true
+  local restore_root
+  local operation_output
+  local new_runtime_present=false
+  local old_runtime_present=false
+
+  if [[ -e "$staging_root/new-runtime" || -L "$staging_root/new-runtime" ]]; then
+    new_runtime_present=true
+  fi
+  if [[ -e "$staging_root/old-runtime" || -L "$staging_root/old-runtime" ]]; then
+    old_runtime_present=true
+  fi
 
   if [[ "$command_publish_intent" == true ]]; then
     if [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]]; then
-      rm -f -- "$command_path" || ok=false
+      if ! operation_output="$(rm -f -- "$command_path" 2>&1)"; then
+        printf 'trx install: could not remove published command: %s\n' \
+          "${operation_output:-no diagnostic}" >&2
+        ok=false
+      fi
     elif [[ -e "$command_path" || -L "$command_path" ]]; then
+      printf 'trx install: published command changed before rollback: %s\n' "$command_path" >&2
       ok=false
     fi
   fi
 
-  if [[ "$runtime_swapped" == true && -d "$staging_root/old-runtime" ]]; then
-    "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
-      swap "$staging_root/old-runtime" "$install_root" || ok=false
-    [[ "$ok" == true ]]
-    return
+  if [[ "$runtime_swapped" == true ]]; then
+    printf 'trx install: restoring exchanged runtime (command-intent=%s rollback-ok=%s)\n' \
+      "$command_publish_intent" "$ok" >&2
+    if [[ -d "$staging_root/old-runtime" && ! -L "$staging_root/old-runtime" \
+      && ! -e "$staging_root/new-runtime" && ! -L "$staging_root/new-runtime" ]]; then
+      restore_root="$staging_root/old-runtime"
+    elif [[ -d "$staging_root/new-runtime" && ! -L "$staging_root/new-runtime" \
+      && ! -e "$staging_root/old-runtime" && ! -L "$staging_root/old-runtime" ]]; then
+      restore_root="$staging_root/new-runtime"
+    else
+      printf 'trx install: cannot restore router runtime; staged paths new=%s old=%s\n' \
+        "$new_runtime_present" "$old_runtime_present" >&2
+      return 1
+    fi
+    if ! operation_output="$("${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
+      swap "$restore_root" "$install_root" 2>&1)"; then
+      printf 'trx install: could not restore router runtime: %s\n' \
+        "${operation_output:-no diagnostic}" >&2
+      return 1
+    fi
+    if [[ "$ok" == true ]]; then
+      return 0
+    fi
+    printf 'trx install: runtime restored but an earlier rollback step failed\n' >&2
+    return 1
   fi
 
   if [[ "$runtime_publish_intent" == true \
@@ -205,15 +241,30 @@ rollback() {
     if [[ -d "$install_root" && ! -L "$install_root" \
       && -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
       && cmp -s "$ownership_marker" <(printf '%s\n' "$ownership_value"); then
-      rm -rf -- "$install_root" || ok=false
+      if ! operation_output="$(rm -rf -- "$install_root" 2>&1)"; then
+        printf 'trx install: could not remove published runtime: %s\n' \
+          "${operation_output:-no diagnostic}" >&2
+        ok=false
+      fi
     else
+      printf 'trx install: cannot identify published runtime for rollback: %s\n' \
+        "$install_root" >&2
       ok=false
     fi
   fi
 
   if [[ -d "$staging_root/old-runtime" ]]; then
-    [[ ! -e "$install_root" && ! -L "$install_root" ]] \
-      && mv "$staging_root/old-runtime" "$install_root" || ok=false
+    if [[ ! -e "$install_root" && ! -L "$install_root" ]]; then
+      if ! operation_output="$(mv "$staging_root/old-runtime" "$install_root" 2>&1)"; then
+        printf 'trx install: could not restore previous runtime: %s\n' \
+          "${operation_output:-no diagnostic}" >&2
+        ok=false
+      fi
+    else
+      printf 'trx install: destination blocks runtime restoration: %s\n' \
+        "$install_root" >&2
+      ok=false
+    fi
   fi
 
   [[ "$ok" == true ]]
@@ -221,12 +272,30 @@ rollback() {
 
 on_exit() {
   local status=$?
+  local new_runtime_present=false
+  local old_runtime_present=false
+  local installed_runtime_present=false
   trap - EXIT HUP INT TERM
   if [[ "$publication_active" == true ]]; then
     if rollback; then
       cleanup_staging
     else
+      if [[ -n "$staging_root" ]]; then
+        if [[ -e "$staging_root/new-runtime" || -L "$staging_root/new-runtime" ]]; then
+          new_runtime_present=true
+        fi
+        if [[ -e "$staging_root/old-runtime" || -L "$staging_root/old-runtime" ]]; then
+          old_runtime_present=true
+        fi
+      fi
+      if [[ -e "$install_root" || -L "$install_root" ]]; then
+        installed_runtime_present=true
+      fi
       printf 'trx install: rollback failed; recovery may be required\n' >&2
+      printf 'trx install state: runtime-swapped=%s publish-intent=%s command-intent=%s staged-new=%s staged-old=%s installed=%s\n' \
+        "$runtime_swapped" "$runtime_publish_intent" "$command_publish_intent" \
+        "$new_runtime_present" \
+        "$old_runtime_present" "$installed_runtime_present" >&2
     fi
   else
     cleanup_staging
@@ -331,13 +400,14 @@ if [[ -d "$install_root" ]]; then
   # Exchange old and new in one rename, so $install_root never goes missing
   # while trx sessions launch from it. Afterwards the old runtime is in
   # new-runtime; rename it to old-runtime so rollback finds it there.
-  runtime_old_intent=true
   runtime_publish_intent=true
   runtime_swapped=true
   "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
     swap "$staging_root/new-runtime" "$install_root" \
-    || { runtime_swapped=false; runtime_publish_intent=false; runtime_old_intent=false
+    || { runtime_swapped=false; runtime_publish_intent=false
       refuse "could not swap in the new router runtime: $install_root"; }
+  [[ "${TRX_INSTALL_TEST_FAIL_AT-}" != after-runtime-swap ]] \
+    || refuse 'injected failure at after-runtime-swap'
   mv "$staging_root/new-runtime" "$staging_root/old-runtime"
   [[ "${TRX_INSTALL_TEST_FAIL_AT-}" != during-runtime-publication ]] \
     || refuse 'injected failure at during-runtime-publication'

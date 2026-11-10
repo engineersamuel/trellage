@@ -7,14 +7,14 @@ mode='tree'
 case "$#" in
   0) ;;
   1)
-    [[ "$1" == '--sanitized-history' ]] || {
-      printf 'usage: tests/publication_contract.sh [--sanitized-history]\n' >&2
+    [[ "$1" == '--sanitized-history' || "$1" == '--policy-only' ]] || {
+      printf 'usage: tests/publication_contract.sh [--sanitized-history|--policy-only]\n' >&2
       exit 2
     }
-    mode='sanitized-history'
+    mode="${1#--}"
     ;;
   *)
-    printf 'usage: tests/publication_contract.sh [--sanitized-history]\n' >&2
+    printf 'usage: tests/publication_contract.sh [--sanitized-history|--policy-only]\n' >&2
     exit 2
     ;;
 esac
@@ -35,6 +35,8 @@ jq -e '
   and .license == "MIT"
 ' packages/trellage-guide-core/package.json >/dev/null \
   || fail 'profile guide core package identity or MIT license changed'
+check_package() {
+local package_manifest
 package_manifest="$(npm pack --dry-run --ignore-scripts --json)" \
   || fail 'npm package contents could not be inspected'
 jq -e '
@@ -69,6 +71,7 @@ jq -e '
   .[0].files | all(.path | test("(^|/)(\\.contract-fixture\\.[^/]+|\\.contract-work)(/|$)") | not)
 ' <<<"$package_manifest" >/dev/null \
   || fail 'npm package includes temporary contract fixtures'
+}
 
 for required_ignore in \
   '/.claude/' '/.hyperresearch/' '/.scratch/' '/research/' '/evidence/' \
@@ -82,13 +85,17 @@ done
 for forbidden_path in \
   '.claude' '.hyperresearch' '.scratch' 'research' 'evidence' \
   'harnesses/rsu-decision-side-by-side' 'docs/superpowers/plans' \
-  'docs/superpowers/specs' '.agents/skills'; do
+  'docs/superpowers/specs'; do
   if git ls-files -- "$forbidden_path" "$forbidden_path/**" | grep -q .; then
     fail "forbidden tracked path: $forbidden_path"
   fi
 done
 
-if git ls-files | grep -Eq '(^|/)(STYLESEED\.md|skills-lock\.json|CLAUDE\.md)$|(^|/)(codex|copilot)-.*\.png$|tests/playwright/(fixtures/|rsu\.spec\.ts$)'; then
+if git ls-files -- .agents/skills | grep -E '(^|/)(\.cache|sessions|node_modules)(/|$)|(^|/)(auth\.json|credentials\.json|\.env)$' >/dev/null; then
+  fail 'generated or private skill state is tracked'
+fi
+
+if git ls-files | grep -Eq '(^|/)STYLESEED\.md$|^CLAUDE\.md$|(^|/)(codex|copilot)-.*\.png$|tests/playwright/(fixtures/|rsu\.spec\.ts$)'; then
   fail 'forbidden tracked artifact or RSU fixture'
 fi
 
@@ -100,8 +107,11 @@ if git grep -n -I -E '/Users/smendenhall|/private/var/folders|/var/folders|/Volu
   fail 'forbidden personal or private absolute path'
 fi
 
-if git grep -n -I -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' -- . ':!tests/publication_contract.sh' ':!tests/publication_contract_self_test.sh'; then
-  fail 'obvious secret material is tracked'
+uv run --offline --no-project python scripts/quality_secrets.py \
+  || fail 'obvious secret material or an invalid public fixture exception is tracked'
+
+if [[ "$mode" != policy-only ]]; then
+  check_package
 fi
 
 if [[ "$mode" == 'sanitized-history' ]]; then

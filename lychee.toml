@@ -1,0 +1,13 @@
+cache = true
+max_cache_age = "1d"
+max_concurrency = 4
+timeout = 20
+max_retries = 2
+include_fragments = "full"
+exclude_all_private = true
+exclude = [
+  '^https?://localhost',
+  '^https?://127\.0\.0\.1',
+  '^https?://[^/]*\.invalid',
+  '^https?://example\.(com|org|net)',
+]

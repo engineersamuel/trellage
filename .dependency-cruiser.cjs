@@ -1,42 +1,36 @@
+const fs = require("node:fs")
+const path = require("node:path")
+
+const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+const packages = fs.readdirSync("packages").filter((name) => fs.existsSync(`packages/${name}/package.json`))
+const publicSources = packages.flatMap((name) => {
+  const manifest = JSON.parse(fs.readFileSync(`packages/${name}/package.json`, "utf8"))
+  return Object.values(manifest.exports ?? {})
+    .filter((entry) => typeof entry === "string")
+    .map((entry) => escape(path.posix.join("packages", name, entry)))
+})
+
 module.exports = {
   forbidden: [
-    {
-      name: "no-circular",
+    { name: "no-cycles", severity: "error", from: { path: "^packages/" }, to: { circular: true } },
+    { name: "no-unresolved-imports", severity: "error", from: { path: "^packages/" }, to: { couldNotResolve: true } },
+    ...packages.map((name) => ({
+      name: `public-exports-of-${name}`,
       severity: "error",
-      from: {},
-      to: { circular: true },
-    },
-    {
-      name: "no-private-guide-core-imports",
-      severity: "error",
-      from: { path: "^packages/(?!trellage-guide-core/)[^/]+/" },
-      to: { path: "^packages/trellage-guide-core/src/(?!index\\.ts$|conversation\\.ts$)" },
-    },
-    {
-      name: "no-private-conversation-source-imports",
-      severity: "error",
-      from: { path: "^packages/(?!trellage-conversation-source/)[^/]+/" },
+      comment: "Cross-package imports must resolve to a declared public export.",
+      from: { pathNot: `^packages/${escape(name)}/` },
       to: {
-        path: "^packages/trellage-conversation-source/src/(?!index\\.ts$|cli\\.ts$|conversation-(?:capture|parser|policy|reader|state|validation)\\.ts$|herdr\\.ts$|source-context\\.ts$|transcripts\\.ts$|transcript-format\\.ts$|trellage-(?:root|session)\\.ts$)",
+        path: `^packages/${escape(name)}/src/`,
+        pathNot: `^(?:${publicSources.join("|")})$`,
       },
-    },
-    {
-      name: "no-private-launcher-imports",
-      severity: "error",
-      from: { path: "^packages/(?!trellage-launcher/)[^/]+/" },
-      to: { path: "^packages/trellage-launcher/src/(?!cli\\.tsx$|run-catalog\\.ts$)" },
-    },
-    {
-      name: "no-private-runtime-imports",
-      severity: "error",
-      from: { path: "^packages/(?!trellage-runtime/)[^/]+/" },
-      to: {
-        path: "^packages/trellage-runtime/src/(?!index\\.ts$|native-config\\.ts$|native-run/(?:index|source|paths|inventory)\\.ts$|workspace\\.ts$|skill-(?:config|update)\\.ts$)",
-      },
-    },
+    })),
   ],
   options: {
     parser: "swc",
-    tsConfig: { fileName: "tsconfig.base.json" },
+    doNotFollow: { path: "node_modules" },
+    exclude: "(^|/)(node_modules|coverage|dist)/",
+    tsConfig: { fileName: "tsconfig.json" },
+    tsPreCompilationDeps: true,
+    enhancedResolveOptions: { exportsFields: ["exports"], conditionNames: ["import", "types", "default"] },
   },
 }

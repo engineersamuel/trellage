@@ -1,19 +1,9 @@
 pre-commit:
-  parallel: true
   jobs:
-    - name: staged whitespace
-      run: git diff --cached --check
-    - name: staged secret scan
-      run: betterleaks git . --pre-commit --staged --redact
-    - name: source workspace typecheck
-      run: bun run check
+    - name: staged quality checks
+      run: mise run quality:staged
 
 pre-push:
-  parallel: true
   jobs:
-    - name: pushed whitespace
-      run: git diff --check "refs/remotes/{1}/main...HEAD"
-    - name: source workspace checks
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- package.json bun.lock bunfig.toml tsconfig.json tsconfig.base.json packages tests/bun-runtime.setup.ts || (git_local_env=$(git rev-parse --local-env-vars) && unset $git_local_env && bun run check && bun run test)
-    - name: launcher shell syntax
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage-*-profiles prototypes/trellage-*-common prototypes/trellage-router || make shell-syntax
+    - name: affected quality checks
+      run: mise run quality:push

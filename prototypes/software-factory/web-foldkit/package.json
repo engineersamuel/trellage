@@ -15,7 +15,8 @@
       "effect": "$effect",
       "@effect/platform-browser": "$@effect/platform-browser",
       "foldkit": "$foldkit",
-      "@foldkit/ui": "$@foldkit/ui"
+      "@foldkit/ui": "$@foldkit/ui",
+      "zod": "4.6.7"
     }
   },
   "dependencies": {

@@ -1,14 +1,20 @@
 import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { readTrellageConfig, type NativeCatalog, type NativeProfile } from "../../packages/trellage-runtime/src/native-config.ts"
+import {
+  readTrellageConfig,
+  type NativeCatalog,
+  type NativeProfile,
+} from "../../packages/trellage-runtime/src/native-config.ts"
 import type { SourceTransport } from "../../packages/trellage-runtime/src/native-run/source.ts"
 import type { RunDependencies } from "../../packages/trellage-runtime/src/native-run/run.ts"
 
-const requestRecorder = (requests: Map<string, number>) => (operation: string, repository: string, value: string): void => {
-  const key = JSON.stringify([operation, repository, value])
-  requests.set(key, (requests.get(key) ?? 0) + 1)
-}
+const requestRecorder =
+  (requests: Map<string, number>) =>
+  (operation: string, repository: string, value: string): void => {
+    const key = JSON.stringify([operation, repository, value])
+    requests.set(key, (requests.get(key) ?? 0) + 1)
+  }
 
 const repositoryIndex = () => {
   const repositories = new Map<string, Map<string, string>>()
@@ -21,13 +27,15 @@ const repositoryIndex = () => {
   return { repositories, commits, filesFor }
 }
 
-const skillFactory = (filesFor: (repository: string) => Map<string, string>) => (repository: string, name: string): void => {
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) throw new Error(`Undeclared fixture skill grammar: ${name}`)
-  filesFor(repository).set(
-    `skills/${name}/SKILL.md`,
-    `---\nname: ${name}\ndescription: Deterministic local source fixture\n${name === "i-have-adhd" ? "disable-model-invocation: true\n" : ""}---\n# ${name}\n`,
-  )
-}
+const skillFactory =
+  (filesFor: (repository: string) => Map<string, string>) =>
+  (repository: string, name: string): void => {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) throw new Error(`Undeclared fixture skill grammar: ${name}`)
+    filesFor(repository).set(
+      `skills/${name}/SKILL.md`,
+      `---\nname: ${name}\ndescription: Deterministic local source fixture\n${name === "i-have-adhd" ? "disable-model-invocation: true\n" : ""}---\n# ${name}\n`,
+    )
+  }
 
 const addProfileSkills = (
   profile: NativeProfile,
@@ -83,16 +91,17 @@ const seedRepositories = (
   addSkill("example/skills", "initial")
 }
 
-const identityFor = (repositories: Map<string, Map<string, string>>) => (repository: string): string => {
-  const files = repositories.get(repository)
-  if (!files) throw new Error(`Unexpected fixture source request: ${repository}`)
-  return createHash("sha1").update(JSON.stringify([repository, [...files].sort()])).digest("hex")
-}
+const identityFor =
+  (repositories: Map<string, Map<string, string>>) =>
+  (repository: string): string => {
+    const files = repositories.get(repository)
+    if (!files) throw new Error(`Unexpected fixture source request: ${repository}`)
+    return createHash("sha1")
+      .update(JSON.stringify([repository, [...files].sort()]))
+      .digest("hex")
+  }
 
-const createFixtureTransport = (
-  config: NativeCatalog,
-  requests: Map<string, number>,
-) => {
+const createFixtureTransport = (config: NativeCatalog, requests: Map<string, number>) => {
   const { repositories, commits, filesFor } = repositoryIndex()
   const recordRequest = requestRecorder(requests)
   const addSkill = skillFactory(filesFor)
@@ -128,6 +137,8 @@ const copyInstructionFiles = async (
   destinationRoot: string,
 ): Promise<void> => {
   for (const instruction of Object.values(instructions)) {
+    // Shipped references use the runtime checkout, not the fixture's config directory.
+    if (instruction.file.startsWith("shipped:")) continue
     const source = path.resolve(repositoryRoot, instruction.file)
     const relative = path.relative(repositoryRoot, source)
     if (relative.startsWith("..") || path.isAbsolute(relative))

@@ -1,0 +1,56 @@
+name: Prepare quality tools
+description: Use the repository tool pins and restore download caches, never installed dependency trees.
+inputs:
+  tools:
+    description: Quality tool set to install
+    default: runtime
+  prepare:
+    description: Prepare frozen source dependencies
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Set up pinned mise
+      uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      with:
+        version: 2026.10.24
+        install_args: bun node python uv
+        cache_key_prefix: quality-tools-v1-${{ inputs.tools }}
+    - name: Install selected quality tools
+      shell: bash
+      env:
+        QUALITY_TOOLS: ${{ inputs.tools }}
+      run: bash scripts/install-quality-tools.sh "$QUALITY_TOOLS"
+    - name: Restore dependency downloads
+      if: inputs.prepare == 'true'
+      id: downloads
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: |
+          ${{ env.BUN_INSTALL_CACHE_DIR }}
+          ${{ env.npm_config_cache }}/_cacache
+        key: ${{ runner.os }}-${{ runner.arch }}-source-downloads-v2-${{ hashFiles('mise.toml', 'bun.lock', 'tests/playwright/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-source-downloads-v2-
+    - name: Require clean dependency preparation
+      if: inputs.prepare == 'true'
+      shell: bash
+      run: |
+        if [[ -n "$(find packages -name node_modules -print -quit)" || -e node_modules ]]; then
+          echo "::error::Prepare source dependencies from a clean checkout."
+          exit 1
+        fi
+    - name: Prepare frozen source workspace
+      if: inputs.prepare == 'true'
+      shell: bash
+      run: |
+        bash scripts/install-source-runtime.sh --prepare
+        git diff --exit-code -- bun.lock package.json 'packages/*/package.json'
+    - name: Save dependency downloads
+      if: inputs.prepare == 'true' && steps.downloads.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: |
+          ${{ env.BUN_INSTALL_CACHE_DIR }}
+          ${{ env.npm_config_cache }}/_cacache
+        key: ${{ steps.downloads.outputs.cache-primary-key }}

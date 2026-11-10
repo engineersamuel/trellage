@@ -69,3 +69,7 @@ results/
 /.six-hats/
 /.test-performance/
 /test-performance.json
+/.quality-results/
+/.lycheecache
+/coverage/
+/packages/*/coverage/

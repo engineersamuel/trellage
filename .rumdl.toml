@@ -1,5 +1,7 @@
 [global]
-line-length = 120
+respect-gitignore = true
 
 [MD013]
 line-length = 120
+code-blocks = false
+tables = false

@@ -4,7 +4,7 @@ import path from "node:path"
 for (const [name, checked, accepted, rejected] of [
   ["overrides", 16_384, 8_864, 7_520],
   ["context", 920, 508, 412],
-  ["fields-regression", 86, undefined, undefined],
+  ["fields-regression", 92, undefined, undefined],
 ] as const) {
   test(`JSON request ${name} preserves validation and precedence across its declared product`, async () => {
     const child = Bun.spawn(

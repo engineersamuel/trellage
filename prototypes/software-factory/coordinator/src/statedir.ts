@@ -4,7 +4,18 @@
 // SF_STATE_DIR still overrides both.
 // Run as a script (mise factory:up) before anything creates the new folder: `bun src/statedir.ts`.
 import { execFileSync } from "node:child_process"
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import path from "node:path"
 
@@ -15,7 +26,8 @@ export const legacyStateDir = (tmp = tmpdir()): string => path.join(tmp, "softwa
 export const defaultStateDir = (env: Env = process.env, home = homedir()): string =>
   path.join(env.XDG_STATE_HOME || path.join(home, ".local", "state"), "trellage", "factory")
 
-export const stateDir = (env: Env = process.env, home = homedir()): string => env.SF_STATE_DIR || defaultStateDir(env, home)
+export const stateDir = (env: Env = process.env, home = homedir()): string =>
+  env.SF_STATE_DIR || defaultStateDir(env, home)
 
 /** Worktree folders in the state (runs/<id>, worktrees/<repo>/<id>): each has a `.git` file that points at its repo. */
 const gitWorktrees = (root: string): string[] =>
@@ -26,7 +38,11 @@ const gitWorktrees = (root: string): string[] =>
         : readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
             if (!d.isDirectory()) return []
             const p = path.join(dir, d.name)
-            return existsSync(path.join(p, ".git")) && lstatSync(path.join(p, ".git")).isFile() ? [p] : depth > 0 ? walk(p, depth - 1) : []
+            return existsSync(path.join(p, ".git")) && lstatSync(path.join(p, ".git")).isFile()
+              ? [p]
+              : depth > 0
+                ? walk(p, depth - 1)
+                : []
           })
     return walk(path.join(root, top), 1)
   })
@@ -50,7 +66,10 @@ const rewriteThreads = (root: string, from: string[]): void => {
   const file = path.join(root, "threads.json")
   if (!existsSync(file)) return
   const text = readFileSync(file, "utf8")
-  const next = from.reduce((t, old) => t.split(JSON.stringify(old).slice(1, -1)).join(JSON.stringify(root).slice(1, -1)), text)
+  const next = from.reduce(
+    (t, old) => t.split(JSON.stringify(old).slice(1, -1)).join(JSON.stringify(root).slice(1, -1)),
+    text,
+  )
   if (next !== text) writeFileSync(file, next)
 }
 
@@ -60,7 +79,13 @@ const rewriteThreads = (root: string, from: string[]): void => {
  * Returns true when it moved the folder.
  */
 export const migrateLegacyState = (target: string, legacy = legacyStateDir()): boolean => {
-  if (path.resolve(target) === path.resolve(legacy) || existsSync(target) || !existsSync(legacy) || lstatSync(legacy).isSymbolicLink()) return false
+  if (
+    path.resolve(target) === path.resolve(legacy) ||
+    existsSync(target) ||
+    !existsSync(legacy) ||
+    lstatSync(legacy).isSymbolicLink()
+  )
+    return false
   mkdirSync(path.dirname(target), { recursive: true })
   try {
     renameSync(legacy, target)
@@ -70,7 +95,7 @@ export const migrateLegacyState = (target: string, legacy = legacyStateDir()): b
     rmSync(legacy, { recursive: true, force: true })
   }
   symlinkSync(target, legacy)
-  // macOS: $TMPDIR is /var/folders/…, and /var is a link to /private/var; old files hold either spelling.
+  // macOS can expose the same temporary directory under two path spellings; old files may use either.
   rewriteThreads(target, [legacy.replace(/\/$/, ""), path.join("/private", legacy).replace(/\/$/, "")])
   repairWorktrees(target)
   return true
@@ -79,7 +104,8 @@ export const migrateLegacyState = (target: string, legacy = legacyStateDir()): b
 if (import.meta.main) {
   if (process.env.SF_STATE_DIR) process.exit(0)
   const target = defaultStateDir()
-  if (migrateLegacyState(target)) console.log(`software-factory state moved: ${legacyStateDir()} -> ${target} (old path is now a link)`)
+  if (migrateLegacyState(target))
+    console.log(`software-factory state moved: ${legacyStateDir()} -> ${target} (old path is now a link)`)
 }
 
 const isAlive = (pid: number): boolean => {
@@ -101,6 +127,8 @@ export const acquireStateLock = (root: string, pid = process.pid): void => {
   mkdirSync(root, { recursive: true })
   const holder = existsSync(file) ? Number(readFileSync(file, "utf8").trim()) : NaN
   if (Number.isInteger(holder) && holder !== pid && isAlive(holder))
-    throw new Error(`another coordinator (pid ${holder}) uses ${root}. Stop it first (mise run factory:down), or set SF_STATE_DIR to another folder.`)
+    throw new Error(
+      `another coordinator (pid ${holder}) uses ${root}. Stop it first (mise run factory:down), or set SF_STATE_DIR to another folder.`,
+    )
   writeFileSync(file, String(pid))
 }

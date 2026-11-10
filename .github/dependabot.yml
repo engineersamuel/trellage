@@ -1,19 +1,48 @@
 version: 2
 updates:
   - package-ecosystem: bun
-    directory: /
+    directories:
+      - /
+      - /pocs/herdr-trx-guide
+      - /prototypes/software-factory/coordinator
     schedule:
       interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
     cooldown:
       default-days: 7
     groups:
-      bun-minor-and-patch:
-        update-types:
-          - minor
-          - patch
+      compatible-workspace-updates:
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directories:
+      - /prototypes/software-factory/web-foldkit
+      - /tests/playwright
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+    groups:
+      compatible-prototype-updates:
+        update-types: [minor, patch]
+  - package-ecosystem: cargo
+    directory: /prototypes/simd-binary-search
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
     cooldown:
       default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

@@ -1,3 +1,16 @@
 [default.extend-words]
 hve = "hve"
+Trellage = "Trellage"
+Empryo = "Empryo"
+empryo = "empryo"
+JCode = "JCode"
+Herdr = "Herdr"
 HVE = "HVE"
+herdr = "herdr"
+cldx = "cldx"
+prx = "prx"
+Uji = "Uji"
+uji = "uji"
+
+[files]
+extend-exclude = ["*.lock", "*-lock.json", ".quality-results", "node_modules"]

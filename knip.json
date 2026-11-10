@@ -1,17 +1,53 @@
 {
-  "$schema": "https://unpkg.com/knip@6.44.1/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreIssues": {
+    "prototypes/trellage-prime-profiles/assets/extensions/ask-user.ts": ["unlisted"]
+  },
   "workspaces": {
+    ".": {
+      "ignoreBinaries": ["uv", "pbcopy", "mkfifo"],
+      "ignoreDependencies": [
+        "@swc/core",
+        "@trellage/launcher",
+        "dependency-cruiser",
+        "lefthook",
+        "oxlint",
+        "oxfmt",
+        "varlock"
+      ],
+      "entry": [
+        "bin/**/*.ts",
+        "scripts/**/*.ts",
+        "tests/**/*.ts",
+        "prototypes/trellage-*-common/*.ts",
+        "prototypes/trellage-*-common/tests/**/*.ts",
+        "prototypes/trellage-*-profiles/**/*.ts",
+        "traits.ts"
+      ],
+      "project": [
+        "bin/**/*.ts",
+        "scripts/**/*.ts",
+        "tests/**/*.ts",
+        "!tests/playwright/**",
+        "prototypes/trellage-*-common/**/*.ts",
+        "prototypes/trellage-*-profiles/**/*.ts",
+        "traits.ts"
+      ]
+    },
     "packages/*": {
       "entry": [
-        "src/**/*.{ts,tsx}",
+        "src/index.ts",
+        "src/*cli.{ts,tsx}",
+        "src/native-run/cli.ts",
         "test/**/*.{ts,tsx}",
         "tests/**/*.{ts,tsx}"
       ],
-      "project": [
-        "src/**/*.{ts,tsx}",
-        "test/**/*.{ts,tsx}",
-        "tests/**/*.{ts,tsx}"
-      ]
+      "project": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"]
+    },
+    "tests/playwright": {
+      "playwright": false,
+      "entry": ["**/*.ts"],
+      "project": ["**/*.ts"]
     }
   }
 }

@@ -1,0 +1,12 @@
+{
+  "measuredOn": "2026-11-09",
+  "platform": "macOS",
+  "policy": "The deterministic guide-core package cannot regress. Other package metrics remain reported until repeated hosted measurements establish stable cross-host floors. Raise floors when coverage improves; do not lower them to make a run pass.",
+  "packages": {
+    "guide-core": {
+      "lines": 87.55,
+      "functions": 83.53,
+      "branches": 77.15
+    }
+  }
+}

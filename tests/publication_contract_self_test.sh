@@ -29,6 +29,7 @@ seed_fixture() {
     "$fixture/packages/trellage-conversation-source/src" \
     "$fixture/packages/trellage-runtime/src"
   cp tests/publication_contract.sh "$fixture/tests/publication_contract.sh"
+  cp scripts/quality_secrets.py "$fixture/scripts/quality_secrets.py"
   cp .gitignore "$fixture/.gitignore"
   cp prototypes/.npmignore "$fixture/prototypes/.npmignore"
   printf 'temporary fixture\n' >"$fixture/prototypes/example/.contract-fixture.publication/marker"
@@ -89,6 +90,22 @@ fixture_git -C "$tree_fixture" tag extra-tag
 fixture_git -C "$tree_fixture" remote add origin https://example.invalid/trellage.git
 run_contract "$tree_fixture" >/dev/null \
   || fail 'default tree mode rejected contributor or additional Git state'
+
+mkdir -p "$tree_fixture/.agents/skills/example"
+printf 'Authored repository skill\n' >"$tree_fixture/.agents/skills/example/SKILL.md"
+printf '{"version":1,"skills":{}}\n' >"$tree_fixture/skills-lock.json"
+fixture_git -C "$tree_fixture" add .agents/skills/example/SKILL.md skills-lock.json
+run_contract "$tree_fixture" --policy-only >/dev/null \
+  || fail 'authored skills or skill-source lock metadata were rejected'
+mkdir -p "$tree_fixture/.agents/skills/example/.cache"
+printf '{}\n' >"$tree_fixture/.agents/skills/example/.cache/session.json"
+fixture_git -C "$tree_fixture" add -f .agents/skills/example/.cache/session.json
+if run_contract "$tree_fixture" --policy-only >"$fixture_root/skill-state-output" 2>&1; then
+  fail 'generated skill state was accepted'
+fi
+grep -Fq 'generated or private skill state is tracked' "$fixture_root/skill-state-output" \
+  || fail 'private skill-state diagnostic changed'
+fixture_git -C "$tree_fixture" rm -qf .agents/skills/example/.cache/session.json
 
 mv "$tree_fixture/prototypes/.npmignore" "$tree_fixture/prototypes/.npmignore.saved"
 if run_contract "$tree_fixture" >"$fixture_root/package-fixture-output" 2>&1; then

@@ -58,10 +58,12 @@ const launchDefaults = (harness: string, preset: string, plan: boolean, id: stri
     claude: ["claude-opus-5.5", plan ? "max" : "medium"],
     codex: [undefined, "medium"],
     copilot: ["gpt-6-astra", "medium"],
+    empryo: ["gpt-6.1-sol", "medium"],
     fx: [plan ? "gpt-6-astra" : "gpt-6.1-sol", plan ? "max" : "medium"],
     grok: ["grok-4.7", "medium"],
     headlong: ["claude-sonnet-5", undefined],
     jcode: ["gpt-5.6-sol", "medium"],
+    nodecode: ["gpt-6-astra", "medium"],
     omp: preset === "local" ? [undefined, "medium"] : ["gpt-5.6-sol", "medium"],
     pi: ["gpt-6-astra", "medium"],
     prime: ["claude-opus-5.5", undefined],
@@ -108,6 +110,20 @@ const checkHeadlong = (c: Check) => {
 const checkFx = (c: Check) => {
   assert.deepEqual(c.args, ["--effort", c.effort!], c.id)
   assert.equal(c.launch.env.FX_MODEL, c.model, c.id)
+}
+
+const checkEmpryo = async (c: Check) => {
+  assert.deepEqual(c.args, [], c.id)
+  const config = JSON.parse(await readFile(path.join(c.world.home, ".empryo/config.json"), "utf8"))
+  assert.equal(config.defaultModel, c.model!.includes("/") ? c.model : `copilot-proxy-rs/${c.model}`, c.id)
+  assert.equal(config.performance?.effort, c.effort, c.id)
+}
+
+const checkNodecode = (c: Check) => {
+  assert.deepEqual(c.args, [], c.id)
+  assert.equal(c.launch.env.NODECODE_HOME, path.join(c.generation, "home"), c.id)
+  assert.equal(c.launch.env.NODECODE_MODEL, c.model, c.id)
+  assert.equal(c.launch.env.NODECODE_REASONING_EFFORT, c.effort ?? null, c.id)
 }
 
 const checkUji = (c: Check) => {
@@ -297,10 +313,12 @@ const argumentChecks: Record<string, (c: Check) => void | Promise<void>> = {
   claude: checkClaude,
   codex: checkCodex,
   copilot: checkCopilot,
+  empryo: checkEmpryo,
   fx: checkFx,
   grok: checkGrok,
   headlong: checkHeadlong,
   jcode: checkJcode,
+  nodecode: checkNodecode,
   omp: checkOmp,
   pi: checkPi,
   prime: checkPrime,
@@ -383,6 +401,8 @@ export const assertRunLaunch = async (
     effort: options.effort ?? defaultEffort,
     args,
   }
-  await argumentChecks[harness]?.(check)
+  const argumentCheck = argumentChecks[harness]
+  assert(argumentCheck, `${id}: missing launch-argument oracle`)
+  await argumentCheck(check)
   if (options.profiles.includes("firstmate")) await firstmateChecks[harness]?.(check)
 }
