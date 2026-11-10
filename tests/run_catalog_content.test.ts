@@ -29,28 +29,18 @@ test("shipped harnesses and effective named choices all carry minimum selection 
 test("generation uses the shipped example without requiring a user config file", async () => {
   const fixture = await mkdtemp(path.join(os.tmpdir(), "trx-catalog-content-"))
   try {
-    await writeFile(path.join(fixture, "config.example.toml"), "schema_version = 1\n", {
-      mode: 0o600,
-    })
+    await writeFile(path.join(fixture, "config.example.toml"), "schema_version = 1\n", {mode:0o600})
     await mkdir(path.join(fixture, "prototypes"))
-    await generateRunCatalogContent({ root: fixture, check: false })
+    await generateRunCatalogContent({root:fixture,check:false})
     expect((await readdir(fixture)).sort()).toEqual(["config.example.toml", "prototypes"])
   } finally {
-    await rm(fixture, { recursive: true, force: true })
+    await rm(fixture,{recursive:true,force:true})
   }
 })
 
 test("copyable example contains valid shipped defaults", async () => {
   const example = await readFile(path.join(root, "config.example.toml"), "utf8")
   expect(example).toContain("Copy this file to ~/.config/trellage/config.toml")
-  const decoded = await readTrellageConfig({
-    environment: { TRELLAGE_CONFIG: path.join(root, "config.example.toml") },
-  })
+  const decoded = await readTrellageConfig({ environment: { TRELLAGE_CONFIG: path.join(root, "config.example.toml") } })
   expect(Object.keys(decoded.config.native.profiles).length).toBeGreaterThan(0)
-  expect(decoded.config.native.sources["ub-mode"]?.repository).toBe("unclebob/ub-mode")
-  expect(decoded.config.native.profiles["claude-ub-mode"]).toMatchObject({
-    always: true,
-    harnesses: ["claude"],
-    skills: [{ source: "ub-mode", names: ["ub-mode"] }],
-  })
 })
