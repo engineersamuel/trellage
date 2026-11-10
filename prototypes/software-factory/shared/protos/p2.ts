@@ -12,18 +12,61 @@ import { fire, json, send } from "../http"
 import { Draft } from "../schemas"
 import { colorOf, mountStream, openHistory } from "./stream"
 import {
-  agentLabel, el, newThread, messageAgent, mountTranscript, openAgentChat, openDecision, openThread, register, statusColor, subscribe, threadOf,
-  type Agent, type Ctx, type Decision, type Review, type State, type Thread,
+  agentLabel,
+  el,
+  newThread,
+  messageAgent,
+  mountTranscript,
+  openAgentChat,
+  openDecision,
+  openThread,
+  register,
+  statusColor,
+  subscribe,
+  threadOf,
+  type Agent,
+  type Ctx,
+  type Decision,
+  type Review,
+  type State,
+  type Thread,
 } from "./core"
 
-type Node = { id: string; kind: "global" | "sub" | "worker" | "ghost" | "draft"; tag: string; name: string; status: string; agent?: Agent; thread?: Thread; parent: string | null; children: Node[]; x: number; y: number; w: number }
+type Node = {
+  id: string
+  kind: "global" | "sub" | "worker" | "ghost" | "draft"
+  tag: string
+  name: string
+  status: string
+  agent?: Agent
+  thread?: Thread
+  parent: string | null
+  children: Node[]
+  x: number
+  y: number
+  w: number
+}
 
-const W = 236, H = 132, GX = 26, GY = 74, PAD = 40, HEAD = 78
+const W = 236,
+  H = 132,
+  GX = 26,
+  GY = 74,
+  PAD = 40,
+  HEAD = 78
 const MAX_GHOSTS = 6
 /** Width the docked global chat takes from the canvas when nothing is selected (518px chat + gaps). */
 const DOCK_W = 560
 /** Row label from what is in the row: a dormant or desk-owned repo conversation sits next to General chats, so a fixed label per depth is wrong. */
-const ROLE = (n: Node) => (n.kind === "global" ? "Factory desk · event inbox · read only" : n.id.startsWith("gen-") ? "General chats · chat here" : n.kind === "worker" ? "Workers" : n.kind === "draft" ? "Drafts · not started" : "Repo conversations · one per run")
+const ROLE = (n: Node) =>
+  n.kind === "global"
+    ? "Factory desk · event inbox · read only"
+    : n.id.startsWith("gen-")
+      ? "General chats · chat here"
+      : n.kind === "worker"
+        ? "Workers"
+        : n.kind === "draft"
+          ? "Drafts · not started"
+          : "Repo conversations · one per run"
 const tierLabels = (nodes: Iterable<Node>): [number, string][] => {
   const rows = new Map<number, Set<string>>()
   for (const n of nodes) (rows.get(n.y) ?? rows.set(n.y, new Set()).get(n.y)!).add(ROLE(n))
@@ -32,8 +75,28 @@ const tierLabels = (nodes: Iterable<Node>): [number, string][] => {
 
 const agentNode = (a: Agent): Node => {
   const l = agentLabel(a)
-  const tag = l.kind === "global" ? "Factory desk" : a.id.startsWith("gen-") ? "General chat" : l.kind === "sub" ? `Sub-coordinator · ${a.name.split(" · ")[0]}` : "Worker"
-  return { id: a.id, kind: l.kind, tag, name: l.kind === "global" ? "Factory desk" : l.name, status: a.status, agent: a, thread: l.kind === "sub" ? threadOf(a.id) : undefined, parent: null, children: [], x: 0, y: 0, w: W }
+  const tag =
+    l.kind === "global"
+      ? "Factory desk"
+      : a.id.startsWith("gen-")
+        ? "General chat"
+        : l.kind === "sub"
+          ? `Sub-coordinator · ${a.name.split(" · ")[0]}`
+          : "Worker"
+  return {
+    id: a.id,
+    kind: l.kind,
+    tag,
+    name: l.kind === "global" ? "Factory desk" : l.name,
+    status: a.status,
+    agent: a,
+    thread: l.kind === "sub" ? threadOf(a.id) : undefined,
+    parent: null,
+    children: [],
+    x: 0,
+    y: 0,
+    w: W,
+  }
 }
 
 const linkParents = (nodes: Map<string, Node>) => {
@@ -49,7 +112,7 @@ const linkParents = (nodes: Map<string, Node>) => {
 
 const placeNode = (n: Node, x: number, depth: number): number => {
   n.y = depth * (H + GY)
-  if (!n.children.length) return (n.x = x), (n.w = W)
+  if (!n.children.length) return ((n.x = x), (n.w = W))
   let cx = x
   for (const c of n.children) cx += placeNode(c, cx, depth + 1) + GX
   n.w = Math.max(W, cx - GX - x)
@@ -62,24 +125,40 @@ const isDraft = (t: Thread) => !!t.draft && !t.draft.startedAt
 const draftPrompt = (t: Thread) => t.draft?.versions.find((v) => v.id === t.draft!.current)?.prompt ?? ""
 
 /** The ring around a draft node, in clockwise order from the top. */
-const RING = [["enhance", "✨", "Enhance"], ["council", "🏛", "Council"], ["debate", "⚖", "Debate"], ["research", "🔎", "Research"], ["hyperresearch", "📚", "Hyperresearch"], ["run", "▶", "Run"]] as const
+const RING = [
+  ["enhance", "✨", "Enhance"],
+  ["council", "🏛", "Council"],
+  ["debate", "⚖", "Debate"],
+  ["research", "🔎", "Research"],
+  ["hyperresearch", "📚", "Hyperresearch"],
+  ["run", "▶", "Run"],
+] as const
 type RingAction = (typeof RING)[number][0]
 const LABEL: Record<string, string> = Object.fromEntries(RING.map(([a, , l]) => [a, l]))
 
 /** An API error body is `{ error }`; its text, else the raw reason. */
 const errorText = (reason: string) => {
-  try { return String(JSON.parse(reason).error ?? reason) } catch { return reason }
+  try {
+    return String(JSON.parse(reason).error ?? reason)
+  } catch {
+    return reason
+  }
 }
 
 /** Line diff of two prompts (LCS): unchanged lines " ", removed "-", added "+". */
 const lineDiff = (a: string[], b: string[]): [" " | "-" | "+", string][] => {
   const L = a.map(() => b.map(() => 0).concat(0)).concat([b.map(() => 0).concat(0)])
-  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) L[i]![j] = a[i] === b[j] ? L[i + 1]![j + 1]! + 1 : Math.max(L[i + 1]![j]!, L[i]![j + 1]!)
+  for (let i = a.length - 1; i >= 0; i--)
+    for (let j = b.length - 1; j >= 0; j--)
+      L[i]![j] = a[i] === b[j] ? L[i + 1]![j + 1]! + 1 : Math.max(L[i + 1]![j]!, L[i]![j + 1]!)
   const out: [" " | "-" | "+", string][] = []
-  let i = 0, j = 0
+  let i = 0,
+    j = 0
   while (i < a.length || j < b.length) {
-    if (i < a.length && j < b.length && a[i] === b[j]) out.push([" ", a[i++]!]), j++
-    else if (j < b.length && (i === a.length || L[i]![j + 1]! >= L[i + 1]![j]!)) out.push(["+", b[j++]!])
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      out.push([" ", a[i++]!])
+      j++
+    } else if (j < b.length && (i === a.length || L[i]![j + 1]! >= L[i + 1]![j]!)) out.push(["+", b[j++]!])
     else out.push(["-", a[i++]!])
   }
   return out
@@ -87,23 +166,58 @@ const lineDiff = (a: string[], b: string[]): [" " | "-" | "+", string][] => {
 
 /** Build the org tree: agents by owner, unstarted drafts under their General chat (else the global node), and dormant repo conversations (no live sub-coordinator) as ghosts under the global node. */
 const buildTree = (s: State, focus: string | null = null): Map<string, Node> => {
-  const archivedChat = (a: Agent) => a.id.startsWith("gen-") && s.threads.some((t) => !t.worktree && t.archivedAt && `gen-${t.id.slice(0, 8)}` === a.id)
+  const archivedChat = (a: Agent) =>
+    a.id.startsWith("gen-") && s.threads.some((t) => !t.worktree && t.archivedAt && `gen-${t.id.slice(0, 8)}` === a.id)
   const nodes = new Map(s.agents.filter((a) => !archivedChat(a)).map((a) => [a.id, agentNode(a)]))
   const live = new Set(s.agents.map((a) => a.id))
-  for (const t of s.threads.filter((t) => isDraft(t) && !t.archivedAt)) {
+  for (const t of s.threads.filter((x) => isDraft(x) && !x.archivedAt)) {
     const id = `draft-${t.id.slice(0, 8)}`
     const gen = t.parentThreadId ? `gen-${t.parentThreadId.slice(0, 8)}` : null
-    nodes.set(id, { id, kind: "draft", tag: `Draft · ${t.folderId}`, name: draftPrompt(t).slice(0, 48), status: "draft", thread: t, parent: gen && live.has(gen) ? gen : null, children: [], x: 0, y: 0, w: W })
+    nodes.set(id, {
+      id,
+      kind: "draft",
+      tag: `Draft · ${t.folderId}`,
+      name: draftPrompt(t).slice(0, 48),
+      status: "draft",
+      thread: t,
+      parent: gen && live.has(gen) ? gen : null,
+      children: [],
+      x: 0,
+      y: 0,
+      w: W,
+    })
   }
-  s.threads.filter((t) => t.worktree && !t.cleanedAt && !t.archivedAt && !isDraft(t) && !live.has(`sub-${t.id.slice(0, 8)}`)).sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_GHOSTS)
-    .forEach((t) => nodes.set(`t:${t.id}`, { id: `t:${t.id}`, kind: "ghost", tag: `Dormant · ${t.folderId}`, name: t.title, status: "dormant", thread: t, parent: null, children: [], x: 0, y: 0, w: W }))
+  s.threads
+    .filter((t) => t.worktree && !t.cleanedAt && !t.archivedAt && !isDraft(t) && !live.has(`sub-${t.id.slice(0, 8)}`))
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, MAX_GHOSTS)
+    .forEach((t) =>
+      nodes.set(`t:${t.id}`, {
+        id: `t:${t.id}`,
+        kind: "ghost",
+        tag: `Dormant · ${t.folderId}`,
+        name: t.title,
+        status: "dormant",
+        thread: t,
+        parent: null,
+        children: [],
+        x: 0,
+        y: 0,
+        w: W,
+      }),
+    )
   // Stopped workers, for the record, only along the selected node's chain (there can be dozens across the factory):
   // under their live sub-coordinator or its dormant conversation. Orphans are left out.
   const byStream = new Map([...nodes.values()].map((n) => [streamId(n), n.id]))
   // The chain is in agent ids: a dormant conversation's node is `t:<thread>`, its agent id `sub-<thread>`.
   const ownerOf = new Map([...s.agents, ...s.past].map((a) => [a.id, a.owner ?? null]))
   const chain = new Set<string>()
-  for (let id = focus && nodes.has(focus) ? streamId(nodes.get(focus)!) : focus; id && !chain.has(id); id = ownerOf.get(id) ?? null) chain.add(id)
+  for (
+    let id = focus && nodes.has(focus) ? streamId(nodes.get(focus)!) : focus;
+    id && !chain.has(id);
+    id = ownerOf.get(id) ?? null
+  )
+    chain.add(id)
   for (const a of s.past) {
     const owner = a.owner ? byStream.get(a.owner) : undefined
     if (owner && chain.has(a.owner!) && !nodes.has(a.id)) nodes.set(a.id, { ...agentNode(a), parent: owner })
@@ -122,11 +236,16 @@ const streamId = (n: Node) => (n.kind === "ghost" ? `sub-${n.thread!.id.slice(0,
 const generalIds = (s: State) => new Set(s.threads.filter((t) => t.folderId === "general").map((t) => t.id))
 const pendingOf = (s: State, n: Node): Decision[] => {
   const p = s.decisions.filter((d) => d.status === "pending")
-  if (n.kind === "global") { const g = generalIds(s); return p.filter((d) => !d.threadId || g.has(d.threadId)) }
+  if (n.kind === "global") {
+    const g = generalIds(s)
+    return p.filter((d) => !d.threadId || g.has(d.threadId))
+  }
   return n.thread ? p.filter((d) => d.threadId === n.thread!.id) : []
 }
 const reviewOf = (s: State, n: Node): Review | undefined =>
-  n.thread ? s.reviews.filter((r) => r.threadId === n.thread!.id).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))[0] : undefined
+  n.thread
+    ? s.reviews.filter((r) => r.threadId === n.thread!.id).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))[0]
+    : undefined
 const reviewText = (r: Review) => {
   if (r.status !== "done") return `review ${r.status}`
   const kept = r.findings.filter((f) => f.verdict === "keep").length
@@ -142,13 +261,22 @@ const activityText = (s: State, n: Node) => {
   if (n.kind === "ghost") return n.thread?.branch ?? "no live coordinator"
   const a = s.activity[n.id]
   if (a) return `${a.label} ${a.detail}`.trim()
-  return n.agent?.status === "running" ? "Working…" : n.agent?.status === "stopped" ? "Stopped · saved history" : (n.agent?.lastMessage ?? "Idle").replace(/[`*#>\n]+/g, " ").trim()
+  return n.agent?.status === "running"
+    ? "Working…"
+    : n.agent?.status === "stopped"
+      ? "Stopped · saved history"
+      : (n.agent?.lastMessage ?? "Idle").replace(/[`*#>\n]+/g, " ").trim()
 }
 
 /** Archive hides a dormant conversation or a General chat from the canvas. Delete removes the conversation (and a repo conversation's worktree and local branch). */
 const ghostAction = (t: Thread, kind: "archive" | "delete") => {
   const b = el("button", `p2-gact ${kind}`, kind === "archive" ? "⤓" : "✕")
-  b.title = kind === "archive" ? "Archive: hide from the canvas (stays in the sidebar)" : t.worktree ? "Delete conversation, worktree, and branch" : "Delete chat"
+  b.title =
+    kind === "archive"
+      ? "Archive: hide from the canvas (stays in the sidebar)"
+      : t.worktree
+        ? "Delete conversation, worktree, and branch"
+        : "Delete chat"
   b.setAttribute("aria-label", `${kind === "archive" ? "Archive" : "Delete"} ${t.title}`)
   b.onclick = (e) => {
     e.stopPropagation()
@@ -216,9 +344,11 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     if (!prompt || !draftFolder.value) return
     draftCreate.disabled = true
     draftErr.textContent = ""
-    void Effect.runPromise(send("/api/drafts", "POST", { folderId: draftFolder.value, prompt }).pipe(
-      Effect.match({ onFailure: (err) => errorText(err.reason), onSuccess: () => null }),
-    )).then((error) => {
+    void Effect.runPromise(
+      send("/api/drafts", "POST", { folderId: draftFolder.value, prompt }).pipe(
+        Effect.match({ onFailure: (err) => errorText(err.reason), onSuccess: () => null }),
+      ),
+    ).then((error) => {
       draftCreate.disabled = false
       if (error) return void (draftErr.textContent = `Create failed: ${error}`)
       draftText.value = ""
@@ -285,7 +415,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const ringEl = el("div", "p2-ring")
   ringEl.setAttribute("role", "menu")
   /** Ellipse radii: the buttons sit just outside the 236×132 card. */
-  const RX = 170, RY = 118
+  const RX = 170,
+    RY = 118
   const ringBtns = RING.map(([a, icon, label], i) => {
     const b = el("button", "p2-ring-btn", icon)
     b.setAttribute("role", "menuitem")
@@ -308,23 +439,31 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const running = (id: string) => !!s?.agents.some((a) => a.id === id && a.status === "running")
   /** Why a ring action cannot start now, or null. */
   const blocked = (n: Node, a: RingAction): string | null => {
-    const t = n.thread!, d = t.draft!, b = busy.get(t.id)
+    const t = n.thread!,
+      d = t.draft!,
+      b = busy.get(t.id)
     if (b) return b === "enhance" ? "Enhancing…" : `${LABEL[b]} is starting…`
     if (a === "enhance") return null
     if (d.pending) return "Pick a rewrite first"
     if (a === "run") {
-      const r = d.reports.find((r) => running(r.workerId))
-      return r ? `${LABEL[r.action]} is running` : s!.agents.some((x) => x.owner === n.id && x.status === "running") ? "A draft worker is running" : null
+      const r = d.reports.find((x) => running(x.workerId))
+      return r
+        ? `${LABEL[r.action]} is running`
+        : s!.agents.some((x) => x.owner === n.id && x.status === "running")
+          ? "A draft worker is running"
+          : null
     }
     return d.reports.some((r) => r.action === a && running(r.workerId)) ? `${LABEL[a]} is running` : null
   }
 
   /** POST a draft endpoint; the reply is the new Draft. Resolves to the error text, or null. */
   const post = (id: string, path: string, body?: unknown) =>
-    Effect.runPromise(json(`/api/drafts/${id}/${path}`, Draft, {
-      method: "POST",
-      ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-    }).pipe(Effect.match({ onFailure: (e) => errorText(e.reason), onSuccess: () => null })))
+    Effect.runPromise(
+      json(`/api/drafts/${id}/${path}`, Draft, {
+        method: "POST",
+        ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+      }).pipe(Effect.match({ onFailure: (e) => errorText(e.reason), onSuccess: () => null })),
+    )
 
   const act = (id: string, a: RingAction) => {
     ring = null
@@ -356,11 +495,18 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     b.setAttribute("aria-label", `Delete draft ${t.title}`)
     b.onclick = (e) => {
       e.stopPropagation()
-      if (!confirm(`Delete draft "${t.title}"?\n\nThis removes the draft, its worktree ${t.worktree ?? ""} (reports too), and the local branch ${t.branch ?? ""}. It cannot be undone.`)) return
+      if (
+        !confirm(
+          `Delete draft "${t.title}"?\n\nThis removes the draft, its worktree ${t.worktree ?? ""} (reports too), and the local branch ${t.branch ?? ""}. It cannot be undone.`,
+        )
+      )
+        return
       errs.delete(t.id)
-      void Effect.runPromise(send(`/api/drafts/${t.id}`, "DELETE").pipe(
-        Effect.match({ onFailure: (err) => errorText(err.reason), onSuccess: () => null }),
-      )).then((err) => {
+      void Effect.runPromise(
+        send(`/api/drafts/${t.id}`, "DELETE").pipe(
+          Effect.match({ onFailure: (err) => errorText(err.reason), onSuccess: () => null }),
+        ),
+      ).then((err) => {
         if (err) errs.set(t.id, `Delete failed: ${err}`)
         if (alive) sync()
       })
@@ -404,13 +550,19 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     document.body.append(back)
     close.focus()
     const q = new URLSearchParams({ path, thread: threadId })
-    void Effect.runPromise(json(`/api/reports?${q}`, Schema.Struct({ content: Schema.String })).pipe(
-      Effect.match({ onFailure: (e) => void (body.textContent = `Report not available: ${e.reason}`), onSuccess: (r) => void (body.innerHTML = markdown(r.content)) }),
-    ))
+    void Effect.runPromise(
+      json(`/api/reports?${q}`, Schema.Struct({ content: Schema.String })).pipe(
+        Effect.match({
+          onFailure: (e) => void (body.textContent = `Report not available: ${e.reason}`),
+          onSuccess: (r) => void (body.innerHTML = markdown(r.content)),
+        }),
+      ),
+    )
   }
 
   const versionRow = (t: Thread, i: number) => {
-    const d = t.draft!, v = d.versions[i]!
+    const d = t.draft!,
+      v = d.versions[i]!
     const row = el("div", "p2-ver")
     const head = el("div", "p2-ver-head")
     head.append(el("b", "", `v${i + 1}`), el("span", "p2-ph-tag", v.source), el("span", "p2-ver-title", v.title ?? ""))
@@ -423,17 +575,17 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     }
     row.append(head)
     if (v.notes) row.append(el("div", "p2-ver-notes", v.notes))
-    if (!i) return row.append(el("div", "p2-ver-prompt", v.prompt)), row
+    if (!i) return (row.append(el("div", "p2-ver-prompt", v.prompt)), row)
     const diff = el("div", "p2-diff")
     diff.setAttribute("aria-label", `Changes from v${i} to v${i + 1}`)
     for (const [op, line] of lineDiff(d.versions[i - 1]!.prompt.split("\n"), v.prompt.split("\n")))
       diff.append(el("div", op === "-" ? "del" : op === "+" ? "add" : "same", `${op} ${line}`))
-    return row.append(diff), row
+    return (row.append(diff), row)
   }
 
   /** Slide-over of one draft: enhance candidates, versions (newest first, diff to the previous), and reports. */
   const renderOver = () => {
-    const t = overId ? s?.threads.find((t) => t.id === overId && isDraft(t)) : undefined
+    const t = overId ? s?.threads.find((x) => x.id === overId && isDraft(x)) : undefined
     if (!t) overId = null
     if (root.classList.contains("drafting") !== !!t) {
       root.classList.toggle("drafting", !!t)
@@ -450,7 +602,11 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     close.setAttribute("aria-label", "Close draft")
     close.onclick = () => ((overId = null), sync())
     const head = el("div", "p2-ph-row p2-over-head")
-    head.append(el("span", "p2-ph-tag", `Draft · ${t.folderId}`), el("span", "p2-ph-act", draftPrompt(t).split("\n")[0]!), close)
+    head.append(
+      el("span", "p2-ph-tag", `Draft · ${t.folderId}`),
+      el("span", "p2-ph-act", draftPrompt(t).split("\n")[0]!),
+      close,
+    )
     const body = el("div", "p2-over-body")
     const err = errs.get(t.id)
     if (err) body.append(el("div", "p2-err p2-err-full", err))
@@ -461,7 +617,12 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
         const card = el("div", "p2-cand")
         const pick = el("button", "p2-newchat", "Pick")
         pick.onclick = () => change(t.id, "pick", { index: i })
-        card.append(el("b", "", c.title), el("div", "p2-cand-prompt", c.prompt), el("div", "p2-ver-notes", c.notes), pick)
+        card.append(
+          el("b", "", c.title),
+          el("div", "p2-cand-prompt", c.prompt),
+          el("div", "p2-ver-notes", c.notes),
+          pick,
+        )
         row.append(card)
       })
       const keep = el("button", "p2-more", "Keep current")
@@ -475,7 +636,11 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       body.append(el("h4", "", "Reports"))
       const chips = el("div", "p2-chips")
       for (const r of d.reports) {
-        const b = el("button", "p2-chip", `${LABEL[r.action]} · v${d.versions.findIndex((v) => v.id === r.versionId) + 1}`)
+        const b = el(
+          "button",
+          "p2-chip",
+          `${LABEL[r.action]} · v${d.versions.findIndex((v) => v.id === r.versionId) + 1}`,
+        )
         b.title = r.path
         b.onclick = () => openReport(t.id, r.path)
         chips.append(b)
@@ -488,7 +653,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const fit = () => {
     const cw = Math.max(...[...nodes.values()].map((n) => n.x + W), W) + PAD * 2
     const ch = Math.max(...[...nodes.values()].map((n) => n.y + H), H) + PAD * 2
-    const aw = canvas.clientWidth - (sel || overId ? 0 : DOCK_W), ah = canvas.clientHeight - HEAD - (sel ? 50 : 40)
+    const aw = canvas.clientWidth - (sel || overId ? 0 : DOCK_W),
+      ah = canvas.clientHeight - HEAD - (sel ? 50 : 40)
     const k = Math.min(1, aw / cw, ah / ch)
     world.style.width = `${cw}px`
     world.style.height = `${ch}px`
@@ -508,7 +674,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   }
 
   const cardHead = (n: Node) => {
-    const pend = pendingOf(s!, n), rev = reviewOf(s!, n)
+    const pend = pendingOf(s!, n),
+      rev = reviewOf(s!, n)
     const head = el("div", "p2-n-head")
     head.append(el("i", "p2-dot"))
     if (n.agent) head.append(harnessBadge(n.agent.harness))
@@ -519,7 +686,14 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       b.onclick = (e) => (e.stopPropagation(), openDecision(pend[0].id))
       head.append(b)
     }
-    if (rev) head.append(el("span", `p2-badge ${rev.findings.some((f) => f.verdict === "keep") ? "warn" : "ok"}`, rev.findings.length ? `🛡 ${rev.findings.length}` : "🛡 ✓"))
+    if (rev)
+      head.append(
+        el(
+          "span",
+          `p2-badge ${rev.findings.some((f) => f.verdict === "keep") ? "warn" : "ok"}`,
+          rev.findings.length ? `🛡 ${rev.findings.length}` : "🛡 ✓",
+        ),
+      )
     const chat = n.id.startsWith("gen-") ? threadOf(n.id) : undefined
     const t = n.kind === "ghost" ? n.thread! : chat
     if (t) head.append(ghostAction(t, "archive"), ghostAction(t, "delete"))
@@ -528,7 +702,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
 
   /** Draft card: version badge, one chip per report (dimmed while its worker runs). */
   const renderDraftCard = (n: Node, card: HTMLElement) => {
-    const t = n.thread!, d = t.draft!
+    const t = n.thread!,
+      d = t.draft!
     const head = el("div", "p2-n-head")
     const badge = el("button", "p2-badge", `v${d.versions.findIndex((v) => v.id === d.current) + 1}`)
     badge.title = "Versions and reports"
@@ -543,19 +718,34 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     }
     // A finished report opens from the card; a running one says so.
     for (const r of d.reports) {
-      const running = s!.agents.some((a) => a.id === r.workerId && a.status === "running")
-      if (running) {
+      const isRunning = s!.agents.some((a) => a.id === r.workerId && a.status === "running")
+      if (isRunning) {
         chips.append(el("span", "p2-chip run", `${LABEL[r.action]} · running…`))
         continue
       }
-      const open = el("button", "p2-chip done", `📄 ${LABEL[r.action]} · v${d.versions.findIndex((v) => v.id === r.versionId) + 1}`)
+      const open = el(
+        "button",
+        "p2-chip done",
+        `📄 ${LABEL[r.action]} · v${d.versions.findIndex((v) => v.id === r.versionId) + 1}`,
+      )
       open.title = `Open ${r.path}`
       open.onclick = (e) => (e.stopPropagation(), openReport(t.id, r.path))
       chips.append(open)
     }
-    const err = errs.get(t.id), b = busy.get(t.id)
-    patchChildren(card, [head, el("div", "p2-n-name", n.name), el("div", "p2-n-wt", t.folderId), chips, ...(err ? [errLine(err)] : []),
-      el("div", "p2-n-foot", b ? (b === "enhance" ? "Enhancing…" : `${LABEL[b]} is starting…`) : "draft · click for actions")])
+    const err = errs.get(t.id),
+      b = busy.get(t.id)
+    patchChildren(card, [
+      head,
+      el("div", "p2-n-name", n.name),
+      el("div", "p2-n-wt", t.folderId),
+      chips,
+      ...(err ? [errLine(err)] : []),
+      el(
+        "div",
+        "p2-n-foot",
+        b ? (b === "enhance" ? "Enhancing…" : `${LABEL[b]} is starting…`) : "draft · click for actions",
+      ),
+    ])
   }
 
   /** One clipped error line on the card; the full text is in the tooltip and the slide-over. */
@@ -572,12 +762,35 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const bar = el("div", "p2-ctx")
     bar.append(el("span"))
     ;(bar.firstChild as HTMLElement).style.width = `${Math.round(ctx * 100)}%`
-    const foot = el("div", "p2-n-foot", n.agent ? `${n.status} · ${n.agent.harness ?? "copilot"} · ${n.agent.model.replace(/^claude-/, "")} · ${Math.round(ctx * 100)}% context` : "dormant · click to resume")
+    const foot = el(
+      "div",
+      "p2-n-foot",
+      n.agent
+        ? `${n.status} · ${n.agent.harness ?? "copilot"} · ${n.agent.model.replace(/^claude-/, "")} · ${Math.round(ctx * 100)}% context`
+        : "dormant · click to resume",
+    )
     if (n.children.length) foot.append(el("span", "p2-kids", `${n.children.length} ▾`))
     const t = n.kind === "global" ? undefined : worktreeOf(n)
-    const wt = el("div", "p2-n-wt", t?.worktree ? worktreeLine(t) : n.kind === "global" ? "event inbox · read only" : n.id.startsWith("gen-") ? "own memory · no worktree" : "own workspace")
+    const wt = el(
+      "div",
+      "p2-n-wt",
+      t?.worktree
+        ? worktreeLine(t)
+        : n.kind === "global"
+          ? "event inbox · read only"
+          : n.id.startsWith("gen-")
+            ? "own memory · no worktree"
+            : "own workspace",
+    )
     if (t?.worktree) wt.title = `Worktree ${t.worktree}\nBranch ${t.branch}${t.base ? `\nBased on ${t.base}` : ""}`
-    patchChildren(card, [cardHead(n), el("div", "p2-n-name", n.name), wt, el("div", "p2-n-act", activityText(s!, n)), bar, foot])
+    patchChildren(card, [
+      cardHead(n),
+      el("div", "p2-n-name", n.name),
+      wt,
+      el("div", "p2-n-act", activityText(s!, n)),
+      bar,
+      foot,
+    ])
   }
 
   const createCard = (id: string) => {
@@ -603,21 +816,30 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
         edges.set(n.id, e)
         svg.append(e)
       }
-      const x1 = p.x + PAD + W / 2, y1 = p.y + PAD + H, x2 = n.x + PAD + W / 2, y2 = n.y + PAD, my = (y1 + y2) / 2
+      const x1 = p.x + PAD + W / 2,
+        y1 = p.y + PAD + H,
+        x2 = n.x + PAD + W / 2,
+        y2 = n.y + PAD,
+        my = (y1 + y2) / 2
       e.setAttribute("d", `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`)
-      e.setAttribute("class", `${n.status === "running" ? "run" : ""} ${n.kind === "ghost" || n.kind === "draft" ? "ghost" : ""}`)
+      e.setAttribute(
+        "class",
+        `${n.status === "running" ? "run" : ""} ${n.kind === "ghost" || n.kind === "draft" ? "ghost" : ""}`,
+      )
     }
-    for (const [id, e] of edges) if (!seen.has(id)) {
-      e.remove()
-      edges.delete(id)
-    }
+    for (const [id, e] of edges)
+      if (!seen.has(id)) {
+        e.remove()
+        edges.delete(id)
+      }
   }
 
   const renderGraph = () => {
-    for (const [id, c] of cards) if (!nodes.has(id)) {
-      c.remove()
-      cards.delete(id)
-    }
+    for (const [id, c] of cards)
+      if (!nodes.has(id)) {
+        c.remove()
+        cards.delete(id)
+      }
     for (const n of nodes.values()) renderCard(n, cards.get(n.id) ?? createCard(n.id))
     // Reading order (top row first, left to right) for keyboard and screen readers; reorder only when it changes.
     const order = [...nodes.values()].sort((a, b) => a.y - b.y || a.x - b.x).map((n) => n.id)
@@ -625,30 +847,50 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       orderKey = order.join()
       world.append(...order.map((id) => cards.get(id)!))
     }
-    patchChildren(tiers, tierLabels(nodes.values()).map(([y, t]) => {
-      const l = el("div", "p2-tier", t)
-      l.style.top = `${y + PAD - 24}px`
-      return l
-    }))
+    patchChildren(
+      tiers,
+      tierLabels(nodes.values()).map(([y, t]) => {
+        const l = el("div", "p2-tier", t)
+        l.style.top = `${y + PAD - 24}px`
+        return l
+      }),
+    )
     renderEdges()
   }
 
   const renderStats = () => {
     const st = s!
-    const running = st.agents.filter((a) => a.status === "running").length
+    const runningCount = st.agents.filter((a) => a.status === "running").length
     const legend = el("span", "p2-legend")
-    for (const [c, t] of [["#22c55e", "idle"], ["#f59e0b", "running"], ["#ef4444", "error"], ["#525252", "dormant"]]) {
+    for (const [c, t] of [
+      ["#22c55e", "idle"],
+      ["#f59e0b", "running"],
+      ["#ef4444", "error"],
+      ["#525252", "dormant"],
+    ]) {
       const d = el("i", "p2-dot")
       d.style.setProperty("--glow", c)
       legend.append(d, el("span", "", t))
     }
-    patchChildren(stats, [legend, el("span", "", `${st.agents.length} agents`), el("span", running ? "on" : "", `${running} running`)])
+    patchChildren(stats, [
+      legend,
+      el("span", "", `${st.agents.length} agents`),
+      el("span", runningCount ? "on" : "", `${runningCount} running`),
+    ])
     const n = sel ? nodes.get(sel) : undefined
-    where.textContent = n ? `Viewing ${n.kind === "global" ? "Factory" : n.name} · Esc goes back` : "Factory overview · click any card to open its chat"
+    where.textContent = n
+      ? `Viewing ${n.kind === "global" ? "Factory" : n.name} · Esc goes back`
+      : "Factory overview · click any card to open its chat"
     // Decisions waiting for a human: each one is a button that opens its card.
     const pend = st.decisions.filter((d) => d.status === "pending").sort((a, b) => a.createdAt - b.createdAt)
     decisions.classList.toggle("warn", pend.length > 0)
-    const items: Element[] = [el("b", "", pend.length ? `⚑ ${pend.length} decision${pend.length > 1 ? "s" : ""} waiting` : "Decisions: none waiting")]
+    const items: Element[] = [
+      el(
+        "b",
+        "",
+        pend.length ? `⚑ ${pend.length} decision${pend.length > 1 ? "s" : ""} waiting` : "Decisions: none waiting",
+      ),
+    ]
     for (const d of pend.slice(0, 3)) {
       const b = el("button", "", d.title)
       b.onclick = () => openDecision(d.id)
@@ -691,7 +933,12 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const row2 = el("div", "p2-ph-row")
     const dot = el("i", "p2-dot")
     dot.style.setProperty("--glow", n.kind === "ghost" ? "#525252" : statusColor(n.status))
-    row2.append(dot, ...(n.agent ? [harnessBadge(n.agent.harness)] : []), el("span", "p2-ph-tag", n.tag), el("span", "p2-ph-act", activityText(st, n)))
+    row2.append(
+      dot,
+      ...(n.agent ? [harnessBadge(n.agent.harness)] : []),
+      el("span", "p2-ph-tag", n.tag),
+      el("span", "p2-ph-act", activityText(st, n)),
+    )
     for (const d of pendingOf(st, n)) {
       const b = el("button", "p2-badge warn", `⚑ ${d.title}`)
       b.onclick = () => openDecision(d.id)
@@ -719,9 +966,15 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       if (t.base) row4.append(el("span", "p2-wt-base", `from ${shortSha(t.base)}`))
       const p = el("button", "p2-wt-path", t.worktree)
       p.title = "Copy the worktree path"
-      p.onclick = () => void navigator.clipboard?.writeText(t.worktree!).then(() => ((p.textContent = "Copied ✓"), setTimeout(() => (p.textContent = t.worktree!), 1200)))
+      p.onclick = () =>
+        void navigator.clipboard
+          ?.writeText(t.worktree!)
+          .then(() => ((p.textContent = "Copied ✓"), setTimeout(() => (p.textContent = t.worktree!), 1200)))
       row4.append(p)
-    } else row4.append(el("span", "p2-ph-tag", n.kind === "global" ? "General · no worktree" : "Own workspace · no repo worktree"))
+    } else
+      row4.append(
+        el("span", "p2-ph-tag", n.kind === "global" ? "General · no worktree" : "Own workspace · no repo worktree"),
+      )
     patchChildren(panelHead, [row1, row4, row2, row3])
   }
 
@@ -737,14 +990,16 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const ta = el("textarea")
     ta.placeholder = "Message this worker directly… (Enter sends)"
     ta.rows = 2
-    const send = el("button", "", "Send")
-    form.append(ta, send)
+    const sendButton = el("button", "", "Send")
+    form.append(ta, sendButton)
     form.onsubmit = (e) => {
       e.preventDefault()
       const text = ta.value.trim()
       if (!text) return
       ta.value = ""
-      void messageAgent(id, text).then((error) => (ta.placeholder = error ? `Send failed: ${error}` : "Sent. Message again…"))
+      void messageAgent(id, text).then(
+        (error) => (ta.placeholder = error ? `Send failed: ${error}` : "Sent. Message again…"),
+      )
     }
     ta.onkeydown = (e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), form.requestSubmit())
     panelBody.replaceChildren(scroll, form)
@@ -772,7 +1027,13 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     fresh.onclick = () => newThread("general")
     const dot = el("i", "p2-dot")
     dot.style.setProperty("--glow", statusColor(g?.status ?? "idle"))
-    patchChildren(dockHead, [dot, el("b", "", "💬 Chat here"), el("span", "p2-ph-act", g && s ? activityText(s, g) : "new requests start here"), fresh, b])
+    patchChildren(dockHead, [
+      dot,
+      el("b", "", "💬 Chat here"),
+      el("span", "p2-ph-act", g && s ? activityText(s, g) : "new requests start here"),
+      fresh,
+      b,
+    ])
   }
 
   const mountPanelBody = (n: Node | undefined): (() => void) => {
@@ -815,7 +1076,11 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     agent: (id) => {
       const n = nodeOfAgent(id)
       if (!n) return undefined
-      return { name: n.kind === "global" ? "Factory desk" : n.name, kind: id.startsWith("gen-") ? "chat" : STREAM_KIND[n.kind], status: n.status }
+      return {
+        name: n.kind === "global" ? "Factory desk" : n.name,
+        kind: id.startsWith("gen-") ? "chat" : STREAM_KIND[n.kind],
+        status: n.status,
+      }
     },
     select: selectAgent,
     /** Agent ids of the selected node and everything under it; null = whole factory. */
@@ -845,7 +1110,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       return [all]
     },
     open: () => railOpen,
-    empty: () => (sel ? "Nothing from this agent yet." : "Nothing yet. Events from every agent appear here as they happen."),
+    empty: () =>
+      sel ? "Nothing from this agent yet." : "Nothing yet. Events from every agent appear here as they happen.",
     openHit: (h) => {
       const n = nodes.get(h.workerId)
       if (!n) return openHistory(h.workerId, h.seq, `${h.workerId} · stopped · saved history`)
@@ -854,7 +1120,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       stream.clearSearch()
       panelFocus = { id: h.workerId, seq: h.seq }
       // Already open: remount so the transcript scrolls to the match.
-      if (sel === h.workerId) mounted?.stop(), (mounted = null)
+      if (sel === h.workerId) {
+        mounted?.stop()
+        mounted = null
+      }
       select(h.workerId)
     },
   })
@@ -891,7 +1160,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     if (!mounted) {
       const threadId = new URL(window.location.href).searchParams.get("thread")
       const linked = [...nodes.values()].find((n) => n.thread?.id === threadId && n.kind !== "draft")
-      if (linked) (sel = linked.id), (nodes = buildTree(st, sel))
+      if (linked) {
+        sel = linked.id
+        nodes = buildTree(st, sel)
+      }
     }
     if (pressed) owed = true
     else sync()
@@ -912,7 +1184,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   /** A press outside the ring and its node closes the ring. */
   const onDown = (e: PointerEvent) => {
     const t = e.target as Element
-    if (ring && !ringEl.contains(t) && !cards.get(ring)?.contains(t)) (ring = null), sync()
+    if (ring && !ringEl.contains(t) && !cards.get(ring)?.contains(t)) {
+      ring = null
+      sync()
+    }
   }
   document.addEventListener("pointerdown", onDown, true)
 
@@ -932,4 +1207,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   }
 }
 
-register({ id: 2, name: "Org Canvas", blurb: "Live org chart of every agent; click a node to open its chat in a slide-over", mount })
+register({
+  id: 2,
+  name: "Org Canvas",
+  blurb: "Live org chart of every agent; click a node to open its chat in a slide-over",
+  mount,
+})

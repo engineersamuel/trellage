@@ -7,14 +7,53 @@ import { answer, runApprovals } from "../approvals"
 import { fire, send } from "../http"
 import { harnessBadge } from "../harness"
 import { openSpec } from "../spec"
-import { el, messageAgent, mountTranscript, newThread, openDecision, openThread, register, subscribe, type Ctx, type State } from "./core"
+import {
+  el,
+  messageAgent,
+  mountTranscript,
+  newThread,
+  openDecision,
+  openThread,
+  register,
+  subscribe,
+  type Ctx,
+  type State,
+} from "./core"
 import { mountStream, openHistory, type StreamAgent } from "./stream"
 import { mountTimeline } from "./timeline-view"
-import { ancestors, bornAt, bossOf, build, count, items, modelReason, rootOf, subtree, VIEWS, type Model, type Node, type View } from "./p3-model"
+import {
+  ancestors,
+  bornAt,
+  bossOf,
+  build,
+  count,
+  items,
+  modelReason,
+  rootOf,
+  subtree,
+  VIEWS,
+  type Model,
+  type Node,
+  type View,
+} from "./p3-model"
 
-const LABEL: Record<Node["status"], string> = { running: "Running", idle: "Idle", error: "Failed", needs: "Needs you", dormant: "Dormant", draft: "Draft", stopped: "Stopped" }
+const LABEL: Record<Node["status"], string> = {
+  running: "Running",
+  idle: "Idle",
+  error: "Failed",
+  needs: "Needs you",
+  dormant: "Dormant",
+  draft: "Draft",
+  stopped: "Stopped",
+}
 const ICON: Record<Node["kind"], string> = { desk: "🌐", chat: "💬", sub: "◆", worker: "⚙", draft: "📄" }
-const KIND: Record<Node["kind"], string> = { desk: "Factory desk", chat: "General chat", sub: "Sub-coordinator", worker: "Worker", draft: "Draft" }
+const KIND: Record<Node["kind"], string> = {
+  desk: "Factory desk",
+  chat: "General chat",
+  sub: "Sub-coordinator",
+  worker: "Worker",
+  draft: "Draft",
+}
 /** Agent fields that change on every model call and that p3 does not draw. */
 const VOLATILE = new Set(["contextTokens", "contextLimit", "rssKb", "eventCount", "lastMessage", "pid"])
 const ago = (t?: number) => {
@@ -32,7 +71,8 @@ const btn = (text: string, onClick: () => void, cls = "") => {
   b.onclick = (e) => (e.stopPropagation(), onClick())
   return b
 }
-const archive = (n: Node, at: number | null) => n.thread && fire(send(`/api/threads/update/${n.thread.id}`, "PATCH", { archivedAt: at }))
+const archive = (n: Node, at: number | null) =>
+  n.thread && fire(send(`/api/threads/update/${n.thread.id}`, "PATCH", { archivedAt: at }))
 
 const mount = ({ root, placeChat }: Ctx): (() => void) => {
   root.classList.add("sfp-p3")
@@ -58,7 +98,11 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const tlOn = new Set<string>()
   let tlFocus: string | null = null
   /** Live by default while the coordinator runs a turn, unless the human switched it off; on when switched on. */
-  const showsLive = (n: Node) => !!n.agent && n.kind !== "worker" && n.kind !== "draft" && (liveOn.has(n.id) || (n.agent.status === "running" && !liveOff.has(n.id)))
+  const showsLive = (n: Node) =>
+    !!n.agent &&
+    n.kind !== "worker" &&
+    n.kind !== "draft" &&
+    (liveOn.has(n.id) || (n.agent.status === "running" && !liveOff.has(n.id)))
   let cur: string | null = null
   const opened = new Set<string>()
   let mounted: { key: string; stop: () => void } | null = null
@@ -80,7 +124,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     }
     const desk = live.nodes.get("coordinator")
     const deskRow = el("div", `p3-sv ${cur === "coordinator" && !streamOn ? "on" : ""}`)
-    deskRow.append(el("span", "p3-ell", "🌐 Factory desk"), el("span", "p3-n", desk?.agg.needs ? `▲${desk.pending.length}` : ""))
+    deskRow.append(
+      el("span", "p3-ell", "🌐 Factory desk"),
+      el("span", "p3-n", desk?.agg.needs ? `▲${desk.pending.length}` : ""),
+    )
     deskRow.onclick = () => ((autoView = false), (streamOn = false), (sel = cur = "coordinator"), render())
     const streamRow = el("div", `p3-sv ${streamOn ? "on" : ""}`)
     streamRow.dataset.testid = "stream-row"
@@ -107,24 +154,42 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     // sel is the open conversation (a root); cur is the node shown in the detail column.
     // The desk is no inbox row in most views, but stays open once picked.
     const isDesk = sel === "coordinator" && m.nodes.has(sel)
-    if (!isDesk && (!sel || !list.some((x) => x.root.id === rootOf(m, sel!)))) (sel = list[0]?.root.id ?? null), (cur = list[0]?.focus.id ?? null)
+    if (!isDesk && (!sel || !list.some((x) => x.root.id === rootOf(m, sel!)))) {
+      sel = list[0]?.root.id ?? null
+      cur = list[0]?.focus.id ?? null
+    }
     if (!cur || !m.nodes.has(cur)) cur = sel
     const bar = el("div", "p3-bar")
     bar.append(el("span", "p3-n", `${list.length} ${list.length === 1 ? "conversation" : "conversations"}`))
-    inbox.replaceChildren(bar, ...list.map(({ root: n, focus, reason, tone }) => {
-      const r = el("div", `p3-item s-${tone} ${n.id === rootOf(m, sel!) ? "on" : ""}`)
-      r.dataset.testid = "inbox-item"
-      const top = el("div", "p3-row")
-      top.append(el("i", "p3-dot"), el("b", "p3-ell", n.title), el("span", "p3-n", ago(n.thread?.createdAt)))
-      const repos = [...new Set(subtree(m, n.id).map((x) => x.thread?.folderId).filter((f) => f && f !== "general"))]
-      const path = focus.id === n.id ? "" : ` › ${KIND[focus.kind]}`
-      const where = el("div", "p3-sub p3-ell", `${ICON[n.kind]} ${KIND[n.kind]}${repos.length ? ` · ${repos.join(", ")}` : ""}${path}`)
-      r.append(top, where)
-      // Quiet rows (idle, dormant, draft): the dot says it all.
-      if (tone === "needs" || tone === "error" || tone === "running") r.append(el("div", "p3-sub p3-st p3-ell", reason))
-      r.onclick = () => ((autoView = false), (streamOn = false), (sel = n.id), (cur = focus.id), render())
-      return r
-    }), ...(list.length ? [] : [el("div", "p3-empty", view === "needs" ? "Nothing needs you. 🎉" : "Nothing here.")]))
+    inbox.replaceChildren(
+      bar,
+      ...list.map(({ root: n, focus, reason, tone }) => {
+        const r = el("div", `p3-item s-${tone} ${n.id === rootOf(m, sel!) ? "on" : ""}`)
+        r.dataset.testid = "inbox-item"
+        const top = el("div", "p3-row")
+        top.append(el("i", "p3-dot"), el("b", "p3-ell", n.title), el("span", "p3-n", ago(n.thread?.createdAt)))
+        const repos = [
+          ...new Set(
+            subtree(m, n.id)
+              .map((x) => x.thread?.folderId)
+              .filter((f) => f && f !== "general"),
+          ),
+        ]
+        const path = focus.id === n.id ? "" : ` › ${KIND[focus.kind]}`
+        const where = el(
+          "div",
+          "p3-sub p3-ell",
+          `${ICON[n.kind]} ${KIND[n.kind]}${repos.length ? ` · ${repos.join(", ")}` : ""}${path}`,
+        )
+        r.append(top, where)
+        // Quiet rows (idle, dormant, draft): the dot says it all.
+        if (tone === "needs" || tone === "error" || tone === "running")
+          r.append(el("div", "p3-sub p3-st p3-ell", reason))
+        r.onclick = () => ((autoView = false), (streamOn = false), (sel = n.id), (cur = focus.id), render())
+        return r
+      }),
+      ...(list.length ? [] : [el("div", "p3-empty", view === "needs" ? "Nothing needs you. 🎉" : "Nothing here.")]),
+    )
   }
 
   // ---------- conversation tree ----------
@@ -157,7 +222,22 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const row = (n: Node) => {
     const r = el("div", `p3-w s-${n.status} ${n.id === cur ? "on" : ""}`)
     r.dataset.testid = "tree-row"
-    r.append(order(n), el("i", "p3-dot"), el("b", "", n.kind === "draft" ? "📄 draft" : n.kind === "worker" ? n.agent?.name ?? "worker" : `${ICON[n.kind]} ${KIND[n.kind]}`), el("span", "p3-tt p3-ell", n.kind === "worker" ? n.agent?.task ?? "" : n.title), el("span", "p3-n", ago(bornAt(n))), el("span", "p3-st", LABEL[n.status]))
+    r.append(
+      order(n),
+      el("i", "p3-dot"),
+      el(
+        "b",
+        "",
+        n.kind === "draft"
+          ? "📄 draft"
+          : n.kind === "worker"
+            ? (n.agent?.name ?? "worker")
+            : `${ICON[n.kind]} ${KIND[n.kind]}`,
+      ),
+      el("span", "p3-tt p3-ell", n.kind === "worker" ? (n.agent?.task ?? "") : n.title),
+      el("span", "p3-n", ago(bornAt(n))),
+      el("span", "p3-st", LABEL[n.status]),
+    )
     r.onclick = (e) => (e.stopPropagation(), choose(n.id))
     return r
   }
@@ -181,7 +261,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   }
   const renderTree = () => {
     const r = sel ? m.nodes.get(rootOf(m, sel)) : undefined
-    if (!r) return void tree.replaceChildren(el("h5", "", "Conversation tree"), el("div", "p3-empty", "Select an item."))
+    if (!r)
+      return void tree.replaceChildren(el("h5", "", "Conversation tree"), el("div", "p3-empty", "Select an item."))
     const branches = r.children.map((id) => {
       const k = m.nodes.get(id)!
       const b = el("div", "p3-br")
@@ -189,20 +270,44 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       return b
     })
     const foot = el("div", "p3-foot")
-    if (r.thread && !r.thread.desk) foot.append(r.thread.archivedAt ? btn("Restore", () => archive(r, null)) : btn("Mark done (archive tree)", () => ((sel = cur = null), archive(r, Date.now()))))
-    tree.replaceChildren(el("h5", "", "Conversation tree"), card(r), ...branches, ...(branches.length ? [] : [el("div", "p3-empty", "No team yet. Ask the chat to spawn one.")]), foot)
+    if (r.thread && !r.thread.desk)
+      foot.append(
+        r.thread.archivedAt
+          ? btn("Restore", () => archive(r, null))
+          : btn("Mark done (archive tree)", () => ((sel = cur = null), archive(r, Date.now()))),
+      )
+    tree.replaceChildren(
+      el("h5", "", "Conversation tree"),
+      card(r),
+      ...branches,
+      ...(branches.length ? [] : [el("div", "p3-empty", "No team yet. Ask the chat to spawn one.")]),
+      foot,
+    )
   }
 
   // ---------- detail ----------
   const renderHead = (n: Node) => {
     const crumbs = el("div", "p3-crumbs")
-    for (const a of ancestors(m, n.id)) crumbs.append(btn(a.kind === "desk" ? "Global" : a.title.slice(0, 24), () => choose(a.id)), el("span", "", "›"))
+    for (const a of ancestors(m, n.id))
+      crumbs.append(
+        btn(a.kind === "desk" ? "Global" : a.title.slice(0, 24), () => choose(a.id)),
+        el("span", "", "›"),
+      )
     crumbs.append(el("b", "", KIND[n.kind]))
     const st = el("div", "p3-sub p3-row")
     const why = n.agent ? modelReason(n.agent) : null
     const reason = why ? el("span", "p3-why", `⇢ ${why.text}`) : null
     if (reason && why) reason.title = why.title
-    st.append(pill(n), ...(n.agent ? [harnessBadge(n.agent.harness)] : []), el("span", "p3-ell", [n.agent?.model, n.thread?.folderId, n.thread?.branch && `⎇ ${n.thread.branch}`].filter(Boolean).join(" · ")), ...(reason ? [reason] : []))
+    st.append(
+      pill(n),
+      ...(n.agent ? [harnessBadge(n.agent.harness)] : []),
+      el(
+        "span",
+        "p3-ell",
+        [n.agent?.model, n.thread?.folderId, n.thread?.branch && `⎇ ${n.thread.branch}`].filter(Boolean).join(" · "),
+      ),
+      ...(reason ? [reason] : []),
+    )
     const acts = el("div", "p3-acts")
     for (const d of n.pending) acts.append(btn(`⚑ ${d.title}`, () => openDecision(d.id), "warn"))
     if (n.agent) acts.append(btn("⚙ Spec", () => openSpec(n.id)))
@@ -210,20 +315,33 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     if (tl) {
       acts.append(
         btn("💬 Chat", () => (tlOn.delete(n.id), liveOn.delete(n.id), liveOff.add(n.id), render())),
-        ...(n.agent ? [btn("◉ Live activity", () => (tlOn.delete(n.id), liveOff.delete(n.id), liveOn.add(n.id), render()))] : []),
+        ...(n.agent
+          ? [btn("◉ Live activity", () => (tlOn.delete(n.id), liveOff.delete(n.id), liveOn.add(n.id), render()))]
+          : []),
       )
     } else if (n.agent && n.kind !== "worker" && n.kind !== "draft") {
       const live = showsLive(n)
-      acts.append(btn(live ? "💬 Chat" : "◉ Live activity", () => (live ? (liveOn.delete(n.id), liveOff.add(n.id)) : (liveOff.delete(n.id), liveOn.add(n.id)), render())))
+      acts.append(
+        btn(
+          live ? "💬 Chat" : "◉ Live activity",
+          () => (live ? (liveOn.delete(n.id), liveOff.add(n.id)) : (liveOff.delete(n.id), liveOn.add(n.id)), render()),
+        ),
+      )
     }
     // A dormant sub-coordinator (no live agent) still has its stored events, so its Timeline shows too.
     if (n.kind === "sub" && !tl) acts.append(btn("🕘 Timeline", () => (tlOn.add(n.id), render())))
-    if (n.agent?.status === "running") acts.append(btn("■ Stop", () => fire(send(`/api/workers/${encodeURIComponent(n.id)}/abort`, "POST"))))
-    if (n.kind === "draft" && n.thread) acts.append(btn("▶ Run draft", () => fire(send(`/api/drafts/${n.thread!.id}/run`, "POST")), "primary"))
+    if (n.agent?.status === "running")
+      acts.append(btn("■ Stop", () => fire(send(`/api/workers/${encodeURIComponent(n.id)}/abort`, "POST"))))
+    if (n.kind === "draft" && n.thread)
+      acts.append(btn("▶ Run draft", () => fire(send(`/api/drafts/${n.thread!.id}/run`, "POST")), "primary"))
     const kids = el("div", "p3-kids")
     for (const id of n.children) {
       const k = m.nodes.get(id)!
-      const b = btn(`${ICON[k.kind]} ${k.kind === "worker" ? k.agent?.name ?? k.title : k.title.slice(0, 28)}`, () => choose(k.id), `s-${k.status}`)
+      const b = btn(
+        `${ICON[k.kind]} ${k.kind === "worker" ? (k.agent?.name ?? k.title) : k.title.slice(0, 28)}`,
+        () => choose(k.id),
+        `s-${k.status}`,
+      )
       b.prepend(el("i", "p3-dot"))
       kids.append(b)
     }
@@ -236,11 +354,19 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const to = el("select")
     const boss = bossOf(m, n.id)
     // A stopped worker cannot take messages; its coordinator can.
-    if (n.status !== "stopped" || !boss?.agent) to.append(Object.assign(el("option", "", "this worker"), { value: n.id }))
-    if (boss?.agent) to.append(Object.assign(el("option", "", `its ${KIND[boss.kind]}: ${boss.title.slice(0, 40)}`), { value: boss.id }))
+    if (n.status !== "stopped" || !boss?.agent)
+      to.append(Object.assign(el("option", "", "this worker"), { value: n.id }))
+    if (boss?.agent)
+      to.append(
+        Object.assign(el("option", "", `its ${KIND[boss.kind]}: ${boss.title.slice(0, 40)}`), { value: boss.id }),
+      )
     const ta = el("textarea")
     ta.rows = 2
-    to.onchange = () => (ta.placeholder = to.value === n.id ? "Steer this worker… (Enter sends)" : "Ask its coordinator: more work, another worker… (Enter sends)")
+    to.onchange = () =>
+      (ta.placeholder =
+        to.value === n.id
+          ? "Steer this worker… (Enter sends)"
+          : "Ask its coordinator: more work, another worker… (Enter sends)")
     to.onchange(new Event("change"))
     const go = el("button", "primary", "Send")
     const label = el("label", "p3-sub", "To ")
@@ -255,7 +381,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       if (!text) return
       ta.value = ""
       const target = to.value === n.id ? n : boss!
-      void messageAgent(target.id, text, target.thread?.id).then((err) => (ta.placeholder = err ? `Send failed: ${err}` : "Sent. Message again…"))
+      void messageAgent(target.id, text, target.thread?.id).then(
+        (err) => (ta.placeholder = err ? `Send failed: ${err}` : "Sent. Message again…"),
+      )
     }
     ta.onkeydown = (e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), form.requestSubmit())
     askBox = el("div", "p3-asks")
@@ -268,16 +396,33 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     if (!askBox) return
     const boss = bossOf(m, n.id)
     const from = boss ? ` · from its ${KIND[boss.kind]}` : ""
-    askBox.replaceChildren(...(boss?.pending ?? []).map((d) => {
-      const q = el("div", "p3-ask")
-      const acts = el("div", "p3-acts")
-      const err = el("span", "p3-sub p3-err")
-      for (const o of d.options)
-        acts.append(btn(o, () => void runApprovals(answer(d.id, o, null)).catch((e: { reason?: string }) => (err.textContent = e.reason ?? String(e)))))
-      acts.append(btn(d.allowText || !d.options.length ? "Answer…" : "Details", () => openDecision(d.id)), err)
-      q.append(el("div", "p3-label", `${d.kind === "question" ? "Question for you" : "Approval for you"}${from}`), el("div", "", d.title), acts)
-      return q
-    }))
+    askBox.replaceChildren(
+      ...(boss?.pending ?? []).map((d) => {
+        const q = el("div", "p3-ask")
+        const acts = el("div", "p3-acts")
+        const err = el("span", "p3-sub p3-err")
+        for (const o of d.options)
+          acts.append(
+            btn(
+              o,
+              () =>
+                void runApprovals(answer(d.id, o, null)).catch(
+                  (e: { reason?: string }) => (err.textContent = e.reason ?? String(e)),
+                ),
+            ),
+          )
+        acts.append(
+          btn(d.allowText || !d.options.length ? "Answer…" : "Details", () => openDecision(d.id)),
+          err,
+        )
+        q.append(
+          el("div", "p3-label", `${d.kind === "question" ? "Question for you" : "Approval for you"}${from}`),
+          el("div", "", d.title),
+          acts,
+        )
+        return q
+      }),
+    )
   }
   const draftBody = (n: Node) => {
     const p = el("pre", "p3-draft", n.title)
@@ -286,25 +431,46 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   }
   /** Place the host's native chat over the detail body. */
   const placeOverBody = () => {
-    const box = body.getBoundingClientRect(), stage = root.getBoundingClientRect()
+    const box = body.getBoundingClientRect(),
+      stage = root.getBoundingClientRect()
     placeChat({ left: `${box.left - stage.left}px`, top: `${box.top - stage.top}px`, right: "0", bottom: "0" })
   }
   /** Stream click on an agent: show it in the inbox and tree; the stream stays open. */
   const streamSelect = (id: string) => {
     const n = m.nodes.get(id)
     if (!n) return
-    const root = rootOf(m, id)
-    if (root !== "coordinator" && !items(m, view).some((x) => x.root.id === root)) (autoView = false), (view = "chats")
-    sel = root
+    const top = rootOf(m, id)
+    if (top !== "coordinator" && !items(m, view).some((x) => x.root.id === top)) {
+      autoView = false
+      view = "chats"
+    }
+    sel = top
     cur = id
     render()
   }
-  const STREAM_KIND: Record<Node["kind"], StreamAgent["kind"]> = { desk: "desk", chat: "chat", sub: "sub", worker: "worker", draft: "sub" }
+  const STREAM_KIND: Record<Node["kind"], StreamAgent["kind"]> = {
+    desk: "desk",
+    chat: "chat",
+    sub: "sub",
+    worker: "worker",
+    draft: "sub",
+  }
   const streamAgent = (id: string): StreamAgent | undefined => {
     const n = m.nodes.get(id)
-    if (n) return { name: n.kind === "worker" ? n.agent?.name ?? n.title : n.title, kind: STREAM_KIND[n.kind], status: n.agent?.status ?? "idle" }
+    if (n)
+      return {
+        name: n.kind === "worker" ? (n.agent?.name ?? n.title) : n.title,
+        kind: STREAM_KIND[n.kind],
+        status: n.agent?.status ?? "idle",
+      }
     const a = s ? [...s.agents, ...s.past].find((x) => x.id === id) : undefined
-    return a && { name: a.name, kind: id.startsWith("sub-") ? "sub" : id.startsWith("gen-") ? "chat" : "worker", status: a.status }
+    return (
+      a && {
+        name: a.name,
+        kind: id.startsWith("sub-") ? "sub" : id.startsWith("gen-") ? "chat" : "worker",
+        status: a.status,
+      }
+    )
   }
   const showStream = () => {
     head.replaceChildren()
@@ -321,7 +487,12 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       openHit: (h) => {
         const a = streamAgent(h.workerId)
         const live = !!s?.agents.some((x) => x.id === h.workerId)
-        openHistory(h.workerId, h.seq, live ? `${a?.name ?? h.workerId} · live transcript` : `${a?.name ?? h.workerId} · stopped · saved history`, !live)
+        openHistory(
+          h.workerId,
+          h.seq,
+          live ? `${a?.name ?? h.workerId} · live transcript` : `${a?.name ?? h.workerId} · stopped · saved history`,
+          !live,
+        )
       },
     })
     stream = v
@@ -338,7 +509,12 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const n = cur ? m.nodes.get(cur) : undefined
     if (!n) {
       head.replaceChildren(el("div", "p3-empty", "Inbox zero."))
-      if (mounted?.key !== "none") (mounted?.stop(), (mounted = { key: "none", stop: () => {} }), body.replaceChildren(), placeChat(null))
+      if (mounted?.key !== "none") {
+        mounted?.stop()
+        mounted = { key: "none", stop: () => {} }
+        body.replaceChildren()
+        placeChat(null)
+      }
       return
     }
     renderHead(n)
@@ -363,7 +539,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       placeChat(null)
       askBox = null
       const scroll = el("div", "p3-log")
-      body.replaceChildren(el("div", "p3-sub", "Live activity of this coordinator (tool calls and messages). Switch back with 💬 Chat."), scroll)
+      body.replaceChildren(
+        el("div", "p3-sub", "Live activity of this coordinator (tool calls and messages). Switch back with 💬 Chat."),
+        scroll,
+      )
       mounted = { key, stop: mountTranscript(scroll, n.id, { stopped: n.agent?.status !== "running" }) }
     } else if (chat) {
       body.replaceChildren()
@@ -388,14 +567,20 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     syncDetail()
   }
   /** Native chat shows only for a conversation (chat, sub-coordinator, desk), never over a worker or draft. */
-  const showsChat = (id: string | null) => { const k = id ? m.nodes.get(id)?.kind : undefined; return !!k && k !== "worker" && k !== "draft" }
+  const showsChat = (id: string | null) => {
+    const k = id ? m.nodes.get(id)?.kind : undefined
+    return !!k && k !== "worker" && k !== "draft"
+  }
   /** "Open in timeline" on a plan or decision tool card in the live activity: show the Timeline at that milestone. */
   const openTimeline = (e: Event) => {
     const n = cur ? m.nodes.get(cur) : undefined
     if (n?.kind !== "sub") return
     tlFocus = String((e as CustomEvent).detail ?? "") || null
     tlOn.add(n.id)
-    if (mounted?.key === `tl:${n.id}`) mounted.stop(), (mounted = null)
+    if (mounted?.key === `tl:${n.id}`) {
+      mounted.stop()
+      mounted = null
+    }
     render()
   }
   window.addEventListener("sf:open-timeline", openTimeline)
@@ -455,7 +640,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
         const inView = hit && items(shown, view).find((x) => x.root.id === rootOf(shown, hit.id))
         if (hit && !inView && view !== "archived") view = "chats"
         const r = hit && items(shown, view).find((x) => x.root.id === rootOf(shown, hit.id))
-        if (r) (sel = r.root.id), (cur = hit.id)
+        if (r) {
+          sel = r.root.id
+          cur = hit.id
+        }
       }
     }
     paint()
@@ -474,4 +662,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   )
 }
 
-register({ id: 3, name: "Inbox", blurb: "Inbox of what needs you, the conversation tree, and the chat or worker you pick", mount })
+register({
+  id: 3,
+  name: "Inbox",
+  blurb: "Inbox of what needs you, the conversation tree, and the chat or worker you pick",
+  mount,
+})

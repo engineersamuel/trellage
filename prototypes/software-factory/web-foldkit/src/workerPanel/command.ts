@@ -1,13 +1,13 @@
-import { Effect, Schema } from "effect";
-import { Command, Mount } from "foldkit";
-import { StoredEvent } from "../../../shared/schemas";
-import { mount as mountTranscript } from "../../../shared/transcript";
-import { getJson, send } from "../api";
-import { Worker } from "../domain";
-import { toBacklogLines } from "./log";
-import { Message } from "./message";
+import { Effect, Schema } from "effect"
+import { Command, Mount } from "foldkit"
+import { StoredEvent } from "../../../shared/schemas"
+import { mount as mountTranscript } from "../../../shared/transcript"
+import { getJson, send } from "../api"
+import { Worker } from "../domain"
+import { toBacklogLines } from "./log"
+import { Message } from "./message"
 
-const workerUrl = (workerId: string): string => `/api/workers/${encodeURIComponent(workerId)}`;
+const workerUrl = (workerId: string): string => `/api/workers/${encodeURIComponent(workerId)}`
 
 export const FetchWorkers = Command.define("FetchWorkers", {
   messages: [Message.SucceededFetchWorkers, Message.FailedFetchWorkers],
@@ -15,7 +15,7 @@ export const FetchWorkers = Command.define("FetchWorkers", {
     Effect.map((workers) => Message.SucceededFetchWorkers({ workers })),
     Effect.catch((error) => Effect.succeed(Message.FailedFetchWorkers({ error }))),
   ),
-});
+})
 
 export const FetchBacklog = Command.define("FetchBacklog", {
   args: { workerId: Schema.String },
@@ -25,7 +25,7 @@ export const FetchBacklog = Command.define("FetchBacklog", {
       Effect.map((events) => Message.SucceededFetchBacklog({ workerId, lines: toBacklogLines(events) })),
       Effect.catch((error) => Effect.succeed(Message.FailedFetchBacklog({ error }))),
     ),
-});
+})
 
 export const SendToWorker = Command.define("SendToWorker", {
   args: { workerId: Schema.String, prompt: Schema.String },
@@ -35,7 +35,7 @@ export const SendToWorker = Command.define("SendToWorker", {
       Effect.as(Message.SucceededSendToWorker({ prompt })),
       Effect.catch((error) => Effect.succeed(Message.FailedSendToWorker({ workerId, error }))),
     ),
-});
+})
 
 /** Abort the worker's current run; the worker stays. */
 export const AbortWorker = Command.define("AbortWorker", {
@@ -46,7 +46,7 @@ export const AbortWorker = Command.define("AbortWorker", {
       Effect.as(Message.SucceededAbortWorker()),
       Effect.catch((error) => Effect.succeed(Message.FailedAbortWorker({ workerId, error }))),
     ),
-});
+})
 
 /** Remove the worker: its session ends and it leaves the list. */
 export const StopWorker = Command.define("StopWorker", {
@@ -57,7 +57,7 @@ export const StopWorker = Command.define("StopWorker", {
       Effect.as(Message.SucceededStopWorker()),
       Effect.catch((error) => Effect.succeed(Message.FailedStopWorker({ workerId, error }))),
     ),
-});
+})
 
 /** shared/transcript.ts fills the element with the worker's readable transcript until the element leaves the page. */
 export const MountTranscript = Mount.define("MountTranscript", {
@@ -68,4 +68,4 @@ export const MountTranscript = Mount.define("MountTranscript", {
       Effect.sync(() => (element instanceof HTMLElement ? mountTranscript(element, workerId) : () => {})),
       (stop) => Effect.sync(stop),
     ).pipe(Effect.as(Message.CompletedMountTranscript())),
-});
+})

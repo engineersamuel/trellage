@@ -3,7 +3,8 @@
 import { Effect, Schema } from "effect"
 import { DIFF_STYLES } from "./diff"
 
-const withDefault = <S extends Schema.Top>(value: S["Encoded"]) => Schema.withDecodingDefaultKey<S>(Effect.succeed(value))
+const withDefault = <S extends Schema.Top>(value: S["Encoded"]) =>
+  Schema.withDecodingDefaultKey<S>(Effect.succeed(value))
 const NullableNumber = Schema.NullOr(Schema.Number).pipe(withDefault(null))
 const NullableString = Schema.NullOr(Schema.String).pipe(withDefault(null))
 
@@ -14,10 +15,12 @@ export const Worker = Schema.Struct({
   status: Schema.String,
   model: Schema.String,
   /** How the model was picked; older servers do not send it. */
-  modelSource: Schema.optionalKey(Schema.Union([
-    Schema.Struct({ kind: Schema.Literal("routed"), by: Schema.String, confidence: Schema.Number }),
-    Schema.Struct({ kind: Schema.Literals(["pinned", "fallback", "default"]) }),
-  ])),
+  modelSource: Schema.optionalKey(
+    Schema.Union([
+      Schema.Struct({ kind: Schema.Literal("routed"), by: Schema.String, confidence: Schema.Number }),
+      Schema.Struct({ kind: Schema.Literals(["pinned", "fallback", "default"]) }),
+    ]),
+  ),
   auth: Schema.String,
   pid: NullableNumber,
   rssKb: NullableNumber,
@@ -37,21 +40,27 @@ export type Worker = typeof Worker.Type
 
 const DraftAction = Schema.Literals(["council", "debate", "research", "hyperresearch"])
 export const Draft = Schema.Struct({
-  versions: Schema.Array(Schema.Struct({
-    id: Schema.String,
-    prompt: Schema.String,
-    source: Schema.Literals(["human", "enhance"]),
-    title: Schema.optionalKey(Schema.String),
-    notes: Schema.optionalKey(Schema.String),
-    at: Schema.Number,
-  })),
+  versions: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      prompt: Schema.String,
+      source: Schema.Literals(["human", "enhance"]),
+      title: Schema.optionalKey(Schema.String),
+      notes: Schema.optionalKey(Schema.String),
+      at: Schema.Number,
+    }),
+  ),
   current: Schema.String,
-  pending: Schema.optionalKey(Schema.Struct({
-    kind: Schema.Literal("enhance"),
-    candidates: Schema.Array(Schema.Struct({ title: Schema.String, prompt: Schema.String, notes: Schema.String })),
-    at: Schema.Number,
-  })),
-  reports: Schema.Array(Schema.Struct({ action: DraftAction, workerId: Schema.String, path: Schema.String, versionId: Schema.String })),
+  pending: Schema.optionalKey(
+    Schema.Struct({
+      kind: Schema.Literal("enhance"),
+      candidates: Schema.Array(Schema.Struct({ title: Schema.String, prompt: Schema.String, notes: Schema.String })),
+      at: Schema.Number,
+    }),
+  ),
+  reports: Schema.Array(
+    Schema.Struct({ action: DraftAction, workerId: Schema.String, path: Schema.String, versionId: Schema.String }),
+  ),
   startedAt: Schema.optionalKey(Schema.Number),
 })
 export type Draft = typeof Draft.Type
@@ -132,7 +141,13 @@ export const StoredEvent = Schema.Struct({
 })
 
 /** GET /api/search */
-export const SearchHit = Schema.Struct({ seq: Schema.Number, workerId: Schema.String, type: Schema.String, timestamp: Schema.String, snippet: Schema.String })
+export const SearchHit = Schema.Struct({
+  seq: Schema.Number,
+  workerId: Schema.String,
+  type: Schema.String,
+  timestamp: Schema.String,
+  snippet: Schema.String,
+})
 
 // Factory settings: the same document the coordinator agent edits with update_settings.
 export const Palette = Schema.Struct({
@@ -173,9 +188,13 @@ export const Settings = Schema.Struct({
     Schema.withDecodingDefaultKey(Effect.succeed({ model: "claude-opus-5.5", reasoningEffort: "high" })),
   ),
   /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
-  workers: Schema.Struct({ harness: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" }))),
+  workers: Schema.Struct({ harness: Schema.String }).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" })),
+  ),
   /** Engine behind every factory decision (gates, lenses, findings, triage, next step). Hot-swappable: the next decision uses it. */
-  decisions: Schema.Struct({ engine: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ engine: "jev" }))),
+  decisions: Schema.Struct({ engine: Schema.String }).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed({ engine: "jev" })),
+  ),
   crons: Schema.Record(Schema.String, Cron),
   extensions: Schema.Record(Schema.String, Extension),
   repo: Schema.String,
@@ -207,4 +226,7 @@ export const Report = Schema.Struct({
 export type Report = typeof Report.Type
 
 /** POST /api/reports/start: the new conversation that runs the finding. */
-export const StartedConversation = Schema.Struct({ threadId: Schema.String, branch: Schema.NullOr(Schema.String).pipe(withDefault(null)) })
+export const StartedConversation = Schema.Struct({
+  threadId: Schema.String,
+  branch: Schema.NullOr(Schema.String).pipe(withDefault(null)),
+})

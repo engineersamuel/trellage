@@ -1,9 +1,9 @@
-import { Schema } from "effect";
-import { defineMessageUnion } from "foldkit/message";
-import { Dialog } from "@foldkit/ui";
-import { StoredEvent } from "../../../shared/schemas";
-import { Worker } from "../domain";
-import { LogLine } from "./model";
+import { Schema } from "effect"
+import { defineMessageUnion } from "foldkit/message"
+import { Dialog } from "@foldkit/ui"
+import { StoredEvent } from "../../../shared/schemas"
+import { Worker } from "../domain"
+import { LogLine } from "./model"
 
 export const Message = defineMessageUnion({
   SucceededFetchWorkers: { workers: Schema.Array(Worker) },
@@ -30,11 +30,11 @@ export const Message = defineMessageUnion({
   ToggledRawLog: { isChecked: Schema.Boolean },
   ClickedDismissError: {},
   CompletedMountTranscript: {},
-});
-export type Message = typeof Message.Type;
+})
+export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
   /** The user picked a worker. The parent owns the focus setting and decides. */
   SelectedWorker: { workerId: Schema.String },
-});
-export type OutMessage = typeof OutMessage.Type;
+})
+export type OutMessage = typeof OutMessage.Type

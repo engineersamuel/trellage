@@ -1,8 +1,8 @@
-import { Schema } from "effect";
-import { DIFF_STYLES } from "../../../shared/diff";
-import { defineMessageUnion } from "foldkit/message";
-import { Dialog, Slider } from "@foldkit/ui";
-import { Delivery, SettingsDocument } from "../domain";
+import { Schema } from "effect"
+import { DIFF_STYLES } from "../../../shared/diff"
+import { defineMessageUnion } from "foldkit/message"
+import { Dialog, Slider } from "@foldkit/ui"
+import { Delivery, SettingsDocument } from "../domain"
 
 export const Message = defineMessageUnion({
   // Loading
@@ -10,7 +10,9 @@ export const Message = defineMessageUnion({
   FailedFetchSettings: { error: Schema.String },
   SucceededFetchDelivery: { delivery: Delivery },
   FailedFetchDelivery: { error: Schema.String },
-  ReceivedSettingsUpdate: { document: Schema.Struct({ settings: SettingsDocument.fields.settings, css: Schema.String }) },
+  ReceivedSettingsUpdate: {
+    document: Schema.Struct({ settings: SettingsDocument.fields.settings, css: Schema.String }),
+  },
   ReceivedDeliveryChange: {},
   ReceivedFeedGap: {},
   SucceededPatchSettings: {},
@@ -47,11 +49,11 @@ export const Message = defineMessageUnion({
   ClickedRemoveExtension: { name: Schema.String },
   CompletedSyncExtensions: {},
   CompletedMountDiffPreview: {},
-});
-export type Message = typeof Message.Type;
+})
+export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
   /** A settings document arrived. Its `focus` names the worker the panel shows. */
   ReceivedFocus: { workerId: Schema.String },
-});
-export type OutMessage = typeof OutMessage.Type;
+})
+export type OutMessage = typeof OutMessage.Type

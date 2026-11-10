@@ -65,9 +65,13 @@ const SettingsSchema = Schema.Struct({
     Schema.withDecodingDefaultKey(Effect.succeed({ model: "claude-opus-5.5", reasoningEffort: "high" })),
   ),
   /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
-  workers: Schema.Struct({ harness: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" }))),
+  workers: Schema.Struct({ harness: Schema.String }).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" })),
+  ),
   /** Engine behind every factory decision (gates, lenses, findings, triage, next step). Hot-swappable: the next decision uses it. */
-  decisions: Schema.Struct({ engine: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ engine: "jev" }))),
+  decisions: Schema.Struct({ engine: Schema.String }).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed({ engine: "jev" })),
+  ),
   crons: Schema.Record(Schema.String, Cron),
   extensions: Schema.Record(Schema.String, Extension),
   /** Absolute path of the git repository the factory works on. Empty = no target. */
@@ -78,13 +82,24 @@ const SettingsSchema = Schema.Struct({
     everySeconds: Schema.Number,
     stallSeconds: Schema.Number,
     offTrackCheck: Schema.Boolean,
-  }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ enabled: true, everySeconds: 60, stallSeconds: 300, offTrackCheck: true }))),
+  }).pipe(
+    Schema.withDecodingDefaultKey(
+      Effect.succeed({ enabled: true, everySeconds: 60, stallSeconds: 300, offTrackCheck: true }),
+    ),
+  ),
 })
 export type Settings = typeof SettingsSchema.Type
 
 const decode = Schema.decodeUnknownSync(SettingsSchema, { onExcessProperty: "error" })
 
-const palette = (bg: string, surface: string, border: string, text: string, muted: string, accent: string): Palette => ({
+const palette = (
+  bg: string,
+  surface: string,
+  border: string,
+  text: string,
+  muted: string,
+  accent: string,
+): Palette => ({
   bg,
   surface,
   border,
@@ -145,7 +160,7 @@ export const patched = (current: Settings, patch: unknown): Settings => {
   try {
     next = decode(merged)
   } catch (e) {
-    throw new Error(`invalid settings: ${e instanceof Error ? e.message : String(e)}`)
+    throw new Error(`invalid settings: ${e instanceof Error ? e.message : String(e)}`, { cause: e })
   }
   validate(next)
   return next
@@ -165,7 +180,8 @@ const validate = (s: Settings): void => {
     }
   }
   if (s.repo !== "" && !path.isAbsolute(s.repo)) throw new Error(`repo: '${s.repo}' must be an absolute path`)
-  if (s.supervisor.everySeconds < MIN_CRON_SECONDS) throw new Error(`supervisor.everySeconds must be >= ${MIN_CRON_SECONDS}`)
+  if (s.supervisor.everySeconds < MIN_CRON_SECONDS)
+    throw new Error(`supervisor.everySeconds must be >= ${MIN_CRON_SECONDS}`)
   if (s.supervisor.stallSeconds < 60) throw new Error("supervisor.stallSeconds must be >= 60")
   oneOf("layout.panel", s.layout.panel, PANEL_POSITIONS)
   if (!(s.layout.panelWidth >= 25 && s.layout.panelWidth <= 70)) throw new Error("layout.panelWidth must be 25..=70")
@@ -186,8 +202,7 @@ const validate = (s: Settings): void => {
   }
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  v !== null && typeof v === "object" && !Array.isArray(v)
+const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v)
 
 /** RFC 7386 merge. null deletes a key, except `banner`, which becomes null. */
 const merge = (target: unknown, patch: unknown): unknown => {
