@@ -25,7 +25,7 @@ export type DecisionInterrupt = {
 }
 
 export type TranslatorOptions = {
-  /** The consumer answers interrupts (forwardedProps.interrupts); the decision stays open in every UI either way. */
+  /** The consumer answers interrupts (forwardedProps.interrupts). The Foldkit UI does not: it answers through POST /api/approvals, which delivers the answer to the coordinator. */
   interrupts?: boolean
   /** A decision is still waiting for its answer. */
   pending?: (decisionId: string) => boolean
@@ -136,7 +136,7 @@ export class Translator {
     this.openReasoning = null
   }
 
-  /** Thinking text as an AG-UI reasoning message (shown by CopilotKit; agent-interface ignores it). */
+  /** Thinking text as an AG-UI reasoning message (agent-interface ignores it). */
   private reasoning(out: unknown[], sourceId: string, delta: string) {
     if (!delta) return
     if (this.openReasoning === null) {

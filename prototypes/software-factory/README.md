@@ -1,6 +1,6 @@
 # Software Factory prototypes
 
-One TypeScript coordinator (Bun). Two frontends (dark theme) on the same backend stream.
+One TypeScript coordinator (Bun). One frontend (Foldkit + agent-interface, no React) on the backend stream.
 
 ```
 browser ──AG-UI SSE──► coordinator (TypeScript, Bun, @github/copilot-sdk 1.0.29-preview.5)
@@ -16,16 +16,16 @@ browser ──AG-UI SSE──► coordinator (TypeScript, Bun, @github/copilot-s
 mise run factory:up                    # native Copilot subscription (token from gh auth token)
 mise run factory:up proxy              # BYOK through copilot-proxy-rs at localhost:8080/v1
 SF_MODEL=claude-haiku-5.5 mise run factory:up   # cheaper model
-mise run factory:restart coordinator   # one service (coordinator | copilotkit | foldkit); no name restarts all
+mise run factory:restart coordinator   # one service (coordinator | foldkit); no name restarts all
+SF_WATCH=1 mise run factory:up          # reload the coordinator on every save (stops running workers)
 mise run factory:status | factory:logs | factory:tui | factory:down
 ```
 
-The tasks are in the repository `mise.toml`. The services run detached under [process-compose](https://f1bonacc1.github.io/process-compose/) (`process-compose.yaml`; mise installs the pinned version). Each service restarts when it exits. `factory:tui` attaches the process-compose TUI (status and live logs; `q` leaves it, the services keep running). The API is the unix socket `$SF_STATE_DIR/pc.sock`, not TCP, because copilot-proxy-rs uses port 8080. Logs are in `$SF_STATE_DIR/logs` (default state dir: `$TMPDIR/software-factory`).
+The tasks are in the repository `mise.toml`. The services run detached under [process-compose](https://f1bonacc1.github.io/process-compose/) (`process-compose.yaml`; mise installs the pinned version). Each service restarts when it exits. The coordinator does not reload on save unless `SF_WATCH=1`, because a reload stops running workers. Only one coordinator may use a state folder: it writes `coordinator.lock` and a second one exits. `factory:tui` attaches the process-compose TUI (status and live logs; `q` leaves it, the services keep running). The API is the unix socket `$SF_STATE_DIR/pc.sock`, not TCP, because copilot-proxy-rs uses port 8080. Logs are in `$SF_STATE_DIR/logs` (default state dir: `~/.local/state/trellage/factory`, or `$XDG_STATE_HOME/trellage/factory`; every git worktree shares it). The first start moves an old `$TMPDIR/software-factory` there, repairs its git worktrees, and leaves a link at the old path (`coordinator/src/statedir.ts`).
 
-| Option | URL |
+| Service | URL |
 |---|---|
-| 1 React + CopilotKit 2.0 RC | http://localhost:5173/copilotkit.html |
-| 2 Foldkit + agent-interface | http://localhost:5174/ |
+| Factory UI (Foldkit + agent-interface) | http://localhost:5174/ |
 | Coordinator API | http://127.0.0.1:7700/ |
 
 ## SDLC gates
@@ -90,7 +90,7 @@ Flow: fill the form (or `sf goal new`) → copy `/factory-loop <id>` → paste i
 2. `confirmed` and `needs_validation` findings are triaged by Jev (`keep`, or discard as false positive, out of scope, or low risk). Without a Jev key, or on error, every finding is kept.
 3. Kept findings go to a fix worker (implement) and then a verify worker. Discarded findings are logged with their reason.
 
-Until the review is `done` or `failed`, `next_step` returns `wait_security_review`. Every transition publishes `factory.security_review`; `GET /api/steps` returns `securityReviews`, shown in both UIs. Fix workers never trigger another review. While a review is unfinished (from its start until `done` or `failed`), `spawn_worker` refuses every spawn in that worktree, whatever the step. Every review, fix, and verify worker is stopped when the review ends, fails, or times out.
+Until the review is `done` or `failed`, `next_step` returns `wait_security_review`. Every transition publishes `factory.security_review`; `GET /api/steps` returns `securityReviews`, shown in the UI. Fix workers never trigger another review. While a review is unfinished (from its start until `done` or `failed`), `spawn_worker` refuses every spawn in that worktree, whatever the step. Every review, fix, and verify worker is stopped when the review ends, fails, or times out.
 
 - `SF_SECURITY_MODEL`: reviewer model (blank counts as unset). Default: the copilot-proxy-rs routed model, else `SF_MODEL`.
 - `SF_SECURITY_TIMEOUT_MS`: wait per review, fix, or verify worker (default 1200000, 20 minutes).
@@ -106,7 +106,7 @@ Copilot SDK is the default harness for every worker. A step that needs skills or
 - **Claude** (`src/claude.ts`, Claude Agent SDK): plugins, `CLAUDE_CONFIG_DIR` and copilot-proxy-rs env. Permission mode `default`, so every prompt goes through `canUseTool`, which denies merge, push and delete.
 - **Pi** (`src/pi.ts`, Pi SDK): skills, extensions, provider and model from the profile; an inline `tool_call` extension applies the same deny rule. Pi has no skill tool: a `read` of a loaded `SKILL.md`, or a `/skill:name` prompt, counts as `skill.invoked`.
 
-Both map their events to the Copilot event names, so the feed, `read_worker`, the supervisor and both UIs treat them like any other worker. Council, Six Hats and Hyperresearch run in Claude. Each saves a separate `reports/<step>.md`. Selection probabilities appear in `factory.workflows_selected`.
+Both map their events to the Copilot event names, so the feed, `read_worker`, the supervisor and the UI treat them like any other worker. Council, Six Hats and Hyperresearch run in Claude. Each saves a separate `reports/<step>.md`. Selection probabilities appear in `factory.workflows_selected`.
 
 The sub-coordinator collects every worker, then starts `step=synthesis` to write `reports/synthesis.md` and calls `report_up`. Synthesis is refused until all selected workers are idle, collected, and have nonempty report files. Launch failures are reported explicitly. This report-only path does not trigger the implementation/security loop or authorize application edits, commits, pushes, or merges.
 
@@ -121,12 +121,12 @@ Shipping: a sub-coordinator calls `request_approval` with `ship=true` (its branc
 ## Notes
 
 - `web-foldkit` uses npm `overrides` because `foldkit@0.169.0` peers `effect@4.0.0` but `agent-interface@0.5.0` peers `effect@4.0.6`.
-- State lives in `$TMPDIR/software-factory/<worker-id>` (override with `SF_STATE_DIR`).
+- State lives in `~/.local/state/trellage/factory/<worker-id>` (override with `SF_STATE_DIR`).
 - Ctrl-C stops the coordinator and terminates every runtime process.
 
 ## Self-updating UI (agent access parity)
 
-One settings document (`coordinator/src/settings.ts`) drives both UIs. The UI and the agent edit it the same way: a JSON merge patch.
+One settings document (`coordinator/src/settings.ts`) drives the UI. The UI and the agent edit it the same way: a JSON merge patch.
 
 - UI: `PATCH /api/settings` from the ⚙ drawer (hotkey `,`) and hotkeys.
 - Agent: `get_settings` / `update_settings` tools.
@@ -134,7 +134,7 @@ One settings document (`coordinator/src/settings.ts`) drives both UIs. The UI an
 
 | Setting | Effect |
 |---|---|
-| `theme`, `themes` | Palette applied to factory, CopilotKit and OpenUI tokens. The agent can create themes. |
+| `theme`, `themes` | Palette applied to factory and OpenUI tokens. The agent can create themes. |
 | `layout` | Worker panel right / left / hidden, width 25–70%. |
 | `navbar` | status, workers, model, context bar, auth, crons. |
 | `banner`, `animations`, `hotkeys`, `focus` | Pinned note, busy pulse, key map, peer-panel worker. |
@@ -145,9 +145,9 @@ One settings document (`coordinator/src/settings.ts`) drives both UIs. The UI an
 
 ## UI extensions (agent-written code)
 
-For changes no settings field covers (animations, canvases, widgets), the agent writes an extension. Each one is saved in `settings.extensions` and mounted live in both UIs by `shared/extensions.ts`.
+For changes no settings field covers (animations, canvases, widgets), the agent writes an extension. Each one is saved in `settings.extensions` and mounted live in the UI by `shared/extensions.ts`.
 
-- `slot`: `chat-background`, `page-background`, `navbar`, `banner`, `panel-top`, `overlay`. Both UIs render empty `[data-slot]` divs; the host owns their children.
+- `slot`: `chat-background`, `page-background`, `navbar`, `banner`, `panel-top`, `overlay`. The UI renders empty `[data-slot]` divs; the host owns their children.
 - `js`: body of `function (el, api)`. Returns a cleanup function. `api` = `{settings, palette, workers, onSettings, onWorkers}`.
 - `css`: global. Stable hooks: `.sf-chat`, `.sf-nav`, `.sf-panel`, `[data-ext="<name>"]`.
 - Errors (sync, timers, animation frames) are posted to `/api/extension-errors`. The agent reads them with `extension_errors` and fixes its code.

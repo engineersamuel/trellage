@@ -1,4 +1,4 @@
-// Diffs in the Foldkit chat and code colors for the diff lines of shared/diffview.ts (same highlight.js setup and theme as web-react).
+// Diffs in the Foldkit chat and code colors for the diff lines of shared/diffview.ts.
 import hljs from "highlight.js/lib/common";
 import "highlight.js/styles/github-dark.css";
 import { setDiffHighlighter, startToolDiffs } from "../../shared/diffview";

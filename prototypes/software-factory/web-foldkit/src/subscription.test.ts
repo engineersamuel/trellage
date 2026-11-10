@@ -11,6 +11,14 @@ describe("feed decoding", () => {
     expect(feedEventToMessage(raw("factory.thread_updated", { threadId: "t1" }))).toEqual(Option.some(Message.ReceivedThreadUpdate({ threadId: "t1" })));
   });
 
+  test("the agent's open_report and set_layout become Messages", () => {
+    expect(feedEventToMessage(raw("factory.ui_open_report", { path: "reports/s.md", agent: "gen-1", threadId: "t1" }))).toEqual(
+      Option.some(Message.RequestedOpenReport({ ref: "reports/s.md", maybeAgent: Option.some("gen-1") })),
+    );
+    expect(feedEventToMessage(raw("factory.ui_set_layout", { layout: 2 }))).toEqual(Option.some(Message.ReceivedLayoutRequest({ layout: 2 })));
+    expect(feedEventToMessage(raw("factory.ui_set_layout", { layout: "x" }))).toEqual(Option.none());
+  });
+
   test("a gap marker becomes ReceivedFeedGap", () => {
     expect(feedEventToMessage(raw("factory.feed_reconnected", null))).toEqual(Option.some(Message.ReceivedFeedGap()));
   });

@@ -4,8 +4,11 @@ import { Command, given, message, model, story } from "foldkit/story";
 import { modifyFields } from "foldkit/struct";
 import * as Url from "foldkit/url";
 import { NO_ARTIFACTS, ThemeSetting, memoryNavigation, readFlags } from "@plana-solutions/agent-interface";
+import { Dialog } from "@foldkit/ui";
 import { describe, expect, test } from "vitest";
-import { RefreshThreads, SyncExtensionWorkers } from "./command";
+import { RefreshThreads, SetLayout, SyncExtensionWorkers } from "./command";
+import { FetchReport as ReportViewerFetch } from "./reportViewer/command";
+import { Message as ReportViewerMessage } from "./reportViewer/message";
 import type { Worker } from "./domain";
 import { Message } from "./message";
 import type { Model } from "./model";
@@ -130,5 +133,33 @@ describe("render cost", () => {
   test("a child update that keeps its Model keeps the root Model", () => {
     expect(update(loaded, toPanel(WorkerPanel.Message.SucceededAbortWorker())).model).toBe(loaded);
     expect(update(loaded, toSettings(Settings.Message.CompletedSyncExtensions())).model).toBe(loaded);
+  });
+});
+
+describe("agent UI actions", () => {
+  test("open_report (or a click on a report path) opens the viewer on that report", () => {
+    story(
+      update,
+      given(loaded),
+      message(Message.RequestedOpenReport({ ref: "reports/synthesis.md", maybeAgent: Option.some("gen-1") })),
+      model((current) => expect([current.reportViewer.dialog.isOpen, current.reportViewer.ref, current.reportViewer.maybeAgent]).toEqual([true, "reports/synthesis.md", Option.some("gen-1")])),
+      Command.expectHas(ReportViewerFetch),
+      Command.resolveAll(
+        [ReportViewerFetch, ReportViewerMessage.FailedFetchReport({ ref: "reports/synthesis.md", error: "gone" })],
+        [Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()],
+      ),
+    );
+  });
+
+  test("set_layout switches the layout, unless it is already shown", () => {
+    story(
+      update,
+      given(modifyFields(loaded, { protoIndex: () => 3 })),
+      message(Message.ReceivedLayoutRequest({ layout: 3 })),
+      Command.expectNone(),
+      message(Message.ReceivedLayoutRequest({ layout: 2 })),
+      Command.expectExact(SetLayout),
+      Command.resolve(SetLayout, Message.CompletedSetLayout()),
+    );
   });
 });

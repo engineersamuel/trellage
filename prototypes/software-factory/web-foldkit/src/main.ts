@@ -4,17 +4,16 @@
 import "./secureContextPolyfill";
 import "@plana-solutions/agent-interface/styles.layered.css";
 import "./page.css";
-import "./openui-card";
+import "./openUiParity.css";
+import "./reportViewer/reportViewer.css";
+import "./openUiCard";
 import "./diffHighlight";
 import { Option } from "effect";
 import { Runtime } from "foldkit";
 import {
-  ChatBackend,
   FlagsSchema,
   NO_ARTIFACTS,
   ThemeSetting,
-  agUiWire,
-  identityMessageFormat,
   memoryNavigation,
   readFlags,
 } from "@plana-solutions/agent-interface";
@@ -22,7 +21,7 @@ import type { AgentConfig } from "@plana-solutions/agent-interface";
 import { startDecisionCenter } from "../../shared/decisions";
 import { startFolderSidebar } from "../../shared/folders";
 import { startPrototypes } from "../../shared/protos";
-import { markdownAsOpenUi } from "./command";
+import { chatBackendLayer } from "./backend";
 import { changedUrl, requestedUrl } from "./chat";
 import { Model } from "./model";
 import { onSlow } from "./slowWarnings";
@@ -56,14 +55,7 @@ const application = Runtime.makeApplication({
   Model,
   container: document.querySelector("#root")!,
   init: (flags, url) => init(flags, url, maybeThreadFromUrl),
-  resources: ChatBackend.layer({
-    artifacts: "/api/artifacts",
-    // The coordinator answers in OpenUI Lang for this frontend, rendered natively by agent-interface.
-    chat: "/api/agui?answer=openui",
-    threads: "/api/threads",
-    storageFormat: { ...identityMessageFormat, fromApi: (data, seed) => markdownAsOpenUi(identityMessageFormat.fromApi(data, seed)) },
-    wire: agUiWire,
-  }),
+  resources: chatBackendLayer,
   routing: {
     onUrlChange: changedUrl,
     onUrlRequest: requestedUrl,

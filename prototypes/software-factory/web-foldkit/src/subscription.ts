@@ -10,12 +10,15 @@ import { feedEvents, fromCallback } from "./feed";
 import { Message } from "./message";
 import type { Model } from "./model";
 import * as DiffPanel from "./diffPanel";
+import * as ReportViewer from "./reportViewer";
 import * as Settings from "./settings";
 import { toGotDiffPanelMessage, toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
 import * as WorkerPanel from "./workerPanel";
 
 const decodeEvent = Schema.decodeUnknownOption(StoredEvent);
 const decodeThreadId = Schema.decodeUnknownOption(Schema.Struct({ threadId: Schema.optional(Schema.String) }));
+const decodeOpenReport = Schema.decodeUnknownOption(Schema.Struct({ path: Schema.String, agent: Schema.String }));
+const decodeSetLayout = Schema.decodeUnknownOption(Schema.Struct({ layout: Schema.Number }));
 
 /** The feed events the root handles. The worker panel and settings subscribe to the kinds they own. */
 export const feedEventToMessage = (raw: FeedEvent): Option.Option<Message> =>
@@ -24,6 +27,11 @@ export const feedEventToMessage = (raw: FeedEvent): Option.Option<Message> =>
       Match.withReturnType<Option.Option<Message>>(),
       Match.when(RESYNC, () => Option.some(Message.ReceivedFeedGap())),
       Match.when("factory.thread_updated", () => Option.map(decodeThreadId(event.data ?? {}), ({ threadId }) => Message.ReceivedThreadUpdate({ threadId }))),
+      // The agent's open_report and set_layout (coordinator/src/tools.ts browserTools).
+      Match.when("factory.ui_open_report", () =>
+        Option.map(decodeOpenReport(event.data), ({ path, agent }) => Message.RequestedOpenReport({ ref: path, maybeAgent: Option.some(agent) })),
+      ),
+      Match.when("factory.ui_set_layout", () => Option.map(decodeSetLayout(event.data), ({ layout }) => Message.ReceivedLayoutRequest({ layout }))),
       Match.orElse(() => Option.none()),
     ),
   );
@@ -67,6 +75,10 @@ const appSubscriptions = Subscription.make<Model, Message>()(() => ({
   // Worker links in shared/transcript.ts.
   selectWorker: Subscription.persistentEntry(
     windowEvents("sf:select-worker").pipe(Stream.map((event) => Message.RequestedSelectWorker({ workerId: eventDetail(event) }))),
+  ),
+  // Report paths anywhere on the page, including shared DOM modules.
+  reportLinks: Subscription.persistentEntry(
+    ReportViewer.reportClicks.pipe(Stream.map(({ ref, agent }) => Message.RequestedOpenReport({ ref, maybeAgent: Option.fromNullishOr(agent) }))),
   ),
   // The prototype switcher in shared/protos.
   proto: Subscription.persistentEntry(fromCallback<number>(onProto).pipe(Stream.map((proto) => Message.UpdatedProto({ proto })))),

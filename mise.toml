@@ -76,7 +76,8 @@ run = "./scripts/azure-fresh-install.sh"
 # Every process-compose call prints two "config home" debug lines when ~/.config/process-compose is
 # absent; the tasks drop them from stderr.
 [vars]
-sf_state = '{{ get_env(name="SF_STATE_DIR", default=get_env(name="TMPDIR", default="/tmp") ~ "/software-factory") }}'
+# Must match coordinator/src/statedir.ts. Outside $TMPDIR, which macOS cleans; shared by every git worktree.
+sf_state = '{{ get_env(name="SF_STATE_DIR", default=get_env(name="XDG_STATE_HOME", default=get_env(name="HOME") ~ "/.local/state") ~ "/trellage/factory") }}'
 
 [tasks."factory:up"]
 description = "Start the software factory detached: native (default, gh auth token) or proxy (copilot-proxy-rs)"
@@ -97,15 +98,17 @@ fi
 # The coordinator imports packages/trellage-runtime, which needs the root workspace deps.
 [[ -d ../../node_modules ]] || (cd ../.. && bun install --frozen-lockfile)
 [[ -d coordinator/node_modules ]] || (cd coordinator && bun install --frozen-lockfile)
-[[ -d web-react/node_modules ]] || (cd web-react && npm ci -q)
 [[ -d web-foldkit/node_modules ]] || (cd web-foldkit && npm ci -q --legacy-peer-deps)
+# Move an old $TMPDIR/software-factory here once (before anything creates the new folder).
+[[ -n "${SF_STATE_DIR:-}" ]] || (cd coordinator && bun src/statedir.ts)
+# Coordinator reload on save (stops running workers): only with SF_WATCH=1.
+export SF_BUN_WATCH=$([[ "${SF_WATCH:-0}" == 1 ]] && echo --watch || true)
 mkdir -p "$SF_LOGS"
 process-compose process list >/dev/null 2>&1 && process-compose down && sleep 2
 rm -f "$PC_SOCKET_PATH"
 process-compose up -D -L "$SF_LOGS/process-compose.log" -f process-compose.yaml
-echo "auth=$SF_AUTH model=$SF_MODEL  (mise run factory:tui | factory:logs | factory:down)"
-echo "  Option 1 CopilotKit : http://localhost:5173/copilotkit.html"
-echo "  Option 2 Foldkit    : http://localhost:5174/"
+echo "auth=$SF_AUTH model=$SF_MODEL watch=${SF_WATCH:-0}  (mise run factory:tui | factory:logs | factory:down)"
+echo "  Factory UI         : http://localhost:5174/"
 echo "  Coordinator API     : http://127.0.0.1:7700/"
 """
 
@@ -121,14 +124,14 @@ process-compose process list >/dev/null 2>&1 && process-compose down && echo sto
 
 [tasks."factory:restart"]
 description = "Restart one software factory service, or all of them"
-usage = 'arg "[service]" help="coordinator, copilotkit or foldkit; none restarts all"'
+usage = 'arg "[service]" help="coordinator or foldkit; none restarts all"'
 shell = "bash -c"
 quiet = true
 env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock" }
 run = """
 set -euo pipefail
 exec 2> >(grep -v 'process compose config home' >&2)
-for s in ${usage_service:-coordinator copilotkit foldkit}; do process-compose process restart "$s"; done
+for s in ${usage_service:-coordinator foldkit}; do process-compose process restart "$s"; done
 """
 
 [tasks."factory:status"]
@@ -139,7 +142,7 @@ env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock" }
 run = """
 exec 2> >(grep -v 'process compose config home' >&2)
 process-compose process list -o wide 2>/dev/null || echo "not running"
-for u in http://127.0.0.1:7700/api/info http://localhost:5173/copilotkit.html http://localhost:5174/; do
+for u in http://127.0.0.1:7700/api/info http://localhost:5174/; do
   printf '%-42s %s\\n' "$u" "$(curl -s -o /dev/null -m 3 -w '%{http_code}' "$u" || true)"
 done
 """
@@ -165,7 +168,7 @@ done
 description = "Follow the software factory service logs"
 quiet = true
 raw = true
-run = "tail -n 30 -F '{{vars.sf_state}}'/logs/{coordinator,copilotkit,foldkit}.log"
+run = "tail -n 30 -F '{{vars.sf_state}}'/logs/{coordinator,foldkit}.log"
 
 [tools]
 bun = "1.4.2"

@@ -361,3 +361,33 @@ test("the security review starts last: only when every other gate is ready, and 
   f.securityReviews.set("sr-1", { ...f.securityReviews.get("sr-1")!, status: "done" })
   expect(startFinalSecurity(f, scope)).toBeNull()
 })
+
+test("UI tools tell every open UI what to show, and confirm_action opens a yes/no decision", async () => {
+  const f = fakeFactory()
+  f.workers.set("w-1", {})
+  const patches: unknown[] = []
+  f.updateSettings = async (p: unknown) => (patches.push(p), {})
+  f.approvals = new Approvals(mkdtempSync(path.join(tmpdir(), "sf-ui-tools-")))
+  f.currentThread = "t0"
+  const tools = coordinatorTools(f, { id: "gen-1", threadId: "t1" })
+
+  expect(JSON.parse(await tool(tools, "focus_agent")({ id: "w-1" }))).toEqual({ shown: "w-1" })
+  expect(patches).toEqual([{ focus: "w-1" }])
+  expect(JSON.parse(await tool(tools, "focus_agent")({ id: "w-404" })).error).toContain("unknown agent")
+
+  expect(JSON.parse(tool(tools, "open_report")({ path: "reports/synthesis.md" }))).toEqual({ opened: "reports/synthesis.md" })
+  expect(JSON.parse(tool(tools, "open_report")({ path: "src/main.ts" })).error).toContain("reports/")
+  expect(JSON.parse(tool(tools, "set_layout")({ layout: 2 }))).toEqual({ layout: 2 })
+  expect(JSON.parse(tool(tools, "set_layout")({ layout: 7 })).error).toBeDefined()
+
+  const asked = JSON.parse(tool(tools, "confirm_action")({ title: "Stop 3 workers?", detail: "They lose unsaved work.", confirmLabel: "Stop them" }))
+  const decision = f.approvals.get(asked.id)!
+  expect([decision.options, decision.threadId, decision.status, decision.summary]).toEqual([["Stop them", "Cancel"], "t1", "pending", "They lose unsaved work."])
+
+  expect(f.published.map((e: any) => [e.type, e.data?.path ?? e.data?.layout ?? e.data?.title])).toEqual([
+    ["factory.ui_open_report", "reports/synthesis.md"],
+    ["factory.ui_set_layout", 2],
+    ["factory.approval_requested", "Stop 3 workers?"],
+  ])
+  expect(f.published[0].data).toEqual({ path: "reports/synthesis.md", agent: "gen-1", threadId: "t1" })
+})

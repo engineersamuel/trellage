@@ -28,7 +28,6 @@ const legacy: Row = { id: "old", title: "Old answered", summary: "", options: ["
 
 for (const app of [
   { name: "foldkit", url: process.env.FOLDKIT_URL ?? "http://localhost:5174/" },
-  { name: "copilotkit", url: process.env.COPILOTKIT_URL ?? "http://localhost:5173/copilotkit.html" },
 ]) {
   test(`${app.name}: approvals come from the shared Effect store`, async ({ page }) => {
     const errors: string[] = []

@@ -30,7 +30,7 @@ Body two.
 `,
 }
 
-test("report paths open a modal with Rendered, MDX and HTML views, and a finding starts a conversation", async ({ page, context }) => {
+test("report paths open a modal with Full, Source and HTML views, and a finding starts a conversation", async ({ page, context }) => {
   const errors: string[] = []
   page.on("pageerror", (e) => errors.push(e.message))
   await page.route("**/api/threads/get", (route) =>
@@ -47,7 +47,7 @@ test("report paths open a modal with Rendered, MDX and HTML views, and a finding
     await route.fulfill({ json: { threadId: "new-1", folder: "copilot-proxy-rs", worktree: "/wt/new", branch: "factory/copilot-proxy-rs-new1" } })
   })
 
-  await page.goto("/copilotkit.html?thread=general-1&proto=0")
+  await page.goto("/?thread=general-1&proto=0")
   const link = page.locator("code.sf-report-link", { hasText: "reports/synthesis.md" }).first()
   await expect(link).toBeVisible()
   await link.click()
@@ -57,12 +57,11 @@ test("report paths open a modal with Rendered, MDX and HTML views, and a finding
   await expect(modal.getByRole("heading", { name: /1\. Make SSE line framing byte-safe/ })).toBeVisible()
   await expect(modal.locator("table")).toContainText("Benchmarks")
   await expect(modal.getByText("Arc<Vec<Value>>")).toBeVisible()
-  await expect(modal.getByRole("button", { name: "▶ Start in Factory" })).toHaveCount(2)
+  await expect(modal.getByRole("button", { name: /^Start in Factory: finding/ })).toHaveCount(2)
 
-  await modal.getByRole("tab", { name: "Open as MDX" }).click()
+  // Findings are cards in every view (the React page had a separate "Open as MDX" tab for that).
   await expect(modal.locator(".rv-finding")).toHaveCount(2)
   await expect(modal.locator(".rv-finding").first()).toContainText("Body one")
-  await expect(modal.getByText("MDX compile failed")).toHaveCount(0)
 
   const popup = context.waitForEvent("page")
   await modal.getByRole("button", { name: "Open as HTML ↗" }).click()
@@ -71,7 +70,7 @@ test("report paths open a modal with Rendered, MDX and HTML views, and a finding
   await expect(html.locator("table")).toContainText("Benchmarks")
   await html.close()
 
-  await modal.locator(".rv-finding").nth(1).getByRole("button", { name: "▶ Start in Factory" }).click()
+  await modal.getByRole("button", { name: "Start in Factory: finding 2" }).click()
   await expect(modal.getByText("Started in Factory · factory/copilot-proxy-rs-new1")).toBeVisible()
   expect(started).toEqual({ path: "reports/synthesis.md", thread: "84574dec-0000", title: "2. Route chat by resolved model", body: "Body two." })
 
@@ -91,12 +90,12 @@ test("a synthesis with a brief opens on the Brief tab, and Start sends the full 
     started = route.request().postDataJSON()
     await route.fulfill({ json: { threadId: "new-1", branch: "factory/x" } })
   })
-  await page.goto("/copilotkit.html?thread=general-1&proto=0")
+  await page.goto("/?thread=general-1&proto=0")
   await page.locator("code.sf-report-link", { hasText: "reports/synthesis.md" }).first().click()
   const modal = page.getByRole("dialog", { name: "Report synthesis.md" })
   await expect(modal.getByRole("tab", { name: "Brief" })).toHaveAttribute("aria-selected", "true")
   await expect(modal.getByText("decode bytes once.")).toBeVisible()
-  await modal.getByRole("button", { name: "▶ Start in Factory" }).nth(1).click()
+  await modal.getByRole("button", { name: "Start in Factory: finding 2" }).click()
   await expect.poll(() => started).toEqual({ path: "reports/synthesis.md", thread: "84574dec-0000", title: "2. Route chat by resolved model", body: "Body two." })
   await modal.getByRole("tab", { name: "Full" }).click()
   await expect(modal.getByText("Body one with")).toBeVisible()

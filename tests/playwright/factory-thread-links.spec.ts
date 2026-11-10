@@ -25,7 +25,7 @@ for (const proto of [0, 2]) {
       throw new Error("Opening a link must not start an agent")
     })
 
-    // Keep the page of the base URL (the React UI lives at /copilotkit.html, Foldkit at /).
+    // Keep the page of the base URL (Foldkit at /).
     await page.goto(`${PAGE}?thread=first&proto=${proto}`)
     await expect(page.getByText("Saved message for first", { exact: true })).toBeVisible()
     await page.reload()

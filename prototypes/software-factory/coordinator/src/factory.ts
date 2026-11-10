@@ -7,7 +7,6 @@ import type { CodeReview } from "./review.ts"
 import type { Sdlc } from "./sdlc.ts"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
 import path from "node:path"
 import { homedir } from "node:os"
 import {
@@ -31,6 +30,7 @@ import { ensureClones, prepareStepSkills, SKILL_REPOS, stepById, stepSetup, TOOL
 import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./claude.ts"
 import { composePi, withProxyModel, PiSession } from "./pi.ts"
 import { setDecisionEngine } from "./decide.ts"
+import { acquireStateLock, migrateLegacyState, stateDir } from "./statedir.ts"
 
 const LOG_CAP = 4000
 
@@ -411,7 +411,10 @@ export class Factory {
   readonly lastReports = new Map<string, string>()
 
   constructor(env = process.env) {
-    this.root = env.SF_STATE_DIR ?? path.join(tmpdir(), "software-factory")
+    this.root = stateDir(env)
+    if (!env.SF_STATE_DIR) migrateLegacyState(this.root)
+    // Before any file is opened: one coordinator per state folder.
+    acquireStateLock(this.root)
     this.healRoot = path.join(this.root, "skills-healed")
     mkdirSync(this.root, { recursive: true })
     this.store = new EventStore(path.join(this.root, "events.db"))

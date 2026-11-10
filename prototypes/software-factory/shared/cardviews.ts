@@ -1,5 +1,5 @@
 // What each chat card shows, as plain data. Shared by the coordinator (OpenUI programs and GET /api/cards for
-// UIs that draw OpenUI only) and the CopilotKit UI (React cards), so both UIs show the same rows and labels.
+// the UI, which draws OpenUI only).
 // Pure: no DOM, no React, no Effect.
 
 export type TagVariant = "neutral" | "info" | "success" | "warning" | "danger"
@@ -143,7 +143,7 @@ const view = (title: string, subtitle: string, metrics: Metric[], rows: Record<s
   rows,
   note,
   noteVariant,
-  // Wide spaces, as the CopilotKit card spaces its metrics (no separators).
+  // Wide spaces between metrics (no separators).
   metricsText: metrics.map((m) => `**${m.value}**\u00a0${m.label}`).join("\u2003\u2003"),
 })
 
@@ -164,7 +164,7 @@ export const toSdlc = (d: { gates?: G[]; security?: string | null; verified?: bo
   }),
 ]
 
-/** A show_* tool's data → the card's view. Same rows as the CopilotKit React cards. */
+/** A show_* tool's data → the card's view. */
 export const cardView = (name: string, data: any): CardView => {
   const d = data ?? {}
   switch (name) {

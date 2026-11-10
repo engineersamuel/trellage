@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { defaultSettings, patched } from "../src/settings.ts"
+import { css, defaultSettings, patched } from "../src/settings.ts"
 
 test("patch merges and validates", () => {
   const s = defaultSettings()
@@ -38,4 +38,10 @@ test("diffStyle defaults to terminal, takes the four styles, rejects others", ()
   expect(() => patched(s, { diffStyle: "fancy" })).toThrow()
   const { diffStyle: _, ...old } = s
   expect(patched(old as never, {}).diffStyle).toBe("terminal")
+})
+
+test("the theme recolors OpenUI cards outside the chat too", () => {
+  const s = patched(defaultSettings(), { theme: "t", themes: { t: { bg: "#000001", surface: "#000002", border: "#000003", text: "#000004", muted: "#000005", accent: "#000006" } } })
+  expect(css(s)).toMatch(/\.openui-genui-card[^{]*\{--openui-background:#000001!important;[^}]*--openui-text-neutral-primary:#000004!important/)
+  expect(css(s)).not.toContain("copilotkit")
 })

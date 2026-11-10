@@ -10,9 +10,10 @@ import { toGotChatMessage } from "./chat";
 import { chat } from "./chatProgram";
 import type { Model } from "./model";
 import * as DiffPanel from "./diffPanel";
+import * as ReportViewer from "./reportViewer";
 import * as Goals from "./goals";
 import * as Settings from "./settings";
-import { toGotDiffPanelMessage, toGotGoalsMessage, toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
+import { toGotDiffPanelMessage, toGotGoalsMessage, toGotReportViewerMessage, toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
 import * as WorkerPanel from "./workerPanel";
 
 const BUSY_COLOR = "#f59e0b";
@@ -148,6 +149,9 @@ const lazyPanelRight = createLazy();
 const lazySettingsDrawer = createLazy();
 const lazyGoalsDialog = createLazy();
 const lazyDiffPanel = createLazy();
+const lazyReportViewer = createLazy();
+const reportViewer = (reportViewerModel: ReportViewer.Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({ model: reportViewerModel, slotId: "report-viewer", toParentMessage: toGotReportViewerMessage, view: ReportViewer.view });
 const lazyClassicChat = createLazy();
 const lazyPrototypeChat = createLazy();
 
@@ -210,6 +214,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
       lazySettingsDrawer(settingsDrawer, [model.settings, h]),
       lazyGoalsDialog(goalsDialog, [model.goals, h]),
       lazyDiffPanel(diffPanel, [model.diffPanel, h]),
+      lazyReportViewer(reportViewer, [model.reportViewer, h]),
     ]),
   };
 };

@@ -1,4 +1,4 @@
-// Prototype layouts: shared core used by every prototype and by both hosts (Foldkit, CopilotKit).
+// Prototype layouts: shared core used by every prototype and by the Foldkit host.
 // A host renders, instead of its classic layout:
 //   <div class="sfp-stage" data-proto="N"><div class="sfp-chat">NATIVE CHAT</div><div class="sfp-host"></div></div>
 // startPrototypes() mounts prototype N into .sfp-host. The prototype owns .sfp-host's children and
@@ -33,13 +33,15 @@ export type State = {
   activity: Record<string, Activity>
   /** Latest readable events across all agents (newest last, max 400). */
   pulses: Pulse[]
+  /** True once the first thread list arrived (it may be empty). */
+  threadsLoaded: boolean
 }
 
 export { agentLabel }
 
 // ---------- store ----------
 
-const state: State = { agents: [], past: [], tree: [], threads: [], folders: [], decisions: [], reviews: [], activity: {}, pulses: [] }
+const state: State = { agents: [], past: [], tree: [], threads: [], folders: [], decisions: [], reviews: [], activity: {}, pulses: [], threadsLoaded: false }
 const subs = new Set<(s: State) => void>()
 const logs = new Map<string, FeedEvent[]>()
 let frame = 0
@@ -57,7 +59,7 @@ const loadAgents = () =>
     undefined,
   )
 const loadThreads = () =>
-  runOr(json("/api/threads/get", Threads).pipe(Effect.map((v) => ((state.threads = v.threads), (state.folders = v.folders), emit()))), undefined)
+  runOr(json("/api/threads/get", Threads).pipe(Effect.map((v) => ((state.threads = v.threads), (state.folders = v.folders), (state.threadsLoaded = true), emit()))), undefined)
 const loadReviews = () => runOr(json("/api/steps", Steps).pipe(Effect.map((v) => ((state.reviews = v.securityReviews), emit()))), undefined)
 const loadPast = () => runOr(json("/api/workers/past", Schema.Array(Worker)).pipe(Effect.map((ws) => ((state.past = ws), emit()))), undefined)
 const loadAll = () => Promise.all([loadAgents(), loadPast(), loadThreads(), loadReviews()])
