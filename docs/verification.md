@@ -117,6 +117,14 @@ deletions alone need no source tests. Annotated tags resolve to their commit.
 Pushed commits must be checked out, and the worktree must have no changed or
 untracked source files. Push separate checked-out commits
 separately. Hooks never stash, reset, auto-stage, or rewrite user files.
+Full pre-push checks can outlast an idle SSH connection. If the remote closes it,
+retry with keepalives rather than disabling the hook:
+
+```bash
+env GIT_SSH_COMMAND="ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=6" git push
+```
+
+If you already use a custom SSH command, add those options to that command instead.
 All Git-local environment variables are cleared before nested test commands.
 The commit snapshot still respects an alternate `GIT_INDEX_FILE`.
 It includes unchanged indexed context for local action and agent-document links.
