@@ -24,9 +24,9 @@
   "dependencies": {
     "@trellage/guide-core": "workspace:*",
     "effect": "3.22.2",
-    "smol-toml": "1.9.0"
+    "smol-toml": "1.9.1"
   },
   "devDependencies": {
-    "@types/bun": "1.4.2"
+    "@types/bun": "1.4.4"
   }
 }
