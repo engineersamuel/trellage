@@ -1,0 +1,203 @@
+# Software factory defaults. Do not edit here for local changes:
+# copy a key to ~/.config/trellage/factory/config.toml; that file wins key by key.
+# Arrays replace; tables merge.
+
+[models]
+# Global coordinators (General chats, the desk).
+coordinator = "gpt-6-astra"
+# Repo sub-coordinators (delivery loops).
+sub_coordinator = "claude-opus-5.5"
+# Workers, when the step names no model and routing gives none. SF_MODEL overrides it.
+worker = "claude-sonnet-5.5"
+# Workers in the Claude Agent SDK when the worker model is not a Claude model.
+claude_worker = "claude-sonnet-5.5"
+
+# Frontier reviewer model per family. Reviewers use a family other than the implementer's.
+[models.review]
+claude = "claude-opus-5.5"
+gpt = "gpt-6-astra"
+gemini = "gemini-4-argon"
+
+[review]
+# Jev probability at or above which a review lens runs.
+lens_threshold = 0.6
+max_lenses = 3
+# Tier T2 (large or sensitive) gets at least this many lenses.
+min_lenses_t2 = 2
+# A finding is fixed only if Jev scores it real and worth fixing at or above these.
+real_threshold = 0.7
+worth_threshold = 0.7
+min_severity = ["medium", "high", "critical"]
+# Changed lines since the last review at or above this re-run the review.
+rereview_lines = 100
+max_rounds = 2
+
+[sdlc]
+# The delivery loop stops when Jev's moreWork is below this.
+done_below = 0.3
+# Fix rounds after the first push, per ship approval.
+max_fix_rounds = 5
+
+[fanout]
+# Most research or optimize workers per fan-out.
+max_workers = 4
+# Jev probability at or above which a fan-out worker runs.
+select_threshold = 0.65
+
+# Jev picks review lenses from these. Ids are free; the first two are the fallback when Jev is down.
+[review.lenses.correctness]
+focus = "logic errors, wrong edge cases, broken error handling, races, and behavior that contradicts the acceptance criteria"
+
+[review.lenses.tests]
+focus = "missing or weak tests for the changed behavior, tests that cannot fail, untested error paths"
+
+[review.lenses.design]
+focus = "needless complexity, duplication, wrong abstraction level, and code that fights the repo's existing patterns"
+
+[review.lenses.performance]
+focus = "needless work in hot paths, unbounded memory, blocking I/O, N+1 calls"
+
+[review.lenses.operability]
+focus = "config, logging, startup/shutdown, ports and paths, scripts that fail on a fresh machine, missing docs for operators"
+
+# SDLC gates. Ids and phases are fixed in code; edit the threshold and the Jev question.
+[gates.design]
+threshold = 0.6
+question = "Does this change alter a public API, data format, security boundary, or architecture enough that a short design note (decision, alternatives, rollback) should come before code?"
+
+[gates.testFirst]
+threshold = 0.5
+question = "Does this change add or alter behavior that automated tests can check, so failing tests should be written before the code?"
+
+[gates.codeReview]
+threshold = 0.6
+question = "Could an independent code reviewer plausibly find a real, worth-fixing defect in this diff (correctness, tests, design, performance)?"
+
+[gates.supplyChain]
+threshold = 0.5
+question = "Does this diff add or change dependencies, lockfiles, CI or install scripts, downloaded tools, or secret handling?"
+
+[gates.docs]
+threshold = 0.5
+question = "Does this diff change user-visible behavior, setup, configuration, or commands that README, docs, or a changelog should describe?"
+
+[gates.postMerge]
+threshold = 0.5
+question = "After merge, could this change break the default branch's CI, a release, or a deployment, so main should be watched after the merge?"
+
+# Research and deliberation workflows for fanout. Each id needs a step of the same id.
+[research.council]
+description = "Pressure-test an architecture or product choice, compare alternatives, record dissent and recommend a decision."
+
+[research.six-hats]
+description = "Evaluate a decision through facts, feelings, benefits, risks and creative alternatives, then combine the perspectives into a plan."
+
+[research.hyperresearch]
+description = "Collect current primary-source evidence for a comparative analysis, check competing claims and save a cited research report."
+
+# SDLC steps. Jev picks the next step from description, best_for and avoid_for.
+# skills: skill names loaded into the worker; harness: run in the Claude or Pi SDK with these trx profiles.
+# Optimize steps (optimize-*) come from the trx guide catalog, not from here.
+[steps.grill]
+description = "Ask the user up to 3 sharp questions before any work, because the request is ambiguous."
+best_for = ["Requests with unclear scope, target, or success criteria"]
+avoid_for = ["Requests that already name the files, behavior, and checks"]
+skills = []
+
+[steps.research]
+description = "Read the target repository and documentation to collect facts the plan needs."
+best_for = ["Changes to unfamiliar code", "Questions whose answer is in the code or docs"]
+avoid_for = ["Facts the user already gave"]
+skills = []
+
+[steps.plan]
+description = "Write a short, ordered plan of verifiable units. The user approves it before implement."
+best_for = ["Multi-file or multi-step changes"]
+avoid_for = ["One small, obvious edit"]
+skills = []
+
+[steps.implement]
+description = "Change the code with ub-mode: TDD, smallest edit, then crapper (CRAP < 10), dryer (duplication < 0.8) and mutator (kill survivors)."
+best_for = ["Any code change", "Building a feature, fix, or configuration"]
+avoid_for = ["Pure research or review with no code change"]
+skills = ["ub-mode"]
+
+[steps.verify]
+description = "Run the project's tests, type checks, and the deliverable itself, and report evidence."
+best_for = ["After every implement step"]
+avoid_for = ["Before any code exists"]
+skills = []
+
+[steps.debug]
+description = "Find the root cause of an error with the systematic-debugging skill (aitmpl.com): investigate, compare, test hypotheses, then report the cause with evidence and a suggested fix. It does not fix the code."
+best_for = ["A failing test, build, CI check, crash, or unexpected behavior", "An earlier step that ended in an error"]
+avoid_for = ["New features with no error", "Work that has no failure to explain"]
+skills = ["systematic-debugging"]
+skill_dirs = ["claude-code-templates/cli-tool/components/skills/development"]
+instructions = "Stop after Phase 3, when the root cause is confirmed or you cannot confirm one. Do not fix the bug: skip Phase 4, write no fix and no new test. Revert every temporary change (logging, experiments) so the code is as you found it. Report: root cause with evidence, hypotheses ruled out, a suggested fix (not applied), and how sure you are."
+gate_tools = false
+
+[steps.review]
+description = "Review the diff for correctness, security, and removable complexity. The user approves findings."
+best_for = ["Finished, verified changes"]
+avoid_for = ["Unverified work in progress"]
+skills = []
+
+[steps.finish]
+description = "Push the approved branch, open or update its PR, and loop until every check is green: read failing checks and review comments, fix, run the tests, commit, push again, at most 5 fix rounds. Never merges. Needs a ship approval the human accepted."
+best_for = ["Verified, reviewed changes the human approved to ship"]
+avoid_for = ["Before a ship approval", "New features or large changes"]
+skills = []
+
+[steps.council]
+description = "Run the Claude Council profile to pressure-test a product or architecture decision."
+best_for = ["Comparative design decisions and conflicting tradeoffs"]
+avoid_for = ["Simple fact lookups"]
+skills = []
+harness = { kind = "claude", profiles = ["council"], entry = "/council" }
+
+[steps."six-hats"]
+description = "Run the Claude Six Hats profile for parallel decision perspectives."
+best_for = ["Decisions involving evidence, preference, risk and alternatives"]
+avoid_for = ["Code-only edits"]
+skills = []
+harness = { kind = "claude", profiles = ["six-hats"], entry = "/six-hats:decide" }
+
+[steps.hyperresearch]
+description = "Run the Claude research profile with Hyperresearch for a current, cited comparison."
+best_for = ["External evidence and comparative research"]
+avoid_for = ["Facts already verified in the repository"]
+skills = []
+harness = { kind = "claude", profiles = ["research"], entry = "/hyperresearch:deep-research" }
+
+[steps.synthesis]
+description = "Read all completed research and decision reports, resolve disagreement, and save one cited Markdown recommendation."
+best_for = ["After all selected research and deliberation workers have completed"]
+avoid_for = ["Before all selected worker outputs are available"]
+skills = []
+
+[steps.security]
+description = "Audit the diff with the security-audit skill and write findings.json. Runs automatically after every implement step."
+best_for = ["The factory's automatic security review"]
+avoid_for = ["Manual selection"]
+skills = ["security-audit"]
+skill_dirs = ["security-audit-skill/skills"]
+gate_tools = false
+factory_only = true
+
+[steps."enhance-prompt"]
+description = "Rewrite a draft prompt with the prompt-master skill into exactly 3 candidates."
+best_for = ["The factory's draft Enhance action"]
+avoid_for = ["Manual selection"]
+skills = ["prompt-master"]
+gate_tools = false
+factory_only = true
+
+[steps."rpi-research"]
+description = "HVE Core RPI Research: evidence-backed task research with wider, deeper and contrarian waves; writes a research artifact and a report. Read-only for code."
+best_for = ["The factory's draft Research action"]
+avoid_for = ["Manual selection"]
+skills = ["rpi-research"]
+skill_dirs = ["hve-core/.github/skills/rpi"]
+gate_tools = false
+factory_only = true

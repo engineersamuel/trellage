@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs"
 import path from "node:path"
 import type { Thread } from "./threads.ts"
+import { loadPrompt } from "./prompt.ts"
 
 export type ReportFile = { threadId: string; folderId: string; title: string; path: string; file: string; content: string }
 
@@ -33,12 +34,7 @@ export const findReport = (threads: readonly Thread[], ref: string, threadId?: s
 
 /** Task for a new conversation that implements one finding from a report. */
 export const findingTask = (r: { path: string; file: string; title: string }, finding: { title: string; body: string }) =>
-  [
-    `Implement this optimization from the report ${r.file} (conversation "${r.title}").`,
-    `## ${finding.title}`,
-    finding.body.trim(),
-    "Follow the delivery loop: next_step, request_approval for the plan, implement, verify. Keep the change to this one finding. Do not push or merge.",
-  ].join("\n\n")
+  loadPrompt("tasks/finding", { file: r.file, conversation: r.title, title: finding.title, body: finding.body.trim() })
 
 /** Ranked `## <rank>. <title>` headings outside code fences. */
 const rankedHeadings = (md: string): string[] => {

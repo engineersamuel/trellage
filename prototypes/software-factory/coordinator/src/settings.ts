@@ -6,6 +6,7 @@ import { TREE_STYLES } from "../../shared/treeLines.ts"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { Effect, Schema } from "effect"
+import { factoryConfig } from "./config.ts"
 
 export const NAVBAR_ITEMS = ["status", "workers", "model", "context", "auth", "crons", "repo"]
 export const HOTKEY_ACTIONS = ["toggleSettings", "cycleTheme", "focusCoordinator", "abortCoordinator"]
@@ -66,7 +67,7 @@ const SettingsSchema = Schema.Struct({
   }),
   /** Model and effort of the repo sub-coordinators (the delivery loops); the global ones use `agent`. */
   subAgent: Schema.Struct({ model: Schema.String, reasoningEffort: Schema.String }).pipe(
-    Schema.withDecodingDefaultKey(Effect.succeed({ model: "claude-opus-5.5", reasoningEffort: "high" })),
+    Schema.withDecodingDefaultKey(Effect.sync(() => ({ model: factoryConfig().models.sub_coordinator, reasoningEffort: "high" }))),
   ),
   /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
   workers: Schema.Struct({ harness: Schema.String }).pipe(
@@ -131,8 +132,8 @@ export const defaultSettings = (): Settings => ({
   hotkeys: { ",": "toggleSettings", t: "cycleTheme", ".": "focusCoordinator" },
   focus: "coordinator",
   banner: null,
-  agent: { model: "gpt-6-astra", reasoningEffort: "high", disabledTools: [], instructions: "" },
-  subAgent: { model: "claude-opus-5.5", reasoningEffort: "high" },
+  agent: { model: factoryConfig().models.coordinator, reasoningEffort: "high", disabledTools: [], instructions: "" },
+  subAgent: { model: factoryConfig().models.sub_coordinator, reasoningEffort: "high" },
   workers: { harness: "auto" },
   decisions: { engine: "jev" },
   crons: {},

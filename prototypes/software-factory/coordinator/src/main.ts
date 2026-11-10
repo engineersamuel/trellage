@@ -13,7 +13,9 @@ import {
   worktreeRoot,
   type Worktree,
 } from "./folders.ts"
-import { CARDS_PROMPT, COORDINATOR_PROMPT, DESK_PROMPT, GLOBAL_PROMPT, RESEARCH_PROMPT, subPrompt } from "./prompts.ts"
+import { cardsPrompt, coordinatorPrompt, deskPrompt, globalPrompt, researchPrompt, subPrompt } from "./prompts.ts"
+import { loadPrompt } from "./prompt.ts"
+import { configStore } from "./config.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
 import { findingTask, findReport } from "./reports.ts"
 import { CARD_TOOLS, cardOpenUi, reportFindings } from "./cards.ts"
@@ -28,12 +30,12 @@ import {
   STATUS_NOTE,
 } from "./general.ts"
 import { specView } from "./spec.ts"
-import { onTrack, STEPS } from "./steps.ts"
+import { onTrack, steps } from "./steps.ts"
 import { findIssues, supervisorPrompt, type Issue } from "./supervisor.ts"
 import { answerPrompt } from "./approvals.ts"
 import { loop, stopLoops } from "./loops.ts"
 import { sendWhenIdle } from "./delivery.ts"
-import { freshTurn, REPORT_NUDGE, reportPrompt, shouldReport, type Report } from "./report.ts"
+import { freshTurn, reportNudge, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, type Run } from "./run.ts"
 import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
@@ -99,6 +101,9 @@ for (const [k, s] of factory.sdlc)
   })
 const threads = new Threads(factory.root)
 const instructions = readInstructions()
+const config = configStore()
+console.error(`factory config: ${config.user}${config.error ? ` (invalid, using defaults: ${config.error})` : ""}`)
+config.watch((c) => console.error(c.error ? `factory config: keeping the last good config; ${c.error}` : "factory config reloaded"))
 console.error(
   `global instructions: ${instructionsPath()} (${instructions ? `${instructions.length} chars` : "missing"})`,
 )
@@ -155,7 +160,7 @@ const snapshot = () =>
   )
 
 const globalSystem = (extra: string) =>
-  `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${GLOBAL_PROMPT}${extra}${instructions ? `\n\n<human-instructions>\n${instructions}\n</human-instructions>` : ""}\n\n# OpenUI Lang\n${openuiPrompt}`
+  `${coordinatorPrompt()}\n\n${cardsPrompt()}\n\n${globalPrompt()}${extra}${instructions ? `\n\n<human-instructions>\n${instructions}\n</human-instructions>` : ""}\n\n# OpenUI Lang\n${openuiPrompt}`
 
 // The Factory desk keeps the id "coordinator" and its runtime process; General chats open their own sessions on it.
 const coord = await factory.spawn({
@@ -163,7 +168,7 @@ const coord = await factory.spawn({
   name: "Factory desk",
   role: "coordinator",
   sessionId: "sf-coordinator",
-  system: globalSystem(`\n\n${DESK_PROMPT}`),
+  system: globalSystem(`\n\n${deskPrompt()}`),
   tools: globalScopeTools(DESK_ID, null),
   permissions: factory.globalPermissions,
 })
@@ -310,9 +315,7 @@ const uiContext = (context: unknown): string => {
 // Both UIs share one coordinator session, so every turn says which format the
 // current UI renders. Without this the agent copies the format of earlier turns.
 const uiFormat = (p: string, answer: string | null) =>
-  answer === "openui"
-    ? `${p}\n\n<ui-format>This UI renders your final message as OpenUI Lang. Write your final answer for this turn as an OpenUI Lang program only (root = Card(...)), no prose. Do not call render_ui. After a show_* tool, write no final message: the factory shows that tool's card as your answer, and text you write before it moves to "Behind the scenes".</ui-format>`
-    : `${p}\n\n<ui-format>This UI renders your final message as markdown. Never write OpenUI Lang (root = ...) in a message; use the render_ui tool for cards.</ui-format>`
+  `${p}\n\n${loadPrompt(answer === "openui" ? "ui-format-openui" : "ui-format-markdown")}`
 
 // ---------- conversations ----------
 
@@ -352,7 +355,7 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
         name: `${folder.name} · ${t.title}`.slice(0, 60),
         role: "coordinator",
         ...(t.parentThreadId ? { owner: genId(t.parentThreadId) } : {}),
-        system: `${COORDINATOR_PROMPT}\n\n${CARDS_PROMPT}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!, t.prBase, readLessons(factory.root, folder.id))}\n\n${RESEARCH_PROMPT}\n\n# OpenUI Lang\n${openuiPrompt}`,
+        system: `${coordinatorPrompt()}\n\n${cardsPrompt()}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!, t.prBase, readLessons(factory.root, folder.id))}\n\n${researchPrompt()}\n\n# OpenUI Lang\n${openuiPrompt}`,
         tools: coordinatorTools(factory, {
           id,
           threadId: t.id,
@@ -443,7 +446,7 @@ const deliverAndLog = (threadId: string | null, text: string) =>
 /** Track a sub-coordinator's turn; when it goes idle done or blocked without reporting, nudge it once to report_up. */
 const watchSub = (w: Worker, threadId: string, ev: SessionEvent) => {
   const content = String(fieldsOf(ev.data).content ?? "")
-  if (ev.type === "user.message" && !content.startsWith(REPORT_NUDGE)) factory.turns.set(w.id, freshTurn(Date.now()))
+  if (ev.type === "user.message" && !content.startsWith(reportNudge())) factory.turns.set(w.id, freshTurn(Date.now()))
   if (ev.type === "session.error") factory.turn(w.id).blocked = true
   if (ev.type !== "session.idle") return
   const turn = factory.turn(w.id)
@@ -460,7 +463,7 @@ const watchSub = (w: Worker, threadId: string, ev: SessionEvent) => {
   }
   if (!shouldReport(state)) return
   turn.nudged = true
-  deliverAndLog(threadId, REPORT_NUDGE)
+  deliverAndLog(threadId, reportNudge())
 }
 
 /** Global coordinator tool: open a conversation in a folder (id, or a repo path to add) and give its sub-coordinator a task. */
@@ -1113,7 +1116,7 @@ const cardScope = (id: string): Scope => {
 
 const goals = makeGoals(
   goalsDir(),
-  STEPS.map((step) => step.id),
+  steps().map((step) => step.id),
 )
 /** prototypes/software-factory: its commit (and dirty flag) is the factory version a goal run ran on. */
 const FACTORY_DIR = path.resolve(new URL(".", import.meta.url).pathname, "../..")
@@ -1235,7 +1238,7 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/steps$/,
     () =>
       json({
-        steps: STEPS,
+        steps: steps(),
         decisions: factory.decisions,
         run: factory.run,
         securityReviews: [...factory.securityReviews.values()].slice(-20),

@@ -206,7 +206,8 @@ def selected(root: Path, name: str, paths: list[str]) -> list[str]:
         if name == "typos":
             return suffix in {".md", ".py", ".sh", ".ts", ".tsx", ".yml", ".yaml", ".toml"}
         if name == "rumdl":
-            return suffix == ".md"
+            # Factory prompt templates are model input, not documentation: their exact text is tested.
+            return suffix == ".md" and "/coordinator/defaults/prompts/" not in path
         if name == "hadolint":
             return Path(path).name.startswith("Dockerfile")
         if name == "config":

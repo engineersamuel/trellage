@@ -1,9 +1,9 @@
 import { noul, TypeSafeClient } from "@typesafe-ai/sdk"
-import { RESEARCH_WORKFLOWS, OPTIMIZE_SKILLS } from "../src/workflows.ts"
+import { researchWorkflows, OPTIMIZE_SKILLS } from "../src/workflows.ts"
 import { jevKey } from "../src/steps.ts"
 
 const catalog = [
-  ...RESEARCH_WORKFLOWS.map((w) => ({ id: w.id, kind: "research", text: w.description })),
+  ...researchWorkflows().map((w) => ({ id: w.id, kind: "research", text: w.description })),
   ...OPTIMIZE_SKILLS.map((s) => ({ id: s.id, kind: "optimize", text: `Read-only repository review lens "${s.title}": ${s.description}` })),
 ]
 // expected: R = research rows only, O = optimize rows only, N = none

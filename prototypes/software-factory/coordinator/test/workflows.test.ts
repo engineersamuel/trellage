@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
-import { SELECTABLE_STEPS, stepById, stepSetup } from "../src/steps.ts"
-import { FANOUT_CATALOG, MAX_FANOUT, OPTIMIZE_SKILLS, optimizeTask, researchTask, selectWorkflows } from "../src/workflows.ts"
+import { selectableSteps, stepById, stepSetup } from "../src/steps.ts"
+import { fanoutCatalog, OPTIMIZE_SKILLS, optimizeTask, researchTask, selectWorkflows } from "../src/workflows.ts"
 
 test("independent probabilities allow multiple workflows or no match", () => {
   expect(selectWorkflows({ council: 0.9, "six-hats": 0.65, hyperresearch: 0.95 }).selected).toEqual([
@@ -22,14 +22,14 @@ test("Claude-built workflows run in the Claude harness with their trx profile an
 })
 
 test("one fan-out catalog holds research workflows and optimize lenses, each bound to a step", () => {
-  expect(FANOUT_CATALOG.map((e) => [e.id, e.kind, e.step])).toEqual([
+  expect(fanoutCatalog().map((e) => [e.id, e.kind, e.step])).toEqual([
     ["council", "research", "council"],
     ["six-hats", "research", "six-hats"],
     ["hyperresearch", "research", "hyperresearch"],
     ...OPTIMIZE_SKILLS.map((s) => [s.id, "optimize", `optimize-${s.id}`]),
   ])
-  for (const e of FANOUT_CATALOG) expect(() => stepById(e.step)).not.toThrow()
-  expect(FANOUT_CATALOG[0]!.task("q")).toContain("reports/council.md")
+  for (const e of fanoutCatalog()) expect(() => stepById(e.step)).not.toThrow()
+  expect(fanoutCatalog()[0]!.task("q")).toContain("reports/council.md")
 })
 
 test("researchTask names its report file", () => {
@@ -37,10 +37,10 @@ test("researchTask names its report file", () => {
   expect(researchTask("council", "x")).toContain("reports/council.md")
 })
 
-test(`selection keeps at most ${MAX_FANOUT} workers, the most probable first`, () => {
-  const p = Object.fromEntries(FANOUT_CATALOG.map((e, i) => [e.id, 0.66 + i * 0.01]))
-  const { selected } = selectWorkflows(p, FANOUT_CATALOG)
-  expect(selected).toEqual(FANOUT_CATALOG.slice(-MAX_FANOUT).map((e) => e.id))
+test(`selection keeps at most ${4} workers, the most probable first`, () => {
+  const p = Object.fromEntries(fanoutCatalog().map((e, i) => [e.id, 0.66 + i * 0.01]))
+  const { selected } = selectWorkflows(p, fanoutCatalog())
+  expect(selected).toEqual(fanoutCatalog().slice(-4).map((e) => e.id))
 })
 
 test("Optimize selection uses the trx guide --optimize catalog", () => {
@@ -71,5 +71,5 @@ test("each Optimize skill is a factory-only step that loads its managed skills",
     extraPath: [],
   })
   expect(stepById("optimize-first-principles").skills).toEqual([])
-  expect(SELECTABLE_STEPS.some((s) => s.id.startsWith("optimize-"))).toBe(false)
+  expect(selectableSteps().some((s) => s.id.startsWith("optimize-"))).toBe(false)
 })

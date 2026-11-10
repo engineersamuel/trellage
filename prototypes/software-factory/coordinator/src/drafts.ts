@@ -1,6 +1,7 @@
 // Draft rules: a repo-folder thread that holds a prompt and starts no work until Run.
 import type { Candidate, Draft, DraftAction, DraftVersion, Thread, Threads } from "./threads.ts"
 import { researchTask } from "./workflows.ts"
+import { loadPrompt } from "./prompt.ts"
 
 export class DraftError extends Error {
   constructor(
@@ -34,11 +35,8 @@ const LABEL: Record<DraftAction, string> = {
   hyperresearch: "Hyperresearch",
 }
 
-/** Extra task text per action, after the shared research instructions. */
-const ACTION_NOTE: Partial<Record<DraftAction, string>> = {
-  research:
-    "Use the rpi-research skill in agent-owned decision mode: ask no questions. Use posture balanced. Write the skill's research artifact under .copilot-tracking/research/ as the skill specifies. Also save a summary with key findings, alternatives, open questions and the artifact path to reports/draft-rpi-research.md. Stop after Research: do not start Plan, Implement or Review, and do not look for other RPI skills or instruction files.",
-}
+/** Extra task text per action (a prompt name), after the shared research instructions. */
+const ACTION_NOTE: Partial<Record<DraftAction, string>> = { research: "tasks/draft-rpi-research" }
 
 export type DraftDeps = {
   threads: Threads
@@ -86,7 +84,7 @@ const actionTask = (draft: Draft, action: DraftAction): string => {
     ? `Context from earlier pre-work in this worktree (read first):\n${reportLines(draft, others)}\n\n`
     : ""
   const note = ACTION_NOTE[action]
-  return `${context}${researchTask(workflow, currentPrompt(draft), `draft-${workflow}`)}${note ? `\n\n${note}` : ""}`
+  return `${context}${researchTask(workflow, currentPrompt(draft), `draft-${workflow}`)}${note ? `\n\n${loadPrompt(note)}` : ""}`
 }
 
 export const makeDrafts = (d: DraftDeps) => {

@@ -187,6 +187,13 @@ directory), so they survive a restart; an old `approvals.json` is imported once.
 - State lives in `~/.local/state/trellage/factory/<worker-id>` (override with `SF_STATE_DIR`).
 - Ctrl-C stops the coordinator and terminates every runtime process.
 
+## Factory config and prompts
+
+Prompts, models, review and SDLC thresholds, lenses, gates, research workflows and steps are files:
+`coordinator/defaults/config.toml` and `coordinator/defaults/prompts/*.md`. Override them key by key in
+`~/.config/trellage/factory/config.toml` and file by file in `~/.config/trellage/factory/prompts/`. Edits apply live;
+a delivery run keeps the config it started with. See `coordinator/AGENTS.md`.
+
 ## Self-updating UI (agent access parity)
 
 One settings document (`coordinator/src/settings.ts`) drives the UI. The UI and the agent edit it the same way: a JSON

@@ -63,12 +63,12 @@ test("finish workers push only their branch, may edit files, and never merge", a
 })
 
 test("a finish grant allows the first push and 5 fix rounds, then rejects the next push but not other commands", async () => {
-  const { finishPermissions, MAX_FIX_ROUNDS } = await import("../src/factory.ts")
+  const { finishPermissions, maxFixRounds } = await import("../src/factory.ts")
   const grant = { id: "a", scopeId: "s", branch: "factory/x", pushes: 0 }
   const saved: number[] = []
   const gate = finishPermissions(grant, (g) => saved.push(g.pushes))
   const shell = (fullCommandText: string): any => ({ kind: "shell", fullCommandText })
-  for (let i = 0; i <= MAX_FIX_ROUNDS; i++) expect(gate(shell("git push origin factory/x"), {} as any)).toEqual({ kind: "approve-once" })
+  for (let i = 0; i <= maxFixRounds(); i++) expect(gate(shell("git push origin factory/x"), {} as any)).toEqual({ kind: "approve-once" })
   expect(saved).toEqual([1, 2, 3, 4, 5, 6])
   expect((gate(shell("git push origin factory/x"), {} as any) as any).feedback).toContain("limit")
   expect(gate(shell("git commit -m fix"), {} as any)).toEqual({ kind: "approve-once" })

@@ -10,6 +10,7 @@ honor its STOP conditions, and update its status when done.
 | --- | --- | --- | --- | --- | --- |
 | 001 | Enforce the Graph of Loops skill entry point | P1 | S | - | DONE |
 | 002 | [Replace named Native launchers with harness-based trx commands](002-unify-native-launchers.md) | P1 | L | - | IMPLEMENTED — host timing check fails; installed-host matrix needs updated trx |
+| 003 | [Drive the software factory from config files](003-factory-config-driven.md) | P1 | L | - | IN PROGRESS — steps 1-3 done; step 4 (UI) open; lint on edited legacy files open |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason,
 or `REJECTED` with a one-line rationale.
@@ -17,7 +18,9 @@ or `REJECTED` with a one-line rationale.
 ## Dependency notes
 
 - Plan 001 is self-contained.
-- Plan 002 was added on 2026-10-07 against `20230dd` plus the uncommitted Native composition work. Its internal phases must precede launcher deletion.
+- Plan 003 was added on 2026-11-10 against `47079db`; it is self-contained.
+- Plan 002 was added on 2026-10-07 against `20230dd` plus the uncommitted Native composition work.
+  Its internal phases must precede launcher deletion.
 
 ## Findings considered and rejected
 

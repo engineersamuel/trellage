@@ -1,6 +1,7 @@
 // Sub-coordinators coordinate; workers change things. A sub-coordinator's shell may only read: an allow-list of
 // commands, no output redirection to files, and per-command limits (no sed -i, no find -exec, read-only git and gh).
 // Edits, builds, tests and servers go through implement and verify workers, so every change passes the SDLC gates.
+import { loadPrompt } from "./prompt.ts"
 
 const SEPARATORS = new Set([";", "&", "|", "\n", "(", ")"])
 
@@ -103,5 +104,4 @@ export const readOnlyViolation = (line: string): string | null => {
   return null
 }
 
-export const SUB_SHELL_FEEDBACK =
-  "Sub-coordinators only read and coordinate. Edits, builds, tests and running servers go through workers so every change passes the SDLC gates: call sdlc_plan, then spawn_worker step=implement (edits) or step=verify (builds, tests, proof runs). Read-only shell commands (ls, cat, grep, git status/diff/log, gh pr view) stay allowed."
+export const subShellFeedback = () => loadPrompt("sub-shell-feedback")

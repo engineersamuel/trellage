@@ -1,6 +1,6 @@
 // Worker lifecycle: each worker is a separate agent process with its own home. Copilot SDK is the
 // default harness (a runtime over TCP); a step may name the Claude Agent SDK harness instead.
-import { readOnlyViolation, SUB_SHELL_FEEDBACK } from "./readonly.ts"
+import { readOnlyViolation, subShellFeedback } from "./readonly.ts"
 import { isolatedLauncher, spawnIsolated } from "./isolate.ts"
 import { factoryMcpServer, gateFromPermissions, MCP_SERVER, mcpToolNames } from "./claudetools.ts"
 import type { CodeReview } from "./review.ts"
@@ -38,6 +38,7 @@ import {
 } from "./steps.ts"
 import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./claude.ts"
 import { composePi, withProxyModel, PiSession } from "./pi.ts"
+import { factoryConfig, missingProfiles, type FactoryConfig } from "./config.ts"
 import { setDecisionEngine } from "./decide.ts"
 import { acquireStateLock, migrateLegacyState, stateDir } from "./statedir.ts"
 
@@ -405,7 +406,10 @@ export class Factory {
   readonly healRoot: string
   readonly defaultAuth: Auth
   readonly proxyUrl: string
-  readonly defaultModel: string
+  /** Worker model when routing gives none: SF_MODEL, else [models] worker in the factory config (read live). */
+  get defaultModel(): string {
+    return this.env.SF_MODEL ?? factoryConfig().models.worker
+  }
   settings: S.Settings
   private readonly settingsFile: string
   /** Latest browser-side extension errors, keyed by "extension@ui". */
@@ -430,7 +434,7 @@ export class Factory {
   /** Last report sent per sub-coordinator, as "turn start|commit|status", so a repeat in the same turn is dropped. */
   readonly lastReports = new Map<string, string>()
 
-  constructor(env = process.env) {
+  constructor(private readonly env: NodeJS.ProcessEnv = process.env) {
     this.root = stateDir(env)
     if (!env.SF_STATE_DIR) migrateLegacyState(this.root)
     // Before any file is opened: one coordinator per state folder.
@@ -441,7 +445,6 @@ export class Factory {
     this.store.importAll(this.root)
     this.seq = Math.max(Date.now() * 1000, this.store.maxSeq() + 1)
     this.defaultAuth = env.SF_AUTH === "proxy" ? "proxy" : "native"
-    this.defaultModel = env.SF_MODEL ?? "claude-sonnet-5.5"
     this.proxyUrl = env.SF_PROXY_URL ?? "http://localhost:8080/v1"
     this.settingsFile = S.settingsPath(this.root)
     this.settings = S.loadSettings(this.settingsFile)
@@ -449,7 +452,7 @@ export class Factory {
     this.approvals = new Approvals(this.root)
     // SF_MODEL is the worker default; coordinators use the settings (agent: global, subAgent: repo conversations).
     if (this.settings.agent.model === "")
-      this.settings = { ...this.settings, agent: { ...this.settings.agent, model: "gpt-6-astra" } }
+      this.settings = { ...this.settings, agent: { ...this.settings.agent, model: factoryConfig().models.coordinator } }
   }
 
   get(id: string): Worker {
@@ -483,6 +486,8 @@ export class Factory {
     const auth = spec.auth ?? this.defaultAuth
     const home = path.join(this.root, id)
     const step = spec.step ? stepById(spec.step) : null
+    const missing = step ? missingProfiles(step.id, step.harness) : []
+    if (missing.length) throw new Error(`refused: ${missing.join("; ")}`)
     // Skill preflight runs first, so a worker with an unusable skill fails before any model call.
     const { workdir, setup, skills } = this.prepareSpawn(spec, id, home, step)
     const harness = workerHarness(
@@ -579,7 +584,7 @@ export class Factory {
     const skillRoot = stepSkills.length ? stepSkillDir(path.join(home, "step-skills"), stepSkills) : null
     // Claude SDK prefers Anthropic models; an explicit model (reviewers use another family on purpose) wins.
     const model =
-      spec.model ?? launch.model ?? (/^claude/.test(this.defaultModel) ? this.defaultModel : "claude-sonnet-5.5")
+      spec.model ?? launch.model ?? (/^claude/.test(this.defaultModel) ? this.defaultModel : factoryConfig().models.claude_worker)
     const session = new ClaudeSession(
       {
         cwd: workdir,
@@ -905,9 +910,9 @@ export class Factory {
           "Sub-coordinators never merge, push, or delete branches or worktrees. To push and open a PR: request_approval with ship=true, then spawn_worker step=finish. Merging and deleting stay with the human.",
       }
     // Coordinate, do not do: no file writes, and only read-only shell commands.
-    if (request.kind === "write") return { kind: "reject", feedback: SUB_SHELL_FEEDBACK }
+    if (request.kind === "write") return { kind: "reject", feedback: subShellFeedback() }
     const why = request.kind === "shell" ? readOnlyViolation(request.fullCommandText) : null
-    if (why) return { kind: "reject", feedback: `Refused (${why}). ${SUB_SHELL_FEEDBACK}` }
+    if (why) return { kind: "reject", feedback: `Refused (${why}). ${subShellFeedback()}` }
     return this.settingsPermissions(request, invocation)
   }
 
@@ -923,7 +928,7 @@ export class Factory {
 }
 
 /** The first push plus this many fix rounds per ship approval; then the human decides. */
-export const MAX_FIX_ROUNDS = 5
+export const maxFixRounds = (c: FactoryConfig = factoryConfig()) => c.sdlc.max_fix_rounds
 
 /**
  * Gate for a finish worker: it fixes, commits, and pushes only its approved branch (no force); it never merges or deletes.
@@ -931,7 +936,7 @@ export const MAX_FIX_ROUNDS = 5
  * `saved` stores the new count after each allowed push.
  */
 export const finishPermissions =
-  (grant: ShipGrant, saved: (g: ShipGrant) => void = () => {}): PermissionHandler =>
+  (grant: ShipGrant, saved: (g: ShipGrant) => void = () => {}, limit = maxFixRounds()): PermissionHandler =>
   (request, invocation) => {
     if (request.kind !== "shell") return approveAll(request, invocation)
     const cmd = request.fullCommandText
@@ -942,10 +947,10 @@ export const finishPermissions =
       }
     if (!forbiddenCommand(cmd)) return approveAll(request, invocation)
     // An allowed push of the granted branch.
-    if (grant.pushes > MAX_FIX_ROUNDS)
+    if (grant.pushes > limit)
       return {
         kind: "reject",
-        feedback: `Fix round limit reached (${MAX_FIX_ROUNDS} after the first push). Stop and return what still fails and why.`,
+        feedback: `Fix round limit reached (${limit} after the first push). Stop and return what still fails and why.`,
       }
     grant.pushes++
     saved(grant)

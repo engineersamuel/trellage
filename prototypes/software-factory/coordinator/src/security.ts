@@ -5,6 +5,7 @@ import { choice } from "@typesafe-ai/sdk"
 import { decisionsAvailable, systemOne } from "./decide.ts"
 import { now, type Auth, type Factory, type Worker } from "./factory.ts"
 import type { Scope } from "./tools.ts"
+import { loadPrompt } from "./prompt.ts"
 
 /** A security-audit findings.json record worth acting on (rejected records are dropped). */
 export type Finding = { id: string; title: string; severity: string; file: string; summary: string; verdict: "confirmed" | "needs_validation" }
@@ -150,7 +151,7 @@ const audit = async (f: Factory, spawn: Spawn, set: Set, base: string): Promise<
   const reviewer = await spawn(
     "security-review",
     "security",
-    `Run the security-audit skill in full audit mode on this worktree, scoped to the changes in \`git diff ${base}\` (the code this diff adds or changes). Use ${out} as the output directory; it is outside the target. Write the validated findings to ${out}/findings.json in the skill's report schema (write [] when there are none). Reply with that path only.`,
+    loadPrompt("tasks/security-audit", { base, out }),
     id,
   )
   set({ workerId: reviewer.id })
@@ -162,10 +163,10 @@ const audit = async (f: Factory, spawn: Spawn, set: Set, base: string): Promise<
 
 /** Fix worker (implement) for the kept findings, then a verify worker. */
 const fixAndVerify = async (spawn: Spawn, set: Set, kept: TriagedFinding[], base: string) => {
-  const fixer = await spawn("security-fix", "implement", `Fix these security findings from the review of \`git diff ${base}\`. Add a test for each fix.\n${list(kept)}`)
+  const fixer = await spawn("security-fix", "implement", loadPrompt("tasks/security-fix", { base, findings: list(kept) }))
   set({ status: "fixing", workerId: fixer.id })
   await idleOrThrow(fixer, "security fix")
-  const verifier = await spawn("security-verify", "verify", `Verify the fixes for these security findings: run the project's tests and type checks and report evidence per finding.\n${list(kept)}`)
+  const verifier = await spawn("security-verify", "verify", loadPrompt("tasks/security-verify", { findings: list(kept) }))
   set({ status: "verifying", workerId: verifier.id })
   await idleOrThrow(verifier, "security verify")
 }

@@ -3,8 +3,9 @@ import { execFileSync } from "node:child_process"
 import { readFileSync, statSync, existsSync } from "node:fs"
 import path from "node:path"
 import { defineTool, type Tool } from "@github/copilot-sdk"
-import { finishPermissions, MAX_FIX_ROUNDS, now, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
+import { finishPermissions, maxFixRounds, now, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
 import { SETTINGS_TOOL_DOC } from "./prompts.ts"
+import { factoryConfig, pinnedConfig } from "./config.ts"
 import type { ShipGrant } from "./approvals.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
 import { briefProblem } from "./reports.ts"
@@ -22,8 +23,8 @@ import {
   startFinalSecurity,
 } from "./gates.ts"
 import { addLessons, artifact, prBody, unprovenCriteria } from "./sdlc.ts"
-import { decideNext, SELECTABLE_STEPS, SkillPreflightError } from "./steps.ts"
-import { FANOUT_CATALOG, MAX_FANOUT, routeFanout, type FanoutSelection } from "./workflows.ts"
+import { decideNext, selectableSteps, SkillPreflightError } from "./steps.ts"
+import { fanoutCatalog, routeFanout, type FanoutSelection } from "./workflows.ts"
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object",
@@ -59,7 +60,7 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
   spawnWorker(f, scope),
   fanoutTool(
     "fanout",
-    `For a research, design-decision or find-optimizations request, ask Jev which workers fit, then start each selected worker (at most ${MAX_FANOUT}) in this conversation's worktree. Workers: ${FANOUT_CATALOG.map((e) => e.id).join(", ")}. Each saves reports/<step>.md. Takes the exact user request, not worker names. Read every returned worker with wait=true before spawning a synthesis worker.`,
+    `For a research, design-decision or find-optimizations request, ask Jev which workers fit, then start each selected worker (at most ${factoryConfig().fanout.max_workers}) in this conversation's worktree. Workers: ${fanoutCatalog().map((e) => e.id).join(", ")}. Each saves reports/<step>.md. Takes the exact user request, not worker names. Read every returned worker with wait=true before spawning a synthesis worker.`,
     (request) => fanout(f, scope, request),
   ),
   defineTool("next_step", {
@@ -100,9 +101,9 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
           threadId: scope.threadId,
         }
         f.publish("coordinator", "factory.step_decided", null, String(Date.now()), entry)
-        return json({ ...d, steps: SELECTABLE_STEPS.map(({ id, description }) => ({ id, description })) })
+        return json({ ...d, steps: selectableSteps().map(({ id, description }) => ({ id, description })) })
       } catch (e) {
-        return json({ error: e instanceof Error ? e.message : String(e), steps: SELECTABLE_STEPS })
+        return json({ error: e instanceof Error ? e.message : String(e), steps: selectableSteps() })
       }
     },
   }),
@@ -408,7 +409,7 @@ export const fanout = async (
   const decision = { ...selection, request, scopeId: scope.id, at: Date.now() }
   f.publish(scope.id, "factory.workflows_selected", null, now(), decision)
   const plans = selection.selected.map((id) => {
-    const e = FANOUT_CATALOG.find((x) => x.id === id)!
+    const e = fanoutCatalog().find((x) => x.id === id)!
     return { step: e.step, report: e.step, kind: e.kind, task: e.task(request) }
   })
   const results = await Promise.allSettled(
@@ -473,15 +474,19 @@ export const synthesisBlocked = (f: Factory, scope: Scope): string | null => {
   return batch.workers.map((worker) => researchWorkerBlocked(f, workdir, worker)).find(Boolean) ?? null
 }
 
+/** Fix-round limit of the conversation's delivery run (its pinned config). */
+const runFixRounds = (f: Factory, scope: Scope) => maxFixRounds(pinnedConfig(f.root, f.sdlc.get(scope.id)?.configId))
+
 /** The branch an accepted ship approval lets this conversation's finish worker push, or why there is none. */
 export const shipGrant = (f: Factory, scope: Scope): ShipGrant | string => {
   if (!scope.workdir) return "step=finish runs only in a repo conversation"
   const branch = gitOr(scope.workdir, "--abbrev-ref", "HEAD")
   const accepted = f.approvals.acceptedShips(scope.id, branch)
-  const open = accepted.find((g) => g.pushes <= MAX_FIX_ROUNDS)
+  const limit = runFixRounds(f, scope)
+  const open = accepted.find((g) => g.pushes <= limit)
   if (open) return open
   return accepted.length
-    ? `Fix round limit reached for ${branch} (${MAX_FIX_ROUNDS} after the first push). report_up blocked, or ask for a new ship approval.`
+    ? `Fix round limit reached for ${branch} (${limit} after the first push). report_up blocked, or ask for a new ship approval.`
     : `No accepted ship approval for branch ${branch}. Call request_approval with ship=true, end your turn, and spawn step=finish after the human picks the first option.`
 }
 
@@ -499,7 +504,7 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         },
         step: {
           type: "string",
-          enum: SELECTABLE_STEPS.map((x) => x.id),
+          enum: selectableSteps().map((x) => x.id),
           description:
             "SDLC step this worker performs. 'implement' loads ub-mode and the crapper/dryer/mutator tools; a security review runs automatically when it finishes.",
         },
@@ -531,7 +536,7 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         ...(typeof a.model === "string" ? { model: a.model } : {}),
         task: sdlcTask(f, scope, a.step as string | undefined, str(a, "task")),
         ...(typeof a.step === "string" ? { step: a.step } : {}),
-        ...(ship ? { permissions: finishPermissions(ship, (g) => f.approvals.setPushes(g)) } : {}),
+        ...(ship ? { permissions: finishPermissions(ship, (g) => f.approvals.setPushes(g), runFixRounds(f, scope)) } : {}),
         ...(!ship && (a.harness === "claude" || a.harness === "pi")
           ? { harness: { kind: a.harness, profiles: Array.isArray(a.profiles) ? a.profiles.map(String) : [] } }
           : {}),

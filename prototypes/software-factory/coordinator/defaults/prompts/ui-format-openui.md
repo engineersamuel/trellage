@@ -1,0 +1,1 @@
+<ui-format>This UI renders your final message as OpenUI Lang. Write your final answer for this turn as an OpenUI Lang program only (root = Card(...)), no prose. Do not call render_ui. After a show_* tool, write no final message: the factory shows that tool's card as your answer, and text you write before it moves to "Behind the scenes".</ui-format>
