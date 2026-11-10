@@ -6,6 +6,7 @@
 import "./p2.css"
 import { openSpec } from "../spec"
 import { harnessBadge } from "../harness"
+import { critterOf, layoutCrittersOn, mountCritter, onLayoutCritters } from "../critter"
 import { markdown } from "../decisions"
 import { Effect, Schema } from "effect"
 import { fire, json, send } from "../http"
@@ -783,7 +784,11 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
             : "own workspace",
     )
     if (t?.worktree) wt.title = `Worktree ${t.worktree}\nBranch ${t.branch}${t.base ? `\nBased on ${t.base}` : ""}`
+    // The critter is the same element every render, so patchChildren keeps it (and its animation) in place.
+    const critter = critterFor(n)
+    card.classList.toggle("has-critter", !!critter)
     patchChildren(card, [
+      ...(critter ? [critter] : []),
       cardHead(n),
       el("div", "p2-n-name", n.name),
       wt,
@@ -791,6 +796,31 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       bar,
       foot,
     ])
+  }
+
+  /** One live critter per agent card (setting `canvasCritters`): the element stays, the animation restarts on a new pose. */
+  const critters = new Map<string, { el: HTMLElement; key: string; stop: () => void }>()
+  const dropCritter = (id: string) => {
+    const c = critters.get(id)
+    if (c) {
+      c.stop()
+      c.el.remove()
+      critters.delete(id)
+    }
+  }
+  const critterFor = (n: Node): HTMLElement | null => {
+    if (!n.agent || !layoutCrittersOn("canvas")) return (dropCritter(n.id), null)
+    const look = critterOf(n.agent)
+    const key = `${look.state}|${look.hat}|${look.body}`
+    const c = critters.get(n.id) ?? { el: el("span", "p2-critter"), key: "", stop: () => {} }
+    if (c.key !== key) {
+      c.stop()
+      c.stop = mountCritter(c.el, look)
+      c.key = key
+    }
+    c.el.setAttribute("aria-hidden", "true")
+    critters.set(n.id, c)
+    return c.el
   }
 
   const createCard = (id: string) => {
@@ -837,6 +867,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const renderGraph = () => {
     for (const [id, c] of cards)
       if (!nodes.has(id)) {
+        dropCritter(id)
         c.remove()
         cards.delete(id)
       }
@@ -1191,9 +1222,12 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   }
   document.addEventListener("pointerdown", onDown, true)
 
+  const unsubCritters = onLayoutCritters(() => sync())
   return () => {
     alive = false
     unsub()
+    unsubCritters()
+    for (const id of [...critters.keys()]) dropCritter(id)
     ro.disconnect()
     window.removeEventListener("keydown", onKey, true)
     document.removeEventListener("pointerdown", onDown, true)

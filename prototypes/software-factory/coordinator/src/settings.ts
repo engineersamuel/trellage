@@ -2,6 +2,7 @@
 // The UI changes it with `PATCH /api/settings`; the agent changes it with the
 // `update_settings` tool. Both send the same JSON merge patch (agent access parity).
 import { DIFF_STYLES } from "../../shared/diff.ts"
+import { TREE_STYLES } from "../../shared/treeLines.ts"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { Effect, Schema } from "effect"
@@ -51,6 +52,14 @@ const SettingsSchema = Schema.Struct({
   animations: Schema.Boolean,
   /** How tool calls show file changes in every chat and transcript. */
   diffStyle: Schema.Literals(DIFF_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("terminal" as const))),
+  /** Animated critter per agent in the worker panel; shows its status and SDLC step. */
+  critters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
+  /** Animated critter on each agent card of the Org Canvas layout. */
+  canvasCritters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
+  /** Animated critter on each agent of the Inbox conversation tree. */
+  inboxCritters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
+  /** Connector lines of the Inbox conversation tree: classic, tree (growing tree) or vine (ivy vine). */
+  treeStyle: Schema.Literals(TREE_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("tree" as const))),
   hotkeys: Schema.Record(Schema.String, Schema.String),
   focus: Schema.String,
   banner: Schema.NullOr(Schema.String),
@@ -123,6 +132,10 @@ export const defaultSettings = (): Settings => ({
   navbar: ["status", "workers", "model", "context"],
   animations: true,
   diffStyle: "terminal",
+  critters: false,
+  canvasCritters: false,
+  inboxCritters: false,
+  treeStyle: "tree",
   hotkeys: { ",": "toggleSettings", p: "togglePanel", t: "cycleTheme", ".": "focusCoordinator" },
   focus: "coordinator",
   banner: null,

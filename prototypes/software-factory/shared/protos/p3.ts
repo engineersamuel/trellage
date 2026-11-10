@@ -6,6 +6,8 @@ import "./p3.css"
 import { answer, runApprovals } from "../approvals"
 import { fire, send } from "../http"
 import { harnessBadge } from "../harness"
+import { critterOf, layoutCrittersOn, mountCritter, onLayoutCritters } from "../critter"
+import { treeLines } from "../treeLines"
 import { openSpec } from "../spec"
 import {
   el,
@@ -193,12 +195,46 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   }
 
   // ---------- conversation tree ----------
+  /** One live critter per agent node (setting `inboxCritters`). The tree is rebuilt on every render, so the same
+   *  element moves into the new row and keeps animating; it restarts only on a new pose. */
+  const critters = new Map<string, { el: HTMLElement; key: string; stop: () => void }>()
+  const dropCritter = (id: string) => {
+    const c = critters.get(id)
+    if (c) {
+      c.stop()
+      c.el.remove()
+      critters.delete(id)
+    }
+  }
+  const critterFor = (n: Node, cls: string): HTMLElement | null => {
+    if (!n.agent || !layoutCrittersOn("inbox")) return (dropCritter(n.id), null)
+    const look = critterOf(n.agent)
+    // The Inbox knows when an agent waits on you: show that pose.
+    const pose = n.status === "needs" ? { ...look, state: "waiting" as const } : look
+    const key = `${pose.state}|${pose.hat}|${pose.body}`
+    const c = critters.get(n.id) ?? { el: el("span"), key: "", stop: () => {} }
+    if (c.key !== key) {
+      c.stop()
+      c.stop = mountCritter(c.el, pose)
+      c.key = key
+    }
+    c.el.className = cls
+    c.el.setAttribute("aria-hidden", "true")
+    critters.set(n.id, c)
+    return c.el
+  }
+  /** Drop critters whose node left the drawn tree. */
+  const pruneCritters = () => {
+    for (const [id, c] of critters) if (!c.el.isConnected) dropCritter(id)
+  }
   const card = (n: Node) => {
     const c = el("div", `p3-card s-${n.status} ${n.id === cur ? "on" : ""} ${n.parent ? "" : "root"}`)
     c.dataset.testid = `tree-${n.kind}`
     c.dataset.id = n.id
+    c.dataset.tl = n.id
     const hd = el("div", "p3-row")
-    hd.append(el("b", "", `${ICON[n.kind]} ${KIND[n.kind]}`), pill(n))
+    const critter = critterFor(n, "p3-critter big")
+    hd.append(...(critter ? [critter] : []), el("b", "", `${ICON[n.kind]} ${KIND[n.kind]}`), pill(n))
     c.append(hd, el("div", "p3-title", n.title))
     const meta = [n.thread?.folderId, n.agent?.model, ago(n.thread?.createdAt)].filter(Boolean).join(" · ")
     if (meta) c.append(el("div", "p3-sub", meta))
@@ -210,21 +246,18 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     c.onclick = (e) => (e.stopPropagation(), choose(n.id))
     return c
   }
-  /** Spawn-order badge: the node's place among its siblings by spawn time. */
-  const order = (n: Node) => {
-    const sibs = m.nodes.get(n.parent ?? "")?.children.map((id) => m.nodes.get(id)!) ?? [n]
-    const k = [...sibs].sort((x, y) => bornAt(x) - bornAt(y)).indexOf(n) + 1
+  /** Rows are in spawn order (p3-model), so no number badge; the spawn time stays as a tooltip. */
+  const spawnedTitle = (e: HTMLElement, n: Node) => {
     const t = bornAt(n)
-    const b = el("span", "p3-ord", String(k))
-    b.title = `Spawned #${k}${t ? ` at ${new Date(t).toLocaleTimeString()}` : ""}`
-    return b
+    if (t) e.title = `Spawned at ${new Date(t).toLocaleTimeString()}`
+    return e
   }
   const row = (n: Node) => {
     const r = el("div", `p3-w s-${n.status} ${n.id === cur ? "on" : ""}`)
     r.dataset.testid = "tree-row"
+    spawnedTitle(r, n)
     r.append(
-      order(n),
-      el("i", "p3-dot"),
+      critterFor(n, "p3-critter") ?? el("i", "p3-dot"),
       el(
         "b",
         "",
@@ -244,13 +277,13 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   /** A sub-coordinator card with its workers on their own branch. Quiet ones fold to one line. */
   const subCard = (n: Node) => {
     const c = card(n)
-    c.querySelector(".p3-row")!.prepend(order(n))
+    spawnedTitle(c, n)
     const kids = n.children.map((id) => m.nodes.get(id)!)
     const open = opened.has(n.id) || n.agg.running || n.agg.error || n.agg.needs || kids.some((k) => k.id === cur)
     if (!kids.length) c.append(el("div", "p3-sub", "no workers yet"))
     else if (open) {
       const w = el("div", "p3-wks")
-      w.append(...kids.map((k) => (k.children.length ? subCard(k) : row(k))))
+      w.append(...kids.map((k) => linked(k.children.length ? subCard(k) : row(k), n.id, k)))
       c.append(w)
     } else {
       const more = el("div", "p3-more", `▸ ${kids.length} workers, all quiet`)
@@ -259,14 +292,23 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     }
     return c
   }
+  /** Mark `e` as a child of `parentId` for the connector layer (shared/treeLines.ts). */
+  const linked = (e: HTMLElement, parentId: string, n: Node) => {
+    e.dataset.tlParent = parentId
+    e.dataset.tlId = n.id
+    e.dataset.tlStatus = n.status
+    return e
+  }
+  const lines = treeLines(tree)
   const renderTree = () => {
     const r = sel ? m.nodes.get(rootOf(m, sel)) : undefined
     if (!r)
-      return void tree.replaceChildren(el("h5", "", "Conversation tree"), el("div", "p3-empty", "Select an item."))
+      return void (tree.replaceChildren(el("h5", "", "Conversation tree"), el("div", "p3-empty", "Select an item.")),
+      pruneCritters())
     const branches = r.children.map((id) => {
       const k = m.nodes.get(id)!
       const b = el("div", "p3-br")
-      b.append(k.kind === "sub" || k.children.length ? subCard(k) : row(k))
+      b.append(linked(k.kind === "sub" || k.children.length ? subCard(k) : row(k), r.id, k))
       return b
     })
     const foot = el("div", "p3-foot")
@@ -283,6 +325,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       ...(branches.length ? [] : [el("div", "p3-empty", "No team yet. Ask the chat to spawn one.")]),
       foot,
     )
+    pruneCritters()
+    lines.draw()
   }
 
   // ---------- detail ----------
@@ -649,8 +693,12 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     paint()
   })
   placeChat(null)
+  const unsubCritters = onLayoutCritters(() => render())
   return () => (
     unsub(),
+    unsubCritters(),
+    lines.stop(),
+    [...critters.keys()].forEach(dropCritter),
     window.removeEventListener("sf:open-timeline", openTimeline),
     ro.disconnect(),
     clearInterval(clock),

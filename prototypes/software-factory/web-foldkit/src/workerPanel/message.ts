@@ -30,6 +30,7 @@ export const Message = defineMessageUnion({
   ToggledRawLog: { isChecked: Schema.Boolean },
   ClickedDismissError: {},
   CompletedMountTranscript: {},
+  CompletedMountCritter: {},
 })
 export type Message = typeof Message.Type
 

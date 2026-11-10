@@ -5,6 +5,7 @@ import { Button, Checkbox, Dialog, Input, Select, Slider, Textarea } from "@fold
 import type { Delivery, JevDecision, SecurityReview, Settings, SettingsOptions } from "../domain"
 import { DIFF_STYLES } from "../../../shared/diff"
 import { STYLES } from "../../../shared/diffview"
+import { TREE_STYLES, TREE_STYLE_LABELS } from "../../../shared/treeLines"
 import { MountDiffPreview } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -161,6 +162,27 @@ const themeSection = (settings: Settings, h: HtmlBuilder<Message>): Html =>
         (isChecked) => Message.ToggledAnimations({ isChecked }),
         h,
       ),
+      checkbox(
+        "critters",
+        "worker critters",
+        settings.critters,
+        (isChecked) => Message.ToggledCritters({ isChecked }),
+        h,
+      ),
+      checkbox(
+        "canvas-critters",
+        "org canvas critters",
+        settings.canvasCritters,
+        (isChecked) => Message.ToggledCanvasCritters({ isChecked }),
+        h,
+      ),
+      checkbox(
+        "inbox-critters",
+        "inbox critters",
+        settings.inboxCritters,
+        (isChecked) => Message.ToggledInboxCritters({ isChecked }),
+        h,
+      ),
     ],
     h,
   )
@@ -181,6 +203,25 @@ const diffSection = (settings: Settings, h: HtmlBuilder<Message>): Html =>
         ),
       ),
       h.keyed("div")("diff-preview", [h.Class("sf-diff-preview"), h.OnMount(MountDiffPreview())]),
+    ],
+    h,
+  )
+
+/** Connector style chips of the Inbox conversation tree. */
+const treeSection = (settings: Settings, h: HtmlBuilder<Message>): Html =>
+  section(
+    "Conversation tree",
+    [
+      h.div(
+        [h.Class("fk-chips")],
+        Array.map(TREE_STYLES, (style) =>
+          h.keyed("span")(
+            style,
+            [],
+            [chip(TREE_STYLE_LABELS[style], style === settings.treeStyle, Message.ClickedTreeStyle({ style }), h)],
+          ),
+        ),
+      ),
     ],
     h,
   )
@@ -624,6 +665,7 @@ const drawerContent = (model: Model, render: Dialog.RenderInfo, h: HtmlBuilder<M
       errorLine(model.maybePatchError, h),
       themeSection(settings, h),
       diffSection(settings, h),
+      treeSection(settings, h),
       layoutSection(model, settings, options, h),
       navbarSection(settings, options, h),
       deliverySection(model, settings, h),

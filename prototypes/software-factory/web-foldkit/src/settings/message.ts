@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { DIFF_STYLES } from "../../../shared/diff"
+import { TREE_STYLES } from "../../../shared/treeLines"
 import { defineMessageUnion } from "foldkit/message"
 import { Dialog, Slider } from "@foldkit/ui"
 import { Delivery, SettingsDocument } from "../domain"
@@ -24,7 +25,11 @@ export const Message = defineMessageUnion({
   // One Message per control, so DevTools shows which setting the user changed.
   ClickedTheme: { theme: Schema.String },
   ToggledAnimations: { isChecked: Schema.Boolean },
+  ToggledCritters: { isChecked: Schema.Boolean },
+  ToggledCanvasCritters: { isChecked: Schema.Boolean },
+  ToggledInboxCritters: { isChecked: Schema.Boolean },
   ClickedDiffStyle: { style: Schema.Literals(DIFF_STYLES) },
+  ClickedTreeStyle: { style: Schema.Literals(TREE_STYLES) },
   ClickedPanelPosition: { position: Schema.String },
   ToggledNavbarItem: { item: Schema.String },
   UpdatedBanner: { value: Schema.String },
@@ -53,7 +58,7 @@ export const Message = defineMessageUnion({
 export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
-  /** A settings document arrived. Its `focus` names the worker the panel shows. */
-  ReceivedFocus: { workerId: Schema.String },
+  /** A settings document arrived. Its `focus` names the worker the panel shows; `critters` turns the panel critters on. */
+  ReceivedFocus: { workerId: Schema.String, critters: Schema.Boolean },
 })
 export type OutMessage = typeof OutMessage.Type

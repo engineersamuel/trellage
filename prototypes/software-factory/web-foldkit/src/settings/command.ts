@@ -1,6 +1,8 @@
 import { Effect, Schema } from "effect"
 import { syncExtensions } from "../../../shared/extensions"
 import { Command, Mount } from "foldkit"
+import { setLayoutCritters } from "../../../shared/critter"
+import { setTreeStyle } from "../../../shared/treeLines"
 import { diffPreview, setDiffStyle } from "../../../shared/diffview"
 import { getJson, send } from "../api"
 import { Delivery, Settings, SettingsDocument } from "../domain"
@@ -49,9 +51,14 @@ export const SyncExtensions = Command.define("SyncExtensions", {
   args: { settings: Settings },
   messages: [Message.CompletedSyncExtensions],
   execute: ({ settings }) =>
-    Effect.sync(() => (syncExtensions(settings, "foldkit"), setDiffStyle(settings.diffStyle))).pipe(
-      Effect.as(Message.CompletedSyncExtensions()),
-    ),
+    Effect.sync(
+      () => (
+        syncExtensions(settings, "foldkit"),
+        setDiffStyle(settings.diffStyle),
+        setLayoutCritters({ canvas: settings.canvasCritters, inbox: settings.inboxCritters }),
+        setTreeStyle(settings.treeStyle)
+      ),
+    ).pipe(Effect.as(Message.CompletedSyncExtensions())),
 })
 
 /** shared/diffview.ts draws a sample diff in the element; it redraws itself when the style changes. */

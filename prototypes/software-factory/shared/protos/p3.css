@@ -89,6 +89,23 @@
 .sfp-p3 .s-stopped {
   --c: var(--p3-idle);
 }
+.sfp-p3 .p3-critter {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: inline-block;
+  margin: -6px 0;
+}
+.sfp-p3 .p3-critter.big {
+  width: 36px;
+  height: 36px;
+  margin: -8px 0;
+}
+.sfp-p3 .p3-critter svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
 .sfp-p3 .p3-dot {
   width: 8px;
   height: 8px;
@@ -174,6 +191,64 @@
 /* conversation tree: Fleet-split cards on tree lines */
 .sfp-p3 .p3-tree {
   padding: 6px 10px 10px;
+  position: relative;
+}
+/* Connector layer (shared/treeLines.ts): above the cards, so lines inside a sub-coordinator card show; never takes clicks. */
+.sfp-p3 .p3-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+.sfp-p3 .p3-lines .grow {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: p3-grow 1.1s var(--delay, 0s) cubic-bezier(0.3, 0.7, 0.3, 1) forwards;
+}
+@keyframes p3-grow {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.sfp-p3 .p3-lines .sway {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: p3-sway 3.2s ease-in-out infinite alternate;
+}
+@keyframes p3-sway {
+  from {
+    transform: rotate(-6deg);
+  }
+  to {
+    transform: rotate(6deg);
+  }
+}
+.sfp-p3 .p3-lines .pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: p3-pulse 1.4s ease-in-out infinite;
+}
+@keyframes p3-pulse {
+  50% {
+    transform: scale(1.35);
+    opacity: 0.7;
+  }
+}
+.sfp-p3 .p3-lines .droop {
+  transform-box: fill-box;
+  transform-origin: top left;
+  transform: rotate(35deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sfp-p3 .p3-lines .grow,
+  .sfp-p3 .p3-lines .sway,
+  .sfp-p3 .p3-lines .pulse {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
 }
 .sfp-p3 .p3-tree > h5 {
   margin-left: 2px;
@@ -204,30 +279,9 @@
   position: relative;
   padding: 8px 0 0 22px;
 }
-.sfp-p3 .p3-br::before {
-  content: "";
-  position: absolute;
-  left: 10px;
-  top: 0;
-  bottom: 0;
-  border-left: 1px solid var(--p3-line);
-}
-.sfp-p3 .p3-br:last-of-type::before {
-  bottom: auto;
-  height: 26px;
-}
-.sfp-p3 .p3-br::after {
-  content: "";
-  position: absolute;
-  left: 10px;
-  top: 26px;
-  width: 12px;
-  border-top: 1px solid var(--p3-line);
-}
 .sfp-p3 .p3-wks {
   margin: 6px 0 0 6px;
   padding-left: 12px;
-  border-left: 1px solid var(--p3-line);
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -242,14 +296,6 @@
   font-size: 12px;
   cursor: pointer;
   position: relative;
-}
-.sfp-p3 .p3-wks > .p3-w::before {
-  content: "";
-  position: absolute;
-  left: -12px;
-  top: 50%;
-  width: 12px;
-  border-top: 1px solid var(--p3-line);
 }
 .sfp-p3 .p3-w:hover {
   outline: 1px solid var(--p3-hover);
@@ -439,19 +485,6 @@
   overflow: auto;
 }
 /* Spawn order: siblings run oldest first and carry their step number. */
-.sfp-p3 .p3-ord {
-  flex: none;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 3px;
-  border-radius: 8px;
-  background: var(--p3-line);
-  color: var(--sf-text);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 16px;
-  text-align: center;
-}
 .sfp-p3 .p3-why {
   flex: none;
   font-size: 11px;

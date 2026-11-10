@@ -16,10 +16,10 @@ import { modifyFields } from "foldkit/struct"
 import { Dialog } from "@foldkit/ui"
 import { describe, test } from "vitest"
 import type { Worker } from "../domain"
-import { AbortWorker, MountTranscript, SendToWorker, StopWorker } from "./command"
+import { AbortWorker, MountCritter, MountTranscript, SendToWorker, StopWorker } from "./command"
 import { Message } from "./message"
 import { WorkersAsyncData } from "./model"
-import { init, update } from "./update"
+import { init, showCritters, update } from "./update"
 import { view } from "./view"
 
 const coordinator: Worker = {
@@ -144,6 +144,17 @@ describe("worker panel", () => {
       click(role("checkbox", { name: "raw events" })),
       expect(role("checkbox", { name: "raw events" })).toBeChecked(),
       Mount.expectEnded(MountTranscript),
+    )
+  })
+
+  test("critters replace the status dots when the setting is on", () => {
+    scene(
+      { update, view },
+      given(showCritters(true)(loaded).model),
+      Mount.resolve(MountTranscript, Message.CompletedMountTranscript()),
+      Mount.resolve(MountCritter, Message.CompletedMountCritter()),
+      Mount.resolve(MountCritter, Message.CompletedMountCritter()),
+      expect(role("button", { name: /namer/ })).toExist(),
     )
   })
 })

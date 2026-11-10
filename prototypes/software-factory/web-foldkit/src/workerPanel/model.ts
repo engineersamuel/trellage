@@ -15,6 +15,8 @@ export const Model = Schema.Struct({
   logLines: Schema.Array(LogLine),
   messageDraft: Schema.String,
   isRawLogVisible: Schema.Boolean,
+  /** Setting `critters`: draw an animated critter in each agent row. */
+  areCrittersVisible: Schema.Boolean,
   maybeError: Schema.Option(Schema.String),
   removeDialog: Dialog.Model,
   /** The worker the remove dialog asks about, while it is open. */

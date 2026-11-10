@@ -2,6 +2,7 @@
 // Struct lists every field a UI uses. Fields older servers or stored rows may lack get defaults.
 import { Effect, Schema } from "effect"
 import { DIFF_STYLES } from "./diff"
+import { TREE_STYLES } from "./treeLines"
 
 const withDefault = <S extends Schema.Top>(value: S["Encoded"]) =>
   Schema.withDecodingDefaultKey<S>(Effect.succeed(value))
@@ -35,6 +36,8 @@ export const Worker = Schema.Struct({
   contextLimit: NullableNumber,
   /** When the factory started this agent (ms); gives the spawn order. */
   startedAt: Schema.optionalKey(Schema.Number),
+  /** SDLC step the agent runs (research, plan, implement, ...); its critter shows it. */
+  step: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 export type Worker = typeof Worker.Type
 
@@ -174,6 +177,14 @@ export const Settings = Schema.Struct({
   navbar: Schema.Array(Schema.String),
   animations: Schema.Boolean,
   diffStyle: Schema.Literals(DIFF_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("terminal" as const))),
+  /** Animated critter per agent in the worker panel; shows its status and SDLC step. */
+  critters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
+  /** Animated critter on each agent card of the Org Canvas layout. */
+  canvasCritters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
+  /** Animated critter on each agent of the Inbox conversation tree. */
+  inboxCritters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
+  /** Connector lines of the Inbox conversation tree: classic, tree (growing tree) or vine (ivy vine). */
+  treeStyle: Schema.Literals(TREE_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("tree" as const))),
   hotkeys: Schema.Record(Schema.String, Schema.String),
   focus: Schema.String,
   banner: Schema.NullOr(Schema.String),

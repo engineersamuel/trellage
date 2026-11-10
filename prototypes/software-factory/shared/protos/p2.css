@@ -548,6 +548,24 @@
 .sfp-p2 .p2-node.dim {
   opacity: 0.6;
 }
+.sfp-p2 .p2-critter {
+  position: absolute;
+  right: 8px;
+  top: 28px;
+  width: 46px;
+  height: 46px;
+  pointer-events: none;
+}
+.sfp-p2 .p2-critter svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.sfp-p2 .p2-node.has-critter .p2-n-name,
+.sfp-p2 .p2-node.has-critter .p2-n-wt,
+.sfp-p2 .p2-node.has-critter .p2-n-act {
+  margin-right: 50px;
+}
 .sfp-p2 .p2-n-head {
   display: flex;
   align-items: center;

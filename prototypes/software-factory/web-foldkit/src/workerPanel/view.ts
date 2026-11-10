@@ -4,7 +4,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { Button, Checkbox, Dialog, Input } from "@foldkit/ui"
 import { agentLabel, workerTree } from "../../../shared/tree"
 import { COORDINATOR_ID, type Worker, backendName } from "../domain"
-import { MountTranscript } from "./command"
+import { MountCritter, MountTranscript } from "./command"
+import { critterOf } from "../../../shared/critter"
 import { workerName } from "./update"
 import { Message } from "./message"
 import type { LogLine, Model } from "./model"
@@ -16,6 +17,16 @@ const DEPTH_INDENT_PX = 22
 const KB_PER_MB = 1024
 
 const memoryLabel = (rssKb: number | null): string => (rssKb ? `${Math.round(rssKb / KB_PER_MB)} MB` : "")
+
+/** Keyed by what it draws: a new state remounts the critter with the new pose. */
+const critter = (worker: Worker, h: HtmlBuilder<Message>): Html => {
+  const { state, hat, body } = critterOf(worker)
+  return h.keyed("span")(`critter-${state}-${hat}-${body}`, [
+    h.Class("fk-critter"),
+    h.AriaHidden(true),
+    h.OnMount(MountCritter({ state, hat, body })),
+  ])
+}
 
 const workerRow = (model: Model, worker: Worker, depth: number, h: HtmlBuilder<Message>): Html => {
   const label = agentLabel(worker)
@@ -37,11 +48,13 @@ const workerRow = (model: Model, worker: Worker, depth: number, h: HtmlBuilder<M
               ],
               [
                 ...(depth > 0 ? [h.span([h.Class("fk-branch"), h.AriaHidden(true)], ["└"])] : []),
-                h.span([
-                  h.Class("fk-dot"),
-                  h.AriaHidden(true),
-                  h.Style({ background: STATUS_COLOR[worker.status] ?? UNKNOWN_STATUS_COLOR }),
-                ]),
+                model.areCrittersVisible
+                  ? critter(worker, h)
+                  : h.span([
+                      h.Class("fk-dot"),
+                      h.AriaHidden(true),
+                      h.Style({ background: STATUS_COLOR[worker.status] ?? UNKNOWN_STATUS_COLOR }),
+                    ]),
                 h.span([h.Class(`sf-tag sf-tag-${label.kind}`)], [label.tag]),
                 h.b([], [label.name]),
                 h.span(

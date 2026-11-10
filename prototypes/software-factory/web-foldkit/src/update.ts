@@ -61,6 +61,14 @@ const focusWorker = (workerId: string): Step =>
     toParentMessage: toGotWorkerPanelMessage,
   })
 
+const showCritters = (isOn: boolean): Step =>
+  Update.foldChildStep({
+    update: WorkerPanel.showCritters(isOn),
+    read: readWorkerPanel,
+    write: writeWorkerPanel,
+    toParentMessage: toGotWorkerPanelMessage,
+  })
+
 const abortWorker = (workerId: string): Step =>
   Update.foldChildStep({
     update: WorkerPanel.abort(workerId),
@@ -138,7 +146,12 @@ const foldSettings = Update.foldChild({
   write: writeSettings,
   toParentMessage: toGotSettingsMessage,
   update: Settings.update,
-  foldOutMessage: Settings.OutMessage.match<Step>({ ReceivedFocus: ({ workerId }) => focusWorker(workerId) }),
+  foldOutMessage: Settings.OutMessage.match<Step>({
+    ReceivedFocus:
+      ({ workerId, critters }) =>
+      (model) =>
+        Update.combine(model, [focusWorker(workerId), showCritters(critters)]),
+  }),
 })
 
 /** Reload the open conversation only while no run streams into it (our own runs arrive live). */

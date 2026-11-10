@@ -15,6 +15,7 @@ export const init = (selectedWorkerId: string): Update.Return<Model, Message> =>
     logLines: [],
     messageDraft: "",
     isRawLogVisible: false,
+    areCrittersVisible: false,
     maybeError: Option.none(),
     removeDialog: Dialog.init({ id: "remove-worker" }),
     maybePendingRemoval: Option.none(),
@@ -99,6 +100,12 @@ export const focus =
           commands: [FetchBacklog({ workerId })],
         }
 
+/** Turn the row critters on or off (setting `critters`). */
+export const showCritters =
+  (isOn: boolean) =>
+  (model: Model): Update.Return<Model, Message> =>
+    isOn === model.areCrittersVisible ? { model } : { model: modifyFields(model, { areCrittersVisible: () => isOn }) }
+
 export const update = (model: Model, message: Message) =>
   Message.match<Update.ReturnWithOutMessage<Model, Message, OutMessage>>(message, {
     SucceededFetchWorkers: ({ workers }) => ({
@@ -164,4 +171,5 @@ export const update = (model: Model, message: Message) =>
     ToggledRawLog: ({ isChecked }) => ({ model: modifyFields(model, { isRawLogVisible: () => isChecked }) }),
     ClickedDismissError: () => ({ model: modifyFields(model, { maybeError: () => Option.none() }) }),
     CompletedMountTranscript: () => ({ model }),
+    CompletedMountCritter: () => ({ model }),
   })

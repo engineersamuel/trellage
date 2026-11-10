@@ -58,7 +58,9 @@ const storeDocument =
 
 /** Tell the parent which worker the settings focus. */
 const withFocus = (document: SettingsDocument) =>
-  Update.withOutMessage(OutMessage.ReceivedFocus({ workerId: document.settings.focus }))
+  Update.withOutMessage(
+    OutMessage.ReceivedFocus({ workerId: document.settings.focus, critters: document.settings.critters }),
+  )
 
 const refreshDelivery = Update.refresh<Model, Message, Delivery, string>({
   read: (model) => Option.some(model.delivery),
@@ -167,7 +169,11 @@ export const update = (model: Model, message: Message) =>
     GotPanelWidthSliderMessage: ({ message: childMessage }) => foldPanelWidthSlider(model, childMessage),
     ClickedTheme: ({ theme }) => patch({ theme })(model),
     ToggledAnimations: ({ isChecked }) => patch({ animations: isChecked })(model),
+    ToggledCritters: ({ isChecked }) => patch({ critters: isChecked })(model),
+    ToggledCanvasCritters: ({ isChecked }) => patch({ canvasCritters: isChecked })(model),
+    ToggledInboxCritters: ({ isChecked }) => patch({ inboxCritters: isChecked })(model),
     ClickedDiffStyle: ({ style }) => patch({ diffStyle: style })(model),
+    ClickedTreeStyle: ({ style }) => patch({ treeStyle: style })(model),
     ClickedPanelPosition: ({ position }) => patch({ layout: { panel: position } })(model),
     ToggledNavbarItem: ({ item }) =>
       withSettings(model, (settings) => ({ navbar: toggleMember(settings.navbar, item) })),

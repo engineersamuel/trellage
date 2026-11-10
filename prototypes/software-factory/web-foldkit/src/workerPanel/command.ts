@@ -4,6 +4,7 @@ import { StoredEvent } from "../../../shared/schemas"
 import { mount as mountTranscript } from "../../../shared/transcript"
 import { getJson, send } from "../api"
 import { Worker } from "../domain"
+import { Critter, mountCritter } from "../../../shared/critter"
 import { toBacklogLines } from "./log"
 import { Message } from "./message"
 
@@ -68,4 +69,15 @@ export const MountTranscript = Mount.define("MountTranscript", {
       Effect.sync(() => (element instanceof HTMLElement ? mountTranscript(element, workerId) : () => {})),
       (stop) => Effect.sync(stop),
     ).pipe(Effect.as(Message.CompletedMountTranscript())),
+})
+
+/** Animates the critter of one agent row until the element leaves the page (setting `critters`). */
+export const MountCritter = Mount.define("MountCritter", {
+  args: Critter,
+  messages: [Message.CompletedMountCritter],
+  execute: ({ element, ...critter }) =>
+    Effect.acquireRelease(
+      Effect.sync(() => mountCritter(element, critter)),
+      (stop) => Effect.sync(stop),
+    ).pipe(Effect.as(Message.CompletedMountCritter())),
 })
