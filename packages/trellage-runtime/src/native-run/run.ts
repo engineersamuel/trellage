@@ -1,14 +1,25 @@
-import type { McpConfig } from "../mcp-config.ts"
-import { selectCommonMcp, prepareMcpLaunch } from "./mcp.ts"
+import { commonMcpEnvironmentNames, selectCommonMcp, prepareMcpLaunch } from "./mcp.ts"
 import { nativeMcpArgs, writeNativeMcpFiles } from "./mcp-render.ts"
 import { execFile, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { lstat, mkdir, readFile } from "node:fs/promises"
 import path from "node:path"
-import { constants as osConstants } from "node:os"
+import { constants as osConstants, homedir } from "node:os"
 import { promisify } from "node:util"
-import { expandTrellagePath, readTrellageConfig, TrellageConfigError, type NativeCatalog } from "../native-config.ts"
+import {
+  expandTrellagePath,
+  readTrellageConfig,
+  TrellageConfigError,
+  type LoadedTrellageConfig,
+  type NativeCatalog,
+} from "../native-config.ts"
+import {
+  CentralEnvironmentError,
+  readCentralEnvironment,
+  type CentralEnvironment,
+  type CentralEnvironmentRequest,
+} from "../native-environment.ts"
 import {
   PI_EXTENSION_PACKAGES,
   adapters,
@@ -48,7 +59,12 @@ import {
   writeFirstmatePiWorkers,
   writePiWorkerShell,
 } from "./worker-handoff.ts"
-import { defaultPrerequisiteIo, ensurePrerequisites, missingPrerequisites, type PrerequisiteIo } from "./prerequisites.ts"
+import {
+  defaultPrerequisiteIo,
+  ensurePrerequisites,
+  missingPrerequisites,
+  type PrerequisiteIo,
+} from "./prerequisites.ts"
 
 export interface RunOptions {
   readonly harness: string
@@ -233,15 +249,21 @@ const loadInstructions = async (
 ): Promise<Record<string, string>> => {
   const instructions = new Set(
     Object.entries(catalog.profiles)
-      .filter(([id, profile]) => profiles.includes(id) || (
-        !options.noAlways && profile.always && (!profile.harnesses || profile.harnesses.includes(options.harness))
-      ))
+      .filter(
+        ([id, profile]) =>
+          profiles.includes(id) ||
+          (!options.noAlways && profile.always && (!profile.harnesses || profile.harnesses.includes(options.harness))),
+      )
       .flatMap(([, profile]) => profile.instructions),
   )
   const texts: Record<string, string> = {}
   for (const id of instructions) {
     const instruction = catalog.instructions[id]!
-    const file = resolveInstructionFile(instruction.file, configDirectory, fileURLToPath(new URL("../../../../",import.meta.url)))
+    const file = resolveInstructionFile(
+      instruction.file,
+      configDirectory,
+      fileURLToPath(new URL("../../../../", import.meta.url)),
+    )
     try {
       const info = await lstat(file)
       if (!info.isFile() || info.size > MAX_INSTRUCTION_BYTES)
@@ -258,7 +280,13 @@ const loadInstructions = async (
 }
 
 export interface Spawner {
-  (command: LaunchCommand, environment: NodeJS.ProcessEnv, cwd: string, onSpawn: (pid?: number) => void, guard?: LaunchGuard): Promise<number>
+  (
+    command: LaunchCommand,
+    environment: NodeJS.ProcessEnv,
+    cwd: string,
+    onSpawn: (pid?: number) => void,
+    guard?: LaunchGuard,
+  ): Promise<number>
 }
 
 export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn, guard) =>
@@ -278,7 +306,11 @@ export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn, guard
         attachmentFailed = true
         void settlement.terminate().then((settled) => {
           process.off("SIGTERM", term)
-          reject(settled ? error : new NativeRunError("launch", `child cleanup did not settle after SIGKILL: ${String(error)}`))
+          reject(
+            settled
+              ? error
+              : new NativeRunError("launch", `child cleanup did not settle after SIGKILL: ${String(error)}`),
+          )
         }, reject)
       }
     })
@@ -440,8 +472,14 @@ export interface RunDependencies {
   readonly spawner?: Spawner
   readonly write?: (line: string) => void
   readonly configHome?: string
-  readonly syncRepository?: (directory: string, repository: ProfileRepository, environment: NodeJS.ProcessEnv) => Promise<void>
+  readonly syncRepository?: (
+    directory: string,
+    repository: ProfileRepository,
+    environment: NodeJS.ProcessEnv,
+  ) => Promise<void>
   readonly prerequisiteIo?: PrerequisiteIo
+  /** Load variables from the central environment; replaceable so tests never start Varlock. */
+  readonly centralEnvironment?: (request: CentralEnvironmentRequest) => Promise<CentralEnvironment>
 }
 
 export interface PreparedRun {
@@ -459,6 +497,8 @@ export interface PreparedRun {
   readonly workspace: string
   /** Prerequisite commands not on PATH when the run was prepared. */
   readonly missing: ReadonlyArray<string>
+  /** Secret values loaded from the central environment for the harness process; never print them. */
+  readonly centralEnvironment?: CentralEnvironment
 }
 
 const shellWord = (word: string): string =>
@@ -502,24 +542,31 @@ const buildLaunch = (
     environment,
     workspace,
   })
-  return { ...command, args: [...nativeMcpArgs(adapter.id, layout.generationPath, plan.mcp?.servers ?? {}), ...command.args] }
+  return {
+    ...command,
+    args: [...nativeMcpArgs(adapter.id, layout.generationPath, plan.mcp?.servers ?? {}), ...command.args],
+  }
 }
 
 export const describePreparedRun = (prepared: PreparedRun): string[] => {
   const { adapter, plan, layout, launch, isolation } = prepared
   const policy = adapter.effectivePolicy(launchModel(prepared), launchEffort(prepared))
+  const centralNames = Object.keys(prepared.centralEnvironment?.values ?? {}).sort()
   return [
     `Harness     ${adapter.label}${plan.profiles.length ? ` + ${plan.profiles.join(" + ")}` : " (no selected profiles)"}`,
     ...(adapter.extensions?.length && !prepared.clean ? [`Extensions  ${adapter.extensions.join(", ")}`] : []),
     `Always-on   ${plan.alwaysProfiles.join(", ") || "none"}`,
     ...(plan.mcp ? [`MCPs        ${Object.keys(plan.mcp.servers).join(", ") || "none"}`] : []),
+    ...(centralNames.length ? [`Central env ${centralNames.join(", ")}`] : []),
     `Instructions ${plan.instructions.map((instruction) => instruction.id).join(", ") || "none"}`,
     `Normal      ${policy.normal}`,
     `Plan        ${policy.plan}`,
     `Isolation   ${isolation.status} — ${isolation.evidence}`,
     `Generation  ${layout.generationPath}`,
     ...(plan.workingDirectory ? [`Directory   ${prepared.workspace}`] : []),
-    ...(plan.repository ? [`Repository  ${plan.repository.url} (${plan.repository.branch}, pulled before launch)`] : []),
+    ...(plan.repository
+      ? [`Repository  ${plan.repository.url} (${plan.repository.branch}, pulled before launch)`]
+      : []),
     ...(plan.prerequisites?.length
       ? [
           `Requires    ${plan.prerequisites
@@ -557,10 +604,20 @@ const adHocSkillProfile = (catalog: NativeCatalog, skills: ReadonlyArray<string>
     return { source, names }
   })
   const id = `adhoc-${createHash("sha256").update(JSON.stringify(selections)).digest("hex").slice(0, 12)}`
-  const profile: NativeCatalog["profiles"][string] = { label: "Ad hoc skills", always: false, instructions: [], plugins: [], skills: selections }
+  const profile: NativeCatalog["profiles"][string] = {
+    label: "Ad hoc skills",
+    always: false,
+    instructions: [],
+    plugins: [],
+    skills: selections,
+  }
   return {
     id,
-    catalog: { ...catalog, sources: { ...catalog.sources, ...sources }, profiles: { ...catalog.profiles, [id]: profile } },
+    catalog: {
+      ...catalog,
+      sources: { ...catalog.sources, ...sources },
+      profiles: { ...catalog.profiles, [id]: profile },
+    },
   }
 }
 
@@ -586,7 +643,11 @@ const assertKnownRunProfiles = (
 ): void => {
   // Declared and shared profiles that exist but skip this harness get the specific "does not support" error below.
   for (const profile of options.profiles) {
-    if (available.includes(profile) || Object.hasOwn(sourceCatalog.profiles, profile) || nativeSharedPresets.includes(profile))
+    if (
+      available.includes(profile) ||
+      Object.hasOwn(sourceCatalog.profiles, profile) ||
+      nativeSharedPresets.includes(profile)
+    )
       continue
     throw new NativeRunError(
       "unknown-profile",
@@ -618,9 +679,7 @@ const resolveRunProfiles = async (
   assertKnownRunProfiles(adapter, options, sourceCatalog, await availableRunProfiles(adapter, sourceCatalog))
   const adHoc = adHocSkillProfile(sourceCatalog, options.skills ?? [])
   let catalog = adHoc?.catalog ?? sourceCatalog
-  const profiles = options.profiles.map((profile) =>
-    resolveProfileKey(catalog, adapter.id, profile),
-  )
+  const profiles = options.profiles.map((profile) => resolveProfileKey(catalog, adapter.id, profile))
   for (const profile of profiles) {
     if (profile.startsWith(`preset-${adapter.id}-`) || nativeSharedPresets.includes(profile))
       catalog = await withBuiltinPreset(catalog, profile)
@@ -638,9 +697,8 @@ const composeRun = async (
   configDirectory: string,
   catalog: NativeCatalog,
   profiles: ReadonlyArray<string>,
-  mcp: McpConfig | undefined,
+  commonMcp: ReturnType<typeof selectCommonMcp>,
 ): Promise<{ plan: CompositionPlan; layout: GenerationLayout }> => {
-  const commonMcp = selectCommonMcp(adapter.id, mcp, environment)
   const instructionTexts = await loadInstructions(configDirectory, catalog, profiles, options)
   const transport = devSourceTransport(
     dependencies.transport ?? gitSourceTransport(),
@@ -691,16 +749,7 @@ const buildPreparedRun = (
   const defaults = options.plan
     ? { model: adapter.planDefaults?.model ?? host.model, effort: adapter.planDefaults?.effort ?? host.effort }
     : host
-  const launch = buildLaunch(
-    adapter,
-    adapter.launch,
-    layout,
-    plan,
-    options,
-    defaults,
-    environment,
-    workspace,
-  )
+  const launch = buildLaunch(adapter, adapter.launch, layout, plan, options, defaults, environment, workspace)
   return {
     adapter,
     plan,
@@ -726,7 +775,10 @@ const prepareCleanRun = async (
 ): Promise<PreparedRun> => {
   const reopened = options.forwardedArgs.find((argument) => clean.managedFlags?.includes(argument.split("=", 1)[0]!))
   if (reopened !== undefined)
-    throw new NativeRunError("usage", `${reopened.split("=", 1)[0]} cannot be forwarded to a clean ${adapter.label} run`)
+    throw new NativeRunError(
+      "usage",
+      `${reopened.split("=", 1)[0]} cannot be forwarded to a clean ${adapter.label} run`,
+    )
   const blocked = (await clean.blockers?.find(dependencies.cwd ?? process.cwd())) ?? []
   if (blocked.length > 0)
     throw new NativeRunError(
@@ -803,10 +855,45 @@ const prepareRunPrerequisites = async (
       `Profile ${options.profiles.join(" + ")}`,
       plan.prerequisites,
       environment,
-      dependencies.prerequisiteIo ?? defaultPrerequisiteIo(dependencies.write ?? ((line) => process.stderr.write(`${line}\n`))),
+      dependencies.prerequisiteIo ??
+        defaultPrerequisiteIo(dependencies.write ?? ((line) => process.stderr.write(`${line}\n`))),
     )
   if (plan.repository && !options.dryRun)
     await (dependencies.syncRepository ?? syncProfileRepository)(workspace, plan.repository, environment)
+}
+
+/** The process environment plus the variables the central environment supplied for this launch. */
+const withCentralEnvironment = (
+  environment: NodeJS.ProcessEnv,
+  central: CentralEnvironment | undefined,
+): NodeJS.ProcessEnv => (central === undefined ? environment : { ...environment, ...central.values })
+
+/**
+ * Load the variables this launch needs from the central environment: those the enabled MCP servers
+ * reference plus the configured allowlist. A variable the process already sets is never loaded.
+ */
+const loadCentralEnvironment = async (
+  adapter: NativeAdapter,
+  loaded: LoadedTrellageConfig,
+  dependencies: RunDependencies,
+  environment: NodeJS.ProcessEnv,
+): Promise<CentralEnvironment> => {
+  const settings = loaded.config.environment
+  const names = [...new Set([...commonMcpEnvironmentNames(adapter.id, loaded.config.mcp), ...settings.inject])]
+    .filter((name) => !environment[name])
+    .sort()
+  try {
+    return await (dependencies.centralEnvironment ?? readCentralEnvironment)({
+      names,
+      settings,
+      configPath: loaded.path,
+      home: dependencies.configHome ?? environment.HOME ?? homedir(),
+      environment,
+    })
+  } catch (error) {
+    if (error instanceof CentralEnvironmentError) throw new NativeRunError("config", error.message)
+    throw error
+  }
 }
 
 /** Resolve, validate, stage and publish the composition without starting the harness. */
@@ -827,6 +914,7 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
   await ensureNativeConfig({ environment, ...(dependencies.configHome ? { home: dependencies.configHome } : {}) })
   const loaded = await loadNativeCatalog(dependencies, environment)
   const resolved = await resolveRunProfiles(adapter, options, loaded.config.native)
+  const centralEnvironment = await loadCentralEnvironment(adapter, loaded, dependencies, environment)
   const { plan, layout } = await composeRun(
     adapter,
     options,
@@ -836,11 +924,14 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
     path.dirname(loaded.path),
     resolved.catalog,
     resolved.profiles,
-    loaded.config.mcp,
+    selectCommonMcp(adapter.id, loaded.config.mcp, withCentralEnvironment(environment, centralEnvironment)),
   )
   const workspace = resolveRunWorkspace(plan, dependencies, environment)
   await prepareRunPrerequisites(plan, options, dependencies, environment, workspace)
-  return buildPreparedRun(adapter, plan, layout, options, dependencies, environment, workspace)
+  return {
+    ...buildPreparedRun(adapter, plan, layout, options, dependencies, environment, workspace),
+    centralEnvironment,
+  }
 }
 
 /** The command that reopens the latest conversation of this harness and profile set. */
@@ -901,7 +992,12 @@ const createRunWriter = (options: RunOptions, dependencies: RunDependencies): ((
   return (line: string) => process.stdout.write(`${line}\n`)
 }
 
-const resolvePreparedLaunch = async (prepared: PreparedRun, launchInput: LaunchInput, warn: (line: string) => void): Promise<LaunchCommand> => {
+const resolvePreparedLaunch = async (
+  prepared: PreparedRun,
+  launchInput: LaunchInput,
+  mcpEnvironment: NodeJS.ProcessEnv,
+  warn: (line: string) => void,
+): Promise<LaunchCommand> => {
   const resolve = prepared.clean
     ? prepared.adapter.clean.supported
       ? prepared.adapter.clean.resolveLaunch
@@ -909,14 +1005,17 @@ const resolvePreparedLaunch = async (prepared: PreparedRun, launchInput: LaunchI
     : prepared.adapter.resolveLaunch
   const resolvedLaunch = (await resolve?.(launchInput, prepared.launch)) ?? prepared.launch
   const finalEnvironment = prepared.clean ? undefined : await prepared.adapter.beforeLaunch?.(launchInput)
-  const launch = finalEnvironment === undefined
-    ? resolvedLaunch
-    : { ...resolvedLaunch, env: { ...resolvedLaunch.env, ...finalEnvironment } }
+  const launch =
+    finalEnvironment === undefined
+      ? resolvedLaunch
+      : { ...resolvedLaunch, env: { ...resolvedLaunch.env, ...finalEnvironment } }
   if (prepared.clean) return launch
   try {
-    return await prepareMcpLaunch(launchInput, launch)
+    return await prepareMcpLaunch({ ...launchInput, environment: mcpEnvironment }, launch)
   } catch {
-    warn(`Warning     MCP setup unavailable for ${prepared.adapter.id}; launching anyway; configured MCPs may be unavailable (check managed configuration and required environment variables)`)
+    warn(
+      `Warning     MCP setup unavailable for ${prepared.adapter.id}; launching anyway; configured MCPs may be unavailable (check managed configuration and required environment variables)`,
+    )
     return launch
   }
 }
@@ -944,7 +1043,8 @@ const handOffToFirstmateWorkers = async (
   if (prepared.adapter.id !== "pi") return
   const provider = argumentAfter(launch.args, "--provider")
   const model = argumentAfter(launch.args, "--model")
-  if (!provider || !model) throw new NativeRunError("launch", "the Pi launch names no provider and model for Firstmate's workers")
+  if (!provider || !model)
+    throw new NativeRunError("launch", "the Pi launch names no provider and model for Firstmate's workers")
   await writePiWorkerShell(prepared.layout.generationPath, home)
   await writeFirstmatePiWorkers(
     prepared.workspace,
@@ -966,16 +1066,21 @@ const launchPreparedRun = async (
   write: (line: string) => void,
 ): Promise<number> => {
   await prepared.adapter.trustWorkspace?.(prepared.layout, prepared.workspace)
+  // Only the MCP aliases and the harness process see the central values; adapters keep the process environment.
+  const harnessEnvironment = withCentralEnvironment(environment, prepared.centralEnvironment)
   const history = createSelectionHistory(paths)
   const keys = await scopeKeysFor(cwd)
   const lease = await acquireLease(paths, prepared.plan.generationId)
-  const ompProfile = prepared.plan.profiles.find((profile) => profile.startsWith("preset-omp-"))?.slice("preset-omp-".length)
+  const ompProfile = prepared.plan.profiles
+    .find((profile) => profile.startsWith("preset-omp-"))
+    ?.slice("preset-omp-".length)
   let guard: ReturnType<typeof acquireProfileGuard> | undefined
   let cleanup: (() => void | Promise<void>) | undefined
   try {
-    guard = prepared.adapter.id === "omp"
-      ? acquireProfileGuard("omp", [ompProfile ?? "default"], "run", environment.HOME)
-      : undefined
+    guard =
+      prepared.adapter.id === "omp"
+        ? acquireProfileGuard("omp", [ompProfile ?? "default"], "run", environment.HOME)
+        : undefined
     const launchInput = {
       layout: prepared.layout,
       plan: prepared.plan,
@@ -988,7 +1093,13 @@ const launchPreparedRun = async (
       workspace: prepared.workspace,
       ...(guard === undefined ? {} : { guard }),
     }
-    const resolveLaunch = () => resolvePreparedLaunch(prepared, launchInput, dependencies.write ?? ((line) => process.stderr.write(`${line}\n`)))
+    const resolveLaunch = () =>
+      resolvePreparedLaunch(
+        prepared,
+        launchInput,
+        harnessEnvironment,
+        dependencies.write ?? ((line) => process.stderr.write(`${line}\n`)),
+      )
     // Serialize only shared-file preparation, never a Nodecode session's lifetime.
     // Native Nodecode owns gateway election and admits concurrent client sessions.
     const launch = await (prepared.adapter.id === "nodecode"
@@ -997,13 +1108,18 @@ const launchPreparedRun = async (
     cleanup = launch.cleanup
     if (prepared.plan.workers === "firstmate") await handOffToFirstmateWorkers(prepared, launch, paths, environment)
     let recorded: Promise<void> = Promise.resolve()
-    const status = await (dependencies.spawner ?? spawnInherited)(launch, environment, prepared.workspace, (pid) => {
-      if (pid !== undefined) guard?.attachChild(pid)
-      recorded = history.record(keys, prepared.selection).catch(() => undefined)
-    }, guard)
+    const status = await (dependencies.spawner ?? spawnInherited)(
+      launch,
+      harnessEnvironment,
+      prepared.workspace,
+      (pid) => {
+        if (pid !== undefined) guard?.attachChild(pid)
+        recorded = history.record(keys, prepared.selection).catch(() => undefined)
+      },
+      guard,
+    )
     await recorded
-    if (prepared.adapter.resumeArgs({ kind: "continue" }).length > 0)
-      write(`Resume     ${resumeCommand(options)}`)
+    if (prepared.adapter.resumeArgs({ kind: "continue" }).length > 0) write(`Resume     ${resumeCommand(options)}`)
     return status
   } finally {
     try {
@@ -1055,6 +1171,7 @@ export const runNative = async (options: RunOptions, dependencies: RunDependenci
   let prepared = await prepareRun(options, dependencies)
   for (const line of describePreparedRun(prepared)) write(line)
   const warn = dependencies.write ?? ((line: string) => process.stderr.write(`${line}\n`))
+  for (const warning of prepared.centralEnvironment?.warnings ?? []) warn(`Warning     ${warning}`)
   for (const warning of prepared.plan.mcpWarnings ?? []) warn(`Warning     ${warning}`)
   if (options.dryRun) return 0
   const resumed = await pickRunResumeSession(prepared, options, dependencies)

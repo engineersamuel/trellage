@@ -48,12 +48,16 @@ const Tag = NonEmpty.pipe(
   ),
 )
 
+const EnvironmentVariableName = NonEmpty.pipe(Schema.pattern(/^[A-Za-z_][A-Za-z0-9_]*$/))
+
 const EnvironmentConfig = Schema.Struct({
   provider: Schema.optionalWith(Schema.Literal("varlock"), { default: () => "varlock" as const }),
   enabled: Schema.optionalWith(Schema.Boolean, { default: () => true }),
   path: Schema.optional(NonEmpty),
   required: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   strict_permissions: Schema.optionalWith(Schema.Boolean, { default: () => true }),
+  /** Variables every trx run harness receives from the central environment, besides those MCP servers reference. */
+  inject: Schema.optionalWith(Schema.Array(EnvironmentVariableName), { default: () => [] }),
 })
 
 const NativeSource = Schema.Struct({
@@ -84,14 +88,26 @@ const NativePluginSelection = Schema.Struct({
 })
 
 const NativeInstruction = Schema.Struct({
-  file: Schema.Union(RelativePluginPath, NonEmpty.pipe(Schema.filter(value => {
-    try { resolveShippedResource(value,"/shipped"); return true } catch { return false }
-  }))),
+  file: Schema.Union(
+    RelativePluginPath,
+    NonEmpty.pipe(
+      Schema.filter((value) => {
+        try {
+          resolveShippedResource(value, "/shipped")
+          return true
+        } catch {
+          return false
+        }
+      }),
+    ),
+  ),
 })
 
 /** Absolute or home-relative (`~/...`) directory. */
 const WorkingDirectory = NonEmpty.pipe(
-  Schema.filter((value) => !hasControlCharacters(value) && (value === "~" || value.startsWith("~/") || path.isAbsolute(value))),
+  Schema.filter(
+    (value) => !hasControlCharacters(value) && (value === "~" || value.startsWith("~/") || path.isAbsolute(value)),
+  ),
 )
 
 const NativeProfileRepository = Schema.Struct({
@@ -114,9 +130,16 @@ const NativeSelection = Schema.Struct({
   best_for: Schema.optional(Schema.Array(NonEmpty)),
   avoid_for: Schema.optional(Schema.Array(NonEmpty)),
   capabilities: Schema.optional(Schema.Array(Identifier)),
-}).pipe(Schema.filter((value) => {
-  try { parseSelectionMetadata(value, "selection"); return true } catch { return false }
-}))
+}).pipe(
+  Schema.filter((value) => {
+    try {
+      parseSelectionMetadata(value, "selection")
+      return true
+    } catch {
+      return false
+    }
+  }),
+)
 
 const NativeWorkflow = Schema.Struct({
   id: Identifier,
@@ -124,10 +147,12 @@ const NativeWorkflow = Schema.Struct({
   examples: Schema.Array(NonEmpty),
   skill: Schema.optional(NonEmpty),
   launch_agent: Schema.optional(NonEmpty),
-  interaction: Schema.optional(Schema.Struct({
-    mode: Schema.Literal("interactive"),
-    required_skills: Schema.Array(Identifier),
-  })),
+  interaction: Schema.optional(
+    Schema.Struct({
+      mode: Schema.Literal("interactive"),
+      required_skills: Schema.Array(Identifier),
+    }),
+  ),
   frame: Schema.optional(Schema.Literal("fixed")),
 })
 const NativeGuide = Schema.Struct({
@@ -135,16 +160,18 @@ const NativeGuide = Schema.Struct({
   documents: Schema.optional(Schema.Record({ key: Identifier, value: NonEmpty })),
   workflows: Schema.optional(Schema.Array(NativeWorkflow)),
   prerequisites: Schema.optional(Schema.Array(Schema.Struct({ id: Identifier, description: NonEmpty }))),
-  goal_execution: Schema.optional(Schema.Struct({
-    controller: Schema.Literal("codex-goal", "claude-goal"),
-    workflow_ids: Schema.Array(Identifier),
-  })),
+  goal_execution: Schema.optional(
+    Schema.Struct({
+      controller: Schema.Literal("codex-goal", "claude-goal"),
+      workflow_ids: Schema.Array(Identifier),
+    }),
+  ),
 })
 export type NativeWorkflowConfig = Schema.Schema.Type<typeof NativeGuide>
 
 const NativeProfile = Schema.Struct({
   selection: Schema.optional(NativeSelection),
-  required_environment: Schema.optional(Schema.Array(NonEmpty.pipe(Schema.pattern(/^[A-Za-z_][A-Za-z0-9_]*$/)))),
+  required_environment: Schema.optional(Schema.Array(EnvironmentVariableName)),
   guide: Schema.optional(NativeGuide),
   label: Schema.optional(NonEmpty),
   /** Apply to every run, before the profiles the user selects. */
@@ -167,9 +194,13 @@ const NativeProfile = Schema.Struct({
 })
 
 const NativeCatalog = Schema.Struct({
-  harnesses: Schema.optional(Schema.Record({ key: Identifier, value: Schema.Struct({ selection: Schema.optional(NativeSelection) }) })),
+  harnesses: Schema.optional(
+    Schema.Record({ key: Identifier, value: Schema.Struct({ selection: Schema.optional(NativeSelection) }) }),
+  ),
   sources: Schema.optionalWith(Schema.Record({ key: Identifier, value: NativeSource }), { default: () => ({}) }),
-  instructions: Schema.optionalWith(Schema.Record({ key: Identifier, value: NativeInstruction }), { default: () => ({}) }),
+  instructions: Schema.optionalWith(Schema.Record({ key: Identifier, value: NativeInstruction }), {
+    default: () => ({}),
+  }),
   profiles: Schema.optionalWith(Schema.Record({ key: Identifier, value: NativeProfile }), { default: () => ({}) }),
 })
 
@@ -280,28 +311,46 @@ const decodeTrellageConfig = (raw: unknown, source: string): Effect.Effect<Trell
     const environment = yield* Schema.decodeUnknown(EnvironmentConfig)(root.environment ?? {}, {
       onExcessProperty: "error",
     }).pipe(Effect.mapError((cause) => configError("[environment]", cause)))
-    const mcp = root.mcp === undefined ? undefined : yield* Schema.decodeUnknown(McpConfig)(root.mcp, {
-      onExcessProperty: "error",
-    }).pipe(Effect.mapError((cause) => configError("[mcp]", cause)))
-    const shared = root.skills === undefined ? undefined : yield* Effect.try({
-      try: () => parseCatalog(source),
-      catch: (cause) => new TrellageConfigError({ message: String(cause) }),
-    })
+    const mcp =
+      root.mcp === undefined
+        ? undefined
+        : yield* Schema.decodeUnknown(McpConfig)(root.mcp, {
+            onExcessProperty: "error",
+          }).pipe(Effect.mapError((cause) => configError("[mcp]", cause)))
+    const shared =
+      root.skills === undefined
+        ? undefined
+        : yield* Effect.try({
+            try: () => parseCatalog(source),
+            catch: (cause) => new TrellageConfigError({ message: String(cause) }),
+          })
     const declaredNative = (root.native ?? {}) as Record<string, unknown>
     const ownSources = (declaredNative.sources ?? {}) as Record<string, unknown>
     for (const id of Object.keys(shared?.sources ?? {})) {
-      if (Object.hasOwn(ownSources, id)) return yield* new TrellageConfigError({ message: `duplicate shared/native source ${id}; declare it only once` })
+      if (Object.hasOwn(ownSources, id))
+        return yield* new TrellageConfigError({ message: `duplicate shared/native source ${id}; declare it only once` })
     }
-    const sharedSources = Object.fromEntries(Object.entries(shared?.sources ?? {}).map(([id, entry]) => [id, {
-      exclude: entry.exclude, required: entry.required, allowWildcard: entry.allowWildcard,
-      allowExecutables: entry.allowExecutables, alwaysOn: entry.alwaysOn,
-      repository: entry.repository.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, ""),
-      ...(entry.tag === undefined ? {} : { tag: entry.tag }),
-      ...(entry.commit === undefined ? {} : { commit: entry.commit }),
-    }]))
-    const native = yield* Schema.decodeUnknown(NativeCatalog)({ ...declaredNative, sources: { ...sharedSources, ...ownSources } }, {
-      onExcessProperty: "error",
-    }).pipe(Effect.mapError((cause) => configError("[native]", cause)))
+    const sharedSources = Object.fromEntries(
+      Object.entries(shared?.sources ?? {}).map(([id, entry]) => [
+        id,
+        {
+          exclude: entry.exclude,
+          required: entry.required,
+          allowWildcard: entry.allowWildcard,
+          allowExecutables: entry.allowExecutables,
+          alwaysOn: entry.alwaysOn,
+          repository: entry.repository.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, ""),
+          ...(entry.tag === undefined ? {} : { tag: entry.tag }),
+          ...(entry.commit === undefined ? {} : { commit: entry.commit }),
+        },
+      ]),
+    )
+    const native = yield* Schema.decodeUnknown(NativeCatalog)(
+      { ...declaredNative, sources: { ...sharedSources, ...ownSources } },
+      {
+        onExcessProperty: "error",
+      },
+    ).pipe(Effect.mapError((cause) => configError("[native]", cause)))
     const referenceError = validateNativeReferences(native)
     if (referenceError)
       return yield* new TrellageConfigError({ message: `invalid [native] configuration: ${referenceError}` })
@@ -318,9 +367,7 @@ export const expandTrellagePath = (candidate: string, home: string, base: string
 }
 
 /** Read the shared config without validating sections owned by other consumers. */
-export const loadTrellageConfigDocument = (
-  location: TrellageConfigLocation = {},
-) =>
+export const loadTrellageConfigDocument = (location: TrellageConfigLocation = {}) =>
   Effect.gen(function* () {
     const environment = location.environment ?? process.env
     const home = location.home ?? os.homedir()

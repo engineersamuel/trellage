@@ -105,9 +105,12 @@ packages in the project, edit project instructions or `.mcp.json`, or change
 Git history. The `openui` skill does not mean OpenUI is a native Foldkit
 renderer; follow the project's own integration rules.
 
-Use Context7's normal Claude MCP sign-in when Claude requests it. For OpenUI,
-query library `/thesysdev/openui`. Context7 documentation lookup can work
-without changing global Claude MCP settings.
+Put `CONTEXT7_API_KEY` in `~/.config/trellage/.env.local` and enable the common
+`context7` server in `config.toml` (see `config.example.toml`). Trellage then uses
+that server instead of the plugin's own, and Claude starts without a sign-in.
+Without the key, use Context7's normal Claude MCP sign-in when Claude requests it.
+For OpenUI, query library `/thesysdev/openui`. Context7 documentation lookup can
+work without changing global Claude MCP settings.
 
 Foldkit DevTools MCP runs `@foldkit/devtools-mcp@0.26.0` with `npx` and
 requires Node.js 22.19 or later. A server can start before an app is connected;

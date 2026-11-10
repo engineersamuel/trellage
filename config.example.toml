@@ -4,7 +4,8 @@
 schema_version = 1
 
 # Common MCPs for every non-clean `trx run HARNESS PROFILE`.
-# Uncomment to enable. Supply keys in the launching environment; do not paste them here.
+# Uncomment to enable. Put keys in ~/.config/trellage/.env.local (Varlock reads it; see the README) or in the
+# launching environment, which wins. Do not paste them here.
 # Unsupported harness/transport combinations and missing variables warn, then launch without that server.
 # [mcp.servers.context7]
 # type = "http"
@@ -16,6 +17,11 @@ schema_version = 1
 # command = "npx"
 # args = ["-y", "@perplexity-ai/mcp-server"]
 # env = { PERPLEXITY_API_KEY = "${PERPLEXITY_API_KEY}" }
+
+# Central environment. Names that common MCP servers use load from .env.local by themselves.
+# To load other names for every non-clean launch of every harness, list them here. Values stay in .env.local.
+# [environment]
+# inject = ["EXAMPLE_TOKEN"]
 
 # Saved prompts for `trx guide --prompts`. Entries override shipped prompts by id.
 # Add another [prompts.lowercase-kebab-case-id] table to create a prompt.
@@ -522,6 +528,7 @@ source = "trellage"
 harness = "claude"
 path = "plugins/foldkit-tools"
 name = "foldkit-tools"
+# The plugin's own context7 server has no key and asks for a sign-in. An active common context7 server replaces it.
 includeMcp = true
 
 [native.profiles.preset-claude-ecc]

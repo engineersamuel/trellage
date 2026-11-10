@@ -18,6 +18,20 @@ export const mcpEnvironmentNames = (server: McpServer): string[] => {
   ].sort()
 }
 
+const unsupportedReason = (harness: string, name: string, server: McpServer) =>
+  harness === "grok" && !/^[A-Za-z]/.test(name)
+    ? "server names must begin with a letter"
+    : nativeMcpSupport(harness, server)
+
+/** Variables that enabled MCP servers for this harness reference; only these need a central value. */
+export const commonMcpEnvironmentNames = (harness: string, config: McpConfig | undefined): string[] => [
+  ...new Set(
+    Object.entries(config?.servers ?? {}).flatMap(([name, server]) =>
+      server.enabled && !unsupportedReason(harness, name, server) ? mcpEnvironmentNames(server) : [],
+    ),
+  ),
+]
+
 /** Missing credentials and unsupported adapters omit just that server, never the harness launch. */
 export const selectCommonMcp = (
   harness: string,
@@ -32,10 +46,7 @@ export const selectCommonMcp = (
   const warnings: string[] = []
   for (const [name, server] of Object.entries(config.servers).sort(([a], [b]) => a.localeCompare(b))) {
     if (!server.enabled) continue
-    const unsupported =
-      harness === "grok" && !/^[A-Za-z]/.test(name)
-        ? "server names must begin with a letter"
-        : nativeMcpSupport(harness, server)
+    const unsupported = unsupportedReason(harness, name, server)
     const missing = mcpEnvironmentNames(server).filter((variable) => !environment[variable])
     if (unsupported) warnings.push(`MCP ${name} unavailable for ${harness}: ${unsupported}; launching without it`)
     else if (missing.length) warnings.push(`MCP ${name} unavailable: set ${missing.join(", ")}; launching without it`)
@@ -44,7 +55,8 @@ export const selectCommonMcp = (
         if (server.type !== "stdio") {
           const url = new URL(expandMcpEnvironment(server.url, environment))
           if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error()
-          new Headers(
+          // Headers throws on an invalid resolved name or value.
+          void new Headers(
             Object.fromEntries(
               Object.entries(server.headers).map(([key, value]) => [key, expandMcpEnvironment(value, environment)]),
             ),
