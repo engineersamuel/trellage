@@ -212,7 +212,9 @@ const selectedWorkspace = (
     ...(repository ? { repository: { url: repository.url, branch: repository.branch } } : {}),
     ...(effective.some((id) => request.catalog.profiles[id]!.project_resources) ? { projectResources: true } : {}),
     ...(prerequisites.size > 0 ? { prerequisites: [...prerequisites.values()] } : {}),
-    ...(effective.some((id) => request.catalog.profiles[id]!.workers === "firstmate") ? { workers: "firstmate" as const } : {}),
+    ...(effective.some((id) => request.catalog.profiles[id]!.workers === "firstmate")
+      ? { workers: "firstmate" as const }
+      : {}),
   }
 }
 
@@ -340,7 +342,10 @@ const validatePluginDirectory = async (
     return { directory, digest: await digestDirectory(directory, true) }
   } catch (cause) {
     if (cause instanceof NativeRunError) throw cause
-    throw new NativeRunError("unsupported", `plugin ${pluginName(selection)} for ${profile} is invalid: ${String(cause)}`)
+    throw new NativeRunError(
+      "unsupported",
+      `plugin ${pluginName(selection)} for ${profile} is invalid: ${String(cause)}`,
+    )
   }
 }
 
@@ -459,7 +464,9 @@ const mergeSelectedSkill = (
   const winner = currentSelected ? selected : existing
   const loser = currentSelected ? existing : selected
   skills.set(selected.name, winner)
-  warnings.push(`skill ${selected.name} from selected source ${winner.sourceId} overrides always-profile source ${loser.sourceId}`)
+  warnings.push(
+    `skill ${selected.name} from selected source ${winner.sourceId} overrides always-profile source ${loser.sourceId}`,
+  )
 }
 
 const resolveSkills = async (
@@ -505,7 +512,7 @@ const generationIdOf = (
         request.adapterPolicy,
         request.providerPolicy,
         // Bump this policy when native MCP rendering changes: published generations are immutable.
-        ...(request.mcp === undefined ? [] : [["common-mcp-v2", request.mcp]]),
+        ...(request.mcp === undefined ? [] : [["common-mcp-v3", request.mcp]]),
         skills.map((skill) => [skill.name, skill.digest, skill.alwaysOn ?? false, skill.manualOnly ?? false]),
         plugins.map((plugin) => [
           plugin.name,
@@ -526,8 +533,15 @@ export const planComposition = async (request: CompositionRequest, options: Plan
   const { alwaysProfiles, effective } = effectiveProfiles(request, profiles)
   const workspace = selectedWorkspace(request, effective)
   const instructions = selectedInstructions(request, effective)
-  const selectedSources = new Set(profiles.flatMap((id) => request.catalog.profiles[id]!.skills.map((selection) => selection.source)))
-  const { sources, skills, warnings } = await resolveSkills(request, options, wantedSkills(request, effective), selectedSources)
+  const selectedSources = new Set(
+    profiles.flatMap((id) => request.catalog.profiles[id]!.skills.map((selection) => selection.source)),
+  )
+  const { sources, skills, warnings } = await resolveSkills(
+    request,
+    options,
+    wantedSkills(request, effective),
+    selectedSources,
+  )
   const resolvedPlugins = await resolvePlugins(request, options, effective)
   const allSources = new Map([...sources, ...resolvedPlugins.sources].map((source) => [source.sourceId, source]))
   for (const skill of skills.filter((entry) => entry.alwaysOn && !entry.manualOnly)) {
@@ -582,6 +596,30 @@ export interface PublishInput {
 
 const stripFrontmatter = (text: string): string => text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim()
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+
+/**
+ * A common MCP server replaces a staged plugin's server of the same name: the plugin's copy has no
+ * credentials, so the harness would start both and ask to sign in to the plugin's. The file is
+ * replaced, never written through, because a copied symbolic link can point at the source cache.
+ */
+const dropShadowedPluginMcp = async (file: string, common: ReadonlyArray<string>): Promise<void> => {
+  if (common.length === 0) return
+  let document: unknown
+  try {
+    document = JSON.parse(await readFile(file, "utf8"))
+  } catch {
+    return
+  }
+  if (!isRecord(document) || !isRecord(document.mcpServers)) return
+  const kept = Object.entries(document.mcpServers).filter(([name]) => !common.includes(name))
+  if (kept.length === Object.keys(document.mcpServers).length) return
+  await rm(file, { force: true })
+  if (kept.length > 0)
+    await writeFile(file, `${JSON.stringify({ ...document, mcpServers: Object.fromEntries(kept) }, null, 2)}\n`)
+}
+
 /** Stage the complete generation, then publish it atomically. Existing identical generations are reused. */
 export const publishGeneration = async (input: PublishInput): Promise<GenerationLayout> => {
   const layout = layoutFor(input.paths, input.plan)
@@ -601,7 +639,9 @@ export const publishGeneration = async (input: PublishInput): Promise<Generation
     for (const plugin of input.plan.plugins) {
       const directory = path.join(stage, "plugins", plugin.name)
       await cp(plugin.directory, directory, { recursive: true, errorOnExist: true, verbatimSymlinks: true })
-      if (!plugin.includeMcp) await rm(path.join(directory, ".mcp.json"), { force: true })
+      if (plugin.includeMcp)
+        await dropShadowedPluginMcp(path.join(directory, ".mcp.json"), Object.keys(input.plan.mcp?.servers ?? {}))
+      else await rm(path.join(directory, ".mcp.json"), { force: true })
     }
     await input.writeAdapterFiles(stage, layout)
     for (const name of input.persistentState ?? []) {

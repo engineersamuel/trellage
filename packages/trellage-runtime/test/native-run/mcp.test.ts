@@ -1,7 +1,14 @@
 import { afterEach, expect, test, spyOn } from "bun:test"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { prepareRun, runNative, type RunDependencies } from "../../src/native-run/run.ts"
+import {
+  CentralEnvironmentError,
+  type CentralEnvironment,
+  type CentralEnvironmentRequest,
+} from "../../src/native-environment.ts"
+import { NativeRunError } from "../../src/native-run/paths.ts"
+import type { LaunchCommand } from "../../src/native-run/adapters.ts"
+import { describePreparedRun, prepareRun, runNative, type RunDependencies } from "../../src/native-run/run.ts"
 import { selectCommonMcp } from "../../src/native-run/mcp.ts"
 import { expandMcpEnvironment } from "../../src/native-run/mcp-stdio.ts"
 import { cleanupFixtures, fixturePaths, git, tempRoot } from "./fixtures.ts"
@@ -253,4 +260,181 @@ test("Nodecode warns and omits HTTP headers while retaining ordinary stdio MCP",
     "MCP context7 unavailable for nodecode: HTTP headers require gateway-scoped authentication support; use a stdio MCP server instead; launching without it",
   ])
   expect(JSON.stringify(prepared)).not.toContain("fixture-context-secret")
+})
+
+const withoutCredentials = ({
+  CONTEXT7_API_KEY: _context,
+  PERPLEXITY_API_KEY: _perplexity,
+  ...rest
+}: NodeJS.ProcessEnv) => rest
+
+/** Stands in for Varlock: answers exactly the requested names it knows and records every request. */
+const centralStub = (values: Record<string, string>, warnings: string[] = []) => {
+  const requests: CentralEnvironmentRequest[] = []
+  const centralEnvironment = async (request: CentralEnvironmentRequest): Promise<CentralEnvironment> => {
+    requests.push(request)
+    return {
+      values: Object.fromEntries(request.names.filter((name) => name in values).map((name) => [name, values[name]!])),
+      warnings,
+    }
+  }
+  return { requests, centralEnvironment }
+}
+
+test("the central environment is asked only for MCP variables and allowlisted names the process lacks", async () => {
+  const fixture = await world(`[environment]\ninject = ["EXTRA_TOKEN", "AMBIENT_TOKEN"]\n${definitions}`)
+  const central = centralStub({ CONTEXT7_API_KEY: "central-context-secret", EXTRA_TOKEN: "central-extra-secret" })
+  const prepared = await prepareRun(base, {
+    ...fixture.dependencies,
+    environment: {
+      ...withoutCredentials(fixture.environment),
+      CONTEXT7_API_KEY: "",
+      PERPLEXITY_API_KEY: "ambient-perplexity-secret",
+      AMBIENT_TOKEN: "ambient-token",
+    },
+    centralEnvironment: central.centralEnvironment,
+  })
+  expect(central.requests).toHaveLength(1)
+  expect(central.requests[0]).toMatchObject({
+    names: ["CONTEXT7_API_KEY", "EXTRA_TOKEN"],
+    configPath: fixture.configPath,
+  })
+  expect(Object.keys(prepared.plan.mcp!.servers)).toEqual(["context7", "perplexity"])
+  expect(prepared.plan.mcpWarnings ?? []).toEqual([])
+  const description = describePreparedRun(prepared).join("\n")
+  expect(description).toContain("Central env CONTEXT7_API_KEY, EXTRA_TOKEN")
+  const published = [
+    description,
+    JSON.stringify(prepared.plan),
+    JSON.stringify(prepared.launch),
+    await readFile(path.join(prepared.layout.generationPath, "manifest.json"), "utf8"),
+  ].join("\n")
+  expect(published).not.toContain("central-")
+})
+
+test("central values reach the MCP aliases and the harness but never the adapters or the refresh", async () => {
+  const fixture = await world()
+  const central = centralStub({ CONTEXT7_API_KEY: "central-context-secret" })
+  let refreshed: NodeJS.ProcessEnv | undefined
+  let spawned: { launchEnvironment: LaunchCommand["env"]; environment: NodeJS.ProcessEnv } | undefined
+  const status = await runNative(
+    { ...base, dryRun: false },
+    {
+      ...fixture.dependencies,
+      environment: { ...withoutCredentials(fixture.environment), PERPLEXITY_API_KEY: "ambient-perplexity-secret" },
+      centralEnvironment: central.centralEnvironment,
+      refreshHarness: async (_harness, environment) => {
+        refreshed = environment
+        return undefined
+      },
+      spawner: async (launch, environment, _cwd, onSpawn) => {
+        spawned = { launchEnvironment: launch.env, environment }
+        onSpawn()
+        return 0
+      },
+    },
+  )
+  expect(status).toBe(0)
+  expect(refreshed).not.toHaveProperty("CONTEXT7_API_KEY")
+  expect(spawned?.environment.CONTEXT7_API_KEY).toBe("central-context-secret")
+  expect(spawned?.environment.PERPLEXITY_API_KEY).toBe("ambient-perplexity-secret")
+  expect(Object.entries(spawned!.launchEnvironment).filter(([name]) => name.startsWith("TRX_MCP_HEADER_"))).toEqual([
+    [expect.any(String), "central-context-secret"],
+  ])
+  expect(fixture.lines.join("\n")).toContain("Central env CONTEXT7_API_KEY")
+  expect(fixture.lines.join("\n")).not.toContain("central-context-secret")
+})
+
+test("a variable the process already sets wins and is never requested", async () => {
+  const fixture = await world()
+  const central = centralStub({ CONTEXT7_API_KEY: "central-context-secret", PERPLEXITY_API_KEY: "central-perplexity" })
+  let environment: NodeJS.ProcessEnv | undefined
+  await runNative(
+    { ...base, dryRun: false },
+    {
+      ...fixture.dependencies,
+      centralEnvironment: central.centralEnvironment,
+      spawner: async (_launch, spawnedEnvironment, _cwd, onSpawn) => {
+        environment = spawnedEnvironment
+        onSpawn()
+        return 0
+      },
+    },
+  )
+  expect(central.requests.map(({ names }) => names)).toEqual([[]])
+  expect(environment?.CONTEXT7_API_KEY).toBe("fixture-context-secret")
+  expect(fixture.lines.join("\n")).not.toContain("Central env")
+})
+
+test("clean runs never read the central environment", async () => {
+  const fixture = await world()
+  const central = centralStub({ CONTEXT7_API_KEY: "central-context-secret" })
+  const prepared = await prepareRun(
+    { ...base, profiles: ["clean"] },
+    { ...fixture.dependencies, centralEnvironment: central.centralEnvironment },
+  )
+  expect(prepared.clean).toBe(true)
+  expect(prepared.centralEnvironment).toBeUndefined()
+  expect(central.requests).toEqual([])
+})
+
+test("a harness that cannot use an MCP server does not request its variables", async () => {
+  const fixture = await world(`[environment]\ninject = ["EXTRA_TOKEN"]\n${definitions}`)
+  const environment = withoutCredentials(fixture.environment)
+  const requested = async (harness: string) => {
+    const central = centralStub({})
+    await prepareRun(
+      { ...base, harness },
+      { ...fixture.dependencies, environment, centralEnvironment: central.centralEnvironment },
+    )
+    return central.requests.map(({ names }) => names)
+  }
+  expect(await requested("uji")).toEqual([["EXTRA_TOKEN"]])
+  expect(await requested("nodecode")).toEqual([["EXTRA_TOKEN", "PERPLEXITY_API_KEY"]])
+  expect(await requested("codex")).toEqual([["CONTEXT7_API_KEY", "EXTRA_TOKEN", "PERPLEXITY_API_KEY"]])
+})
+
+test("a central warning is reported once and does not block the launch", async () => {
+  const fixture = await world()
+  const warning = "Central environment unavailable: Varlock could not load the environment; launching without it"
+  const central = centralStub({}, [warning])
+  const status = await runNative(base, {
+    ...fixture.dependencies,
+    environment: withoutCredentials(fixture.environment),
+    centralEnvironment: central.centralEnvironment,
+  })
+  expect(status).toBe(0)
+  expect(fixture.lines.filter((line) => line === `Warning     ${warning}`)).toHaveLength(1)
+  expect(fixture.lines).toContain("Warning     MCP context7 unavailable: set CONTEXT7_API_KEY; launching without it")
+})
+
+test("a required central environment that fails stops the run with a configuration error", async () => {
+  const fixture = await world()
+  const failure = await prepareRun(base, {
+    ...fixture.dependencies,
+    centralEnvironment: async () => {
+      throw new CentralEnvironmentError({ message: "required Varlock environment path does not exist: /nowhere" })
+    },
+  }).catch((error: unknown) => error)
+  expect(failure).toBeInstanceOf(NativeRunError)
+  expect(failure).toMatchObject({
+    code: "config",
+    message: "required Varlock environment path does not exist: /nowhere",
+  })
+})
+
+test("the default central environment enables a credential only its file holds", async () => {
+  const fixture = await world()
+  await writeFile(
+    path.join(fixture.root, ".env.local"),
+    "CONTEXT7_API_KEY=file-context-secret\nUNRELATED=file-unrelated\n",
+    {
+      mode: 0o600,
+    },
+  )
+  const environment = { ...withoutCredentials(fixture.environment), PERPLEXITY_API_KEY: "ambient-perplexity-secret" }
+  const prepared = await prepareRun(base, { ...fixture.dependencies, environment })
+  expect(prepared.centralEnvironment).toEqual({ values: { CONTEXT7_API_KEY: "file-context-secret" }, warnings: [] })
+  expect(Object.keys(prepared.plan.mcp!.servers)).toEqual(["context7", "perplexity"])
+  expect(describePreparedRun(prepared).join("\n")).not.toContain("file-context-secret")
 })

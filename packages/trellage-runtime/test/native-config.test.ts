@@ -54,6 +54,7 @@ plugins = [{ source = "office", harness = "claude", path = "." }]
       path: "environment",
       required: false,
       strict_permissions: true,
+      inject: [],
     },
     native: {
       instructions: {},
@@ -144,9 +145,16 @@ test.each([
   expect(result.present).toBe(false)
   expect(result.config).toEqual({
     schema_version: 1,
-    environment: { provider: "varlock", enabled: true, required: false, strict_permissions: true },
+    environment: { provider: "varlock", enabled: true, required: false, strict_permissions: true, inject: [] },
     native: { sources: {}, instructions: {}, profiles: {} },
   })
+})
+
+test("reads the variable names injected from the central environment", async () => {
+  const result = await Effect.runPromise(
+    parseTrellageConfig('[environment]\ninject = ["CONTEXT7_API_KEY", "PERPLEXITY_API_KEY"]\n'),
+  )
+  expect(result.environment.inject).toEqual(["CONTEXT7_API_KEY", "PERPLEXITY_API_KEY"])
 })
 
 test("rejects symbolic links, directories, and writable user config files", async () => {
@@ -176,6 +184,9 @@ test.each([
   '[native.sources.Invalid]\nrepository = "example/skills"',
   '[native.profiles."../outside"]',
   '[native.sources.known]\nrepository = "example/skills"\n[native.profiles.work]\nskills = [{ source = "constructor", names = ["known"] }]',
+  '[environment]\ninject = ["NOT-A-NAME"]',
+  '[environment]\ninject = ["API_KEY=value"]',
+  '[environment]\ninject = "API_KEY"',
 ])("rejects invalid schema versions, keys, and catalog identifiers: %s", async (source) => {
   await expect(Effect.runPromise(parseTrellageConfig(source))).rejects.toThrow(/invalid/)
 })

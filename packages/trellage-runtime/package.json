@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./native-config": "./src/native-config.ts",
+    "./native-environment": "./src/native-environment.ts",
     "./native-run": "./src/native-run/index.ts",
     "./workspace": "./src/workspace.ts",
     "./skill-config": "./src/skill-config.ts",

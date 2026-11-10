@@ -54,11 +54,10 @@ mise trust
 mise run trx -- run copilot hve -- -p "Reply exactly OK"
 ```
 
-Codex native and comparison profiles use the upstream Pro preset:
-`gpt-6-astra` with `medium` reasoning, Luna execution subagents with `max`
-reasoning, and an Astra reviewer with `low` reasoning. Up to four subagents
-can run concurrently. Copilot retains Astra with `low` reasoning. Plan mode uses Astra with `max` reasoning. Explicit harness model and reasoning
-arguments override the default mode settings.
+Codex native and comparison profiles use the upstream Pro preset: `gpt-6-astra` with `medium` reasoning, Luna execution
+subagents with `max` reasoning, and an Astra reviewer with `low` reasoning. Up to four subagents can run concurrently.
+Copilot retains Astra with `low` reasoning. Plan mode uses Astra with `max` reasoning. Explicit harness model and
+reasoning arguments override the default mode settings.
 
 ## Fresh Azure VM Acceptance
 
@@ -238,26 +237,52 @@ to the worktree, so composition snapshots the worktree's current files
 (tracked and untracked, not ignored) into a deterministic local commit without
 changing its index, HEAD, or refs. The variable takes whitespace-separated
 `<repository>=<absolute path>` pairs.
+
 ## Automatic Varlock Environment Loading
 
-Trellage bundles Varlock and uses it automatically for Native profile launches
-that declare required environment variables. Invoke `trx` directly:
+Trellage bundles Varlock. `trx run` uses it to read secrets from one central
+place, `~/.config/trellage/.env.local`, for every harness. The load is
+headless: no prompt, no browser sign-in, and no wrapper command. Invoke `trx`
+directly:
 
 ```bash
-trx run claude research
-trx run codex youtube
+trx run claude foldkit
+trx run codex research
 trx
-trx list --json
 ```
 
-Prompt and resume launches use the same loading only when the selected profile
-publishes those capabilities.
+Interactive, prompt, resume, and `--dry-run` launches load the same way.
+`trx run HARNESS clean` loads nothing.
 
-Do not prefix these commands with `varlock`. This keeps the same interface for terminals, scripts, editors, Herdr, and other applications invoking Trellage.
+Do not prefix these commands with `varlock`. This keeps the same interface for terminals, scripts, editors, Herdr, and
+other applications invoking Trellage.
+
+### What loads
+
+Trellage loads only the names it needs, never the whole file. For each
+`trx run`, the names are:
+
+- Each `${NAME}` that a common MCP server for the selected harness uses (see
+  Common MCP servers below).
+- Each name in `[environment] inject`.
+
+A name that is already non-empty in the launching environment is not loaded.
+The process environment wins, so automation can override the file.
+
+Varlock runs as a short child process that only resolves values. It never
+wraps the harness. The values reach only the final harness process; setup,
+skill refresh, Git, and other helper processes do not get them. Generated MCP
+files hold references, not values. `--dry-run` shows the names (`Central env`),
+never the values.
+
+If the source is missing, unsafe, or Varlock fails, `trx run` prints a warning
+and launches without the values. Set `required = true` to fail the launch
+instead.
 
 ### Default files
 
-The default environment directory is `$XDG_CONFIG_HOME/trellage`, or `~/.config/trellage` when `XDG_CONFIG_HOME` is unset:
+The default environment directory is `$XDG_CONFIG_HOME/trellage`, or `~/.config/trellage` when `XDG_CONFIG_HOME` is
+unset:
 
 ```text
 ~/.config/trellage/
@@ -266,18 +291,21 @@ The default environment directory is `$XDG_CONFIG_HOME/trellage`, or `~/.config/
 └── .env.local
 ```
 
-No `config.toml` is required for the default behavior. If the directory has no `.env` files, Trellage continues without Varlock. To supply a required environment variable:
+No `config.toml` is required for the default behavior. If the directory has no `.env` files, Trellage continues without
+Varlock. To supply a key, for example `CONTEXT7_API_KEY` for the Context7 MCP server:
 
 ```dotenv
 # ~/.config/trellage/.env.schema
 # @sensitive
-EXAMPLE_TOKEN=
+CONTEXT7_API_KEY=
 ```
 
 ```dotenv
 # ~/.config/trellage/.env.local
-EXAMPLE_TOKEN=replace-with-token
+CONTEXT7_API_KEY=replace-with-key
 ```
+
+The schema is optional; it marks the value as sensitive.
 
 Protect the directory and value file:
 
@@ -286,25 +314,20 @@ chmod 700 ~/.config/trellage
 chmod 600 ~/.config/trellage/.env.local
 ```
 
-On launch, Trellage resolves the Varlock source before it captures host credentials. The resolved `PLAYWRIGHT_MCP_EXTENSION_TOKEN` is then forwarded only to the final Claude process, allowing the profile to expose both Playwright and Obscura. Existing process environment values take precedence over file values, so explicit credentials supplied by automation remain authoritative.
+### Variables for every harness
 
-The Native `trx run codex youtube` profile uses the same source and policy. Add
-`TRANSCRIPT_API_KEY` to the schema and value file:
+Names that a common MCP server uses load by themselves. To load another name for
+every launch, list it in `inject`:
 
-```dotenv
-# ~/.config/trellage/.env.schema
-# @sensitive
-TRANSCRIPT_API_KEY=
+```toml
+# ~/.config/trellage/config.toml
+[environment]
+inject = ["EXAMPLE_TOKEN"]
 ```
 
-```dotenv
-# ~/.config/trellage/.env.local
-TRANSCRIPT_API_KEY=replace-with-token
-```
-
-The Codex adapter asks Varlock to inject only the environment names required by the
-selected profile. It then removes the key from the harness environment before
-setup, skill, Git, Node, inventory, and other helper subprocesses run.
+Each listed name reaches the final process of every harness except `clean`
+runs. List only names that you want everywhere. Keep values in `.env.local`,
+never in `config.toml`.
 
 ### Configuration
 
@@ -317,16 +340,23 @@ enabled = true
 path = "~/.config/trellage"
 required = false
 strict_permissions = true
+inject = []
 ```
 
 - `enabled`: enables automatic loading. Defaults to `true`.
 - `path`: selects a Varlock file or directory. Relative paths resolve from `config.toml`.
-- `required`: fails the launch when the source is absent or has no `.env` files. Defaults to `false`.
+- `required`: fails the launch when the source is absent, unsafe, has no `.env` files, or Varlock cannot load it.
+  Defaults to `false`, which only warns.
 - `strict_permissions`: rejects insecure directories and secret-bearing files. Defaults to `true`.
+- `inject`: names to load for every `trx run`, in addition to the names that common MCP servers use. Defaults to `[]`.
 
-Trellage rejects symlinked sources, non-regular `.env` entries, group/world-writable configuration, and group/world-accessible secret-bearing files. For unattended applications, provision values before launch; do not use `varlock(prompt)`. Device-local encryption or a noninteractive Varlock secret-provider plugin can protect values at rest.
+Trellage rejects symlinked sources, non-regular `.env` entries, group/world-writable configuration, and
+group/world-accessible secret-bearing files. For unattended applications, provision values before launch; do not use
+`varlock(prompt)`. Device-local encryption or a noninteractive Varlock secret-provider plugin can protect values at
+rest.
 
-Use `TRELLAGE_CONFIG` to select another config file. Use `TRELLAGE_ENVIRONMENT=off` for a per-process bypass or `TRELLAGE_ENVIRONMENT=on` to override `enabled = false`. Compiler and lifecycle commands do not load secrets.
+Use `TRELLAGE_CONFIG` to select another config file. Use `TRELLAGE_ENVIRONMENT=off` for a per-process bypass or
+`TRELLAGE_ENVIRONMENT=on` to override `enabled = false`. Compiler and lifecycle commands do not load secrets.
 
 ### Common MCP servers (`trx run`)
 
@@ -347,9 +377,11 @@ args = ["-y", "@perplexity-ai/mcp-server"]
 env = { PERPLEXITY_API_KEY = "${PERPLEXITY_API_KEY}" }
 ```
 
-Supply `CONTEXT7_API_KEY` and `PERPLEXITY_API_KEY` through the environment of the
-launching `trx` process, for example with your existing secret manager. This path
-does not automatically load Varlock or copy credentials from host harness files.
+Supply `CONTEXT7_API_KEY` and `PERPLEXITY_API_KEY` in the central
+`~/.config/trellage/.env.local` (see Automatic Varlock Environment Loading above)
+or through the environment of the launching `trx` process; the process
+environment wins. Trellage does not copy credentials from host harness files,
+such as `~/.copilot/mcp-config.json`.
 `${NAME}` references are resolved at launch, without shell evaluation; resolved
 credentials are not stored in generation manifests, config files, or displayed
 commands. Avoid literal secrets in definitions. Stdio commands must be installed
@@ -360,6 +392,14 @@ Server names are lower-kebab-case. Supported definition types are `stdio`
 (`command`, optional `args` and `env`), `http`, and `sse` (`url`, optional
 `headers`); transport support depends on the harness. Set `enabled = false` to
 disable an entry globally. Per-harness inclusion/exclusion is not implemented yet.
+
+A selected plugin with `includeMcp = true` can ship a server with the same name
+as a common server; the `foldkit` profile ships its own `context7`. The plugin's
+copy has no key, so Claude asks for a browser sign-in each launch. When the
+common server is active, Trellage removes the plugin's server of that name from
+the staged plugin copy and keeps the plugin's other servers. When the common
+server is inactive, for example because its key is missing, the plugin's server
+stays.
 
 `trx` translates definitions into isolated native configuration instead of
 editing host Copilot, Claude, Codex, or other harness configuration. Unsupported
@@ -562,9 +602,8 @@ run directly on the host, without a Trellage container or security boundary.
 `trx` resolves a composition catalog from built-in presets and `config.toml`, then routes each harness to its adapter.
 Install the dependencies for the harnesses you use. On a brand-new machine:
 
-1. **Confirm `~/.local/bin` is on `PATH`.** The router installer places `trx`
-   there; harness installers register private backends. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile if
-   it is missing, then reload the shell.
+1. **Confirm `~/.local/bin` is on `PATH`.** The router installer places `trx` there; harness installers register private
+   backends. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile if it is missing, then reload the shell.
 2. **Install only the underlying agent CLIs you actually use**. Each harness
    needs only its own dependency:
    - Codex needs the `codex` CLI (`npm install -g @openai/codex`),
@@ -695,11 +734,10 @@ trx skills update --upgrade-pins  # Persist newer pinned versions atomically.
 An unsuccessful update preserves the previous cache and configuration.
 Use `trx upgrade all` to update harnesses and deployed skill copies together.
 
-Reinstall the Native backends before refreshing skills after a catalog or
-shared-helper change. For `i-have-adhd`, the updated JCode adapter must be
-installed before `trx skills update`; publishing only the catalog is not enough.
-Then synchronize the refreshed skills with `trx upgrade HARNESS PROFILE --skills-only`, or let its next normal launch sync the cache. Existing comparison images must be rebuilt with the updated Trellage compiler and runtime.
-
+Reinstall the Native backends before refreshing skills after a catalog or shared-helper change. For `i-have-adhd`, the
+updated JCode adapter must be installed before `trx skills update`; publishing only the catalog is not enough. Then
+synchronize the refreshed skills with `trx upgrade HARNESS PROFILE --skills-only`, or let its next normal launch sync
+the cache. Existing comparison images must be rebuilt with the updated Trellage compiler and runtime.
 
 GitHub Copilot Native runs use `trx run copilot PROFILE`.
 
@@ -1229,7 +1267,7 @@ editing the main request.
 Research and Codebase run in the background. Choosing either gives the screen
 back at once and puts a one-line status bar above the tab bar:
 
-```
+```text
 ⠋ Research · Reading the research note · p then a to watch
 ✓ Research ready · p then a to apply
 ✗ Research failed · p then a for details
@@ -1640,7 +1678,8 @@ not security boundaries.
 
 ## Generic Evaluation Harness
 
-This repository runs multiple coding-agent configurations against the same prompt without loading their plugins, skills, hooks, sessions, caches, or configuration into the host harness.
+This repository runs multiple coding-agent configurations against the same prompt without loading their plugins, skills,
+hooks, sessions, caches, or configuration into the host harness.
 
 The included comparison builds the same TODO app twice:
 
@@ -1649,7 +1688,8 @@ The included comparison builds the same TODO app twice:
 - GitHub Copilot CLI with the current approved `github/awesome-copilot`
   source, using native GitHub Copilot authentication.
 
-Each contestant gets its own image, Compose project, network, workspace volume, app-data volume, session, and loopback port. The output is normalized evidence for later grading; the harness does not select a winner.
+Each contestant gets its own image, Compose project, network, workspace volume, app-data volume, session, and loopback
+port. The output is normalized evidence for later grading; the harness does not select a winner.
 
 Each comparison build resolves `comparison-common` once and gives the same
 staged skill snapshot to every contestant image. A build fails if the snapshot
@@ -1688,7 +1728,8 @@ Run the complete comparison:
 make compare
 ```
 
-This validates the manifest, builds both images, runs both agents concurrently, serves both apps, verifies both generated workspaces and browser flows, and writes a timestamped evidence bundle.
+This validates the manifest, builds both images, runs both agents concurrently, serves both apps, verifies both
+generated workspaces and browser flows, and writes a timestamped evidence bundle.
 
 Open the live apps:
 
@@ -1697,7 +1738,10 @@ Open the live apps:
 
 ## Native Agent Profile Matrix
 
-Prerequisites are the installed commands `trx`, `codex`, and `jq`; provisioned Codex/Copilot profiles; and authenticated CLI sessions. The Agency, Claude, and JCode backends have their own contracts and router integration but are not yet part of the plugin-and-skill profile matrix. Composed Grok is verified by the Native runtime tests rather than this legacy profile matrix. Live verification also requires paid model access.
+Prerequisites are the installed commands `trx`, `codex`, and `jq`; provisioned Codex/Copilot profiles; and authenticated
+CLI sessions. The Agency, Claude, and JCode backends have their own contracts and router integration but are not yet
+part of the plugin-and-skill profile matrix. Composed Grok is verified by the Native runtime tests rather than this
+legacy profile matrix. Live verification also requires paid model access.
 
 Run native non-inference verification in static mode:
 
@@ -1706,7 +1750,8 @@ scripts/verify-agent-profiles
 make profile-matrix
 ```
 
-Static mode performs native profile discovery plus non-inference health, inventory, and context validation. It never invokes a model.
+Static mode performs native profile discovery plus non-inference health, inventory, and context validation. It never
+invokes a model.
 
 All harnesses are required; failures are not skips.
 
@@ -1717,7 +1762,8 @@ scripts/verify-agent-profiles --live
 make profile-matrix PROFILE_MATRIX_ARGS=--live
 ```
 
-Live mode invokes every statically passing discovered profile, may consume paid model quota, and may create product-local telemetry or state where a CLI lacks ephemeral mode.
+Live mode invokes every statically passing discovered profile, may consume paid model quota, and may create
+product-local telemetry or state where a CLI lacks ephemeral mode.
 
 Run the focused contract with:
 
@@ -1725,11 +1771,15 @@ Run the focused contract with:
 make profile-matrix-test
 ```
 
-Codex discovery and static checks require the managed Codex backend and isolated profile roots under `~/.local/share/trellage/profiles/codex/`.
+Codex discovery and static checks require the managed Codex backend and isolated profile roots under
+`~/.local/share/trellage/profiles/codex/`.
 
-Codex live checks bypass the managed Codex backend and invoke raw `codex` with the validated isolated `CODEX_HOME` plus ephemeral, read-only, approval-never arguments.
+Codex live checks bypass the managed Codex backend and invoke raw `codex` with the validated isolated `CODEX_HOME` plus
+ephemeral, read-only, approval-never arguments.
 
-Static verification performs no native marketplace, plugin, or managed-skill mutation and no live prompt. It never runs setup, repair, update, install, uninstall, login, or logout, but `trx doctor codex` may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.
+Static verification performs no native marketplace, plugin, or managed-skill mutation and no live prompt. It never runs
+setup, repair, update, install, uninstall, login, or logout, but `trx doctor codex` may atomically remove only exact
+Codex-generated project-trust stanzas during stale recovery.
 
 Exit statuses:
 
@@ -1847,7 +1897,10 @@ The Copilot contestant does not use `copilot-proxy-rs`. The runner resolves a to
 2. `GH_TOKEN`
 3. `gh auth token`
 
-It writes the value to a temporary mode-`0600` file, mounts that file only as `/run/secrets/copilot_token` in the one-shot Copilot agent container, and deletes the temporary file when the run ends. The token is not placed in container environment configuration, host bind mounts, logs, or collected evidence. Host `~/.copilot` and `~/.config/gh` directories are never mounted.
+It writes the value to a temporary mode-`0600` file, mounts that file only as `/run/secrets/copilot_token` in the
+one-shot Copilot agent container, and deletes the temporary file when the run ends. The token is not placed in container
+environment configuration, host bind mounts, logs, or collected evidence. Host `~/.copilot` and `~/.config/gh`
+directories are never mounted.
 
 ## Lifecycle Commands
 
@@ -1873,7 +1926,8 @@ HARNESS_RUN_ID=my-run ./scripts/harness collect harnesses/todo-side-by-side/harn
 - `sessions` inspects retained native state without credentials or network
   access and prints each contestant's recoverable session ID.
 - `serve` publishes the generated runtime artifacts and starts both apps.
-- `verify` runs each app's own test/type/lint/build/audit checks, recreates clean app processes, runs the shared CRUD flow, recreates each app again, and proves SQLite persistence.
+- `verify` runs each app's own test/type/lint/build/audit checks, recreates clean app processes, runs the shared CRUD
+  flow, recreates each app again, and proves SQLite persistence.
 - `collect` exports normalized, secret-scanned evidence and refuses to overwrite an existing run ID.
 - `down` stops containers but preserves workspaces, sessions, and app data.
 - `purge` permanently removes both contestant projects and their named volumes.
@@ -1921,9 +1975,11 @@ Current adapter capabilities:
 | Codex | `wshobson/agents` | Exactly one plugin per contestant | Generated Codex agents and skills bundled by that plugin | Direct hooks unsupported |
 | Copilot | `github/awesome-copilot` | One or more plugins per contestant | Native plugin agents and skills are materialized with their manifests | Plugin hooks and direct hooks unsupported |
 
-The Awesome Copilot adapter also rejects plugin manifests that require MCP servers, commands, extensions, unsafe paths, or symbolic links. Unsupported surfaces fail validation or build instead of being silently ignored.
+The Awesome Copilot adapter also rejects plugin manifests that require MCP servers, commands, extensions, unsafe paths,
+or symbolic links. Unsupported surfaces fail validation or build instead of being silently ignored.
 
-When changing package inputs, use a new harness/contestant ID for a clean comparison, or run `purge` first. Reusing an ID intentionally reuses that contestant's retained workspace and data volumes.
+When changing package inputs, use a new harness/contestant ID for a clean comparison, or run `purge` first. Reusing an
+ID intentionally reuses that contestant's retained workspace and data volumes.
 
 ## Isolation Contract
 
@@ -1937,7 +1993,8 @@ When changing package inputs, use a new harness/contestant ID for a clean compar
 - The Copilot agent joins only its project network and receives only its ephemeral file secret.
 - Generated apps cannot reach the proxy network and receive no model credentials.
 
-The app networks are ordinary Docker bridges because published host ports do not work on Docker internal networks. Isolation is enforced by project-scoped networks and volumes, hardened containers, and loopback-only port publication.
+The app networks are ordinary Docker bridges because published host ports do not work on Docker internal networks.
+Isolation is enforced by project-scoped networks and volumes, hardened containers, and loopback-only port publication.
 
 ## Evidence
 
@@ -1962,7 +2019,8 @@ results/<harness-id>/<run-id>/
     └── artifact-hashes.json
 ```
 
-`comparison.json` records prompt parity, runtime/provider/model identity, evidence roots, and pass/fail status. It intentionally has no `winner` field, leaving a stable seam for a deterministic rubric or future LLM judge.
+`comparison.json` records prompt parity, runtime/provider/model identity, evidence roots, and pass/fail status. It
+intentionally has no `winner` field, leaving a stable seam for a deterministic rubric or future LLM judge.
 
 Each contestant image creates `/opt/trellage/source-provenance.json` at build
 time. The read-only, network-disabled evidence exporter reads this receipt
