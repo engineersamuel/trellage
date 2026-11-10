@@ -2,13 +2,13 @@
 // The UI changes it with `PATCH /api/settings`; the agent changes it with the
 // `update_settings` tool. Both send the same JSON merge patch (agent access parity).
 import { DIFF_STYLES } from "../../shared/diff.ts"
+import { TREE_STYLES } from "../../shared/treeLines.ts"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { Effect, Schema } from "effect"
 
 export const NAVBAR_ITEMS = ["status", "workers", "model", "context", "auth", "crons", "repo"]
-export const PANEL_POSITIONS = ["right", "left", "hidden"]
-export const HOTKEY_ACTIONS = ["toggleSettings", "togglePanel", "cycleTheme", "focusCoordinator", "abortCoordinator"]
+export const HOTKEY_ACTIONS = ["toggleSettings", "cycleTheme", "focusCoordinator", "abortCoordinator"]
 export const EFFORTS = ["default", "low", "medium", "high", "xhigh"]
 export const WORKER_HARNESSES = ["auto", "copilot", "claude", "pi"]
 /** Who answers factory decisions: Jev, or a copilot-proxy-rs decision model. */
@@ -46,12 +46,16 @@ const Extension = Schema.Struct({
 const SettingsSchema = Schema.Struct({
   theme: Schema.String,
   themes: Schema.Record(Schema.String, Palette),
-  layout: Schema.Struct({ panel: Schema.String, panelWidth: Schema.Number }),
   navbar: Schema.Array(Schema.String),
   animations: Schema.Boolean,
   /** How tool calls show file changes in every chat and transcript. */
   diffStyle: Schema.Literals(DIFF_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("terminal" as const))),
+  /** Animated critter on each agent of the Inbox conversation tree and canvas; shows its status and SDLC step. */
+  inboxCritters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
+  /** Connector lines of the Inbox conversation tree: classic, tree (growing tree) or vine (ivy vine). */
+  treeStyle: Schema.Literals(TREE_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("tree" as const))),
   hotkeys: Schema.Record(Schema.String, Schema.String),
+  /** Agent the Inbox shows (focus_agent, the worker board's Show). */
   focus: Schema.String,
   banner: Schema.NullOr(Schema.String),
   agent: Schema.Struct({
@@ -65,9 +69,13 @@ const SettingsSchema = Schema.Struct({
     Schema.withDecodingDefaultKey(Effect.succeed({ model: "claude-opus-5.5", reasoningEffort: "high" })),
   ),
   /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
-  workers: Schema.Struct({ harness: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" }))),
+  workers: Schema.Struct({ harness: Schema.String }).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" })),
+  ),
   /** Engine behind every factory decision (gates, lenses, findings, triage, next step). Hot-swappable: the next decision uses it. */
-  decisions: Schema.Struct({ engine: Schema.String }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ engine: "jev" }))),
+  decisions: Schema.Struct({ engine: Schema.String }).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed({ engine: "jev" })),
+  ),
   crons: Schema.Record(Schema.String, Cron),
   extensions: Schema.Record(Schema.String, Extension),
   /** Absolute path of the git repository the factory works on. Empty = no target. */
@@ -78,13 +86,24 @@ const SettingsSchema = Schema.Struct({
     everySeconds: Schema.Number,
     stallSeconds: Schema.Number,
     offTrackCheck: Schema.Boolean,
-  }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ enabled: true, everySeconds: 60, stallSeconds: 300, offTrackCheck: true }))),
+  }).pipe(
+    Schema.withDecodingDefaultKey(
+      Effect.succeed({ enabled: true, everySeconds: 60, stallSeconds: 300, offTrackCheck: true }),
+    ),
+  ),
 })
 export type Settings = typeof SettingsSchema.Type
 
 const decode = Schema.decodeUnknownSync(SettingsSchema, { onExcessProperty: "error" })
 
-const palette = (bg: string, surface: string, border: string, text: string, muted: string, accent: string): Palette => ({
+const palette = (
+  bg: string,
+  surface: string,
+  border: string,
+  text: string,
+  muted: string,
+  accent: string,
+): Palette => ({
   bg,
   surface,
   border,
@@ -104,11 +123,12 @@ export const defaultSettings = (): Settings => ({
     forest: palette("#0d1410", "#15201a", "#22342a", "#e0efe4", "#94b39f", "#34d399"),
     ember: palette("#140d0b", "#20140f", "#3a2219", "#f5e6df", "#b99d90", "#f97316"),
   },
-  layout: { panel: "right", panelWidth: 45 },
   navbar: ["status", "workers", "model", "context"],
   animations: true,
   diffStyle: "terminal",
-  hotkeys: { ",": "toggleSettings", p: "togglePanel", t: "cycleTheme", ".": "focusCoordinator" },
+  inboxCritters: false,
+  treeStyle: "tree",
+  hotkeys: { ",": "toggleSettings", t: "cycleTheme", ".": "focusCoordinator" },
   focus: "coordinator",
   banner: null,
   agent: { model: "gpt-6-astra", reasoningEffort: "high", disabledTools: [], instructions: "" },
@@ -121,6 +141,19 @@ export const defaultSettings = (): Settings => ({
   supervisor: { enabled: true, everySeconds: 60, stallSeconds: 300, offTrackCheck: true },
 })
 
+/** Keys and hotkey actions of the retired Classic and Org Canvas layouts. A stored file may still hold them;
+ *  without this, decoding (no excess keys) would reset every setting to the defaults. */
+const RETIRED_KEYS = ["layout", "critters", "canvasCritters"]
+const RETIRED_ACTIONS = ["togglePanel"]
+const dropRetired = (stored: unknown): unknown => {
+  if (!isObject(stored)) return stored
+  for (const k of RETIRED_KEYS) delete stored[k]
+  if (isObject(stored.hotkeys))
+    for (const [key, action] of Object.entries(stored.hotkeys))
+      if (RETIRED_ACTIONS.includes(String(action))) delete stored.hotkeys[key]
+  return stored
+}
+
 export const settingsPath = (root: string): string => path.join(root, "settings.json")
 
 /** Stored settings over the defaults; unreadable or invalid files give the defaults. */
@@ -128,7 +161,7 @@ export const loadSettings = (file: string): Settings => {
   try {
     if (!existsSync(file)) return defaultSettings()
     const doc = structuredClone(defaultSettings()) as unknown
-    merge(doc, JSON.parse(readFileSync(file, "utf8")))
+    merge(doc, dropRetired(JSON.parse(readFileSync(file, "utf8"))))
     return decode(doc)
   } catch {
     return defaultSettings()
@@ -145,7 +178,7 @@ export const patched = (current: Settings, patch: unknown): Settings => {
   try {
     next = decode(merged)
   } catch (e) {
-    throw new Error(`invalid settings: ${e instanceof Error ? e.message : String(e)}`)
+    throw new Error(`invalid settings: ${e instanceof Error ? e.message : String(e)}`, { cause: e })
   }
   validate(next)
   return next
@@ -165,10 +198,9 @@ const validate = (s: Settings): void => {
     }
   }
   if (s.repo !== "" && !path.isAbsolute(s.repo)) throw new Error(`repo: '${s.repo}' must be an absolute path`)
-  if (s.supervisor.everySeconds < MIN_CRON_SECONDS) throw new Error(`supervisor.everySeconds must be >= ${MIN_CRON_SECONDS}`)
+  if (s.supervisor.everySeconds < MIN_CRON_SECONDS)
+    throw new Error(`supervisor.everySeconds must be >= ${MIN_CRON_SECONDS}`)
   if (s.supervisor.stallSeconds < 60) throw new Error("supervisor.stallSeconds must be >= 60")
-  oneOf("layout.panel", s.layout.panel, PANEL_POSITIONS)
-  if (!(s.layout.panelWidth >= 25 && s.layout.panelWidth <= 70)) throw new Error("layout.panelWidth must be 25..=70")
   for (const item of s.navbar) oneOf("navbar", item, NAVBAR_ITEMS)
   for (const action of Object.values(s.hotkeys)) oneOf("hotkeys", action, HOTKEY_ACTIONS)
   oneOf("agent.reasoningEffort", s.agent.reasoningEffort, EFFORTS)
@@ -186,8 +218,7 @@ const validate = (s: Settings): void => {
   }
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  v !== null && typeof v === "object" && !Array.isArray(v)
+const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v)
 
 /** RFC 7386 merge. null deletes a key, except `banner`, which becomes null. */
 const merge = (target: unknown, patch: unknown): unknown => {

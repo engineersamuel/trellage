@@ -1,14 +1,14 @@
-import { Effect, Option, Schema } from "effect";
-import { Command, Mount } from "foldkit";
-import { ChatMessageSchema } from "@plana-solutions/agent-interface";
-import type { ChatMessage as ChatLine } from "@plana-solutions/agent-interface";
-import { attachSlot, setExtensionWorkers } from "../../shared/extensions";
-import { syncThreadUrl } from "../../shared/folders";
-import { isOpenUi, setProto } from "../../shared/protos/core";
-import { getJson } from "./api";
-import { fetchChatThreads } from "./threads";
-import { Worker } from "./domain";
-import { Message } from "./message";
+import { Effect, Option, Schema } from "effect"
+import { Command, Mount } from "foldkit"
+import { ChatMessageSchema } from "@plana-solutions/agent-interface"
+import type { ChatMessage as ChatLine } from "@plana-solutions/agent-interface"
+import { attachSlot, setExtensionWorkers } from "../../shared/extensions"
+import { syncThreadUrl } from "../../shared/folders"
+import { isOpenUi } from "../../shared/protos/core"
+import { getJson } from "./api"
+import { fetchChatThreads } from "./threads"
+import { Worker } from "./domain"
+import { Message } from "./message"
 
 /**
  * This chat draws every answer as OpenUI Lang. Answers written for the markdown UI or sent from outside
@@ -16,17 +16,26 @@ import { Message } from "./message";
  */
 export const markdownAsOpenUi = (messages: ReadonlyArray<ChatLine>): Array<ChatLine> =>
   messages.map((message) =>
-    message.role === "assistant" && typeof message.content === "string" && message.content.trim() && !isOpenUi(message.content)
+    message.role === "assistant" &&
+    typeof message.content === "string" &&
+    message.content.trim() &&
+    !isOpenUi(message.content)
       ? { ...message, content: `root = Card([MarkDownRenderer(${JSON.stringify(message.content)}, "clear")])` }
       : message,
-  );
+  )
 
-/** Switch the prototype layout (shared/protos). It stores the choice and tells every listener, the host included. */
-export const SetLayout = Command.define("SetLayout", {
-  args: { layout: Schema.Number },
-  messages: [Message.CompletedSetLayout],
-  execute: ({ layout }) => Effect.sync(() => (setProto(layout), Message.CompletedSetLayout())),
-});
+/** Select an agent in the Inbox (focus_agent, the worker board's Show). The Inbox listens for "sf:select-worker". */
+export const ShowAgent = Command.define("ShowAgent", {
+  args: { workerId: Schema.String },
+  messages: [Message.CompletedShowAgent],
+  execute: ({ workerId }) =>
+    Effect.sync(
+      () => (
+        window.dispatchEvent(new CustomEvent("sf:select-worker", { detail: workerId })),
+        Message.CompletedShowAgent()
+      ),
+    ),
+})
 
 // Threads started elsewhere (the sf CLI, the stream) appear in the chat's thread list.
 export const RefreshThreads = Command.define("RefreshThreads", {
@@ -35,7 +44,7 @@ export const RefreshThreads = Command.define("RefreshThreads", {
     Effect.map((threads) => Message.SucceededRefreshThreads({ threads })),
     Effect.catch((error) => Effect.succeed(Message.FailedRefreshThreads({ error }))),
   ),
-});
+})
 
 // The open conversation changed elsewhere (sf CLI, approval answer, global coordinator): load its messages.
 export const ReloadThread = Command.define("ReloadThread", {
@@ -46,7 +55,7 @@ export const ReloadThread = Command.define("ReloadThread", {
       Effect.map((messages) => Message.SucceededReloadThread({ threadId, messages: markdownAsOpenUi(messages) })),
       Effect.catch((error) => Effect.succeed(Message.FailedReloadThread({ error }))),
     ),
-});
+})
 
 /** Write the open thread into the address bar (?thread=) and the conversation sidebar. */
 export const SyncThreadUrl = Command.define("SyncThreadUrl", {
@@ -54,7 +63,7 @@ export const SyncThreadUrl = Command.define("SyncThreadUrl", {
   messages: [Message.CompletedSyncThreadUrl],
   execute: ({ maybeThreadId }) =>
     Effect.sync(() => syncThreadUrl(Option.getOrNull(maybeThreadId))).pipe(Effect.as(Message.CompletedSyncThreadUrl())),
-});
+})
 
 /** Give extensions the current worker list (their api.workers and onWorkers callbacks). */
 export const SyncExtensionWorkers = Command.define("SyncExtensionWorkers", {
@@ -62,7 +71,7 @@ export const SyncExtensionWorkers = Command.define("SyncExtensionWorkers", {
   messages: [Message.CompletedSyncExtensionWorkers],
   execute: ({ workers }) =>
     Effect.sync(() => setExtensionWorkers([...workers])).pipe(Effect.as(Message.CompletedSyncExtensionWorkers())),
-});
+})
 
 /**
  * An extension slot. shared/extensions.ts owns the element's children; this Mount registers the element
@@ -76,4 +85,4 @@ export const AttachSlot = Mount.define("AttachSlot", {
       Effect.sync(() => (element instanceof HTMLElement ? attachSlot(name, element) : () => {})),
       (detach) => Effect.sync(detach),
     ).pipe(Effect.as(Message.CompletedAttachSlot())),
-});
+})

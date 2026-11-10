@@ -6,19 +6,24 @@ import { expect, test } from "@playwright/test"
 // shows on every keystroke, not once.
 const MAX_SPIKES_PER_RESIZE = 1
 const MAX_TYPING_SPIKES = 1
-// The classic layout (0) shows the chat composer.
-const URL = (() => {
-  const u = new globalThis.URL(process.env.FOLDKIT_URL ?? "http://localhost:5174/")
-  u.searchParams.set("proto", "0")
-  return u.toString()
-})()
+const URL = process.env.FOLDKIT_URL ?? "http://localhost:5174/"
 
 test("foldkit: no slow-phase warnings after startup, on a 4x slower CPU", async ({ page }) => {
   const warnings: string[] = []
   page.on("console", async (m) => {
     if (m.type() !== "warning" || !m.text().includes("[foldkit] Slow")) return
     // Name the child Message inside a Got* wrapper, so a failure points at the real trigger.
-    const inner = await Promise.all(m.args().map((arg) => arg.evaluate((value: any) => value?.message?._tag ?? value?.message?.value?.message?._tag ?? "").catch(() => "")))
+    const inner = await Promise.all(
+      m.args().map((arg) =>
+        arg
+          .evaluate((value: unknown) => {
+            type Tagged = { message?: { ["_tag"]?: string; value?: { message?: { ["_tag"]?: string } } } }
+            const v = value as Tagged | null
+            return v?.message?.["_tag"] ?? v?.message?.value?.message?.["_tag"] ?? ""
+          })
+          .catch(() => ""),
+      ),
+    )
     warnings.push(`${m.text().replace(/\. (Key|Inspect|Keep).*/s, "")} (${inner.filter(Boolean).join(", ")})`)
   })
   // The OpenUI devtools widget (dev only, from a CDN) is not part of the app.
@@ -27,6 +32,9 @@ test("foldkit: no slow-phase warnings after startup, on a 4x slower CPU", async 
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 })
   await page.goto(URL)
   await page.getByRole("heading", { level: 1, name: "Factory · Foldkit" }).waitFor({ timeout: 60_000 })
+  // Start an empty chat, as the old Classic layout showed: the Inbox opens a stored conversation, whose history makes
+  // every keystroke cost more (a separate issue).
+  await page.getByRole("button", { name: "＋ New General chat" }).click()
   await page.waitForTimeout(3_000)
   const startup = [...warnings]
   warnings.length = 0

@@ -8,26 +8,29 @@ import path from "node:path"
 import { Factory, type SpawnSpec } from "../src/factory.ts"
 import { Approvals } from "../src/approvals.ts"
 import { freshTurn } from "../src/report.ts"
-import { coordinatorTools, fanout, globalTools, synthesisBlocked } from "../src/tools.ts"
+import { coordinatorTools, fanout, globalTools, synthesisBlocked, type Scope } from "../src/tools.ts"
 import type { FanoutSelection } from "../src/workflows.ts"
 
 const fakeFactory = () => {
   const f = Object.create(Factory.prototype)
   Object.assign(f, {
     workers: new Map(),
-    securityReviews: new Map(), codeReviews: new Map(), sdlc: new Map(),
+    securityReviews: new Map(),
+    codeReviews: new Map(),
+    sdlc: new Map(),
     researchBatches: new Map(),
     turns: new Map(),
     lastReports: new Map(),
     run: null,
-    published: [] as any[],
-    spawned: [] as any[],
+    published: [] as unknown[],
+    spawned: [] as unknown[],
   })
   f.publish = (_w: string, type: string, _a: null, _t: string, data: unknown) => f.published.push({ type, data })
-  f.spawn = async (spec: any) => (f.spawned.push(spec), { id: "w-1", summary: () => ({ id: "w-1" }) })
+  f.spawn = async (spec: SpawnSpec) => (f.spawned.push(spec), { id: "w-1", summary: () => ({ id: "w-1" }) })
   return f
 }
-const tool = (tools: any[], name: string) => tools.find((t) => t.name === name)!.handler
+const tool = (tools: { name: string; handler?: unknown }[], name: string) =>
+  tools.find((t) => t.name === name)!.handler as (args: Record<string, unknown>) => string
 
 test("research fans out all Jev selections in the conversation worktree and retains partial failures", async () => {
   const f = fakeFactory()
@@ -50,7 +53,7 @@ test("research fans out all Jev selections in the conversation worktree and reta
     ["six-hats", "/research-wt", "sub-r"],
     ["hyperresearch", "/research-wt", "sub-r"],
   ])
-  expect(result.workers.map((w: any) => w.id)).toEqual(["council", "hyperresearch"])
+  expect(result.workers.map((w) => w.id)).toEqual(["council", "hyperresearch"])
   expect(result.errors).toEqual([{ workflow: "six-hats", error: "Native profile unavailable" }])
   expect(f.published[0].type).toBe("factory.workflows_selected")
 })
@@ -83,13 +86,9 @@ test("research requires a conversation worktree, respects review gates, and neve
   }
   await expect(fanout(f, { id: "coordinator", threadId: null }, "x", fail)).rejects.toThrow("own worktree")
   f.securityReviews.set("sr", { id: "sr", status: "started", workdir: "/wt" })
-  await expect(fanout(f, { id: "sub-r", threadId: "r", workdir: "/wt" }, "x", fail)).rejects.toThrow(
-    "security review",
-  )
+  await expect(fanout(f, { id: "sub-r", threadId: "r", workdir: "/wt" }, "x", fail)).rejects.toThrow("security review")
   f.securityReviews.clear()
-  await expect(fanout(f, { id: "sub-r", threadId: "r", workdir: "/wt" }, "x", fail)).rejects.toThrow(
-    "Jev timeout",
-  )
+  await expect(fanout(f, { id: "sub-r", threadId: "r", workdir: "/wt" }, "x", fail)).rejects.toThrow("Jev timeout")
   expect(f.spawned).toEqual([])
 })
 
@@ -116,7 +115,7 @@ test("spawn_worker refuses every step while a security review is unfinished in t
   expect(f.spawned).toEqual([])
   f.securityReviews.get("sr").status = "done"
   await spawn({ name: "i", task: "x", step: "implement" })
-  expect(f.spawned.map((s: any) => s.step)).toEqual(["implement"])
+  expect(f.spawned.map((s: SpawnSpec) => s.step)).toEqual(["implement"])
 })
 
 test("the global coordinator's spawn gate uses the run worktree, and none without a run", async () => {
@@ -140,8 +139,8 @@ const gitRepo = () => {
 test("report_up is for sub-coordinators; it takes branch and commit from git, reports once per commit and status", async () => {
   const { repo, head } = gitRepo()
   const f = fakeFactory()
-  const sent: any[] = []
-  expect(coordinatorTools(f).some((t: any) => t.name === "report_up")).toBe(false)
+  const sent: unknown[] = []
+  expect(coordinatorTools(f).some((t) => t.name === "report_up")).toBe(false)
   const report = tool(
     coordinatorTools(f, { id: "sub-1", threadId: "t", workdir: repo, report: (r) => void sent.push(r) }),
     "report_up",
@@ -159,7 +158,7 @@ test("report_up is for sub-coordinators; it takes branch and commit from git, re
 test("report_up sends the same report again in a later turn", async () => {
   const { repo } = gitRepo()
   const f = fakeFactory()
-  const sent: any[] = []
+  const sent: unknown[] = []
   const report = tool(
     coordinatorTools(f, { id: "sub-1", threadId: "t", workdir: repo, report: (r) => void sent.push(r) }),
     "report_up",
@@ -171,7 +170,7 @@ test("report_up sends the same report again in a later turn", async () => {
 })
 
 test("report_up marks branch and commit unknown outside git", async () => {
-  const sent: any[] = []
+  const sent: unknown[] = []
   const dir = mkdtempSync(path.join(tmpdir(), "sf-nogit-"))
   const report = tool(
     coordinatorTools(fakeFactory(), { id: "sub-1", threadId: "t", workdir: dir, report: (r) => void sent.push(r) }),
@@ -206,9 +205,9 @@ test("a failed report_up leaves no trace, so a retry is sent", async () => {
 })
 
 test("only the global coordinator's request_approval stores the report conversation to relay to", async () => {
-  const opened: any[] = []
+  const opened: Record<string, unknown>[] = []
   const f = fakeFactory()
-  f.approvals = { open: (a: any) => (opened.push(a), { id: "a1", ...a }) }
+  f.approvals = { open: (a: Record<string, unknown>) => (opened.push(a), { id: "a1", ...a }) }
   const global = coordinatorTools(f, { id: "coordinator", threadId: null, knownThread: (id) => id === "t-7" })
   await tool(global, "request_approval")({ title: "Next?", summary: "s", options: ["Merge"], reportThreadId: "t-7" })
   await tool(global, "ask_user")({ title: "Q", summary: "s", options: [], reportThreadId: "t-7" })
@@ -220,10 +219,10 @@ test("only the global coordinator's request_approval stores the report conversat
 })
 
 test("request_approval rejects an unknown or cleaned-up report conversation", async () => {
-  const opened: any[] = []
+  const opened: Record<string, unknown>[] = []
   const f = fakeFactory()
-  f.approvals = { open: (a: any) => (opened.push(a), { id: "a1", ...a }) }
-  const ask = (scope: any) =>
+  f.approvals = { open: (a: Record<string, unknown>) => (opened.push(a), { id: "a1", ...a }) }
+  const ask = (scope: Scope) =>
     tool(
       coordinatorTools(f, scope),
       "request_approval",
@@ -239,7 +238,12 @@ test("optimize fans out one read-only worker per Jev-selected skill and gates sy
   const scope = { id: "sub-o", threadId: "o", workdir }
   const result = await fanout(f, scope, "top 3 optimizations", async () => ({
     selected: ["first-principles", "improve-codebase-architecture"],
-    probabilities: { "first-principles": 0.9, "behavior-preservation": 0.4, "improve-codebase-architecture": 0.8, "ui-css": 0.1 },
+    probabilities: {
+      "first-principles": 0.9,
+      "behavior-preservation": 0.4,
+      "improve-codebase-architecture": 0.8,
+      "ui-css": 0.1,
+    },
   }))
   expect(f.spawned.map((s: SpawnSpec) => [s.step, s.workdir, s.owner])).toEqual([
     ["optimize-first-principles", workdir, "sub-o"],
@@ -250,7 +254,7 @@ test("optimize fans out one read-only worker per Jev-selected skill and gates sy
     "reports/optimize-first-principles.md",
     "reports/optimize-improve-codebase-architecture.md",
   ])
-  expect(f.published.map((e: any) => e.type)).toEqual(["factory.workflows_selected"])
+  expect(f.published.map((e: { type: string }) => e.type)).toEqual(["factory.workflows_selected"])
   f.workers.set("w-1", { status: "idle", collected: true })
   expect(synthesisBlocked(f, scope)).toContain("optimize-first-principles")
   mkdirSync(path.join(workdir, "reports"))
@@ -290,7 +294,11 @@ test("spawn_worker passes a named harness and its trx profiles; copilot is the d
   await spawn({ name: "a", task: "x" })
   await spawn({ name: "b", task: "x", harness: "pi", profiles: ["research"] })
   await spawn({ name: "c", task: "x", harness: "copilot" })
-  expect(f.spawned.map((s: SpawnSpec) => s.harness)).toEqual([undefined, { kind: "pi", profiles: ["research"] }, undefined])
+  expect(f.spawned.map((s: SpawnSpec) => s.harness)).toEqual([
+    undefined,
+    { kind: "pi", profiles: ["research"] },
+    undefined,
+  ])
 })
 
 test("step=finish needs an accepted ship approval for this conversation's factory branch; it gets the finish gate", async () => {
@@ -303,16 +311,30 @@ test("step=finish needs an accepted ship approval for this conversation's factor
   f.approvals = new Approvals(root)
   const tools = coordinatorTools(f, { id: "sub-1", threadId: "t", workdir: repo })
   // No SDLC plan yet: the ship request itself is refused.
-  const refused = JSON.parse(await tool(tools, "request_approval")({ title: "Ship?", summary: "s", options: ["Ship", "Hold"], ship: true }))
+  const refused = JSON.parse(
+    await tool(tools, "request_approval")({ title: "Ship?", summary: "s", options: ["Ship", "Hold"], ship: true }),
+  )
   expect(refused.error).toContain("no SDLC plan")
   // A conversation whose floors are met: criteria proven, verify after implement, security done; no optional gate on.
   ensureFactoryDir(repo)
   writeFileSync(artifact(repo, "evidence.md"), "AC-1: PASS — t — ok\n")
   f.sdlc.set("sub-1", { ...newSdlc("sub-1", "t"), criteria: ["works"], implementDoneAt: 1, verifyDoneAt: 2 })
-  f.securityReviews.set("sr-1", { id: "sr-1", scopeId: "sub-1", threadId: "t", implementWorkerId: "w", status: "done", model: "", findings: [], at: 3 })
+  f.securityReviews.set("sr-1", {
+    id: "sr-1",
+    scopeId: "sub-1",
+    threadId: "t",
+    implementWorkerId: "w",
+    status: "done",
+    model: "",
+    findings: [],
+    at: 3,
+  })
   const finish = () => tool(tools, "spawn_worker")({ name: "finish", task: "ship", step: "finish", harness: "claude" })
   expect(JSON.parse(await finish()).error).toContain("No accepted ship approval")
-  const ask = async () => JSON.parse(await tool(tools, "request_approval")({ title: "Ship?", summary: "s", options: ["Ship", "Hold"], ship: true })).id
+  const ask = async () =>
+    JSON.parse(
+      await tool(tools, "request_approval")({ title: "Ship?", summary: "s", options: ["Ship", "Hold"], ship: true }),
+    ).id
   const held = await ask()
   expect(JSON.parse(await finish()).error).toContain("No accepted ship approval")
   f.approvals.answer(held, "Hold", null)
@@ -336,16 +358,33 @@ test("step=finish needs an accepted ship approval for this conversation's factor
   expect(JSON.parse(await finish()).error).toBeUndefined()
   // Another conversation's approval does not count; a non-factory branch cannot ask.
   const other = coordinatorTools(f, { id: "sub-2", threadId: "u", workdir: repo })
-  expect(JSON.parse(await tool(other, "spawn_worker")({ name: "finish", task: "ship", step: "finish" })).error).toContain("No accepted ship approval")
+  expect(
+    JSON.parse(await tool(other, "spawn_worker")({ name: "finish", task: "ship", step: "finish" })).error,
+  ).toContain("No accepted ship approval")
   git("checkout", "-q", "-b", "main")
-  expect(JSON.parse(await tool(tools, "request_approval")({ title: "Ship?", summary: "s", options: ["Ship"], ship: true })).error).toContain("factory/*")
+  expect(
+    JSON.parse(await tool(tools, "request_approval")({ title: "Ship?", summary: "s", options: ["Ship"], ship: true }))
+      .error,
+  ).toContain("factory/*")
   expect(f.approvals.list()).toHaveLength(3)
 })
 
 test("the security review starts last: only when every other gate is ready, and once per implement", async () => {
   const repo = mkdtempSync(path.join(tmpdir(), "sf-last-"))
   execFileSync("git", ["-C", repo, "init", "-q", "-b", "factory/x"])
-  execFileSync("git", ["-C", repo, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "x"])
+  execFileSync("git", [
+    "-C",
+    repo,
+    "-c",
+    "user.email=a@b",
+    "-c",
+    "user.name=a",
+    "commit",
+    "-q",
+    "--allow-empty",
+    "-m",
+    "x",
+  ])
   const f = fakeFactory()
   f.approvals = new Approvals(mkdtempSync(path.join(tmpdir(), "sf-last-state-")))
   const scope = { id: "sub-1", threadId: "t", workdir: repo }
@@ -355,7 +394,16 @@ test("the security review starts last: only when every other gate is ready, and 
   expect(startFinalSecurity(f, scope)).toBeNull()
   writeFileSync(artifact(repo, "evidence.md"), "AC-1: PASS — t — ok\n")
   // Everything else ready, the review running: wait note.
-  f.securityReviews.set("sr-1", { id: "sr-1", scopeId: "sub-1", threadId: "t", implementWorkerId: "w", status: "started", model: "", findings: [], at: 3 })
+  f.securityReviews.set("sr-1", {
+    id: "sr-1",
+    scopeId: "sub-1",
+    threadId: "t",
+    implementWorkerId: "w",
+    status: "started",
+    model: "",
+    findings: [],
+    at: 3,
+  })
   expect(startFinalSecurity(f, scope)).toContain("final security review sr-1 is started")
   // Done after the last implement: nothing more to start.
   f.securityReviews.set("sr-1", { ...f.securityReviews.get("sr-1")!, status: "done" })
@@ -375,18 +423,32 @@ test("UI tools tell every open UI what to show, and confirm_action opens a yes/n
   expect(patches).toEqual([{ focus: "w-1" }])
   expect(JSON.parse(await tool(tools, "focus_agent")({ id: "w-404" })).error).toContain("unknown agent")
 
-  expect(JSON.parse(tool(tools, "open_report")({ path: "reports/synthesis.md" }))).toEqual({ opened: "reports/synthesis.md" })
+  expect(JSON.parse(tool(tools, "open_report")({ path: "reports/synthesis.md" }))).toEqual({
+    opened: "reports/synthesis.md",
+  })
   expect(JSON.parse(tool(tools, "open_report")({ path: "src/main.ts" })).error).toContain("reports/")
-  expect(JSON.parse(tool(tools, "set_layout")({ layout: 2 }))).toEqual({ layout: 2 })
-  expect(JSON.parse(tool(tools, "set_layout")({ layout: 7 })).error).toBeDefined()
 
-  const asked = JSON.parse(tool(tools, "confirm_action")({ title: "Stop 3 workers?", detail: "They lose unsaved work.", confirmLabel: "Stop them" }))
+  const asked = JSON.parse(
+    tool(
+      tools,
+      "confirm_action",
+    )({ title: "Stop 3 workers?", detail: "They lose unsaved work.", confirmLabel: "Stop them" }),
+  )
   const decision = f.approvals.get(asked.id)!
-  expect([decision.options, decision.threadId, decision.status, decision.summary]).toEqual([["Stop them", "Cancel"], "t1", "pending", "They lose unsaved work."])
+  expect([decision.options, decision.threadId, decision.status, decision.summary]).toEqual([
+    ["Stop them", "Cancel"],
+    "t1",
+    "pending",
+    "They lose unsaved work.",
+  ])
 
-  expect(f.published.map((e: any) => [e.type, e.data?.path ?? e.data?.layout ?? e.data?.title])).toEqual([
+  expect(
+    f.published.map((e: { type: string; data?: { path?: string; title?: string } }) => [
+      e.type,
+      e.data?.path ?? e.data?.title,
+    ]),
+  ).toEqual([
     ["factory.ui_open_report", "reports/synthesis.md"],
-    ["factory.ui_set_layout", 2],
     ["factory.approval_requested", "Stop 3 workers?"],
   ])
   expect(f.published[0].data).toEqual({ path: "reports/synthesis.md", agent: "gen-1", threadId: "t1" })

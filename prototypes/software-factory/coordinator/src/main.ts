@@ -4,13 +4,29 @@ import { existsSync, readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Translator } from "./agui.ts"
 import { Factory, now, type FeedEvent, type Worker, type WorkerSummary } from "./factory.ts"
-import { createWorktree, discardWorktree, fullyMerged, GENERAL, removeWorktree, worktreeRoot, type Worktree } from "./folders.ts"
+import {
+  createWorktree,
+  discardWorktree,
+  fullyMerged,
+  GENERAL,
+  removeWorktree,
+  worktreeRoot,
+  type Worktree,
+} from "./folders.ts"
 import { CARDS_PROMPT, COORDINATOR_PROMPT, DESK_PROMPT, GLOBAL_PROMPT, RESEARCH_PROMPT, subPrompt } from "./prompts.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
 import { findingTask, findReport } from "./reports.ts"
 import { CARD_TOOLS, cardOpenUi, reportFindings } from "./cards.ts"
 import { cardView } from "../../shared/cardviews.ts"
-import { conversationStatus, deletedNotice, DESK_ID, factorySnapshot, genId, reportTarget, STATUS_NOTE } from "./general.ts"
+import {
+  conversationStatus,
+  deletedNotice,
+  DESK_ID,
+  factorySnapshot,
+  genId,
+  reportTarget,
+  STATUS_NOTE,
+} from "./general.ts"
 import { specView } from "./spec.ts"
 import { onTrack, STEPS } from "./steps.ts"
 import { findIssues, supervisorPrompt, type Issue } from "./supervisor.ts"
@@ -29,7 +45,7 @@ import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thre
 import { cardData, coordinatorTools, globalTools, spawnHealing, type Scope } from "./tools.ts"
 import { DRAFT_NOTE, DraftError, draftNodeId, isUnstartedDraft, makeDrafts } from "./drafts.ts"
 import { enhanceWith, stopEnhance } from "./enhance.ts"
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 import { worktreeDiff } from "./worktreeDiff.ts"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
@@ -50,15 +66,37 @@ const factory = (() => {
 })()
 // Gate state, code and security reviews survive a restart: the newest published copy of each wins. A review that
 // was mid-run when the process stopped lost its workers, so it is marked failed (the gate then blocks shipping).
-const restore = <T extends { at?: number; status?: string }>(type: string, key: (v: T) => string, into: Map<string, T>, unfinished?: (v: T) => boolean) => {
+const restore = <T extends object>(
+  type: string,
+  key: (v: T) => string,
+  into: Map<string, T>,
+  unfinished?: (v: T) => boolean,
+) => {
   for (const v of factory.store.latest(type, 2000) as T[]) into.set(key(v), v)
-  if (unfinished) for (const [k, v] of into) if (unfinished(v)) into.set(k, { ...v, status: "failed", error: "coordinator restarted" } as T)
+  if (unfinished)
+    for (const [k, v] of into)
+      if (unfinished(v)) into.set(k, { ...v, status: "failed", error: "coordinator restarted" } as T)
 }
-restore("factory.sdlc", (s: any) => s.scopeId, factory.sdlc as Map<string, any>)
-restore("factory.code_review", (r: any) => r.id, factory.codeReviews as Map<string, any>, (r) => r.status !== "done" && r.status !== "failed")
-restore("factory.security_review", (r: any) => r.id, factory.securityReviews as Map<string, any>, (r) => r.status !== "done" && r.status !== "failed")
+restore("factory.sdlc", (sdlc) => sdlc.scopeId, factory.sdlc)
+restore(
+  "factory.code_review",
+  (r) => r.id,
+  factory.codeReviews,
+  (r) => r.status !== "done" && r.status !== "failed",
+)
+restore(
+  "factory.security_review",
+  (r) => r.id,
+  factory.securityReviews,
+  (r) => r.status !== "done" && r.status !== "failed",
+)
 for (const [k, s] of factory.sdlc)
-  factory.sdlc.set(k, { ...s, gates: s.gates.map((g) => (g.status === "running" ? { ...g, status: "failed", detail: "coordinator restarted" } : g)) })
+  factory.sdlc.set(k, {
+    ...s,
+    gates: s.gates.map((g) =>
+      g.status === "running" ? { ...g, status: "failed", detail: "coordinator restarted" } : g,
+    ),
+  })
 const threads = new Threads(factory.root)
 const instructions = readInstructions()
 console.error(
@@ -87,7 +125,11 @@ const globalScopeTools = (id: string, chat: string | null) => [
       const w = factory.workers.get(subId(tid))
       if (w && wait) await w.waitIdle(300_000)
       const status = statusOf(tid)
-      return { status, ...(STATUS_NOTE[status] ? { note: STATUS_NOTE[status] } : {}), lastMessage: w?.lastMessage ?? null }
+      return {
+        status,
+        ...(STATUS_NOTE[status] ? { note: STATUS_NOTE[status] } : {}),
+        lastMessage: w?.lastMessage ?? null,
+      }
     },
     status: snapshot,
   }),
@@ -98,7 +140,9 @@ const statusOf = (threadId: string) =>
 
 const lastText = (threadId: string): string | null =>
   factory.workers.get(subId(threadId))?.lastMessage ??
-  [...threads.messages(threadId)].reverse().flatMap((m) => (m.role === "assistant" && m.content ? [m.content] : []))[0] ??
+  [...threads.messages(threadId)]
+    .reverse()
+    .flatMap((m) => (m.role === "assistant" && m.content ? [m.content] : []))[0] ??
   null
 
 const snapshot = () =>
@@ -161,8 +205,8 @@ const chatCoordinator = (t: Thread): Promise<Worker> => {
         model: factory.settings.agent.model,
       })
       .then(async (w) => {
-        const { model, reasoningEffort } = factory.settings.agent
-        if (reasoningEffort !== "default") await w.setModel(model, reasoningEffort).catch(() => {})
+        const { model: chatModel, reasoningEffort: chatEffort } = factory.settings.agent
+        if (chatEffort !== "default") await w.setModel(chatModel, chatEffort).catch(() => {})
         return w
       })
       .finally(() => startingChat.delete(id))
@@ -226,24 +270,40 @@ const sse = (start: (send: (v: unknown) => boolean, close: () => void) => () => 
   })
 }
 
+type Fields = { readonly [key: string]: unknown }
+const decodeFields = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))
+/** The fields of an untrusted JSON value; a value that is not an object (null, array, number, string) has none. */
+const fieldsOf = (v: unknown): Fields => Option.getOrElse(decodeFields(v), () => ({}))
+/** The fields of a request body. A null body is an error, as reading a field of null was before. */
+const bodyFields = (v: unknown): Fields => {
+  if (v === null) throw new TypeError("request body is null")
+  return fieldsOf(v)
+}
+/** An untrusted JSON value as a list; a value that is not an array is an empty list. */
+const listOf = (v: unknown): readonly unknown[] => (Array.isArray(v) ? v : [])
+
 /** The text of the run's new user message: the last message, when it is a user message. A resume or a tool-result run has none. */
-const newUserText = (input: any): string | null => {
-  const msg = (input?.messages ?? []).at(-1)
-  if (msg?.role !== "user") return null
+const newUserText = (input: Fields): string | null => {
+  const msg = fieldsOf(listOf(input.messages).at(-1))
+  if (msg.role !== "user") return null
   if (typeof msg.content === "string") return msg.content
   if (Array.isArray(msg.content))
-    return msg.content
-      .map((p: any) => p?.text)
-      .filter((t: unknown) => typeof t === "string")
+    return listOf(msg.content)
+      .map((p) => fieldsOf(p).text)
+      .filter((t) => typeof t === "string")
       .join("\n")
   return null
 }
 
 /** AG-UI run input `context` as a block the coordinator reads with the prompt. */
 const uiContext = (context: unknown): string => {
-  const items = (Array.isArray(context) ? context : []).filter((c: any) => typeof c?.description === "string" && c.value !== undefined)
+  const items = listOf(context).flatMap((c) => {
+    const { description, value } = fieldsOf(c)
+    return typeof description === "string" && value !== undefined ? [{ description, value }] : []
+  })
   if (!items.length) return ""
-  const line = (c: any) => `- ${c.description}: ${typeof c.value === "string" ? c.value : JSON.stringify(c.value)}`
+  const line = (c: { description: string; value: unknown }) =>
+    `- ${c.description}: ${typeof c.value === "string" ? c.value : JSON.stringify(c.value)}`
   return `\n\n<ui-context>\n${items.map(line).join("\n")}\n</ui-context>`
 }
 
@@ -273,7 +333,6 @@ const createThread = (text: string | null, folderId: string, base?: string) => {
   factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
   return t
 }
-
 
 /** The coordinator for a conversation: the global one, or the conversation's sub-coordinator in its worktree (started on first use). */
 const starting = new Map<string, Promise<Worker>>()
@@ -310,8 +369,10 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
       })
       .then(async (w) => {
         // Resumed sessions keep their old model: always apply the sub-coordinator model and effort.
-        const { model, reasoningEffort } = factory.settings.subAgent
-        await w.setModel(model, reasoningEffort).catch((e) => console.error(`sub-coordinator model ${model}/${reasoningEffort} not applied: ${e}`))
+        const { model: subModel, reasoningEffort: subEffort } = factory.settings.subAgent
+        await w
+          .setModel(subModel, subEffort)
+          .catch((e) => console.error(`sub-coordinator model ${subModel}/${subEffort} not applied: ${e}`))
         w.events.subscribe((ev) => watchSub(w, t.id, ev))
         return w
       })
@@ -368,7 +429,9 @@ const deliverToThread = async (threadId: string | null, text: string): Promise<D
 /** A sub-coordinator's report goes to the General chat that started its conversation, else to the Factory desk. */
 const reportToGeneral = async (folder: string, t: Thread, r: Report): Promise<void> => {
   const target = reportTarget(t, threads.list(), deskThread().id)
-  await (await deliverToThread(target, reportPrompt(folder, t.title, t.id, r))).sent
+  await (
+    await deliverToThread(target, reportPrompt(folder, t.title, t.id, r))
+  ).sent
 }
 
 /** Deliver without waiting; failures are logged. */
@@ -379,7 +442,7 @@ const deliverAndLog = (threadId: string | null, text: string) =>
 
 /** Track a sub-coordinator's turn; when it goes idle done or blocked without reporting, nudge it once to report_up. */
 const watchSub = (w: Worker, threadId: string, ev: SessionEvent) => {
-  const content = String((ev as { data?: any }).data?.content ?? "")
+  const content = String(fieldsOf(ev.data).content ?? "")
   if (ev.type === "user.message" && !content.startsWith(REPORT_NUDGE)) factory.turns.set(w.id, freshTurn(Date.now()))
   if (ev.type === "session.error") factory.turn(w.id).blocked = true
   if (ev.type !== "session.idle") return
@@ -454,8 +517,8 @@ const cleanMergedThread = async (t: Thread): Promise<void> => {
   if (!t.worktree || t.cleanedAt || conversationBusy(t.id)) return
   const repo = threads.folder(t.folderId)?.path
   if (!repo || !fullyMerged(repo, t as Worktree)) return
-  const s = factory.sdlc.get(subId(t.id))
-  if (s?.gates.some((g) => g.id === "postMerge" && g.chosen))
+  const sdlc = factory.sdlc.get(subId(t.id))
+  if (sdlc?.gates.some((g) => g.id === "postMerge" && g.chosen))
     void postMergeCheck(repo, t.branch!).then((r) => {
       factory.publish(subId(t.id), "factory.post_merge", null, now(), { threadId: t.id, ...r })
       if (!r.ok) deliverAndLog(reportTarget(t, threads.list(), deskThread().id), `[post-merge ${t.title}] ${r.detail}`)
@@ -513,14 +576,20 @@ const clientCalls = new Map<string, (content: string) => void>()
 const CLIENT_TOOL_TIMEOUT_MS = 120_000
 
 /** An AG-UI client tool as a session tool: the handler waits until the next run carries the browser's result. */
-const clientTool = (t: { name: string; description?: unknown; parameters?: unknown }): Tool<any> =>
-  defineTool(t.name, {
+const clientTool = (t: { name: string; description?: unknown; parameters?: unknown }): Tool<Record<string, unknown>> =>
+  defineTool<Record<string, unknown>>(t.name, {
     description: String(t.description ?? ""),
     parameters: (t.parameters ?? { type: "object", properties: {} }) as Record<string, unknown>,
     handler: (_args: unknown, inv: { toolCallId: string }) =>
       new Promise<string>((resolve) => {
-        const timer = setTimeout(() => (clientCalls.delete(inv.toolCallId), resolve("The UI did not run this tool in time.")), CLIENT_TOOL_TIMEOUT_MS)
-        clientCalls.set(inv.toolCallId, (content) => (clearTimeout(timer), clientCalls.delete(inv.toolCallId), resolve(content)))
+        const timer = setTimeout(
+          () => (clientCalls.delete(inv.toolCallId), resolve("The UI did not run this tool in time.")),
+          CLIENT_TOOL_TIMEOUT_MS,
+        )
+        clientCalls.set(
+          inv.toolCallId,
+          (content) => (clearTimeout(timer), clientCalls.delete(inv.toolCallId), resolve(content)),
+        )
       }),
   })
 
@@ -531,8 +600,14 @@ const clientTool = (t: { name: string; description?: unknown; parameters?: unkno
 const syncClientTools = async (w: Worker, tools: unknown): Promise<Set<string>> => {
   if (!w.session.setTools) return new Set()
   const own = new Set(w.tools.map((t) => t.name))
-  const list = (Array.isArray(tools) ? tools : []).filter((t: any) => typeof t?.name === "string" && !own.has(t.name))
-  const key = list.map((t: any) => t.name).sort().join(",")
+  const list = listOf(tools).flatMap((t) => {
+    const { name, description, parameters } = fieldsOf(t)
+    return typeof name === "string" && !own.has(name) ? [{ name, description, parameters }] : []
+  })
+  const key = list
+    .map((t) => t.name)
+    .sort()
+    .join(",")
   if (key !== w.clientToolKey) {
     try {
       await w.session.setTools([...w.tools, ...list.map(clientTool)])
@@ -542,7 +617,7 @@ const syncClientTools = async (w: Worker, tools: unknown): Promise<Set<string>> 
       return new Set()
     }
   }
-  return new Set(list.map((t: any) => t.name))
+  return new Set(list.map((t) => t.name))
 }
 
 /**
@@ -551,16 +626,18 @@ const syncClientTools = async (w: Worker, tools: unknown): Promise<Set<string>> 
  * Returns the answer prompts for the coordinator.
  */
 const resumeAnswers = (resume: unknown): string[] =>
-  (Array.isArray(resume) ? resume : []).flatMap((r: any) => {
-    if (r?.status !== "resolved" || typeof r.payload?.answer !== "string") return []
+  listOf(resume).flatMap((entry) => {
+    const r = fieldsOf(entry)
+    const payload = fieldsOf(r.payload)
+    if (r.status !== "resolved" || typeof payload.answer !== "string") return []
     try {
-      const note = typeof r.payload.note === "string" && r.payload.note.trim() ? r.payload.note.trim() : null
-      const a = factory.approvals.answer(String(r.interruptId), r.payload.answer, note)
+      const note = typeof payload.note === "string" && payload.note.trim() ? payload.note.trim() : null
+      const a = factory.approvals.answer(String(r.interruptId), payload.answer, note)
       factory.publish("coordinator", "factory.approval_answered", null, now(), a)
       return [answerPrompt(a)]
     } catch (e) {
       // Answered elsewhere first, or an unknown id: the coordinator already got that answer.
-      console.error(`resume ${r.interruptId}: ${e instanceof Error ? e.message : e}`)
+      console.error(`resume ${String(r.interruptId)}: ${e instanceof Error ? e.message : e}`)
       return []
     }
   })
@@ -570,7 +647,13 @@ const workerCard = (ev: FeedEvent): Record<string, unknown> => {
   if (ev.type === "factory.worker_stopped") return { id: ev.workerId, status: "stopped" }
   const w = ev.data as Record<string, unknown>
   const pick = ["id", "name", "status", "harness", "model", "task", "lastMessage"] as const
-  return Object.fromEntries(pick.flatMap((k) => (w[k] === undefined || w[k] === null ? [] : [[k, k === "lastMessage" || k === "task" ? String(w[k]).slice(0, 300) : w[k]]])))
+  return Object.fromEntries(
+    pick.flatMap((k) =>
+      w[k] === undefined || w[k] === null
+        ? []
+        : [[k, k === "lastMessage" || k === "task" ? String(w[k]).slice(0, 300) : w[k]]],
+    ),
+  )
 }
 
 type RunOptions = {
@@ -593,7 +676,12 @@ const streamAguiRun = (worker: Worker, threadId: string, runId: string, o: RunOp
     interrupts: o.interrupts,
     pending: (id) => factory.approvals.get(id)?.status === "pending",
     clientTool: (name) => o.clientTools.has(name),
-    ...(o.openUi ? { card: (name: string, result: string, args: Record<string, unknown>, prefix: string) => cardOpenUi(name, result, worker.id, args, prefix) } : {}),
+    ...(o.openUi
+      ? {
+          card: (name: string, result: string, args: Record<string, unknown>, prefix: string) =>
+            cardOpenUi(name, result, worker.id, args, prefix),
+        }
+      : {}),
   })
   for (const id of o.delivered) tr.clientCalls.add(id)
   const rec = new RunRecorder()
@@ -608,7 +696,10 @@ const streamAguiRun = (worker: Worker, threadId: string, runId: string, o: RunOp
     let offEvents = () => {}
     let offFeed = () => {}
     const handle = (events: unknown[]) => {
-      for (const e of events) (rec.add(e), send(e))
+      for (const e of events) {
+        rec.add(e)
+        send(e)
+      }
       if (!tr.done) return
       offEvents()
       offFeed()
@@ -619,7 +710,11 @@ const streamAguiRun = (worker: Worker, threadId: string, runId: string, o: RunOp
     }
     offEvents = worker.events.subscribe((ev) => handle(tr.translate(ev)))
     offFeed = factory.feed.subscribe((ev) => {
-      if (ev.type === "factory.worker_started" && ev.data?.owner === worker.id) mine.add(ev.workerId)
+      if (
+        ev.type === "factory.worker_started" &&
+        Option.exists(decodeOwner(ev.data), ({ owner }) => owner === worker.id)
+      )
+        mine.add(ev.workerId)
       if (!mine.has(ev.workerId) || !/^factory\.worker_(started|updated|stopped)$/.test(ev.type)) return
       handle(tr.activity(`worker-${ev.workerId}`, "worker", workerCard(ev)))
     })
@@ -669,8 +764,8 @@ const CAPABILITIES = {
  * answers to the decisions the last run ended with, or results of client tools the last run ended at.
  */
 const aguiRun = async (id: string | null, url: URL, req: Request): Promise<Response> => {
-  const input = (await req.json().catch(() => ({}))) as any
-  const threadId: string = input.threadId ?? "default"
+  const input = fieldsOf(await req.json().catch(() => ({})))
+  const threadId = typeof input.threadId === "string" ? input.threadId : "default"
   const prompt = newUserText(input)
   const ensureError = ensureAguiThread(threadId, prompt, req)
   if (ensureError) return ensureError
@@ -680,18 +775,34 @@ const aguiRun = async (id: string | null, url: URL, req: Request): Promise<Respo
     )
   const worker = await findAguiWorker(id, threadId)
   if (worker instanceof Response) return worker
-  const runId = input.runId ?? crypto.randomUUID()
-  const props = (input.forwardedProps ?? {}) as { answer?: unknown; interrupts?: unknown }
+  const runId = typeof input.runId === "string" ? input.runId : crypto.randomUUID()
+  const props = fieldsOf(input.forwardedProps)
   const format = typeof props.answer === "string" ? props.answer : url.searchParams.get("answer")
   const clientTools = await syncClientTools(worker, input.tools)
-  const results = (input.messages ?? []).filter((m: any) => m?.role === "tool" && clientCalls.has(m.toolCallId))
+  const results = listOf(input.messages).flatMap((entry) => {
+    const { role, id: messageId, toolCallId, content } = fieldsOf(entry)
+    return role === "tool" && typeof toolCallId === "string" && clientCalls.has(toolCallId)
+      ? [{ id: messageId, toolCallId, content }]
+      : []
+  })
   const answers = resumeAnswers(input.resume)
   const text = [...answers, ...(prompt === null ? [] : [prompt])].join("\n\n")
   const start = (): (() => Promise<unknown>) | null => {
     if (results.length) {
       // The browser ran the client tools: save their results and let the waiting session continue.
-      threads.append(threadId, ...results.map((m: any) => ({ id: String(m.id ?? crypto.randomUUID()), role: "tool" as const, toolCallId: m.toolCallId, content: String(m.content ?? "") })))
-      return async () => results.forEach((m: any) => clientCalls.get(m.toolCallId)?.(typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
+      threads.append(
+        threadId,
+        ...results.map((m) => ({
+          id: String(m.id ?? crypto.randomUUID()),
+          role: "tool" as const,
+          toolCallId: m.toolCallId,
+          content: String(m.content ?? ""),
+        })),
+      )
+      return async () =>
+        results.forEach((m) =>
+          clientCalls.get(m.toolCallId)?.(typeof m.content === "string" ? m.content : JSON.stringify(m.content)),
+        )
     }
     if (!text) return null
     recordAguiPrompt(worker, threadId, text)
@@ -702,7 +813,7 @@ const aguiRun = async (id: string | null, url: URL, req: Request): Promise<Respo
     start: start(),
     interrupts: props.interrupts === true,
     clientTools,
-    delivered: results.map((m: any) => String(m.toolCallId)),
+    delivered: results.map((m) => m.toolCallId),
     openUi: format === "openui",
   })
 }
@@ -738,10 +849,28 @@ const feed = (req: Request, url: URL): Response => {
     if (held) {
       const replay = factory.store.after(since, REPLAY_LIMIT, worker)
       let last = since
-      for (const ev of replay ?? []) (send(ev), (last = ev.seq))
-      send({ seq: -1, workerId: "", type: "factory.feed_replay", agentId: null, timestamp: now(), data: { complete: replay !== null, replayed: replay?.length ?? 0 } })
+      for (const ev of replay ?? []) {
+        send(ev)
+        last = ev.seq
+      }
+      send({
+        seq: -1,
+        workerId: "",
+        type: "factory.feed_replay",
+        agentId: null,
+        timestamp: now(),
+        data: { complete: replay !== null, replayed: replay?.length ?? 0 },
+      })
       // Status changes are not stored; send the current state of every agent instead.
-      for (const w of factory.workers.values()) send({ seq: -1, workerId: w.id, type: "factory.worker_updated", agentId: null, timestamp: now(), data: w.summary() })
+      for (const w of factory.workers.values())
+        send({
+          seq: -1,
+          workerId: w.id,
+          type: "factory.worker_updated",
+          agentId: null,
+          timestamp: now(),
+          data: w.summary(),
+        })
       for (const ev of held) if (ev.seq > last || ev.seq < 0) send(ev)
       held = null
     }
@@ -755,10 +884,13 @@ const answerApproval = (a: ReturnType<typeof factory.approvals.answer>) => deliv
 /** Shadow mode: Jev predicts each new decision's answer from INSTRUCTIONS.md (re-read each time, so edits apply at once). */
 factory.feed.subscribe((ev) => {
   if (ev.type !== "factory.approval_requested") return
-  predict(ev.data, readInstructions())
+  const requested = Option.flatMap(decodeId(ev.data), ({ id }) => Option.fromNullishOr(factory.approvals.get(id)))
+  if (Option.isNone(requested)) return
+  const { id } = requested.value
+  predict(requested.value, readInstructions())
     .catch((e) => (console.error(`shadow prediction failed: ${e}`), null))
     .then((shadow) => {
-      const a = factory.approvals.setShadow(ev.data.id, shadow)
+      const a = factory.approvals.setShadow(id, shadow)
       if (a) factory.publish("coordinator", "factory.approval_shadowed", null, now(), a)
     })
 })
@@ -796,8 +928,11 @@ const latestWorkerActivity = (worker: Worker): string =>
     .slice(-6)
     .map((e) =>
       e.type === "tool.execution_start"
-        ? `${e.data?.toolName} ${JSON.stringify(e.data?.arguments ?? {}).slice(0, 200)}`
-        : String(e.data?.content ?? "").slice(0, 300),
+        ? Option.match(decodeToolStart(e.data), {
+            onNone: () => "",
+            onSome: (d) => `${d.toolName} ${JSON.stringify(d.arguments ?? {}).slice(0, 200)}`,
+          })
+        : Option.match(decodeContent(e.data), { onNone: () => "", onSome: (d) => d.content.slice(0, 300) }),
     )
     .join("\n")
 
@@ -853,7 +988,10 @@ const sendSupervisionIssues = (issues: Issue[], coordinator: Worker): void => {
     if (recipient.status === "running") continue
     for (const issue of list) reported.set(`${issue.worker}|${issue.kind}`, issue.detail)
     if (recipient === coordinator) toDesk(supervisorPrompt(list))
-    else recipient.send(factory.coordinatorPrompt(supervisorPrompt(list))).catch((e) => console.error(`supervisor prompt failed: ${e}`))
+    else
+      recipient
+        .send(factory.coordinatorPrompt(supervisorPrompt(list)))
+        .catch((e) => console.error(`supervisor prompt failed: ${e}`))
   }
 }
 
@@ -881,7 +1019,11 @@ const drafts = makeDrafts({
   spawn: (spec) =>
     spawnHealing(
       factory,
-      { id: spec.owner, threadId: threads.list().find((t) => t.worktree === spec.workdir)?.id ?? null, workdir: spec.workdir },
+      {
+        id: spec.owner,
+        threadId: threads.list().find((t) => t.worktree === spec.workdir)?.id ?? null,
+        workdir: spec.workdir,
+      },
       { ...spec, role: "worker", auth: factory.defaultAuth },
     ),
   isRunning: (workerId) => factory.workers.get(workerId)?.status === "running",
@@ -891,7 +1033,9 @@ const drafts = makeDrafts({
   discard: (t) => deleteThread(t.id),
   // Awaits the hand-off, so a failed delivery rejects and run() unlocks the draft.
   deliver: async (id, text) => {
-    await (await deliverToThread(id, text)).sent
+    await (
+      await deliverToThread(id, text)
+    ).sent
   },
   stopSub: async (id) => {
     if (factory.workers.has(subId(id))) await factory.stop(subId(id))
@@ -901,10 +1045,28 @@ const drafts = makeDrafts({
   changed: (threadId) => factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId }),
 })
 
+/** Read one payload shape from a feed event; a payload of another shape gives None. */
+const decodeOwner = Schema.decodeUnknownOption(Schema.Struct({ owner: Schema.NullOr(Schema.String) }))
+const decodeId = Schema.decodeUnknownOption(Schema.Struct({ id: Schema.String }))
+const decodeToolStart = Schema.decodeUnknownOption(
+  Schema.Struct({ toolName: Schema.String, arguments: Schema.optionalKey(Schema.Unknown) }),
+)
+const decodeContent = Schema.decodeUnknownOption(Schema.Struct({ content: Schema.String }))
+
 const CreateBody = Schema.Struct({ folderId: Schema.String, prompt: Schema.String })
 const VersionBody = Schema.Struct({ prompt: Schema.String })
 const CurrentBody = Schema.Struct({ versionId: Schema.String })
 const PickBody = Schema.Struct({ index: Schema.Int })
+
+/**
+ * The thread fields a PATCH may change: title, cleanedAt, archivedAt. An archivedAt that is not a number (null)
+ * is sent as present but empty, so the update clears it.
+ */
+const threadPatch = (b: Fields): Partial<Thread> => ({
+  ...(typeof b.title === "string" ? { title: b.title } : {}),
+  ...(typeof b.cleanedAt === "number" ? { cleanedAt: b.cleanedAt } : {}),
+  ...("archivedAt" in b ? { archivedAt: typeof b.archivedAt === "number" ? b.archivedAt : undefined } : {}),
+})
 
 /** Decode a draft request body; bad JSON or a bad shape is a 400. */
 const draftBody = async <A>(req: Request, schema: Schema.Codec<A, unknown>): Promise<A> => {
@@ -937,7 +1099,9 @@ const draftReply = async (run: () => unknown): Promise<Response> => {
 type Handler = (req: Request, url: URL, params: string[]) => Response | Promise<Response>
 /** The repo conversation an agent works in: its own (sub-coordinator), its owner's, or the one whose worktree it uses. */
 const threadOfAgent = (w: Worker): Thread | undefined =>
-  threads.list().find((t) => t.worktree && (t.worktree === w.spec?.workdir || subId(t.id) === w.id || subId(t.id) === w.owner))
+  threads
+    .list()
+    .find((t) => t.worktree && (t.worktree === w.spec?.workdir || subId(t.id) === w.id || subId(t.id) === w.owner))
 
 /** The tool scope of a coordinator by worker id: a repo sub-coordinator's worktree, a General chat's thread, the desk. */
 const cardScope = (id: string): Scope => {
@@ -947,7 +1111,10 @@ const cardScope = (id: string): Scope => {
   return { id, threadId: t?.id ?? null }
 }
 
-const goals = makeGoals(goalsDir(), STEPS.map((s) => s.id))
+const goals = makeGoals(
+  goalsDir(),
+  STEPS.map((step) => step.id),
+)
 /** prototypes/software-factory: its commit (and dirty flag) is the factory version a goal run ran on. */
 const FACTORY_DIR = path.resolve(new URL(".", import.meta.url).pathname, "../..")
 
@@ -957,24 +1124,41 @@ const goalReply = async (run: () => unknown): Promise<Response> => {
     const v = await run()
     return v === null ? json({ error: "not found" }, 404) : json(v)
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : String(e) }, e instanceof GoalError || e instanceof SyntaxError ? 400 : 500)
+    return json(
+      { error: e instanceof Error ? e.message : String(e) },
+      e instanceof GoalError || e instanceof SyntaxError ? 400 : 500,
+    )
   }
 }
 
 /** SDLC record of a conversation: tier, criteria and which lack PASS evidence, gates, code reviews, metrics. */
 const runSdlc = (scopeId: string, workdir: string | undefined): Run["sdlc"] => {
-  const s = factory.sdlc.get(scopeId)
-  if (!s) return null
-  const evidence = workdir && existsSync(artifact(workdir, "evidence.md")) ? readFileSync(artifact(workdir, "evidence.md"), "utf8") : null
+  const sdlc = factory.sdlc.get(scopeId)
+  if (!sdlc) return null
+  const evidence =
+    workdir && existsSync(artifact(workdir, "evidence.md"))
+      ? readFileSync(artifact(workdir, "evidence.md"), "utf8")
+      : null
   return {
-    tier: s.risk?.tier ?? null,
-    criteria: s.criteria,
-    unproven: unprovenCriteria(s.criteria, evidence),
-    gates: s.gates,
+    tier: sdlc.risk?.tier ?? null,
+    criteria: sdlc.criteria,
+    unproven: unprovenCriteria(sdlc.criteria, evidence),
+    gates: sdlc.gates,
     codeReviews: [...factory.codeReviews.values()]
       .filter((r) => r.scopeId === scopeId)
-      .map((r) => ({ id: r.id, status: r.status, lenses: r.lenses, kept: r.findings.filter((x) => x.keep).length, dropped: r.findings.filter((x) => !x.keep).length })),
-    metrics: { minutes: Math.round((Date.now() - s.startedAt) / 60_000), workers: s.workers, findingsKept: s.findings.kept, findingsDropped: s.findings.dropped },
+      .map((r) => ({
+        id: r.id,
+        status: r.status,
+        lenses: r.lenses,
+        kept: r.findings.filter((x) => x.keep).length,
+        dropped: r.findings.filter((x) => !x.keep).length,
+      })),
+    metrics: {
+      minutes: Math.round((Date.now() - sdlc.startedAt) / 60_000),
+      workers: sdlc.workers,
+      findingsKept: sdlc.findings.kept,
+      findingsDropped: sdlc.findings.dropped,
+    },
   }
 }
 
@@ -1004,8 +1188,17 @@ const runRecord = async (threadId: string): Promise<Run | null> => {
     approvals: factory.approvals
       .list()
       .filter((a) => a.threadId === t.id || a.reportThreadId === t.id)
-      .map((a) => ({ id: a.id, title: a.title, topic: a.topic ?? "other", status: a.status, answer: a.answer, options: a.options })),
-    securityReviews: [...factory.securityReviews.values()].filter((r) => r.threadId === t.id).map((r) => ({ id: r.id, status: r.status })),
+      .map((a) => ({
+        id: a.id,
+        title: a.title,
+        topic: a.topic ?? "other",
+        status: a.status,
+        answer: a.answer,
+        options: a.options,
+      })),
+    securityReviews: [...factory.securityReviews.values()]
+      .filter((r) => r.threadId === t.id)
+      .map((r) => ({ id: r.id, status: r.status })),
     report: latestReport(t.id),
     sdlc: runSdlc(subId(t.id), t.worktree),
     pr: repo && t.branch ? await branchPr(repo, t.branch) : null,
@@ -1055,13 +1248,15 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/cards\/start-finding$/,
     async (req) => {
       try {
-        const b = (await req.json()) as any
-        const scope = cardScope(String(b?.scope ?? DESK_ID))
-        const r = findReport(threads.list(), String(b?.path ?? ""), scope.threadId)
+        const b = fieldsOf(await req.json())
+        const scope = cardScope(String(b.scope ?? DESK_ID))
+        const r = findReport(threads.list(), String(b.path ?? ""), scope.threadId)
         if (!r) return bad("report not found")
-        const f = reportFindings(r.content).find((x) => x.rank === Number(b?.rank))
-        if (!f) return bad(`finding ${b?.rank} not found`)
-        return json(await startConversation(r.folderId, findingTask(r, { title: `${f.rank}. ${f.title}`, body: f.body })))
+        const f = reportFindings(r.content).find((x) => x.rank === Number(b.rank))
+        if (!f) return bad(`finding ${String(b.rank)} not found`)
+        return json(
+          await startConversation(r.folderId, findingTask(r, { title: `${f.rank}. ${f.title}`, body: f.body })),
+        )
       } catch (e) {
         return bad(e)
       }
@@ -1075,8 +1270,18 @@ const routes: [string, RegExp, Handler][] = [
     (_req, url) => {
       const name = url.searchParams.get("name") ?? ""
       if (!CARD_TOOLS.has(name)) return bad(`unknown card ${name}`)
-      const path = url.searchParams.get("path")
-      return json(cardView(name, cardData(factory, cardScope(url.searchParams.get("scope") ?? DESK_ID), name, path ? { path } : {})))
+      const cardPath = url.searchParams.get("path")
+      return json(
+        cardView(
+          name,
+          cardData(
+            factory,
+            cardScope(url.searchParams.get("scope") ?? DESK_ID),
+            name,
+            cardPath ? { path: cardPath } : {},
+          ),
+        ),
+      )
     },
   ],
   [
@@ -1090,7 +1295,7 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/folders$/,
     async (req) => {
       try {
-        const f = threads.addFolder(String(((await req.json()) as any).path ?? ""))
+        const f = threads.addFolder(String(bodyFields(await req.json()).path ?? ""))
         factory.publish("coordinator", "factory.thread_updated", null, now(), { folderId: f.id })
         return json(f)
       } catch (e) {
@@ -1114,7 +1319,7 @@ const routes: [string, RegExp, Handler][] = [
     async (req) => {
       // Open a decision directly (tests, scripts). Same shape as the coordinator tools.
       try {
-        const b = (await req.json()) as any
+        const b = bodyFields(await req.json())
         const item = factory.approvals.open({
           kind: b.kind === "question" ? "question" : "approval",
           threadId: typeof b.threadId === "string" ? b.threadId : null,
@@ -1137,7 +1342,7 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/approvals\/([^/]+)$/,
     async (req, _url, [id]) => {
       try {
-        const b = (await req.json()) as any
+        const b = bodyFields(await req.json())
         const a = factory.approvals.answer(
           id!,
           String(b.answer),
@@ -1158,7 +1363,7 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/extension-errors$/,
     async (req) => {
       // Browsers report extension failures here so the agent can see and fix them.
-      const b = (await req.json().catch(() => ({}))) as any
+      const b = bodyFields(await req.json().catch(() => ({})))
       const ext = typeof b.extension === "string" ? b.extension : "?"
       const ui = typeof b.ui === "string" ? b.ui : "?"
       const entry = { extension: ext, ui, error: b.error ?? null, at: now() }
@@ -1172,7 +1377,13 @@ const routes: [string, RegExp, Handler][] = [
   [
     "GET",
     /^\/api\/workers\/past$/,
-    () => json(pastWorkers(factory.store.latestTimed("factory.worker_started", 100_000) as { ts: number; data: WorkerSummary }[], (id) => factory.workers.has(id))),
+    () =>
+      json(
+        pastWorkers(
+          factory.store.latestTimed("factory.worker_started", 100_000) as { ts: number; data: WorkerSummary }[],
+          (id) => factory.workers.has(id),
+        ),
+      ),
   ],
   [
     "DELETE",
@@ -1192,8 +1403,9 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/workers\/([^/]+)\/message$/,
     async (req, _url, [id]) => {
       try {
-        const body = (await req.json()) as any
+        const body = bodyFields(await req.json())
         const prompt = body.prompt
+        if (typeof prompt !== "string") return bad("prompt must be a string")
         // A coordinator's prompt is saved as a turn in its conversation, so every chat shows it and the answer.
         // The caller may name the conversation (the card it answers came from); it must belong to this coordinator.
         const named = typeof body.threadId === "string" ? body.threadId : undefined
@@ -1236,8 +1448,8 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/reports\/start$/,
     async (req) => {
       try {
-        const b = (await req.json()) as any
-        const r = findReport(threads.list(), String(b?.path ?? ""), b?.thread ?? null)
+        const b = fieldsOf(await req.json())
+        const r = findReport(threads.list(), String(b.path ?? ""), typeof b.thread === "string" ? b.thread : null)
         if (!r) return bad("report not found")
         if (typeof b.title !== "string" || !b.title.trim()) return bad("finding title required")
         return json(await startConversation(r.folderId, findingTask(r, { title: b.title, body: String(b.body ?? "") })))
@@ -1269,7 +1481,8 @@ const routes: [string, RegExp, Handler][] = [
     (_req, url, [id]) => {
       try {
         // ?from=SEQ&before=SEQ: the stored events older than a loaded window (to reach an old search hit).
-        const from = Number(url.searchParams.get("from")), before = Number(url.searchParams.get("before"))
+        const from = Number(url.searchParams.get("from")),
+          before = Number(url.searchParams.get("before"))
         if (from > 0 && before > 0) return json(factory.store.between(id!, from, before, KEEP_PER_WORKER))
         // A stopped agent's history comes from the event store.
         const w = factory.workers.get(id!)
@@ -1315,46 +1528,84 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/agui\/capabilities$/, () => json(CAPABILITIES)],
   ["POST", /^\/api\/agui$/, (req, url) => aguiRun(null, url, req)],
   ["POST", /^\/api\/agui\/([^/]+)$/, (req, url, [id]) => aguiRun(id!, url, req)],
-  ["GET", /^\/api\/runs\/([^/]+)$/, async (_req, _url, [id]) => {
-    const run = await runRecord(id!)
-    return run ? json(run) : json({ error: `no thread ${id}` }, 404)
-  }],
-  ["GET", /^\/api\/files\/image$/, (_req, url) => {
-    const r = servableImage(url.searchParams.get("path") ?? "", [factory.root, worktreeRoot(), ARTIFACTS_DIR])
-    return "error" in r ? json({ error: r.error }, 404) : new Response(Bun.file(r.path), { headers: { "content-type": r.type, "cache-control": "no-store" } })
-  }],
-  ["GET", /^\/api\/goals$/, () => goalReply(() => ({ dir: goals.dir, factoryCommit: checkoutCommit(FACTORY_DIR), goals: goals.list() }))],
+  [
+    "GET",
+    /^\/api\/runs\/([^/]+)$/,
+    async (_req, _url, [id]) => {
+      const run = await runRecord(id!)
+      return run ? json(run) : json({ error: `no thread ${id}` }, 404)
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/files\/image$/,
+    (_req, url) => {
+      const r = servableImage(url.searchParams.get("path") ?? "", [factory.root, worktreeRoot(), ARTIFACTS_DIR])
+      return "error" in r
+        ? json({ error: r.error }, 404)
+        : new Response(Bun.file(r.path), { headers: { "content-type": r.type, "cache-control": "no-store" } })
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/goals$/,
+    () => goalReply(() => ({ dir: goals.dir, factoryCommit: checkoutCommit(FACTORY_DIR), goals: goals.list() })),
+  ],
   ["POST", /^\/api\/goals$/, (req) => goalReply(async () => goals.save(await req.json()))],
   ["GET", /^\/api\/goals\/([^/]+)$/, (_req, _url, [id]) => goalReply(() => goals.get(id!))],
-  ["GET", /^\/api\/goals\/([^/]+)\/prompt$/, (_req, _url, [id]) => goalReply(() => {
-    const spec = goals.get(id!)
-    return spec && { skill: `/factory-loop ${spec.id}`, prompt: loopPrompt(readFileSync(path.join(FACTORY_DIR, "skills/factory-loop/SKILL.md"), "utf8"), spec) }
-  })],
+  [
+    "GET",
+    /^\/api\/goals\/([^/]+)\/prompt$/,
+    (_req, _url, [id]) =>
+      goalReply(() => {
+        const spec = goals.get(id!)
+        return (
+          spec && {
+            skill: `/factory-loop ${spec.id}`,
+            prompt: loopPrompt(readFileSync(path.join(FACTORY_DIR, "skills/factory-loop/SKILL.md"), "utf8"), spec),
+          }
+        )
+      }),
+  ],
   ["GET", /^\/api\/goals\/([^/]+)\/runs$/, (_req, _url, [id]) => goalReply(() => goals.runs(id!))],
-  ["POST", /^\/api\/goals\/([^/]+)\/runs$/, (req, _url, [id]) => goalReply(async () => goals.appendRun(id!, { factoryCommit: checkoutCommit(FACTORY_DIR), ...(await req.json()) }))],
+  [
+    "POST",
+    /^\/api\/goals\/([^/]+)\/runs$/,
+    (req, _url, [id]) =>
+      goalReply(async () =>
+        goals.appendRun(id!, { factoryCommit: checkoutCommit(FACTORY_DIR), ...(await req.json()) }),
+      ),
+  ],
   ["GET", /^\/api\/threads\/get$/, () => json({ threads: threads.list(), folders: threads.folders() })],
   ["GET", /^\/api\/threads\/get\/([^/]+)$/, (_req, _url, [id]) => json(threads.messages(id!))],
   // Diff panel: every change of the conversation's worktree against its base. A thread without a worktree
   // (general chat) shows the factory run worktree. Paths come from the server only, never from the request.
-  ["GET", /^\/api\/threads\/([^/]+)\/diff$/, (_req, _url, [id]) => {
-    const t = threads.get(id!)
-    const wt = t?.worktree && !t.cleanedAt ? { worktree: t.worktree, base: t.base } : factory.run && { worktree: factory.run.worktree, base: factory.run.base }
-    if (!wt?.base) return new Response("no worktree for this conversation", { status: 404 })
-    try {
-      return json(worktreeDiff(wt.worktree, wt.base))
-    } catch (e) {
-      return new Response(`git diff failed: ${e instanceof Error ? e.message : String(e)}`, { status: 500 })
-    }
-  }],
+  [
+    "GET",
+    /^\/api\/threads\/([^/]+)\/diff$/,
+    (_req, _url, [id]) => {
+      const t = threads.get(id!)
+      const wt =
+        t?.worktree && !t.cleanedAt
+          ? { worktree: t.worktree, base: t.base }
+          : factory.run && { worktree: factory.run.worktree, base: factory.run.base }
+      if (!wt?.base) return new Response("no worktree for this conversation", { status: 404 })
+      try {
+        return json(worktreeDiff(wt.worktree, wt.base))
+      } catch (e) {
+        return new Response(`git diff failed: ${e instanceof Error ? e.message : String(e)}`, { status: 500 })
+      }
+    },
+  ],
   [
     "POST",
     /^\/api\/threads\/create$/,
     async (req) => {
-      const b = (await req.json().catch(() => ({}))) as any
-      const first = b?.messages?.[0]?.content
-      const folderId = typeof b?.folderId === "string" ? b.folderId : cookieFolder(req)
+      const b = fieldsOf(await req.json().catch(() => ({})))
+      const first = fieldsOf(listOf(b.messages)[0]).content
+      const folderId = typeof b.folderId === "string" ? b.folderId : cookieFolder(req)
       try {
-        const base = typeof b?.base === "string" && b.base.trim() ? b.base.trim() : undefined
+        const base = typeof b.base === "string" && b.base.trim() ? b.base.trim() : undefined
         return json(
           createThread(
             typeof first === "string" ? first : null,
@@ -1371,7 +1622,7 @@ const routes: [string, RegExp, Handler][] = [
     "PATCH",
     /^\/api\/threads\/update\/([^/]+)$/,
     async (req, _url, [id]) => {
-      const t = threads.update(id!, (await req.json()) as any)
+      const t = threads.update(id!, threadPatch(bodyFields(await req.json())))
       // Archiving a General chat stops its session; its next message starts it again.
       if (t?.archivedAt && !t.worktree && !t.desk && factory.workers.has(genId(t.id))) await factory.stop(genId(t.id))
       if (t) factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
@@ -1386,16 +1637,37 @@ const routes: [string, RegExp, Handler][] = [
       return empty(204)
     },
   ],
-  ["POST", /^\/api\/drafts$/, (req) => draftReply(async () => {
-    const b = await draftBody(req, CreateBody)
-    return drafts.create(b.folderId, b.prompt)
-  })],
-  ["POST", /^\/api\/drafts\/([^/]+)\/versions$/, (req, _url, [id]) => draftReply(async () => drafts.addVersion(id!, (await draftBody(req, VersionBody)).prompt))],
-  ["POST", /^\/api\/drafts\/([^/]+)\/current$/, (req, _url, [id]) => draftReply(async () => drafts.setCurrent(id!, (await draftBody(req, CurrentBody)).versionId))],
+  [
+    "POST",
+    /^\/api\/drafts$/,
+    (req) =>
+      draftReply(async () => {
+        const b = await draftBody(req, CreateBody)
+        return drafts.create(b.folderId, b.prompt)
+      }),
+  ],
+  [
+    "POST",
+    /^\/api\/drafts\/([^/]+)\/versions$/,
+    (req, _url, [id]) => draftReply(async () => drafts.addVersion(id!, (await draftBody(req, VersionBody)).prompt)),
+  ],
+  [
+    "POST",
+    /^\/api\/drafts\/([^/]+)\/current$/,
+    (req, _url, [id]) => draftReply(async () => drafts.setCurrent(id!, (await draftBody(req, CurrentBody)).versionId)),
+  ],
   ["POST", /^\/api\/drafts\/([^/]+)\/enhance$/, (_req, _url, [id]) => draftReply(() => drafts.enhance(id!))],
-  ["POST", /^\/api\/drafts\/([^/]+)\/pick$/, (req, _url, [id]) => draftReply(async () => drafts.pick(id!, (await draftBody(req, PickBody)).index))],
+  [
+    "POST",
+    /^\/api\/drafts\/([^/]+)\/pick$/,
+    (req, _url, [id]) => draftReply(async () => drafts.pick(id!, (await draftBody(req, PickBody)).index)),
+  ],
   ["POST", /^\/api\/drafts\/([^/]+)\/dismiss$/, (_req, _url, [id]) => draftReply(async () => drafts.dismiss(id!))],
-  ["POST", /^\/api\/drafts\/([^/]+)\/(council|debate|research|hyperresearch)$/, (_req, _url, [id, action]) => draftReply(() => drafts.act(id!, action as DraftAction))],
+  [
+    "POST",
+    /^\/api\/drafts\/([^/]+)\/(council|debate|research|hyperresearch)$/,
+    (_req, _url, [id, action]) => draftReply(() => drafts.act(id!, action as DraftAction)),
+  ],
   ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => draftReply(() => drafts.run(id!))],
   ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => draftReply(() => drafts.remove(id!))],
   ["GET", /^\/api\/artifacts$/, () => json({ artifacts: [] })],

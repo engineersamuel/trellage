@@ -1,4 +1,4 @@
-/* Factory stream: shared by the Org Canvas rail and the Inbox 📡 Factory stream view (shared/protos/stream.ts). */
+/* Factory stream: the Inbox 📡 Factory stream view (shared/protos/stream.ts). */
 .sf-stream .p2-rail-head { flex: none; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 10px; border-bottom: 1px solid var(--sf-border); box-sizing: border-box; }
 .sf-stream .p2-rail-toggle { flex: none; width: 32px; height: 32px; border: 1px solid var(--sf-border); border-radius: 8px; background: var(--sf-bg); color: var(--sf-muted); }
 .sf-stream .p2-rail-toggle:hover { color: var(--sf-text); border-color: var(--sf-accent); }

@@ -1,15 +1,42 @@
 // Factory stream: one timeline across agents (Slack-style runs, report/decision/review cards) with full-text search.
-// Shared by the Org Canvas (left rail, scoped to the selected node) and the Inbox (📡 Factory stream view).
+// Used by the Inbox (📡 Factory stream view).
 import "./stream.css"
 import { Schema } from "effect"
 import { markdown } from "../decisions"
 import { json, runOr } from "../http"
 import { SearchHit, StoredEvent } from "../schemas"
-import { agentOfThread, el, isOpenUi, mountTranscript, openDecision, renderOpenUi, statusColor, type Review, type State } from "./core"
+import {
+  agentOfThread,
+  el,
+  isOpenUi,
+  mountTranscript,
+  openDecision,
+  renderOpenUi,
+  statusColor,
+  type Decision,
+  type Review,
+  type State,
+} from "./core"
 
 type Kind = "line" | "user" | "report" | "decision" | "review"
-type Item = { key: string; at: number; agentId: string; kind: Kind; text: string; ref?: any; threadId?: string }
-type Ev = { seq: number; type: string; timestamp: string; data: any }
+type Item = {
+  key: string
+  at: number
+  agentId: string
+  kind: Kind
+  text: string
+  ref?: Decision | Review
+  threadId?: string
+}
+/** Fields of a stored event that the stream reads. */
+type EvData = {
+  content?: unknown
+  threadId?: string
+  parentToolCallId?: unknown
+  toolName?: unknown
+  message?: unknown
+}
+type Ev = { seq: number; type: string; timestamp: string; data: EvData | null }
 export type StreamAgent = { name: string; kind: "desk" | "chat" | "sub" | "worker"; status: string }
 export type StreamHost = {
   /** Name, kind and status of an agent id; undefined when the host does not know it. */
@@ -22,7 +49,7 @@ export type StreamHost = {
   scope?: () => Set<string> | null
   /** Second line of the header. */
   subtitle?: () => string
-  /** Header controls before and after the title (Org Canvas: collapse and Show all). */
+  /** Header controls before and after the title. */
   headBefore?: () => HTMLElement[]
   headAfter?: () => HTMLElement[]
   /** False hides the list (collapsed rail). */
@@ -40,12 +67,19 @@ export const colorOf = (id: string) => {
 }
 /** Long messages and OpenUI programs stand alone as report cards. */
 const isReport = (t: string) => t.length > 220 || isOpenUi(t)
-const clean = (s: string) => s.replace(/<(ui-format|ui-context|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim()
+const clean = (s: string) =>
+  s.replace(/<(ui-format|ui-context|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim()
 const hhmm = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 const day = (t: number) => new Date(t).toDateString()
 const standaloneItem = (it: Item) => it.kind === "report" || it.kind === "decision" || it.kind === "review"
-const startsNewRun = (prev: Item | undefined, it: Item) => prev !== undefined && (prev.agentId !== it.agentId || it.at - prev.at > 600_000)
-const TAG: Record<StreamAgent["kind"], string> = { desk: "desk", chat: "chat", sub: "sub-coordinator", worker: "worker" }
+const startsNewRun = (prev: Item | undefined, it: Item) =>
+  prev !== undefined && (prev.agentId !== it.agentId || it.at - prev.at > 600_000)
+const TAG: Record<StreamAgent["kind"], string> = {
+  desk: "desk",
+  chat: "chat",
+  sub: "sub-coordinator",
+  worker: "worker",
+}
 
 const toItem = (agentId: string, e: Ev, at: number): Item | null => {
   const d = e.data ?? {}
@@ -60,9 +94,9 @@ const toItem = (agentId: string, e: Ev, at: number): Item | null => {
       return t ? { key, at, agentId, kind: isReport(t) ? "report" : "line", text: t, threadId: d.threadId } : null
     }
     case "tool.execution_start":
-      return d.parentToolCallId ? null : { key, at, agentId, kind: "line", text: `⚙ ${d.toolName}` }
+      return d.parentToolCallId ? null : { key, at, agentId, kind: "line", text: `⚙ ${String(d.toolName)}` }
     case "session.error":
-      return { key, at, agentId, kind: "line", text: `✗ ${d.message ?? "error"}` }
+      return { key, at, agentId, kind: "line", text: `✗ ${String(d.message ?? "error")}` }
   }
   return null
 }
@@ -125,10 +159,10 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
     genuiUsed.add(k)
     let g = genui.get(k)
     if (!g) {
-      const el = document.createElement("div")
-      const stop = renderOpenUi(el, program, agentId, threadId)
+      const box = document.createElement("div")
+      const stop = renderOpenUi(box, program, agentId, threadId)
       if (!stop) return null
-      genui.set(k, (g = { el, stop }))
+      genui.set(k, (g = { el: box, stop }))
     }
     return g.el
   }
@@ -141,22 +175,30 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
   const fetchBacklog = (...ids: string[]) => {
     if (!ids.length) return
     for (const id of ids) fetched.add(id)
-    const q = new URLSearchParams({ workers: ids.join(","), types: "user.message,assistant.message,tool.execution_start,session.error", perWorker: "1000" })
-    void runOr(json(`/api/events?${q}`, Schema.Array(StoredEvent)), null)
-      .then((log) => {
-        if (!log || !alive) return
-        for (const id of ids) backlog.set(id, [])
-        for (const e of log) {
-          const it = toItem(e.workerId, e, Date.parse(e.timestamp) || 0)
-          if (it) backlog.get(e.workerId)!.push(it)
-        }
-        backlogVer++
-        renderStream()
-      })
+    const q = new URLSearchParams({
+      workers: ids.join(","),
+      types: "user.message,assistant.message,tool.execution_start,session.error",
+      perWorker: "1000",
+    })
+    void runOr(json(`/api/events?${q}`, Schema.Array(StoredEvent)), null).then((log) => {
+      if (!log || !alive) return
+      for (const id of ids) backlog.set(id, [])
+      for (const e of log) {
+        const it = toItem(e.workerId, e, Date.parse(e.timestamp) || 0)
+        if (it) backlog.get(e.workerId)!.push(it)
+      }
+      backlogVer++
+      renderStream()
+    })
   }
 
   // ---- search ----
-  const HIT_KIND: Record<string, string> = { "user.message": "prompt", "assistant.message": "reply", "tool.execution_start": "tool call", "session.error": "error" }
+  const HIT_KIND: Record<string, string> = {
+    "user.message": "prompt",
+    "assistant.message": "reply",
+    "tool.execution_start": "tool call",
+    "session.error": "error",
+  }
   let searchSeq = 0
   /** Text with «…» match markers as nodes, so search text is never parsed as HTML. */
   const marked = (snippet: string): ChildNode[] =>
@@ -182,11 +224,16 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
             const b = el("button", "p2-hit")
             const at = Date.parse(h.timestamp) || Number(h.timestamp) || 0
             const head = el("div", "p2-hit-head")
-            head.append(el("b", "", nameOf(h.workerId)), el("span", "", `${HIT_KIND[h.type] ?? h.type} · ${at ? new Date(at).toLocaleString() : ""}`))
+            head.append(
+              el("b", "", nameOf(h.workerId)),
+              el("span", "", `${HIT_KIND[h.type] ?? h.type} · ${at ? new Date(at).toLocaleString() : ""}`),
+            )
             const text = el("div", "p2-hit-text")
             text.append(...marked(h.snippet))
             b.append(head, text)
-            b.title = host.agent(h.workerId) ? "Show this match in the agent's transcript" : "This agent has stopped: open its saved history"
+            b.title = host.agent(h.workerId)
+              ? "Show this match in the agent's transcript"
+              : "This agent has stopped: open its saved history"
             b.onclick = () => host.openHit(h)
             return b
           }),
@@ -198,7 +245,8 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
   searchInput.oninput = () => (clearTimeout(searchTimer), (searchTimer = setTimeout(runSearch, 200)))
   // Escape clears the box. A library listener on document (capture) stops Escape before it reaches the
   // input, so this listens on window (capture), which runs first.
-  const onSearchKey = (e: KeyboardEvent) => e.key === "Escape" && e.target === searchInput && searchInput.value && clearSearch()
+  const onSearchKey = (e: KeyboardEvent) =>
+    e.key === "Escape" && e.target === searchInput && searchInput.value && clearSearch()
   window.addEventListener("keydown", onSearchKey, true)
   searchInput.addEventListener("search", runSearch)
 
@@ -211,7 +259,11 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
   }
   const avatar = (id: string) => {
     const k = kindOf(id)
-    const v = el("button", `p2-av ${k === "desk" ? "global" : k}`, k === "desk" ? "◎" : k === "worker" ? nameOf(id).slice(0, 1).toUpperCase() : "⎇")
+    const v = el(
+      "button",
+      `p2-av ${k === "desk" ? "global" : k}`,
+      k === "desk" ? "◎" : k === "worker" ? nameOf(id).slice(0, 1).toUpperCase() : "⎇",
+    )
     v.title = nameOf(id)
     v.onclick = () => host.select(id)
     const st = el("span", "p2-av-st")
@@ -221,16 +273,29 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
   }
 
   const decisionCard = (it: Item, c: HTMLElement, head: HTMLElement): boolean => {
-    const d = it.ref
-    const go = el("button", d.status === "pending" ? "p2-open" : "p2-more", d.status === "pending" ? "Answer →" : "Open")
+    const d = it.ref as Decision
+    const go = el(
+      "button",
+      d.status === "pending" ? "p2-open" : "p2-more",
+      d.status === "pending" ? "Answer →" : "Open",
+    )
     go.onclick = () => openDecision(d.id)
     if (d.status !== "pending") {
       // Answered decisions shrink to one line; only waiting ones stay big.
       c.classList.add("done")
-      head.append(el("span", "p2-cbadge", "Decided"), el("span", "p2-done-q", d.title), el("b", "p2-done-a", `→ ${d.answer ?? d.status}`), go)
+      head.append(
+        el("span", "p2-cbadge", "Decided"),
+        el("span", "p2-done-q", d.title),
+        el("b", "p2-done-a", `→ ${d.answer ?? d.status}`),
+        go,
+      )
       return true
     }
-    head.append(el("span", "p2-cbadge", d.kind === "question" ? "Question" : "Decision"), el("b", "", d.title), el("span", "p2-state pending", "waiting"))
+    head.append(
+      el("span", "p2-cbadge", d.kind === "question" ? "Question" : "Decision"),
+      el("b", "", d.title),
+      el("span", "p2-state pending", "waiting"),
+    )
     const opts = el("div", "p2-opts")
     for (const o of (d.options ?? []) as string[]) {
       const x = el("span", `p2-opt${d.shadow?.pick === o ? " jev" : ""}`, o)
@@ -245,10 +310,26 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
   const reviewCard = (it: Item, c: HTMLElement, head: HTMLElement) => {
     const r = it.ref as Review
     const kept = r.findings.filter((f) => f.verdict === "keep").length
-    head.append(el("span", "p2-cbadge", "Security review"), el("b", "", r.status === "done" ? (r.findings.length ? `${r.findings.length} findings · ${kept} kept` : "no findings") : r.status), el("span", `p2-state ${r.status}`, r.status))
+    head.append(
+      el("span", "p2-cbadge", "Security review"),
+      el(
+        "b",
+        "",
+        r.status === "done"
+          ? r.findings.length
+            ? `${r.findings.length} findings · ${kept} kept`
+            : "no findings"
+          : r.status,
+      ),
+      el("span", `p2-state ${r.status}`, r.status),
+    )
     for (const f of r.findings.slice(0, 6)) {
       const row = el("div", `p2-finding ${f.verdict ?? ""}`)
-      row.append(el("span", `p2-sev ${f.severity ?? ""}`, f.severity ?? "·"), el("span", "", f.title ?? f.id ?? "finding"), el("span", "p2-verdict", f.verdict ?? ""))
+      row.append(
+        el("span", `p2-sev ${f.severity ?? ""}`, f.severity ?? "·"),
+        el("span", "", f.title ?? f.id ?? "finding"),
+        el("span", "p2-verdict", f.verdict ?? ""),
+      )
       c.append(row)
     }
     if (r.error) c.append(el("div", "p2-err", r.error))
@@ -300,7 +381,14 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
       t.onclick = () => (open ? expanded.delete(first.key) : expanded.add(first.key), renderStream(true))
       body.append(t)
     }
-    for (const it of shown) body.append(el("div", `p2-line ${it.kind}${it.text.startsWith("⚙") ? " tool" : ""}`, it.kind === "user" ? `→ ${it.text.slice(0, 400)}` : it.text))
+    for (const it of shown)
+      body.append(
+        el(
+          "div",
+          `p2-line ${it.kind}${it.text.startsWith("⚙") ? " tool" : ""}`,
+          it.kind === "user" ? `→ ${it.text.slice(0, 400)}` : it.text,
+        ),
+      )
     b.append(avatar(first.agentId), body)
     return b
   }
@@ -314,18 +402,42 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
         refetched.add(key)
         fetchBacklog(p.agentId)
       }
-      const kind: Kind = p.type === "user.message" ? "user" : p.type === "assistant.message" && isReport(p.text) ? "report" : "line"
-      out.push({ key, at: p.at, agentId: p.agentId, kind, text: kind === "user" ? p.text.replace(/^→ /, "") : p.text, threadId: p.threadId })
+      const kind: Kind =
+        p.type === "user.message" ? "user" : p.type === "assistant.message" && isReport(p.text) ? "report" : "line"
+      out.push({
+        key,
+        at: p.at,
+        agentId: p.agentId,
+        kind,
+        text: kind === "user" ? p.text.replace(/^→ /, "") : p.text,
+        threadId: p.threadId,
+      })
     }
   }
 
   const appendDecisionItems = (st: State, out: Item[]) => {
     const ownerOf = (threadId: string | null) => {
-      const t = st.threads.find((t) => t.id === threadId)
+      const t = st.threads.find((x) => x.id === threadId)
       return (t && agentOfThread(t)) || "coordinator"
     }
-    for (const d of st.decisions) out.push({ key: `d:${d.id}`, at: d.createdAt, agentId: ownerOf(d.threadId), kind: "decision", text: d.title, ref: d })
-    for (const r of st.reviews) out.push({ key: `r:${r.id}`, at: r.at ?? 0, agentId: r.scopeId ?? (r.threadId ? ownerOf(r.threadId) : "coordinator"), kind: "review", text: "", ref: r })
+    for (const d of st.decisions)
+      out.push({
+        key: `d:${d.id}`,
+        at: d.createdAt,
+        agentId: ownerOf(d.threadId),
+        kind: "decision",
+        text: d.title,
+        ref: d,
+      })
+    for (const r of st.reviews)
+      out.push({
+        key: `r:${r.id}`,
+        at: r.at ?? 0,
+        agentId: r.scopeId ?? (r.threadId ? ownerOf(r.threadId) : "coordinator"),
+        kind: "review",
+        text: "",
+        ref: r,
+      })
   }
 
   const streamItems = (st: State): Item[] => {
@@ -335,7 +447,10 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
     appendPulses(st, seen, out)
     appendDecisionItems(st, out)
     const only = host.scope?.() ?? null
-    return out.filter((i) => !only || only.has(i.agentId)).sort((a, b) => a.at - b.at).slice(-300)
+    return out
+      .filter((i) => !only || only.has(i.agentId))
+      .sort((a, b) => a.at - b.at)
+      .slice(-300)
   }
 
   const streamBlocks = (items: Item[]): HTMLElement[] => {
@@ -364,16 +479,20 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
   }
 
   const pruneGenui = () => {
-    for (const [k, g] of genui) if (!genuiUsed.has(k)) {
-      g.stop()
-      genui.delete(k)
-    }
+    for (const [k, g] of genui)
+      if (!genuiUsed.has(k)) {
+        g.stop()
+        genui.delete(k)
+      }
     genuiUsed.clear()
   }
 
   const renderHead = () => {
     const title = el("div", "p2-rail-title")
-    title.append(el("b", "", "Factory stream"), el("span", "", host.subtitle?.() ?? "Every agent, newest at the bottom"))
+    title.append(
+      el("b", "", "Factory stream"),
+      el("span", "", host.subtitle?.() ?? "Every agent, newest at the bottom"),
+    )
     railHead.replaceChildren(...(host.headBefore?.() ?? []), title, ...(host.headAfter?.() ?? []))
   }
 
@@ -383,14 +502,26 @@ export const mountStream = (rail: HTMLElement, host: StreamHost) => {
     if (!st) return
     const open = host.open?.() ?? true
     const scope = [...(host.scope?.() ?? [])].join()
-    const sig = [backlogVer, st.pulses.at(-1)?.seq, scope, open, st.decisions.map((d) => d.id + d.status).join(), st.reviews.map((r) => r.id + r.status + r.findings.length).join(), st.agents.map((a) => a.id + a.status).join(), st.past.length].join("|")
+    const sig = [
+      backlogVer,
+      st.pulses.at(-1)?.seq,
+      scope,
+      open,
+      st.decisions.map((d) => d.id + d.status).join(),
+      st.reviews.map((r) => r.id + r.status + r.findings.length).join(),
+      st.agents.map((a) => a.id + a.status).join(),
+      st.past.length,
+    ].join("|")
     if (!force && sig === streamSig) return
     streamSig = sig
     renderHead()
     if (!open) return void list.replaceChildren()
     const atEnd = railScroll.scrollHeight - railScroll.scrollTop - railScroll.clientHeight < 80
     const out = streamBlocks(streamItems(st))
-    if (!out.length) out.push(el("div", "p2-empty", host.empty?.() ?? "Nothing yet. Events from every agent appear here as they happen."))
+    if (!out.length)
+      out.push(
+        el("div", "p2-empty", host.empty?.() ?? "Nothing yet. Events from every agent appear here as they happen."),
+      )
     list.replaceChildren(...out)
     pruneGenui()
     const jump = lastScope !== scope

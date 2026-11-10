@@ -4,10 +4,12 @@ import "../bun-runtime.setup.ts"
 test.use({ channel: "chrome" })
 
 /** Page under test: FACTORY_PAGE, else the path of PLAYWRIGHT_BASE_URL, else "/". */
-const PAGE = process.env.FACTORY_PAGE ?? (process.env.PLAYWRIGHT_BASE_URL ? new URL(process.env.PLAYWRIGHT_BASE_URL).pathname : "/")
+const PAGE =
+  process.env.FACTORY_PAGE ??
+  (process.env.PLAYWRIGHT_BASE_URL ? new URL(process.env.PLAYWRIGHT_BASE_URL).pathname : "/")
 
-for (const proto of [0, 2]) {
-  test(`layout ${proto}: thread links load history, survive reload, and follow browser history`, async ({ page }) => {
+{
+  test("thread links load history, survive reload, and follow browser history", async ({ page }) => {
     await page.route("**/api/threads/**", async (route) => {
       const path = new URL(route.request().url()).pathname
       await route.fulfill({
@@ -26,7 +28,7 @@ for (const proto of [0, 2]) {
     })
 
     // Keep the page of the base URL (Foldkit at /).
-    await page.goto(`${PAGE}?thread=first&proto=${proto}`)
+    await page.goto(`${PAGE}?thread=first`)
     await expect(page.getByText("Saved message for first", { exact: true })).toBeVisible()
     await page.reload()
     await expect(page.getByText("Saved message for first", { exact: true })).toBeVisible()

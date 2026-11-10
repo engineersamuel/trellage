@@ -1,8 +1,9 @@
-import { Schema } from "effect";
-import { DIFF_STYLES } from "../../../shared/diff";
-import { defineMessageUnion } from "foldkit/message";
-import { Dialog, Slider } from "@foldkit/ui";
-import { Delivery, SettingsDocument } from "../domain";
+import { Schema } from "effect"
+import { DIFF_STYLES } from "../../../shared/diff"
+import { TREE_STYLES } from "../../../shared/treeLines"
+import { defineMessageUnion } from "foldkit/message"
+import { Dialog } from "@foldkit/ui"
+import { Delivery, SettingsDocument } from "../domain"
 
 export const Message = defineMessageUnion({
   // Loading
@@ -10,7 +11,9 @@ export const Message = defineMessageUnion({
   FailedFetchSettings: { error: Schema.String },
   SucceededFetchDelivery: { delivery: Delivery },
   FailedFetchDelivery: { error: Schema.String },
-  ReceivedSettingsUpdate: { document: Schema.Struct({ settings: SettingsDocument.fields.settings, css: Schema.String }) },
+  ReceivedSettingsUpdate: {
+    document: Schema.Struct({ settings: SettingsDocument.fields.settings, css: Schema.String }),
+  },
   ReceivedDeliveryChange: {},
   ReceivedFeedGap: {},
   SucceededPatchSettings: {},
@@ -18,12 +21,12 @@ export const Message = defineMessageUnion({
   // Drawer
   ClickedOpenSettings: {},
   GotDialogMessage: { message: Dialog.Message },
-  GotPanelWidthSliderMessage: { message: Slider.Message },
   // One Message per control, so DevTools shows which setting the user changed.
   ClickedTheme: { theme: Schema.String },
   ToggledAnimations: { isChecked: Schema.Boolean },
+  ToggledInboxCritters: { isChecked: Schema.Boolean },
   ClickedDiffStyle: { style: Schema.Literals(DIFF_STYLES) },
-  ClickedPanelPosition: { position: Schema.String },
+  ClickedTreeStyle: { style: Schema.Literals(TREE_STYLES) },
   ToggledNavbarItem: { item: Schema.String },
   UpdatedBanner: { value: Schema.String },
   UpdatedRepo: { value: Schema.String },
@@ -47,11 +50,11 @@ export const Message = defineMessageUnion({
   ClickedRemoveExtension: { name: Schema.String },
   CompletedSyncExtensions: {},
   CompletedMountDiffPreview: {},
-});
-export type Message = typeof Message.Type;
+})
+export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
-  /** A settings document arrived. Its `focus` names the worker the panel shows. */
-  ReceivedFocus: { workerId: Schema.String },
-});
-export type OutMessage = typeof OutMessage.Type;
+  /** A settings update changed `focus` (focus_agent, the worker board's Show): the Inbox shows that agent. */
+  ChangedFocus: { workerId: Schema.String },
+})
+export type OutMessage = typeof OutMessage.Type

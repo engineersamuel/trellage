@@ -1,8 +1,8 @@
 // Prototype layouts: shared core used by every prototype and by the Foldkit host.
-// A host renders, instead of its classic layout:
-//   <div class="sfp-stage" data-proto="N"><div class="sfp-chat">NATIVE CHAT</div><div class="sfp-host"></div></div>
-// startPrototypes() mounts prototype N into .sfp-host. The prototype owns .sfp-host's children and
-// places the host's native chat with ctx.placeChat(). Switch layouts with the switcher pill or Alt+0..5.
+// A host renders:
+//   <div class="sfp-stage" data-proto="3"><div class="sfp-chat">NATIVE CHAT</div><div class="sfp-host" data-proto="3"></div></div>
+// startPrototypes() mounts the Inbox (3) into .sfp-host. It owns .sfp-host's children and
+// places the host's native chat with ctx.placeChat().
 import "./core.css"
 import { appendCompact, onFeed, RESYNC, type FeedEvent } from "../feed"
 import { activity, mount as mountTranscriptRaw, type MountOptions } from "../transcript"
@@ -41,7 +41,18 @@ export { agentLabel }
 
 // ---------- store ----------
 
-const state: State = { agents: [], past: [], tree: [], threads: [], folders: [], decisions: [], reviews: [], activity: {}, pulses: [], threadsLoaded: false }
+const state: State = {
+  agents: [],
+  past: [],
+  tree: [],
+  threads: [],
+  folders: [],
+  decisions: [],
+  reviews: [],
+  activity: {},
+  pulses: [],
+  threadsLoaded: false,
+}
 const subs = new Set<(s: State) => void>()
 const logs = new Map<string, FeedEvent[]>()
 let frame = 0
@@ -59,16 +70,31 @@ const loadAgents = () =>
     undefined,
   )
 const loadThreads = () =>
-  runOr(json("/api/threads/get", Threads).pipe(Effect.map((v) => ((state.threads = v.threads), (state.folders = v.folders), (state.threadsLoaded = true), emit()))), undefined)
-const loadReviews = () => runOr(json("/api/steps", Steps).pipe(Effect.map((v) => ((state.reviews = v.securityReviews), emit()))), undefined)
-const loadPast = () => runOr(json("/api/workers/past", Schema.Array(Worker)).pipe(Effect.map((ws) => ((state.past = ws), emit()))), undefined)
+  runOr(
+    json("/api/threads/get", Threads).pipe(
+      Effect.map(
+        (v) => ((state.threads = v.threads), (state.folders = v.folders), (state.threadsLoaded = true), emit()),
+      ),
+    ),
+    undefined,
+  )
+const loadReviews = () =>
+  runOr(json("/api/steps", Steps).pipe(Effect.map((v) => ((state.reviews = v.securityReviews), emit()))), undefined)
+const loadPast = () =>
+  runOr(
+    json("/api/workers/past", Schema.Array(Worker)).pipe(Effect.map((ws) => ((state.past = ws), emit()))),
+    undefined,
+  )
 const loadAll = () => Promise.all([loadAgents(), loadPast(), loadThreads(), loadReviews()])
 
 const describe = (ev: FeedEvent): string | null => {
   const d = ev.data ?? {}
   switch (ev.type) {
     case "user.message":
-      return `→ ${String(d.content ?? "").replace(/<(ui-format|ui-context|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "").trim().slice(0, 240)}`
+      return `→ ${String(d.content ?? "")
+        .replace(/<(ui-format|ui-context|user-instructions|disabled-tools)>[\s\S]*?<\/\1>/g, "")
+        .trim()
+        .slice(0, 240)}`
     case "assistant.message":
       return d.content ? String(d.content).slice(0, 240) : null
     case "tool.execution_start":
@@ -88,7 +114,12 @@ const start = () => {
   subscribeApprovals((a) => ((state.decisions = a.all), emit()))
   onFeed((ev) => {
     if (ev.type === RESYNC) return void loadAll()
-    if (ev.type === "factory.worker_started" || ev.type === "factory.worker_updated" || ev.type === "factory.worker_stopped") return void Promise.all([loadAgents(), loadPast()])
+    if (
+      ev.type === "factory.worker_started" ||
+      ev.type === "factory.worker_updated" ||
+      ev.type === "factory.worker_stopped"
+    )
+      return void Promise.all([loadAgents(), loadPast()])
     if (ev.type === "factory.thread_updated") return void loadThreads()
     // Approvals come from the shared Effect store (subscribed in start).
     if (ev.type.startsWith("factory.approval_")) return
@@ -99,7 +130,18 @@ const start = () => {
     logs.set(ev.workerId, log)
     state.activity = { ...state.activity, [ev.workerId]: activity(log) }
     const text = describe(ev)
-    if (text) state.pulses = [...state.pulses.slice(-399), { seq: ev.seq, agentId: ev.workerId, type: ev.type, text, at: Date.now(), threadId: (ev.data as any)?.threadId }]
+    if (text)
+      state.pulses = [
+        ...state.pulses.slice(-399),
+        {
+          seq: ev.seq,
+          agentId: ev.workerId,
+          type: ev.type,
+          text,
+          at: Date.now(),
+          threadId: typeof ev.data?.threadId === "string" ? ev.data.threadId : undefined,
+        },
+      ]
     emit()
   })
 }
@@ -116,13 +158,17 @@ export const subscribe = (cb: (s: State) => void): (() => void) => {
 
 /** Thread of a sub-coordinator ("sub-<first 8 of thread id>"). */
 export const threadOf = (agentId: string): Thread | undefined =>
-  agentId === "coordinator" ? state.threads.find((t) => t.desk) : state.threads.find((t) => `${t.worktree ? "sub" : "gen"}-${t.id.slice(0, 8)}` === agentId)
+  agentId === "coordinator"
+    ? state.threads.find((t) => t.desk)
+    : state.threads.find((t) => `${t.worktree ? "sub" : "gen"}-${t.id.slice(0, 8)}` === agentId)
 /** Sub-coordinator id of a thread, if it is a repo conversation. */
 export const agentOfThread = (t: Thread): string | null => (t.worktree ? `sub-${t.id.slice(0, 8)}` : null)
-export const pendingFor = (threadId: string | null) => state.decisions.filter((d) => d.status === "pending" && d.threadId === threadId)
+export const pendingFor = (threadId: string | null) =>
+  state.decisions.filter((d) => d.status === "pending" && d.threadId === threadId)
 
 /** Show a conversation in the host's native chat. */
-export const openThread = (threadId: string) => window.dispatchEvent(new CustomEvent("sf:open-thread", { detail: threadId }))
+export const openThread = (threadId: string) =>
+  window.dispatchEvent(new CustomEvent("sf:open-thread", { detail: threadId }))
 /** Start a new conversation in a folder in the host's native chat. */
 export const newThread = (folderId = "general") => {
   document.cookie = `sf_folder=${folderId}; path=/; max-age=31536000; samesite=lax`
@@ -131,12 +177,13 @@ export const newThread = (folderId = "general") => {
 /** Open the conversation behind an agent in the native chat: the newest General thread for the global coordinator, the repo thread for a sub-coordinator. Returns false for workers (no conversation). */
 export const openAgentChat = (agentId: string): boolean => {
   if (agentId === "general") {
-    const t = state.threads.find((t) => t.folderId === "general" && !t.desk)
-    t ? openThread(t.id) : newThread("general")
+    const chat = state.threads.find((t) => t.folderId === "general" && !t.desk)
+    if (chat) openThread(chat.id)
+    else newThread("general")
     return true
   }
   const t = threadOf(agentId)
-  if (t) return openThread(t.id), true
+  if (t) return (openThread(t.id), true)
   return false
 }
 /** threadId: the conversation the prompt belongs to (a coordinator serves several); the server checks it. */
@@ -149,7 +196,7 @@ export const messageAgent = (agentId: string, prompt: string, threadId?: string)
     ),
   )
 export const openDecision = (id: string) => (location.hash = `decision=${id}`)
-/** Live readable transcript of any agent in `el` (same renderer as the classic panel). Returns cleanup. */
+/** Live readable transcript of any agent in `el`. Returns cleanup. */
 export const mountTranscript = (el: HTMLElement, agentId: string, opts?: MountOptions): (() => void) => {
   el.setAttribute("data-transcript-scroll", "")
   // Same layout as a [data-transcript] host (gaps between items), without the attribute: that would mount it twice.
@@ -165,7 +212,8 @@ export const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text
   if (text) e.textContent = text
   return e
 }
-export const statusColor = (s: string) => (s === "running" ? "#f59e0b" : s === "error" ? "#ef4444" : s === "stopped" ? "#525252" : "#22c55e")
+export const statusColor = (s: string) =>
+  s === "running" ? "#f59e0b" : s === "error" ? "#ef4444" : s === "stopped" ? "#525252" : "#22c55e"
 
 // ---------- OpenUI Lang ----------
 
@@ -178,11 +226,19 @@ type OpenUiRenderer = (el: HTMLElement, program: string, onAction: (a: OpenUiAct
 let openUiRenderer: OpenUiRenderer | null = null
 export const setOpenUiRenderer = (r: OpenUiRenderer) => void (openUiRenderer = r)
 /** Render a card that agentId wrote in threadId. Follow-up buttons send their text back to that conversation; links open in a new tab. */
-export const renderOpenUi = (el: HTMLElement, program: string, agentId: string, threadId?: string): (() => void) | null =>
-  openUiRenderer?.(el, program, (a) => {
-    if (a.type === "open_url" && typeof a.params.url === "string") return void window.open(a.params.url, "_blank", "noopener")
+export const renderOpenUi = (
+  host: HTMLElement,
+  program: string,
+  agentId: string,
+  threadId?: string,
+): (() => void) | null =>
+  openUiRenderer?.(host, program, (a) => {
+    if (a.type === "open_url" && typeof a.params.url === "string")
+      return void window.open(a.params.url, "_blank", "noopener")
     if (a.type === "continue_conversation" && a.humanFriendlyMessage)
-      void messageAgent(agentId, a.humanFriendlyMessage, threadId).then((error) => error && alert(`Send failed: ${error}`))
+      void messageAgent(agentId, a.humanFriendlyMessage, threadId).then(
+        (error) => error && alert(`Send failed: ${error}`),
+      )
   }) ?? null
 
 // ---------- prototypes ----------
@@ -199,57 +255,18 @@ const registry = new Map<number, Prototype>()
 export const register = (p: Prototype) => registry.set(p.id, p)
 export const prototypes = () => [...registry.values()].sort((a, b) => a.id - b.id)
 
-// ---------- current layout + switcher ----------
-
-const KEY = "sf_proto"
-export const currentProto = (): number => {
-  const q = new URLSearchParams(location.search).get("proto")
-  // Inbox (3) is the default layout; 0 is the classic layout.
-  const n = Number(q ?? localStorage.getItem(KEY) ?? 3)
-  return n === 0 || registry.has(n) ? n : 3
-}
-/** Switch layout live. Hosts listen for window event "sf:proto" (detail = number). */
-export const setProto = (n: number) => {
-  localStorage.setItem(KEY, String(n))
-  const u = new URL(location.href)
-  u.searchParams.set("proto", String(n))
-  history.replaceState(null, "", u)
-  window.dispatchEvent(new CustomEvent("sf:proto", { detail: n }))
-  renderSwitcher()
-}
-export const onProto = (cb: (n: number) => void): (() => void) => {
-  const on = (e: Event) => cb((e as CustomEvent<number>).detail)
-  window.addEventListener("sf:proto", on)
-  return () => window.removeEventListener("sf:proto", on)
-}
-
-let switcher: HTMLElement | null = null
-const renderSwitcher = () => {
-  if (!switcher) return
-  const cur = currentProto()
-  switcher.replaceChildren(el("span", "sfp-sw-label", "Layout"))
-  for (const p of [{ id: 0, name: "Classic", blurb: "The original chat + agent panel" }, ...prototypes()]) {
-    const b = el("button", p.id === cur ? "on" : "", `${p.id} ${p.name}`)
-    b.title = `${p.blurb} (Alt+${p.id})`
-    b.onclick = () => setProto(p.id)
-    switcher.append(b)
-  }
-}
-
-/** Mount once per page: the switcher pill, and the prototype in any .sfp-host the host renders. */
+/** Mount once per page: the prototype in any .sfp-host the host renders. */
+let hostsStarted = false
 export const startPrototypes = (): void => {
-  if (switcher) return
-  switcher = el("div", "sfp-switcher")
-  document.body.append(switcher)
-  renderSwitcher()
-  window.addEventListener("keydown", (e) => {
-    const n = Number(e.key)
-    const d = /^Digit\d$/.test(e.code) ? Number(e.code.slice(5)) : n
-    if (e.altKey && (d === 0 || registry.has(d))) (e.preventDefault(), setProto(d))
-  })
+  if (hostsStarted) return
+  hostsStarted = true
   const live = new Map<HTMLElement, { n: number; stop: () => void }>()
   const sync = () => {
-    for (const [host, m] of live) if (!host.isConnected || Number(host.dataset.proto) !== m.n) (m.stop(), live.delete(host))
+    for (const [host, m] of live)
+      if (!host.isConnected || Number(host.dataset.proto) !== m.n) {
+        m.stop()
+        live.delete(host)
+      }
     for (const host of document.querySelectorAll<HTMLElement>(".sfp-host[data-proto]")) {
       const n = Number(host.dataset.proto)
       if (live.has(host) || !registry.has(n)) continue
@@ -264,6 +281,11 @@ export const startPrototypes = (): void => {
       live.set(host, { n, stop: registry.get(n)!.mount({ root: host, placeChat }) })
     }
   }
-  new MutationObserver(sync).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-proto"] })
+  new MutationObserver(sync).observe(document.body, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ["data-proto"],
+  })
   sync()
 }
