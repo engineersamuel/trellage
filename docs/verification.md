@@ -136,8 +136,8 @@ Local runs execute selected prototype checks. Swift requires macOS; other hosts
 report that requirement, and the required CI matrix supplies the macOS check.
 Swift checks retain the outer offline sandbox and use native SwiftPM to find CLT
 Testing macros. The generated test runner receives the same framework search path;
-an empty test report fails the gate. The existing standalone assertion runner also
-executes.
+the gate requires Swift Testing to report at least one executed case. The existing
+standalone assertion runner also executes.
 
 Static tools run on maintained files, not vendored Foldkit reference sources,
 verbatim shadcn components, dependencies, or generated artifacts. Knip analyzes

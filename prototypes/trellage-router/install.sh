@@ -24,7 +24,7 @@ refuse() {
 }
 
 canonical_directory() {
-  (CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P)
+  (CDPATH='' cd -P -- "$1" >/dev/null 2>&1 && pwd -P)
 }
 
 require_safe_directory() {
@@ -45,6 +45,7 @@ require_owned_runtime_contents() {
   local installed_ownership
   installed_ownership="$(<"$ownership_marker")"
   if [[ "$installed_ownership" == "$ownership_value" ]]; then
+    # shellcheck disable=SC2154 # Initialized by bun-runtime.sh before this function runs.
     "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
       validate-replaceable-owned "$installed_source" \
       || refuse "unsafe owned source workspace: $installed_source"
@@ -138,7 +139,6 @@ done < <(find "$source_guides" -mindepth 1 -print)
 
 staging_root=''
 publication_active=false
-runtime_old_intent=false
 runtime_publish_intent=false
 runtime_swapped=false
 command_publish_intent=false
@@ -184,6 +184,7 @@ release_install_lock() {
 
 rollback() {
   local ok=true
+  local swap_output
 
   if [[ "$command_publish_intent" == true ]]; then
     if [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]]; then
@@ -194,8 +195,11 @@ rollback() {
   fi
 
   if [[ "$runtime_swapped" == true && -d "$staging_root/old-runtime" ]]; then
-    "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
-      swap "$staging_root/old-runtime" "$install_root" || ok=false
+    if ! swap_output="$("${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
+      swap "$staging_root/old-runtime" "$install_root" 2>&1)"; then
+      printf 'trx install: could not restore router runtime: %s\n' "${swap_output:-no diagnostic}" >&2
+      ok=false
+    fi
     [[ "$ok" == true ]]
     return
   fi
@@ -331,12 +335,11 @@ if [[ -d "$install_root" ]]; then
   # Exchange old and new in one rename, so $install_root never goes missing
   # while trx sessions launch from it. Afterwards the old runtime is in
   # new-runtime; rename it to old-runtime so rollback finds it there.
-  runtime_old_intent=true
   runtime_publish_intent=true
   runtime_swapped=true
   "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
     swap "$staging_root/new-runtime" "$install_root" \
-    || { runtime_swapped=false; runtime_publish_intent=false; runtime_old_intent=false
+    || { runtime_swapped=false; runtime_publish_intent=false
       refuse "could not swap in the new router runtime: $install_root"; }
   mv "$staging_root/new-runtime" "$staging_root/old-runtime"
   [[ "${TRX_INSTALL_TEST_FAIL_AT-}" != during-runtime-publication ]] \

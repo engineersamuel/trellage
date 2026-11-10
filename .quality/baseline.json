@@ -4326,11 +4326,6 @@
           "reviewBy": "2027-02-07",
           "sha256": "5fa2fff9c25b234aab605286face275284f93c901c4968b72cc152985eb59e95"
         },
-        "prototypes/trellage-router/install.sh": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "becfc6695e628e73441dcd1c1d55cca636f095366ee7c3f263230f0f056d8fe8"
-        },
         "prototypes/trellage-router/uninstall.sh": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
