@@ -9,6 +9,8 @@ import { harnessBadge } from "../harness"
 import { critterOf, layoutCrittersOn, mountCritter, onLayoutCritters } from "../critter"
 import { treeLines } from "../treeLines"
 import { openSpec } from "../spec"
+import { draftDetail, draftForm } from "./drafts"
+import { mountCanvas } from "./canvas"
 import {
   el,
   messageAgent,
@@ -73,6 +75,21 @@ const btn = (text: string, onClick: () => void, cls = "") => {
   b.onclick = (e) => (e.stopPropagation(), onClick())
   return b
 }
+/** SDK that runs a node's agent. A dormant General chat or desk has no agent yet, but always runs in the Copilot SDK. */
+const harnessOf = (n: Node): string | undefined =>
+  n.agent?.harness ?? (n.kind === "chat" || n.kind === "desk" ? "copilot" : undefined)
+const badge = (n: Node): HTMLElement[] => {
+  const h = harnessOf(n)
+  return h ? [harnessBadge(h)] : []
+}
+const CANVAS_KEY = "sf_inbox_canvas"
+const readCanvas = () => {
+  try {
+    return localStorage.getItem(CANVAS_KEY) === "1"
+  } catch {
+    return false
+  }
+}
 const archive = (n: Node, at: number | null) =>
   n.thread && fire(send(`/api/threads/update/${n.thread.id}`, "PATCH", { archivedAt: at }))
 
@@ -112,15 +129,25 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   let askBox: HTMLElement | null = null
 
   /** The 📡 Factory stream shows in the detail column; any other pick in the sidebar, inbox or tree leaves it. */
+  /** A node to select as soon as it appears (a draft just created, or a draft just run). */
+  let wantSel: string | null = null
+  const draftBox = draftForm(
+    () => (s?.folders ?? []).filter((f) => f.path),
+    (threadId) => ((wantSel = `draft-${threadId.slice(0, 8)}`), (autoView = false), (view = "chats"), render()),
+  )
+  /** Tree or canvas view of the selected conversation (kept per browser). */
+  let canvasOn = readCanvas()
+  const canvasHost = el("div")
+  const canvas = mountCanvas(canvasHost)
   let streamOn = false
   let stream: ReturnType<typeof mountStream> | null = null
   const choose = (id: string) => ((streamOn = false), (cur = id), render())
 
   // ---------- sidebar ----------
   const renderSide = (live: Model) => {
-    const row = (v: View, label: string, n: number, badge = false) => {
+    const row = (v: View, label: string, n: number, alert = false) => {
       const r = el("div", `p3-sv ${view === v ? "on" : ""}`)
-      r.append(el("span", "p3-ell", label), el("span", badge && n ? "p3-badge" : "p3-n", String(n)))
+      r.append(el("span", "p3-ell", label), el("span", alert && n ? "p3-badge" : "p3-n", String(n)))
       r.onclick = () => ((view = v), (autoView = false), (streamOn = false), (sel = cur = null), render())
       return r
     }
@@ -139,6 +166,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const archivedN = (s?.threads ?? []).filter((t) => t.archivedAt && !t.desk).length
     side.replaceChildren(
       btn("＋ New General chat", () => newThread("general"), "p3-new"),
+      draftBox,
       el("h5", "", "Views"),
       ...VIEWS.map((v) => row(v.id, v.label, count(live, v.id), v.id === "needs")),
       deskRow,
@@ -234,7 +262,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     c.dataset.tl = n.id
     const hd = el("div", "p3-row")
     const critter = critterFor(n, "p3-critter big")
-    hd.append(...(critter ? [critter] : []), el("b", "", `${ICON[n.kind]} ${KIND[n.kind]}`), pill(n))
+    hd.append(...(critter ? [critter] : []), ...badge(n), el("b", "", `${ICON[n.kind]} ${KIND[n.kind]}`), pill(n))
     c.append(hd, el("div", "p3-title", n.title))
     const meta = [n.thread?.folderId, n.agent?.model, ago(n.thread?.createdAt)].filter(Boolean).join(" · ")
     if (meta) c.append(el("div", "p3-sub", meta))
@@ -258,6 +286,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     spawnedTitle(r, n)
     r.append(
       critterFor(n, "p3-critter") ?? el("i", "p3-dot"),
+      ...badge(n),
       el(
         "b",
         "",
@@ -299,12 +328,57 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     e.dataset.tlStatus = n.status
     return e
   }
+  /** One agent card on the canvas: the same status, SDK and critter as the tree. */
+  const canvasCard = (n: Node) => {
+    const c = el("div", `p3-cv s-${n.status} ${n.id === cur ? "on" : ""}`)
+    c.dataset.testid = `canvas-${n.kind}`
+    c.dataset.id = n.id
+    c.setAttribute("role", "button")
+    c.tabIndex = 0
+    spawnedTitle(c, n)
+    const hd = el("div", "p3-row")
+    const name = n.kind === "worker" ? (n.agent?.name ?? n.title) : `${ICON[n.kind]} ${KIND[n.kind]}`
+    hd.append(critterFor(n, "p3-critter") ?? el("i", "p3-dot"), ...badge(n), el("b", "p3-ell", name), pill(n))
+    const text = n.kind === "worker" ? (n.agent?.task ?? "") : n.title
+    const meta = [n.thread?.folderId, n.agent?.model, ago(bornAt(n))].filter(Boolean).join(" · ")
+    c.append(hd, el("div", "p3-cv-title", text), el("div", "p3-sub p3-ell", meta))
+    c.onclick = (e) => (e.stopPropagation(), choose(n.id))
+    c.onkeydown = (e) => e.key === "Enter" && (e.preventDefault(), choose(n.id))
+    return c
+  }
+  /** Column header: title and the Tree | Canvas switch for the selected conversation. */
+  const treeHead = () => {
+    const h = el("div", "p3-treehead")
+    const sw = el("div", "p3-seg")
+    sw.setAttribute("role", "group")
+    sw.setAttribute("aria-label", "Conversation view")
+    for (const [on, label] of [
+      [false, "Tree"],
+      [true, "Canvas"],
+    ] as const) {
+      const b = btn(
+        label,
+        () => {
+          canvasOn = on
+          try {
+            localStorage.setItem(CANVAS_KEY, on ? "1" : "0")
+          } catch {}
+          render()
+        },
+        canvasOn === on ? "on" : "",
+      )
+      b.setAttribute("aria-pressed", String(canvasOn === on))
+      b.dataset.testid = `view-${label.toLowerCase()}`
+      sw.append(b)
+    }
+    h.append(el("h5", "", "Conversation"), sw)
+    return h
+  }
   const lines = treeLines(tree)
   const renderTree = () => {
+    root.classList.toggle("canvas", canvasOn)
     const r = sel ? m.nodes.get(rootOf(m, sel)) : undefined
-    if (!r)
-      return void (tree.replaceChildren(el("h5", "", "Conversation tree"), el("div", "p3-empty", "Select an item.")),
-      pruneCritters())
+    if (!r) return void (tree.replaceChildren(treeHead(), el("div", "p3-empty", "Select an item.")), pruneCritters())
     const branches = r.children.map((id) => {
       const k = m.nodes.get(id)!
       const b = el("div", "p3-br")
@@ -318,13 +392,22 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
           ? btn("Restore", () => archive(r, null))
           : btn("Mark done (archive tree)", () => ((sel = cur = null), archive(r, Date.now()))),
       )
-    tree.replaceChildren(
-      el("h5", "", "Conversation tree"),
-      card(r),
-      ...branches,
-      ...(branches.length ? [] : [el("div", "p3-empty", "No team yet. Ask the chat to spawn one.")]),
-      foot,
-    )
+    if (canvasOn) {
+      canvas.draw(m, r.id, canvasCard)
+      tree.replaceChildren(
+        treeHead(),
+        canvasHost,
+        ...(r.children.length ? [] : [el("div", "p3-empty", "No team yet. Ask the chat to spawn one.")]),
+        foot,
+      )
+    } else
+      tree.replaceChildren(
+        treeHead(),
+        card(r),
+        ...branches,
+        ...(branches.length ? [] : [el("div", "p3-empty", "No team yet. Ask the chat to spawn one.")]),
+        foot,
+      )
     pruneCritters()
     lines.draw()
   }
@@ -344,7 +427,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     if (reason && why) reason.title = why.title
     st.append(
       pill(n),
-      ...(n.agent ? [harnessBadge(n.agent.harness)] : []),
+      ...badge(n),
       el(
         "span",
         "p3-ell",
@@ -376,8 +459,13 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     if (n.kind === "sub" && !tl) acts.append(btn("🕘 Timeline", () => (tlOn.add(n.id), render())))
     if (n.agent?.status === "running")
       acts.append(btn("■ Stop", () => fire(send(`/api/workers/${encodeURIComponent(n.id)}/abort`, "POST"))))
-    if (n.kind === "draft" && n.thread)
-      acts.append(btn("▶ Run draft", () => fire(send(`/api/drafts/${n.thread!.id}/run`, "POST")), "primary"))
+    draftEls = []
+    if (n.kind === "draft" && n.thread) {
+      const t = n.thread
+      const d = draftDetail(t, s?.agents ?? [], render, () => ((wantSel = `sub-${t.id.slice(0, 8)}`), render()))
+      acts.append(...d.acts)
+      draftEls = d.body
+    }
     const kids = el("div", "p3-kids")
     for (const id of n.children) {
       const k = m.nodes.get(id)!
@@ -468,10 +556,12 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       }),
     )
   }
-  const draftBody = (n: Node) => {
-    const p = el("pre", "p3-draft", n.title)
-    body.replaceChildren(el("div", "p3-sub", "Not started yet. Run it, or refine it from the Org Canvas layout."), p)
-    return () => {}
+  /** Body of the shown draft, built by renderHead on every render (rewrites, versions, reports). */
+  let draftEls: HTMLElement[] = []
+  const draftBody = () => {
+    const box = el("div", "p3-draftbody")
+    box.append(el("div", "p3-sub", "Not started yet. Refine it, research it, then Run it."), ...draftEls)
+    body.replaceChildren(box)
   }
   /** Place the host's native chat over the detail body. */
   const placeOverBody = () => {
@@ -567,6 +657,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const chat = !tl && showsChat(n.id) && !live
     const key = tl ? `tl:${n.id}` : live ? `live:${n.id}` : n.id
     if (mounted?.key === key && n.kind === "worker") renderAsks(n)
+    if (mounted?.key === key && n.kind === "draft") draftBody()
     if (chat) placeOverBody()
     if (mounted?.key === key) return
     mounted?.stop()
@@ -595,7 +686,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     } else {
       placeChat(null)
       askBox = null
-      mounted = { key: n.id, stop: n.kind === "worker" ? workerBody(n) : draftBody(n) }
+      mounted = { key: n.id, stop: n.kind === "worker" ? workerBody(n) : (draftBody(), () => {}) }
       if (n.kind === "worker") renderAsks(n)
     }
   }
@@ -605,6 +696,17 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const agents = [...s.agents, ...s.past]
     const live = build(agents, s.threads, s.decisions)
     m = view === "archived" ? build(agents, s.threads, s.decisions, true) : live
+    // A draft just created or run: open it once it is in the model.
+    if (wantSel && m.nodes.has(wantSel)) {
+      if (!items(m, view).some((x) => x.root.id === rootOf(m, wantSel!))) {
+        autoView = false
+        view = "chats"
+      }
+      sel = rootOf(m, wantSel)
+      cur = wantSel
+      streamOn = false
+      wantSel = null
+    }
     renderSide(live)
     renderInbox()
     renderTree()
@@ -628,6 +730,15 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     render()
   }
   window.addEventListener("sf:open-timeline", openTimeline)
+  /** A worker link in a transcript, focus_agent, or the worker board's Show: select that agent (now, or once it appears). */
+  const selectAgent = (e: Event) => {
+    const id = (e as CustomEvent).detail
+    if (typeof id !== "string" || !id) return
+    wantSel = id
+    autoView = false
+    render()
+  }
+  window.addEventListener("sf:select-worker", selectAgent)
   const ro = new ResizeObserver(() => mounted?.key === cur && showsChat(cur) && placeOverBody())
   ro.observe(head)
   ro.observe(root)
@@ -698,8 +809,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     unsub(),
     unsubCritters(),
     lines.stop(),
+    canvas.stop(),
     [...critters.keys()].forEach(dropCritter),
     window.removeEventListener("sf:open-timeline", openTimeline),
+    window.removeEventListener("sf:select-worker", selectAgent),
     ro.disconnect(),
     clearInterval(clock),
     root.removeEventListener("pointerdown", press, true),

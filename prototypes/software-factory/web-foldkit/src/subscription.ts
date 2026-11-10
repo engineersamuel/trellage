@@ -1,57 +1,60 @@
-import { Filter, Match, Option, Schema, Stream } from "effect";
-import { AsyncData, Subscription } from "foldkit";
-import { changes as approvalChanges } from "../../shared/approvals";
-import { type FeedEvent, RESYNC } from "../../shared/feed";
-import { onProto } from "../../shared/protos";
-import { StoredEvent } from "../../shared/schemas";
-import { toGotChatMessage } from "./chat";
-import { chat } from "./chatProgram";
-import { feedEvents, fromCallback } from "./feed";
-import { Message } from "./message";
-import type { Model } from "./model";
-import * as DiffPanel from "./diffPanel";
-import * as ReportViewer from "./reportViewer";
-import * as Settings from "./settings";
-import { toGotDiffPanelMessage, toGotSettingsMessage, toGotWorkerPanelMessage } from "./update";
-import * as WorkerPanel from "./workerPanel";
+import { Filter, Match, Option, Schema, Stream } from "effect"
+import { AsyncData, Subscription } from "foldkit"
+import { changes as approvalChanges } from "../../shared/approvals"
+import { type FeedEvent, RESYNC } from "../../shared/feed"
+import { StoredEvent } from "../../shared/schemas"
+import { toGotChatMessage } from "./chat"
+import { chat } from "./chatProgram"
+import { feedEvents } from "./feed"
+import { Message } from "./message"
+import type { Model } from "./model"
+import * as DiffPanel from "./diffPanel"
+import * as ReportViewer from "./reportViewer"
+import * as Settings from "./settings"
+import { toGotDiffPanelMessage, toGotSettingsMessage, toGotWorkersMessage } from "./update"
+import * as Workers from "./workers"
 
-const decodeEvent = Schema.decodeUnknownOption(StoredEvent);
-const decodeThreadId = Schema.decodeUnknownOption(Schema.Struct({ threadId: Schema.optional(Schema.String) }));
-const decodeOpenReport = Schema.decodeUnknownOption(Schema.Struct({ path: Schema.String, agent: Schema.String }));
-const decodeSetLayout = Schema.decodeUnknownOption(Schema.Struct({ layout: Schema.Number }));
+const decodeEvent = Schema.decodeUnknownOption(StoredEvent)
+const decodeThreadId = Schema.decodeUnknownOption(Schema.Struct({ threadId: Schema.optional(Schema.String) }))
+const decodeOpenReport = Schema.decodeUnknownOption(Schema.Struct({ path: Schema.String, agent: Schema.String }))
 
-/** The feed events the root handles. The worker panel and settings subscribe to the kinds they own. */
+/** The feed events the root handles. The worker list and settings subscribe to the kinds they own. */
 export const feedEventToMessage = (raw: FeedEvent): Option.Option<Message> =>
   Option.flatMap(decodeEvent(raw), (event) =>
     Match.value(event.type).pipe(
       Match.withReturnType<Option.Option<Message>>(),
       Match.when(RESYNC, () => Option.some(Message.ReceivedFeedGap())),
-      Match.when("factory.thread_updated", () => Option.map(decodeThreadId(event.data ?? {}), ({ threadId }) => Message.ReceivedThreadUpdate({ threadId }))),
-      // The agent's open_report and set_layout (coordinator/src/tools.ts browserTools).
-      Match.when("factory.ui_open_report", () =>
-        Option.map(decodeOpenReport(event.data), ({ path, agent }) => Message.RequestedOpenReport({ ref: path, maybeAgent: Option.some(agent) })),
+      Match.when("factory.thread_updated", () =>
+        Option.map(decodeThreadId(event.data ?? {}), ({ threadId }) => Message.ReceivedThreadUpdate({ threadId })),
       ),
-      Match.when("factory.ui_set_layout", () => Option.map(decodeSetLayout(event.data), ({ layout }) => Message.ReceivedLayoutRequest({ layout }))),
+      // The agent's open_report (coordinator/src/tools.ts browserTools).
+      Match.when("factory.ui_open_report", () =>
+        Option.map(decodeOpenReport(event.data), ({ path, agent }) =>
+          Message.RequestedOpenReport({ ref: path, maybeAgent: Option.some(agent) }),
+        ),
+      ),
       Match.orElse(() => Option.none()),
     ),
-  );
+  )
 
 /** Feed events that change what a chat card shows. Workers report often while busy, so changes are coalesced. */
-const CARD_EVENTS = /^factory\.(worker_(started|updated|stopped)|approval_|security_review|code_review|sdlc|step_decided)/;
+const CARD_EVENTS =
+  /^factory\.(worker_(started|updated|stopped)|approval_|security_review|code_review|sdlc|step_decided)/
 /** One card refresh per burst of feed events (a busy worker sends several per second). */
-const CARD_REFRESH_DEBOUNCE = "150 millis";
+const CARD_REFRESH_DEBOUNCE = "150 millis"
 
-export const isCardEvent = (type: string): boolean => CARD_EVENTS.test(type);
+export const isCardEvent = (type: string): boolean => CARD_EVENTS.test(type)
 
 /** The string payload of an sf:* window event ("" when missing). */
-const eventDetail = (event: Event): string => (event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : "");
+const eventDetail = (event: Event): string =>
+  event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : ""
 
-const windowEvents = (type: string): Stream.Stream<Event> => Stream.fromEventListener<Event>(window, type);
+const windowEvents = (type: string): Stream.Stream<Event> => Stream.fromEventListener<Event>(window, type)
 
 /** Plain keys outside text fields and dialogs. update looks the key up in the hotkey settings. */
 const isHotkey = (event: KeyboardEvent): boolean =>
   !(event.metaKey || event.ctrlKey || event.altKey) &&
-  !(event.target instanceof Element && event.target.closest("input,textarea,select,[contenteditable],dialog"));
+  !(event.target instanceof Element && event.target.closest("input,textarea,select,[contenteditable],dialog"))
 
 const appSubscriptions = Subscription.make<Model, Message>()(() => ({
   feed: Subscription.persistentEntry(feedEvents.pipe(Stream.filterMap(Filter.fromPredicateOption(feedEventToMessage)))),
@@ -70,43 +73,58 @@ const appSubscriptions = Subscription.make<Model, Message>()(() => ({
     ),
   ),
   // Deep links from the decision center and the conversation sidebar.
-  openThread: Subscription.persistentEntry(windowEvents("sf:open-thread").pipe(Stream.map((event) => Message.RequestedOpenThread({ threadId: eventDetail(event) })))),
-  newThread: Subscription.persistentEntry(windowEvents("sf:new-thread").pipe(Stream.map(() => Message.RequestedNewThread()))),
-  // Worker links in shared/transcript.ts.
-  selectWorker: Subscription.persistentEntry(
-    windowEvents("sf:select-worker").pipe(Stream.map((event) => Message.RequestedSelectWorker({ workerId: eventDetail(event) }))),
+  openThread: Subscription.persistentEntry(
+    windowEvents("sf:open-thread").pipe(
+      Stream.map((event) => Message.RequestedOpenThread({ threadId: eventDetail(event) })),
+    ),
+  ),
+  newThread: Subscription.persistentEntry(
+    windowEvents("sf:new-thread").pipe(Stream.map(() => Message.RequestedNewThread())),
   ),
   // Report paths anywhere on the page, including shared DOM modules.
   reportLinks: Subscription.persistentEntry(
-    ReportViewer.reportClicks.pipe(Stream.map(({ ref, agent }) => Message.RequestedOpenReport({ ref, maybeAgent: Option.fromNullishOr(agent) }))),
+    ReportViewer.reportClicks.pipe(
+      Stream.map(({ ref, agent }) => Message.RequestedOpenReport({ ref, maybeAgent: Option.fromNullishOr(agent) })),
+    ),
   ),
-  // The prototype switcher in shared/protos.
-  proto: Subscription.persistentEntry(fromCallback<number>(onProto).pipe(Stream.map((proto) => Message.UpdatedProto({ proto })))),
   // The shared Effect approvals store. Its changes become Messages, so DevTools can replay them.
-  approvals: Subscription.persistentEntry(approvalChanges.pipe(Stream.map(({ pending }) => Message.UpdatedApprovals({ pending })))),
-}));
+  approvals: Subscription.persistentEntry(
+    approvalChanges.pipe(Stream.map(({ pending }) => Message.UpdatedApprovals({ pending }))),
+  ),
+}))
 
 const chatSubscriptions = Subscription.lift(chat.subscriptions)({
   read: (model: Model) => Option.some(model.chat),
   toParentMessage: toGotChatMessage,
-});
+})
 
-const workerPanelSubscriptions = Subscription.lift(WorkerPanel.subscriptions)<Model, Message>({
-  read: (model) => Option.some(model.workerPanel),
-  toParentMessage: toGotWorkerPanelMessage,
-});
+const workersSubscriptions = Subscription.lift(Workers.subscriptions)<Model, Message>({
+  read: (model) => Option.some(model.workers),
+  toParentMessage: toGotWorkersMessage,
+})
 
 const settingsSubscriptions = Subscription.lift(Settings.subscriptions)<Model, Message>({
   read: (model) => Option.some(model.settings),
   toParentMessage: toGotSettingsMessage,
-});
+})
 
-// The diff panel reloads for tool calls of agents in its worktree; the agent list lives in the worker panel.
+// The diff panel reloads for tool calls of agents in its worktree; the agent list lives in `workers`.
 const diffPanelSubscriptions = Subscription.make<Model, Message>()((entry) => ({
   diffPanelReload: entry(DiffPanel.ReloadDependencies, {
-    modelToDependencies: (model) => DiffPanel.reloadDependencies(model.diffPanel, AsyncData.getOrElse(model.workerPanel.workers, () => [])),
-    dependenciesToStream: (dependencies) => DiffPanel.reloadStream(dependencies).pipe(Stream.map(toGotDiffPanelMessage)),
+    modelToDependencies: (model) =>
+      DiffPanel.reloadDependencies(
+        model.diffPanel,
+        AsyncData.getOrElse(model.workers.workers, () => []),
+      ),
+    dependenciesToStream: (dependencies) =>
+      DiffPanel.reloadStream(dependencies).pipe(Stream.map(toGotDiffPanelMessage)),
   }),
-}));
+}))
 
-export const subscriptions = Subscription.aggregate(chatSubscriptions, appSubscriptions, workerPanelSubscriptions, settingsSubscriptions, diffPanelSubscriptions);
+export const subscriptions = Subscription.aggregate(
+  chatSubscriptions,
+  appSubscriptions,
+  workersSubscriptions,
+  settingsSubscriptions,
+  diffPanelSubscriptions,
+)

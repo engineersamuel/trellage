@@ -55,7 +55,7 @@ export const SyncExtensions = Command.define("SyncExtensions", {
       () => (
         syncExtensions(settings, "foldkit"),
         setDiffStyle(settings.diffStyle),
-        setLayoutCritters({ canvas: settings.canvasCritters, inbox: settings.inboxCritters }),
+        setLayoutCritters({ inbox: settings.inboxCritters }),
         setTreeStyle(settings.treeStyle)
       ),
     ).pipe(Effect.as(Message.CompletedSyncExtensions())),

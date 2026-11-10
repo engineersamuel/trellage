@@ -1,5 +1,5 @@
-// Worker critters: a small animated figure per agent that shows what the agent does. Settings `critters`
-// (Foldkit worker panel), `canvasCritters` (Org Canvas cards) and `inboxCritters` (Inbox tree).
+// Worker critters: a small animated figure per agent that shows what the agent does. Setting `inboxCritters`
+// (Inbox conversation tree and canvas).
 // Style "soft flat": body colour = model family, headgear = role, pose and prop = status and SDLC step.
 // Plain DOM: each mounted critter redraws itself at 12 fps until its Mount ends.
 import { Schema } from "effect"
@@ -431,16 +431,16 @@ export const mountCritter = (element: Element, critter: Critter): (() => void) =
 
 // ---------- layout settings (plain-DOM hosts) ----------
 
-/** Plain-DOM layouts with their own critter setting: Org Canvas (`canvasCritters`) and Inbox (`inboxCritters`). */
-export type CritterLayout = "canvas" | "inbox"
-const layoutCritters: Record<CritterLayout, boolean> = { canvas: false, inbox: false }
+/** Plain-DOM layouts with their own critter setting: Inbox (`inboxCritters`). */
+export type CritterLayout = "inbox"
+const layoutCritters: Record<CritterLayout, boolean> = { inbox: false }
 const layoutListeners = new Set<() => void>()
 
 export const layoutCrittersOn = (layout: CritterLayout): boolean => layoutCritters[layout]
 
 /** Hosts call this with the settings whenever they load or change; open layouts redraw. */
 export const setLayoutCritters = (next: Readonly<Record<CritterLayout, boolean>>): void => {
-  if (next.canvas === layoutCritters.canvas && next.inbox === layoutCritters.inbox) return
+  if (next.inbox === layoutCritters.inbox) return
   Object.assign(layoutCritters, next)
   layoutListeners.forEach((redraw) => redraw())
 }

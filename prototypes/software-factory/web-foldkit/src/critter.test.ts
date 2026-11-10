@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
-import type { Worker } from "../domain"
-import { critterOf, critterSvg } from "../../../shared/critter"
+import type { Worker } from "./domain"
+import { critterOf, critterSvg } from "../../shared/critter"
 
 const worker: Worker = {
   id: "w1",

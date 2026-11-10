@@ -173,15 +173,10 @@ const Extension = Schema.Struct({
 export const Settings = Schema.Struct({
   theme: Schema.String,
   themes: Schema.Record(Schema.String, Palette),
-  layout: Schema.Struct({ panel: Schema.String, panelWidth: Schema.Number }),
   navbar: Schema.Array(Schema.String),
   animations: Schema.Boolean,
   diffStyle: Schema.Literals(DIFF_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("terminal" as const))),
-  /** Animated critter per agent in the worker panel; shows its status and SDLC step. */
-  critters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
-  /** Animated critter on each agent card of the Org Canvas layout. */
-  canvasCritters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
-  /** Animated critter on each agent of the Inbox conversation tree. */
+  /** Animated critter on each agent of the Inbox conversation tree and canvas. */
   inboxCritters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
   /** Connector lines of the Inbox conversation tree: classic, tree (growing tree) or vine (ivy vine). */
   treeStyle: Schema.Literals(TREE_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("tree" as const))),
@@ -214,7 +209,6 @@ export type Settings = typeof Settings.Type
 
 export const SettingsOptions = Schema.Struct({
   navbarItems: Schema.Array(Schema.String),
-  panelPositions: Schema.Array(Schema.String),
   efforts: Schema.Array(Schema.String),
   toolKinds: Schema.Array(Schema.String),
   models: Schema.Array(Schema.String),

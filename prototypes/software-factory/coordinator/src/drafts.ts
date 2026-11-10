@@ -18,7 +18,7 @@ export const draftNodeId = (threadId: string) => `draft-${threadId.slice(0, 8)}`
 export const isUnstartedDraft = (t: Pick<Thread, "draft"> | undefined): boolean => !!t?.draft && !t.draft.startedAt
 
 /** Note for coordinators that list an unstarted draft. */
-export const DRAFT_NOTE = "draft: do not message; the human runs it from the canvas"
+export const DRAFT_NOTE = "draft: do not message; the human runs it from the Inbox"
 
 export const ACTION_WORKFLOW: Record<DraftAction, "council" | "six-hats" | "rpi-research" | "hyperresearch"> = {
   council: "council",
@@ -27,7 +27,12 @@ export const ACTION_WORKFLOW: Record<DraftAction, "council" | "six-hats" | "rpi-
   hyperresearch: "hyperresearch",
 }
 
-const LABEL: Record<DraftAction, string> = { council: "Council", debate: "Debate", research: "Research", hyperresearch: "Hyperresearch" }
+const LABEL: Record<DraftAction, string> = {
+  council: "Council",
+  debate: "Debate",
+  research: "Research",
+  hyperresearch: "Hyperresearch",
+}
 
 /** Extra task text per action, after the shared research instructions. */
 const ACTION_NOTE: Partial<Record<DraftAction, string>> = {
@@ -60,7 +65,10 @@ const currentPrompt = (draft: Draft) => draft.versions.find((v) => v.id === draf
 /** One line per report: path, action and the prompt version it read. */
 const reportLines = (draft: Draft, reports: Draft["reports"]): string =>
   reports
-    .map((r) => `- ${r.path} (${LABEL[r.action]}, on prompt version ${draft.versions.findIndex((v) => v.id === r.versionId) + 1})`)
+    .map(
+      (r) =>
+        `- ${r.path} (${LABEL[r.action]}, on prompt version ${draft.versions.findIndex((v) => v.id === r.versionId) + 1})`,
+    )
     .join("\n")
 
 /** The first message of a started draft: its current prompt and the reports to read. */
@@ -74,7 +82,9 @@ export const runMessage = (draft: Draft): string => {
 const actionTask = (draft: Draft, action: DraftAction): string => {
   const workflow = ACTION_WORKFLOW[action]
   const others = draft.reports.filter((r) => r.action !== action)
-  const context = others.length ? `Context from earlier pre-work in this worktree (read first):\n${reportLines(draft, others)}\n\n` : ""
+  const context = others.length
+    ? `Context from earlier pre-work in this worktree (read first):\n${reportLines(draft, others)}\n\n`
+    : ""
   const note = ACTION_NOTE[action]
   return `${context}${researchTask(workflow, currentPrompt(draft), `draft-${workflow}`)}${note ? `\n\n${note}` : ""}`
 }
@@ -101,7 +111,13 @@ export const makeDrafts = (d: DraftDeps) => {
     d.changed(id)
     return draft
   }
-  const version = (prompt: string, extra: Partial<DraftVersion> = {}): DraftVersion => ({ id: crypto.randomUUID(), prompt, source: "human", at: now(), ...extra })
+  const version = (prompt: string, extra: Partial<DraftVersion> = {}): DraftVersion => ({
+    id: crypto.randomUUID(),
+    prompt,
+    source: "human",
+    at: now(),
+    ...extra,
+  })
 
   return {
     create(folderId: string, prompt: string): Thread {
@@ -174,7 +190,8 @@ export const makeDrafts = (d: DraftDeps) => {
       if (t.draft.pending) throw new DraftError(409, "pick a rewrite first")
       const pending = acting.get(id)
       if (pending) throw new DraftError(409, `${pending} is starting`)
-      if (t.draft.reports.some((r) => r.action === action && d.isRunning(r.workerId))) throw new DraftError(409, `${action} is already running`)
+      if (t.draft.reports.some((r) => r.action === action && d.isRunning(r.workerId)))
+        throw new DraftError(409, `${action} is already running`)
       const workflow = ACTION_WORKFLOW[action]
       acting.set(id, action)
       try {

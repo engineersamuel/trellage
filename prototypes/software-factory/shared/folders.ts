@@ -11,7 +11,6 @@ import { Folder, Threads, type Thread } from "./schemas"
 //   - Clicking a conversation opens it (window event "sf:open-thread", handled by the host UI).
 //   - The folder for new conversations is kept in the sf_folder cookie, which the server reads.
 
-
 const COOKIE = /(?:^|;\s*)sf_folder=([\w-]+)/
 const folderNow = () => document.cookie.match(COOKIE)?.[1] ?? "general"
 const setFolder = (id: string) => (document.cookie = `sf_folder=${id}; path=/; max-age=31536000; samesite=lax`)
@@ -62,7 +61,7 @@ const renderThread = (t: Thread): HTMLAnchorElement => {
   if (t.cleanedAt) r.append(el("span", "sff-merged", "merged"))
   if (t.archivedAt) {
     const a = el("span", "sff-merged", "archived")
-    a.title = "Archived: hidden from the org canvas. Click to restore."
+    a.title = "Archived: hidden from the Inbox. Click to restore."
     a.onclick = (e) => {
       e.preventDefault()
       e.stopPropagation()
@@ -98,7 +97,7 @@ const render = () => {
     head.append(name, add)
     group.append(head)
     // An unstarted draft is not a conversation yet: a message typed into it would start a run before Run.
-    for (const t of threads.filter((t) => t.folderId === f.id && !(t.draft && !t.draft.startedAt))) {
+    for (const t of threads.filter((x) => x.folderId === f.id && !(x.draft && !x.draft.startedAt))) {
       group.append(renderThread(t))
     }
     list.append(group)
@@ -125,7 +124,11 @@ const addRepo = async (form: HTMLFormElement) => {
   const input = form.querySelector("input")!
   const err = form.querySelector<HTMLElement>(".sff-error")!
   const added = await Effect.runPromise(
-    json("/api/folders", Folder, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: input.value.trim() }) }).pipe(
+    json("/api/folders", Folder, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: input.value.trim() }),
+    }).pipe(
       Effect.map((f) => ({ ok: true as const, f })),
       Effect.catch((e) => Effect.succeed({ ok: false as const, reason: e.reason })),
     ),
@@ -161,9 +164,9 @@ export const startFolderSidebar = (): void => {
   const openLocation = () => {
     const threadId = new URL(window.location.href).searchParams.get("thread")
     syncThreadUrl(threadId)
-    window.dispatchEvent(threadId
-      ? new CustomEvent("sf:open-thread", { detail: threadId })
-      : new CustomEvent("sf:new-thread"))
+    window.dispatchEvent(
+      threadId ? new CustomEvent("sf:open-thread", { detail: threadId }) : new CustomEvent("sf:new-thread"),
+    )
   }
   window.addEventListener("popstate", openLocation)
   void load().then(() => {

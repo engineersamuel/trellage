@@ -1,7 +1,7 @@
 import { Array, Option, Record } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { Button, Checkbox, Dialog, Input, Select, Slider, Textarea } from "@foldkit/ui"
+import { Button, Checkbox, Dialog, Input, Select, Textarea } from "@foldkit/ui"
 import type { Delivery, JevDecision, SecurityReview, Settings, SettingsOptions } from "../domain"
 import { DIFF_STYLES } from "../../../shared/diff"
 import { STYLES } from "../../../shared/diffview"
@@ -163,20 +163,6 @@ const themeSection = (settings: Settings, h: HtmlBuilder<Message>): Html =>
         h,
       ),
       checkbox(
-        "critters",
-        "worker critters",
-        settings.critters,
-        (isChecked) => Message.ToggledCritters({ isChecked }),
-        h,
-      ),
-      checkbox(
-        "canvas-critters",
-        "org canvas critters",
-        settings.canvasCritters,
-        (isChecked) => Message.ToggledCanvasCritters({ isChecked }),
-        h,
-      ),
-      checkbox(
         "inbox-critters",
         "inbox critters",
         settings.inboxCritters,
@@ -222,51 +208,6 @@ const treeSection = (settings: Settings, h: HtmlBuilder<Message>): Html =>
           ),
         ),
       ),
-    ],
-    h,
-  )
-
-const layoutSection = (model: Model, settings: Settings, options: SettingsOptions, h: HtmlBuilder<Message>): Html =>
-  section(
-    "Layout",
-    [
-      h.div(
-        [h.Class("fk-chips")],
-        Array.map(options.panelPositions, (position) =>
-          h.keyed("span")(
-            position,
-            [],
-            [chip(position, position === settings.layout.panel, Message.ClickedPanelPosition({ position }), h)],
-          ),
-        ),
-      ),
-      h.submodel({
-        slotId: model.panelWidthSlider.id,
-        model: model.panelWidthSlider,
-        view: Slider.view,
-        viewInputs: {
-          value: settings.layout.panelWidth,
-          formatValue: (value: number) => `${value}%`,
-          toView: (attributes: Slider.SliderAttributes) =>
-            h.div(
-              [h.Class("fk-slider")],
-              [
-                h.label([...attributes.label], [`panel width ${settings.layout.panelWidth}%`]),
-                h.div(
-                  [...attributes.root, h.Class("fk-slider-root")],
-                  [
-                    h.div(
-                      [...attributes.track, h.Class("fk-slider-track")],
-                      [h.div([...attributes.filledTrack, h.Class("fk-slider-fill")])],
-                    ),
-                    h.div([...attributes.thumb, h.Class("fk-slider-thumb")]),
-                  ],
-                ),
-              ],
-            ),
-        },
-        toParentMessage: (message: Slider.Message) => Message.GotPanelWidthSliderMessage({ message }),
-      }),
     ],
     h,
   )
@@ -666,7 +607,6 @@ const drawerContent = (model: Model, render: Dialog.RenderInfo, h: HtmlBuilder<M
       themeSection(settings, h),
       diffSection(settings, h),
       treeSection(settings, h),
-      layoutSection(model, settings, options, h),
       navbarSection(settings, options, h),
       deliverySection(model, settings, h),
       agentSection(settings, options, h),

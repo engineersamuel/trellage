@@ -501,3 +501,203 @@
   flex-direction: column;
   background: var(--sf-surface);
 }
+
+/* Harness icon: which SDK runs the agent (Copilot, Claude, Pi). Global: the stream uses it too. */
+.sf-harness {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+}
+.sf-harness svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Tree | Canvas switch in the conversation column header. */
+.sfp-p3 .p3-treehead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sfp-p3 .p3-treehead h5 {
+  margin-left: 2px;
+}
+.sfp-p3 .p3-seg {
+  display: inline-flex;
+  margin-top: 8px;
+  border: 1px solid var(--sf-border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.sfp-p3 .p3-seg button {
+  border: 0;
+  border-radius: 0;
+  padding: 2px 10px;
+  font-size: 11px;
+  background: transparent;
+  color: var(--sf-muted);
+}
+.sfp-p3 .p3-seg button.on {
+  background: var(--p3-sel);
+  color: var(--sf-text);
+}
+/* Canvas on: the conversation column takes the room, the detail becomes a side panel. */
+.sfp-p3.canvas {
+  grid-template-columns: 180px 255px minmax(0, 1fr) minmax(360px, 38%);
+}
+.sfp-p3 .p3-canvas {
+  overflow: auto;
+  padding: 4px 0;
+}
+.sfp-p3 .p3-world {
+  position: relative;
+}
+.sfp-p3 .p3-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sfp-p3 .p3-edges path {
+  fill: none;
+  stroke: var(--p3-line);
+  stroke-width: 1.5;
+}
+.sfp-p3 .p3-edges path.s-running {
+  stroke: var(--p3-run);
+  stroke-dasharray: 6 5;
+  animation: p3-flow 0.9s linear infinite;
+}
+@keyframes p3-flow {
+  to {
+    stroke-dashoffset: -11;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sfp-p3 .p3-edges path.s-running {
+    animation: none;
+  }
+}
+.sfp-p3 .p3-cv {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
+  cursor: pointer;
+  overflow: hidden;
+  font-size: 12px;
+}
+.sfp-p3 .p3-cv:hover {
+  border-color: var(--p3-hover);
+}
+.sfp-p3 .p3-cv:focus-visible,
+.sfp-p3 .p3-cv.on {
+  border-color: var(--sf-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sf-accent) 25%, transparent);
+}
+.sfp-p3 .p3-cv .p3-pill {
+  margin-left: auto;
+}
+.sfp-p3 .p3-cv-title {
+  color: var(--sf-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* "+ Draft" in the sidebar, and the draft detail. */
+.sfp-p3 .p3-draft-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 10px 8px;
+}
+.sfp-p3 .p3-draft-form[hidden] {
+  display: none;
+}
+.sfp-p3 .p3-draft-form select,
+.sfp-p3 .p3-draft-form textarea {
+  background: var(--sf-bg);
+  color: var(--sf-text);
+  border: 1px solid var(--sf-border);
+  border-radius: 8px;
+  font: inherit;
+  padding: 4px 8px;
+  resize: vertical;
+}
+.sfp-p3 .p3-draft-form .p3-err:empty {
+  display: none;
+}
+.sfp-p3 .p3-draftbody {
+  overflow: auto;
+  padding: 10px 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sfp-p3 .p3-draftbody h4 {
+  margin: 8px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sf-muted);
+}
+.sfp-p3 .p3-draft-err {
+  white-space: pre-wrap;
+}
+.sfp-p3 .p3-cands {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+.sfp-p3 .p3-cand,
+.sfp-p3 .p3-ver {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--sf-border);
+  border-radius: 8px;
+  background: var(--p3-raised);
+}
+.sfp-p3 .p3-cand-prompt {
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.sfp-p3 .p3-diff {
+  font:
+    12px ui-monospace,
+    Menlo,
+    monospace;
+  white-space: pre-wrap;
+}
+.sfp-p3 .p3-diff .del {
+  color: #f87171;
+}
+.sfp-p3 .p3-diff .add {
+  color: #4ade80;
+}
+.sfp-p3 .p3-diff .same {
+  color: var(--sf-muted);
+}
+.p3-report {
+  overflow: auto;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.sfp-p3 .p3-newdraft .p3-new {
+  margin-top: 6px;
+  margin-bottom: 6px;
+  background: var(--sf-surface);
+  color: var(--sf-text);
+}

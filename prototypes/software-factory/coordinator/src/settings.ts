@@ -8,8 +8,7 @@ import path from "node:path"
 import { Effect, Schema } from "effect"
 
 export const NAVBAR_ITEMS = ["status", "workers", "model", "context", "auth", "crons", "repo"]
-export const PANEL_POSITIONS = ["right", "left", "hidden"]
-export const HOTKEY_ACTIONS = ["toggleSettings", "togglePanel", "cycleTheme", "focusCoordinator", "abortCoordinator"]
+export const HOTKEY_ACTIONS = ["toggleSettings", "cycleTheme", "focusCoordinator", "abortCoordinator"]
 export const EFFORTS = ["default", "low", "medium", "high", "xhigh"]
 export const WORKER_HARNESSES = ["auto", "copilot", "claude", "pi"]
 /** Who answers factory decisions: Jev, or a copilot-proxy-rs decision model. */
@@ -47,20 +46,16 @@ const Extension = Schema.Struct({
 const SettingsSchema = Schema.Struct({
   theme: Schema.String,
   themes: Schema.Record(Schema.String, Palette),
-  layout: Schema.Struct({ panel: Schema.String, panelWidth: Schema.Number }),
   navbar: Schema.Array(Schema.String),
   animations: Schema.Boolean,
   /** How tool calls show file changes in every chat and transcript. */
   diffStyle: Schema.Literals(DIFF_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("terminal" as const))),
-  /** Animated critter per agent in the worker panel; shows its status and SDLC step. */
-  critters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
-  /** Animated critter on each agent card of the Org Canvas layout. */
-  canvasCritters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
-  /** Animated critter on each agent of the Inbox conversation tree. */
+  /** Animated critter on each agent of the Inbox conversation tree and canvas; shows its status and SDLC step. */
   inboxCritters: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
   /** Connector lines of the Inbox conversation tree: classic, tree (growing tree) or vine (ivy vine). */
   treeStyle: Schema.Literals(TREE_STYLES).pipe(Schema.withDecodingDefaultKey(Effect.succeed("tree" as const))),
   hotkeys: Schema.Record(Schema.String, Schema.String),
+  /** Agent the Inbox shows (focus_agent, the worker board's Show). */
   focus: Schema.String,
   banner: Schema.NullOr(Schema.String),
   agent: Schema.Struct({
@@ -128,15 +123,12 @@ export const defaultSettings = (): Settings => ({
     forest: palette("#0d1410", "#15201a", "#22342a", "#e0efe4", "#94b39f", "#34d399"),
     ember: palette("#140d0b", "#20140f", "#3a2219", "#f5e6df", "#b99d90", "#f97316"),
   },
-  layout: { panel: "right", panelWidth: 45 },
   navbar: ["status", "workers", "model", "context"],
   animations: true,
   diffStyle: "terminal",
-  critters: false,
-  canvasCritters: false,
   inboxCritters: false,
   treeStyle: "tree",
-  hotkeys: { ",": "toggleSettings", p: "togglePanel", t: "cycleTheme", ".": "focusCoordinator" },
+  hotkeys: { ",": "toggleSettings", t: "cycleTheme", ".": "focusCoordinator" },
   focus: "coordinator",
   banner: null,
   agent: { model: "gpt-6-astra", reasoningEffort: "high", disabledTools: [], instructions: "" },
@@ -149,6 +141,19 @@ export const defaultSettings = (): Settings => ({
   supervisor: { enabled: true, everySeconds: 60, stallSeconds: 300, offTrackCheck: true },
 })
 
+/** Keys and hotkey actions of the retired Classic and Org Canvas layouts. A stored file may still hold them;
+ *  without this, decoding (no excess keys) would reset every setting to the defaults. */
+const RETIRED_KEYS = ["layout", "critters", "canvasCritters"]
+const RETIRED_ACTIONS = ["togglePanel"]
+const dropRetired = (stored: unknown): unknown => {
+  if (!isObject(stored)) return stored
+  for (const k of RETIRED_KEYS) delete stored[k]
+  if (isObject(stored.hotkeys))
+    for (const [key, action] of Object.entries(stored.hotkeys))
+      if (RETIRED_ACTIONS.includes(String(action))) delete stored.hotkeys[key]
+  return stored
+}
+
 export const settingsPath = (root: string): string => path.join(root, "settings.json")
 
 /** Stored settings over the defaults; unreadable or invalid files give the defaults. */
@@ -156,7 +161,7 @@ export const loadSettings = (file: string): Settings => {
   try {
     if (!existsSync(file)) return defaultSettings()
     const doc = structuredClone(defaultSettings()) as unknown
-    merge(doc, JSON.parse(readFileSync(file, "utf8")))
+    merge(doc, dropRetired(JSON.parse(readFileSync(file, "utf8"))))
     return decode(doc)
   } catch {
     return defaultSettings()
@@ -196,8 +201,6 @@ const validate = (s: Settings): void => {
   if (s.supervisor.everySeconds < MIN_CRON_SECONDS)
     throw new Error(`supervisor.everySeconds must be >= ${MIN_CRON_SECONDS}`)
   if (s.supervisor.stallSeconds < 60) throw new Error("supervisor.stallSeconds must be >= 60")
-  oneOf("layout.panel", s.layout.panel, PANEL_POSITIONS)
-  if (!(s.layout.panelWidth >= 25 && s.layout.panelWidth <= 70)) throw new Error("layout.panelWidth must be 25..=70")
   for (const item of s.navbar) oneOf("navbar", item, NAVBAR_ITEMS)
   for (const action of Object.values(s.hotkeys)) oneOf("hotkeys", action, HOTKEY_ACTIONS)
   oneOf("agent.reasoningEffort", s.agent.reasoningEffort, EFFORTS)

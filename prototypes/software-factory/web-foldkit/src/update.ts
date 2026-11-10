@@ -2,7 +2,6 @@ import { Equal, Option } from "effect"
 import { AsyncData, Command, Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import type { ChatBackend, Flags } from "@plana-solutions/agent-interface"
-import { currentProto } from "../../shared/protos"
 import {
   foldChat,
   newThread,
@@ -13,7 +12,7 @@ import {
   toGotChatMessage,
 } from "./chat"
 import { chat } from "./chatProgram"
-import { RefreshThreads, ReloadThread, SetLayout, SyncExtensionWorkers, SyncThreadUrl } from "./command"
+import { RefreshThreads, ReloadThread, ShowAgent, SyncExtensionWorkers, SyncThreadUrl } from "./command"
 import { COORDINATOR_ID } from "./domain"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -21,60 +20,32 @@ import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
 import * as Goals from "./goals"
 import * as Settings from "./settings"
-import * as WorkerPanel from "./workerPanel"
+import * as Workers from "./workers"
 
 export type UpdateReturn = Update.Return<Model, Message, ChatBackend>
 type Step = Update.Step<Model, Message, ChatBackend>
 
-export const toGotWorkerPanelMessage = (message: WorkerPanel.Message): Message =>
-  Message.GotWorkerPanelMessage({ message })
+export const toGotWorkersMessage = (message: Workers.Message): Message => Message.GotWorkersMessage({ message })
 export const toGotSettingsMessage = (message: Settings.Message): Message => Message.GotSettingsMessage({ message })
 export const toGotGoalsMessage = (message: Goals.Message): Message => Message.GotGoalsMessage({ message })
 export const toGotDiffPanelMessage = (message: DiffPanel.Message): Message => Message.GotDiffPanelMessage({ message })
 export const toGotReportViewerMessage = (message: ReportViewer.Message): Message =>
   Message.GotReportViewerMessage({ message })
 
-const readWorkerPanel = (model: Model) => Option.some(model.workerPanel)
-// An unchanged child keeps the parent Model: Foldkit renders only when the Model reference changes, and the panel
-// ignores most feed events (stream deltas, other workers).
-const writeWorkerPanel = (model: Model, next: WorkerPanel.Model): Model =>
-  next === model.workerPanel ? model : modifyFields(model, { workerPanel: () => next })
+const readWorkers = (model: Model) => Option.some(model.workers)
+// An unchanged child keeps the parent Model: Foldkit renders only when the Model reference changes.
+const writeWorkers = (model: Model, next: Workers.Model): Model =>
+  next === model.workers ? model : modifyFields(model, { workers: () => next })
 const readSettings = (model: Model) => Option.some(model.settings)
 const writeSettings = (model: Model, next: Settings.Model): Model =>
   next === model.settings ? model : modifyFields(model, { settings: () => next })
 
-/** Ask the server to focus a worker; the settings broadcast that follows moves the panel. */
-const requestFocus = (workerId: string): Step =>
-  Update.foldChildStep({
-    update: Settings.requestFocus(workerId),
-    read: readSettings,
-    write: writeSettings,
-    toParentMessage: toGotSettingsMessage,
-  })
-
-/** Show `workerId` in the panel. */
-const focusWorker = (workerId: string): Step =>
-  Update.foldChildStep({
-    update: WorkerPanel.focus(workerId),
-    read: readWorkerPanel,
-    write: writeWorkerPanel,
-    toParentMessage: toGotWorkerPanelMessage,
-  })
-
-const showCritters = (isOn: boolean): Step =>
-  Update.foldChildStep({
-    update: WorkerPanel.showCritters(isOn),
-    read: readWorkerPanel,
-    write: writeWorkerPanel,
-    toParentMessage: toGotWorkerPanelMessage,
-  })
-
 const abortWorker = (workerId: string): Step =>
   Update.foldChildStep({
-    update: WorkerPanel.abort(workerId),
-    read: readWorkerPanel,
-    write: writeWorkerPanel,
-    toParentMessage: toGotWorkerPanelMessage,
+    update: Workers.abort(workerId),
+    read: readWorkers,
+    write: writeWorkers,
+    toParentMessage: toGotWorkersMessage,
   })
 
 const pressSettingsHotkey = (action: string): Step =>
@@ -85,13 +56,11 @@ const pressSettingsHotkey = (action: string): Step =>
     toParentMessage: toGotSettingsMessage,
   })
 
-const foldWorkerPanel = Update.foldChild({
-  read: readWorkerPanel,
-  write: writeWorkerPanel,
-  toParentMessage: toGotWorkerPanelMessage,
-  update: WorkerPanel.update,
-  // The user picked a worker: the focus setting decides which worker every UI shows.
-  foldOutMessage: WorkerPanel.OutMessage.match<Step>({ SelectedWorker: ({ workerId }) => requestFocus(workerId) }),
+const foldWorkers = Update.foldChild({
+  read: readWorkers,
+  write: writeWorkers,
+  toParentMessage: toGotWorkersMessage,
+  update: Workers.update,
 })
 
 const foldGoals = Update.foldChild({
@@ -147,10 +116,10 @@ const foldSettings = Update.foldChild({
   toParentMessage: toGotSettingsMessage,
   update: Settings.update,
   foldOutMessage: Settings.OutMessage.match<Step>({
-    ReceivedFocus:
-      ({ workerId, critters }) =>
-      (model) =>
-        Update.combine(model, [focusWorker(workerId), showCritters(critters)]),
+    // focus_agent or the worker board's Show: the Inbox selects that agent.
+    ChangedFocus:
+      ({ workerId }) =>
+      (model) => ({ model, commands: [ShowAgent({ workerId })] }),
   }),
 })
 
@@ -175,7 +144,7 @@ const refreshThreads: Step = (model) => ({ model, commands: [RefreshThreads()] }
 const handleMessage = (model: Model, message: Message) =>
   Message.match<UpdateReturn>(message, {
     GotChatMessage: ({ message: childMessage }) => foldChat(model, childMessage),
-    GotWorkerPanelMessage: ({ message: childMessage }) => foldWorkerPanel(model, childMessage),
+    GotWorkersMessage: ({ message: childMessage }) => foldWorkers(model, childMessage),
     GotSettingsMessage: ({ message: childMessage }) => foldSettings(model, childMessage),
     GotGoalsMessage: ({ message: childMessage }) => foldGoals(model, childMessage),
     GotDiffPanelMessage: ({ message: childMessage }) => foldDiffPanel(model, childMessage),
@@ -188,14 +157,7 @@ const handleMessage = (model: Model, message: Message) =>
     ReceivedCardDataChange: () => refreshCards(model),
     RequestedOpenThread: ({ threadId }) => openThread(threadId)(model),
     RequestedNewThread: () => newThread(model),
-    RequestedSelectWorker: ({ workerId }) => requestFocus(workerId)(model),
     RequestedOpenReport: ({ ref, maybeAgent }) => openReport(ref, maybeAgent)(model),
-    UpdatedProto: ({ proto }) => ({ model: modifyFields(model, { protoIndex: () => proto }) }),
-    ReceivedLayoutRequest: ({ layout }) => ({
-      model,
-      commands: layout === model.protoIndex ? [] : [SetLayout({ layout })],
-    }),
-    CompletedSetLayout: () => ({ model }),
     PressedKey: ({ key }) =>
       Option.match(
         Option.flatMap(Settings.maybeSettings(model.settings), (settings) =>
@@ -218,6 +180,7 @@ const handleMessage = (model: Model, message: Message) =>
     FailedRefreshThreads: () => ({ model }),
     CompletedSyncThreadUrl: () => ({ model }),
     CompletedSyncExtensionWorkers: () => ({ model }),
+    CompletedShowAgent: () => ({ model }),
     CompletedAttachSlot: () => ({ model }),
   })
 
@@ -230,10 +193,10 @@ const syncOutside =
       ...(Equal.equals(previous.chat.maybeSelectedThreadId, model.chat.maybeSelectedThreadId)
         ? []
         : [SyncThreadUrl({ maybeThreadId: model.chat.maybeSelectedThreadId })]),
-      ...Option.match(AsyncData.getData(model.workerPanel.workers), {
+      ...Option.match(AsyncData.getData(model.workers.workers), {
         onNone: () => [],
         onSome: (workers) =>
-          Option.contains(AsyncData.getData(previous.workerPanel.workers), workers)
+          Option.contains(AsyncData.getData(previous.workers.workers), workers)
             ? []
             : [SyncExtensionWorkers({ workers })],
       }),
@@ -263,7 +226,7 @@ export const init = (
   url: Parameters<typeof chat.init>[1],
   maybeThreadId: Option.Option<string>,
 ): UpdateReturn => {
-  const workerPanel = WorkerPanel.init(COORDINATOR_ID)
+  const workers = Workers.init()
   const settings = Settings.init()
   const goals = Goals.init()
   const diffPanel = DiffPanel.init()
@@ -272,12 +235,11 @@ export const init = (
     toParentMessage: toGotChatMessage,
     toParentModel: (chatModel): Model => ({
       chat: chatModel,
-      workerPanel: workerPanel.model,
+      workers: workers.model,
       settings: settings.model,
       goals: goals.model,
       diffPanel: diffPanel.model,
       reportViewer: reportViewer.model,
-      protoIndex: currentProto(),
       approvals: [],
     }),
   })
@@ -286,7 +248,7 @@ export const init = (
       model,
       commands: [
         ...(app.commands ?? []),
-        ...Command.mapMessages(workerPanel.commands, toGotWorkerPanelMessage),
+        ...Command.mapMessages(workers.commands, toGotWorkersMessage),
         ...Command.mapMessages(settings.commands, toGotSettingsMessage),
       ],
     }),

@@ -29,7 +29,10 @@ export const parseNumstat = (out: string, base: string): DiffSummary => {
 
 /** Committed and uncommitted changes of `workdir` against `base`. */
 export const diffSummary = (workdir: string, base: string): DiffSummary =>
-  parseNumstat(execFileSync("git", ["diff", "--numstat", base], { cwd: workdir, encoding: "utf8", maxBuffer: 8 << 20 }), base)
+  parseNumstat(
+    execFileSync("git", ["diff", "--numstat", base], { cwd: workdir, encoding: "utf8", maxBuffer: 8 << 20 }),
+    base,
+  )
 
 /** Ranked findings of a report: `## 1. Title` headings and their text. Same rule as the UI's report model. */
 export const reportFindings = (md: string): { rank: number; title: string; body: string }[] => {
@@ -66,11 +69,14 @@ const lit = (v: unknown): string => JSON.stringify(v ?? null)
 /** Body statements per card, reading the live view `c` (rows are objects of the card's view). */
 const body = (name: string, c: string, x: string): { children: string[]; lines: string[] } => {
   const L: string[] = []
-  const col = (id: string, label: string, data: string) => (L.push(`${x}${id} = Col(${q(label)}, ${data})`), `${x}${id}`)
+  const col = (id: string, label: string, data: string) => (
+    L.push(`${x}${id} = Col(${q(label)}, ${data})`),
+    `${x}${id}`
+  )
   const table = (id: string, cols: string[]) => (L.push(`${x}${id} = Table([${cols.join(", ")}])`), `${x}${id}`)
   switch (name) {
     case "show_worker_board":
-      // A row's "Show" puts that agent in the side panel.
+      // A row's "Show" selects that agent in the Inbox.
       L.push(`${x}focus = Mutation("focus_agent", {id: $${x}agent})`)
       return {
         lines: L,
@@ -81,7 +87,11 @@ const body = (name: string, c: string, x: string): { children: string[]; lines: 
             col("m", "Model", `${c}.rows.model`),
             col("mem", "Memory", `${c}.rows.memory`),
             col("ctx", "Context", `${c}.rows.context`),
-            col("go", "", `@Each(${c}.rows, "r", Button("Show", Action([@Set($${x}agent, r.id), @Run(${x}focus)]), "tertiary", "normal", "extra-small"))`),
+            col(
+              "go",
+              "",
+              `@Each(${c}.rows, "r", Button("Show", Action([@Set($${x}agent, r.id), @Run(${x}focus)]), "tertiary", "normal", "extra-small"))`,
+            ),
           ]),
         ],
       }
@@ -122,7 +132,16 @@ const body = (name: string, c: string, x: string): { children: string[]; lines: 
         ],
       }
     case "show_diff_summary":
-      return { lines: L, children: [table("t", [col("p", "File", `${c}.rows.path`), col("a", "Added", `${c}.rows.added`), col("r", "Removed", `${c}.rows.removed`)])] }
+      return {
+        lines: L,
+        children: [
+          table("t", [
+            col("p", "File", `${c}.rows.path`),
+            col("a", "Added", `${c}.rows.added`),
+            col("r", "Removed", `${c}.rows.removed`),
+          ]),
+        ],
+      }
     case "show_report_findings":
       // "Start" opens a new conversation for the finding.
       L.push(`${x}start = Mutation("start_finding", {path: ${c}.path, rank: $${x}rank, scope: $${x}scope})`)
@@ -130,7 +149,11 @@ const body = (name: string, c: string, x: string): { children: string[]; lines: 
         lines: L,
         children: [
           table("t", [
-            col("go", "", `@Each(${c}.rows, "r", Button("▶ Start", Action([@Set($${x}rank, r.rank), @Run(${x}start)]), "secondary", "normal", "extra-small"))`),
+            col(
+              "go",
+              "",
+              `@Each(${c}.rows, "r", Button("▶ Start", Action([@Set($${x}rank, r.rank), @Run(${x}start)]), "secondary", "normal", "extra-small"))`,
+            ),
             col("f", "Finding", `@Each(${c}.rows, "r", Text("text", r.title, r.subtitle))`),
           ]),
         ],
@@ -144,7 +167,11 @@ const body = (name: string, c: string, x: string): { children: string[]; lines: 
           table("t", [
             col("d", "Decision", `@Each(${c}.rows, "r", Text("text", r.title, r.context))`),
             col("k", "", `@Each(${c}.rows, "r", Tag(r.kind, null, "sm", r.variant))`),
-            col("o", "Answer", `@Each(${c}.rows, "r", Buttons(@Each(r.options, "o", Button(o, Action([@Set($${x}pick, r.id + "|" + o), @Run(${x}answer), @Run(${x}card)]), "secondary", "normal", "extra-small"))))`),
+            col(
+              "o",
+              "Answer",
+              `@Each(${c}.rows, "r", Buttons(@Each(r.options, "o", Button(o, Action([@Set($${x}pick, r.id + "|" + o), @Run(${x}answer), @Run(${x}card)]), "secondary", "normal", "extra-small"))))`,
+            ),
           ]),
         ],
       }
@@ -157,7 +184,13 @@ const body = (name: string, c: string, x: string): { children: string[]; lines: 
  * The live OpenUI card for a show_* tool result. `scope` is the coordinator whose data it shows; `prefix` keeps the
  * names of several cards in one message apart. Null when the tool is not a card or the result is not JSON.
  */
-export const cardOpenUi = (toolName: string, result: string, scope = "coordinator", args: Record<string, unknown> = {}, prefix = "x"): string | null => {
+export const cardOpenUi = (
+  toolName: string,
+  result: string,
+  scope = "coordinator",
+  args: Record<string, unknown> = {},
+  prefix = "x",
+): string | null => {
   if (!CARD_TOOLS.has(toolName)) return null
   let data: unknown
   try {
@@ -175,7 +208,10 @@ export const cardOpenUi = (toolName: string, result: string, scope = "coordinato
     `${c} = Query("factory_card", ${lit(queryArgs)}, ${lit(v)}, ${CARD_REFRESH_SECONDS})`,
     `${x}head = CardHeader(${c}.title, ${c}.subtitle)`,
   ]
-  if (v.metrics.length) (out.push(`${x}metrics = TextContent(${c}.metricsText)`), shown.push(`${x}metrics`))
+  if (v.metrics.length) {
+    out.push(`${x}metrics = TextContent(${c}.metricsText)`)
+    shown.push(`${x}metrics`)
+  }
   // The note (nothing yet, an error) shows only while there is one; the rows show only while there are rows.
   out.push(`${x}note = ${c}.note ? Callout(${c}.noteVariant, "", ${c}.note) : null`)
   shown.push(`${x}note`)
@@ -184,7 +220,16 @@ export const cardOpenUi = (toolName: string, result: string, scope = "coordinato
   return [`ROOT = Card([${shown.join(", ")}])`, ...out].join("\n")
 }
 
-export const CARD_TOOLS = new Set(["show_worker_board", "show_delivery_run", "show_security_review", "show_code_review", "show_sdlc", "show_diff_summary", "show_report_findings", "show_decisions"])
+export const CARD_TOOLS = new Set([
+  "show_worker_board",
+  "show_delivery_run",
+  "show_security_review",
+  "show_code_review",
+  "show_sdlc",
+  "show_diff_summary",
+  "show_report_findings",
+  "show_decisions",
+])
 
 /** Several cards (each built with its own prefix) as one program: Foldkit shows only a turn's last message as the answer. */
 export const mergeCards = (programs: readonly string[]): string => {

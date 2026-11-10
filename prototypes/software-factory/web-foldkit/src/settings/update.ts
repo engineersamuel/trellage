@@ -1,7 +1,7 @@
 import { Array, Match, Number, Option, Record, Result, String, pipe } from "effect"
 import { AsyncData, Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
-import { Dialog, Slider } from "@foldkit/ui"
+import { Dialog } from "@foldkit/ui"
 import {
   type Delivery,
   DeliveryAsyncData,
@@ -18,15 +18,12 @@ type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 type Step = Update.Step<Model, Message>
 
 export const DIALOG_ID = "settings"
-const PANEL_WIDTH_MIN = 25
-const PANEL_WIDTH_MAX = 70
 
 export const init = (): Update.Return<Model, Message> => ({
   model: {
     document: SettingsAsyncData.Loading(),
     delivery: DeliveryAsyncData.Loading(),
     dialog: Dialog.init({ id: DIALOG_ID }),
-    panelWidthSlider: Slider.init({ id: "panel-width", min: PANEL_WIDTH_MIN, max: PANEL_WIDTH_MAX, step: 1 }),
     maybePatchError: Option.none(),
     cronDraft: EMPTY_CRON_DRAFT,
     maybeCronDraftError: Option.none(),
@@ -56,11 +53,13 @@ const storeDocument =
     commands: [SyncExtensions({ settings: document.settings })],
   })
 
-/** Tell the parent which worker the settings focus. */
-const withFocus = (document: SettingsDocument) =>
-  Update.withOutMessage(
-    OutMessage.ReceivedFocus({ workerId: document.settings.focus, critters: document.settings.critters }),
-  )
+/** Tell the parent when an update moved the focus to another agent. The first load is no move. */
+const withFocusChange =
+  (previous: Settings, document: SettingsDocument) =>
+  (step: Update.Return<Model, Message>): UpdateReturn =>
+    previous.focus === document.settings.focus
+      ? step
+      : Update.withOutMessage(OutMessage.ChangedFocus({ workerId: document.settings.focus }))(step)
 
 const refreshDelivery = Update.refresh<Model, Message, Delivery, string>({
   read: (model) => Option.some(model.delivery),
@@ -101,17 +100,6 @@ export const toggleDialog = Update.foldChildStep({
   }),
 })
 
-const foldPanelWidthSlider = Update.foldChild({
-  update: Slider.update,
-  read: (model: Model) => Option.some(model.panelWidthSlider),
-  write: (model: Model, slider: Slider.Model) =>
-    slider === model.panelWidthSlider ? model : modifyFields(model, { panelWidthSlider: () => slider }),
-  toParentMessage: (message: Slider.Message) => Message.GotPanelWidthSliderMessage({ message }),
-  foldOutMessage: Slider.OutMessage.match<Step>({
-    ChangedValue: ({ value }) => patch({ layout: { panelWidth: value } }),
-  }),
-})
-
 /** Validate the cron draft: a name, a prompt, and a whole number of seconds above zero. */
 const parseCronDraft = (
   model: Model,
@@ -141,7 +129,7 @@ const submitCronDraft = (model: Model): UpdateReturn =>
 
 export const update = (model: Model, message: Message) =>
   Message.match<UpdateReturn>(message, {
-    SucceededFetchSettings: ({ document }) => pipe(storeDocument(document)(model), withFocus(document)),
+    SucceededFetchSettings: ({ document }) => storeDocument(document)(model),
     FailedFetchSettings: ({ error }) => ({
       model: modifyFields(model, { document: (current) => AsyncData.settle(current, Result.fail(error)) }),
     }),
@@ -155,9 +143,12 @@ export const update = (model: Model, message: Message) =>
     ReceivedSettingsUpdate: ({ document: { settings, css } }) =>
       Option.match(AsyncData.getData(model.document), {
         onNone: () => ({ model, commands: [FetchSettings()] }),
-        onSome: ({ options }) => {
+        onSome: ({ settings: previous, options }) => {
           const document = { settings, css, options }
-          return pipe(Update.combine(model, [storeDocument(document), refreshDelivery]), withFocus(document))
+          return pipe(
+            Update.combine(model, [storeDocument(document), refreshDelivery]),
+            withFocusChange(previous, document),
+          )
         },
       }),
     ReceivedDeliveryChange: () => refreshDelivery(model),
@@ -166,15 +157,11 @@ export const update = (model: Model, message: Message) =>
     FailedPatchSettings: ({ error }) => ({ model: modifyFields(model, { maybePatchError: () => Option.some(error) }) }),
     ClickedOpenSettings: () => toggleDialog(model),
     GotDialogMessage: ({ message: childMessage }) => foldDialog(model, childMessage),
-    GotPanelWidthSliderMessage: ({ message: childMessage }) => foldPanelWidthSlider(model, childMessage),
     ClickedTheme: ({ theme }) => patch({ theme })(model),
     ToggledAnimations: ({ isChecked }) => patch({ animations: isChecked })(model),
-    ToggledCritters: ({ isChecked }) => patch({ critters: isChecked })(model),
-    ToggledCanvasCritters: ({ isChecked }) => patch({ canvasCritters: isChecked })(model),
     ToggledInboxCritters: ({ isChecked }) => patch({ inboxCritters: isChecked })(model),
     ClickedDiffStyle: ({ style }) => patch({ diffStyle: style })(model),
     ClickedTreeStyle: ({ style }) => patch({ treeStyle: style })(model),
-    ClickedPanelPosition: ({ position }) => patch({ layout: { panel: position } })(model),
     ToggledNavbarItem: ({ item }) =>
       withSettings(model, (settings) => ({ navbar: toggleMember(settings.navbar, item) })),
     UpdatedBanner: ({ value }) => patch({ banner: String.isEmpty(value) ? null : value })(model),
@@ -223,9 +210,6 @@ const nextTheme = (settings: Settings): Option.Option<string> => {
   )
 }
 
-/** Ask the server to focus a worker. The settings broadcast then moves the panel. */
-export const requestFocus = (workerId: string): Step => patch({ focus: workerId })
-
 /** Run a hotkey action. Unknown actions do nothing. */
 export const pressHotkey =
   (action: string): Step =>
@@ -239,13 +223,10 @@ const runHotkeyAction = (model: Model, action: string): Update.Return<Model, Mes
       Match.value(action).pipe(
         Match.withReturnType<Update.Return<Model, Message>>(),
         Match.when("toggleSettings", () => toggleDialog(model)),
-        Match.when("togglePanel", () =>
-          patch({ layout: { panel: settings.layout.panel === "hidden" ? "right" : "hidden" } })(model),
-        ),
+        Match.when("focusCoordinator", () => patch({ focus: "coordinator" })(model)),
         Match.when("cycleTheme", () =>
           Option.match(nextTheme(settings), { onNone: () => ({ model }), onSome: (theme) => patch({ theme })(model) }),
         ),
-        Match.when("focusCoordinator", () => patch({ focus: "coordinator" })(model)),
         Match.orElse(() => ({ model })),
       ),
   })

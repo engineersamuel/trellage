@@ -15,13 +15,12 @@ const delivery: Delivery = { steps: [], run: null, decisions: [], securityReview
 const loaded = modifyFields(init().model, { document: () => AsyncData.succeed(document) })
 
 describe("loading", () => {
-  test("loaded settings go to the extension host and focus the panel", () => {
+  test("loaded settings go to the extension host; the first load moves no focus", () => {
     story(
       update,
       given(init().model),
       message(Message.SucceededFetchSettings({ document })),
       Command.expectExact(SyncExtensions),
-      expectOutMessage(OutMessage.ReceivedFocus({ workerId: "coordinator", critters: false })),
       model((current) => expect(AsyncData.getData(current.document)).toEqual(Option.some(document))),
       Command.resolve(SyncExtensions, Message.CompletedSyncExtensions()),
     )
@@ -44,7 +43,7 @@ describe("loading", () => {
       given(withDelivery),
       message(Message.ReceivedSettingsUpdate({ document: { settings: next, css: ":root{--x:1}" } })),
       Command.expectExact(SyncExtensions, FetchDelivery),
-      expectOutMessage(OutMessage.ReceivedFocus({ workerId: "namer", critters: false })),
+      expectOutMessage(OutMessage.ChangedFocus({ workerId: "namer" })),
       model((current) =>
         expect(AsyncData.getData(current.document)).toEqual(
           Option.some({ settings: next, css: ":root{--x:1}", options: document.options }),
@@ -89,12 +88,6 @@ describe("controls", () => {
     })
     expect(update(loaded, Message.UpdatedBanner({ value: "" })).commands?.[0]?.args).toEqual({
       patch: { banner: null },
-    })
-    expect(update(loaded, Message.ToggledCritters({ isChecked: true })).commands?.[0]?.args).toEqual({
-      patch: { critters: true },
-    })
-    expect(update(loaded, Message.ToggledCanvasCritters({ isChecked: true })).commands?.[0]?.args).toEqual({
-      patch: { canvasCritters: true },
     })
     expect(update(loaded, Message.ToggledInboxCritters({ isChecked: true })).commands?.[0]?.args).toEqual({
       patch: { inboxCritters: true },

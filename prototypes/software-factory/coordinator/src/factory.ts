@@ -6,7 +6,7 @@ import { factoryMcpServer, gateFromPermissions, MCP_SERVER, mcpToolNames } from 
 import type { CodeReview } from "./review.ts"
 import type { Sdlc } from "./sdlc.ts"
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync } from "node:fs"
 import path from "node:path"
 import { homedir } from "node:os"
 import {
@@ -26,7 +26,16 @@ import { forbiddenCommand } from "./guard.ts"
 import type { SecurityReview } from "./security.ts"
 import * as S from "./settings.ts"
 import { appendCompact } from "../../shared/feed.ts"
-import { ensureClones, prepareStepSkills, SKILL_REPOS, stepById, stepSetup, TOOL_REPOS, type HarnessSpec, type SkillCheck } from "./steps.ts"
+import {
+  ensureClones,
+  prepareStepSkills,
+  SKILL_REPOS,
+  stepById,
+  stepSetup,
+  TOOL_REPOS,
+  type HarnessSpec,
+  type SkillCheck,
+} from "./steps.ts"
 import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./claude.ts"
 import { composePi, withProxyModel, PiSession } from "./pi.ts"
 import { setDecisionEngine } from "./decide.ts"
@@ -44,7 +53,7 @@ export type Session = {
   disconnect(): Promise<void>
   setModel(model: string, options?: { reasoningEffort?: never }): Promise<void>
   /** Replace the tools this client supplies (Copilot SDK, experimental). */
-  setTools?(tools: Tool<any>[]): Promise<void>
+  setTools?(tools: Tool<Record<string, unknown>>[]): Promise<void>
 }
 
 /** How a worker got its model: Jev routing, set by the spawner, or the default (Jev unavailable or not asked). */
@@ -88,7 +97,7 @@ export type FeedEvent = {
   type: string
   agentId: string | null
   timestamp: string
-  data: any
+  data: unknown
 }
 
 export type SpawnSpec = {
@@ -99,7 +108,7 @@ export type SpawnSpec = {
   model?: string
   task?: string
   system?: string
-  tools?: Tool<any>[]
+  tools?: Tool<Record<string, unknown>>[]
   permissions?: PermissionHandler
   /** SDLC step from the catalog; loads its skills and quality-gate tools. */
   step?: string
@@ -176,7 +185,7 @@ export class Worker {
   session!: Session
   harness: Harness = "copilot"
   /** The session's own tools; AG-UI client tools are added to these for one run (Copilot sessions only). */
-  tools: Tool<any>[] = []
+  tools: Tool<Record<string, unknown>>[] = []
   /** Names of the client tools the session has now; "" when it has only its own. */
   clientToolKey = ""
 
@@ -232,7 +241,7 @@ export class Worker {
   }
 
   observe(factory: Factory, ev: SessionEvent): void {
-    let data = (ev as { data?: any }).data ?? {}
+    let data = (ev as { data?: Record<string, unknown> }).data ?? {}
     // The global coordinator serves many conversations: tag each answer with the conversation of its turn.
     const tag = this.threadId ?? (this.id === "coordinator" ? factory.currentThread : null)
     if (ev.type === "assistant.message" && tag) data = { ...data, threadId: tag }
@@ -247,13 +256,17 @@ export class Worker {
     this.settleDone(ev.type)
   }
 
-  private observeToolResult(type: string, agentId: string | null, data: any): void {
+  private observeToolResult(type: string, agentId: string | null, data: Record<string, unknown>): void {
     if (type !== "tool.execution_complete" || agentId !== null) return
     this.failedTools = data.success === false ? this.failedTools + 1 : 0
-    if (data.success === false) this.lastError = String(data.error?.message ?? "tool failed").slice(0, 300)
+    if (data.success === false)
+      this.lastError = String((data.error as { message?: unknown } | null | undefined)?.message ?? "tool failed").slice(
+        0,
+        300,
+      )
   }
 
-  private applyEventState(type: string, agentId: string | null, data: any): boolean {
+  private applyEventState(type: string, agentId: string | null, data: Record<string, unknown>): boolean {
     switch (type) {
       case "assistant.turn_start":
       case "user.message":
@@ -268,7 +281,7 @@ export class Worker {
           this.context = [data.currentTokens, data.tokenLimit]
         return true
       case "assistant.message":
-        if (data.content && agentId === null) this.lastMessage = data.content
+        if (data.content && agentId === null) this.lastMessage = data.content as string
         return false
       default:
         return false
@@ -326,7 +339,13 @@ export class Worker {
  * applies to every worker; a step's own profiles (e.g. council in Claude) are kept when the forced SDK matches.
  * Global coordinators stay on the Copilot SDK; a repo sub-coordinator moves to Claude when Claude is forced.
  */
-export const workerHarness = (setting: string, role: string, chosen: HarnessSpec | undefined, gated = false, subCoordinator = false): HarnessSpec | undefined => {
+export const workerHarness = (
+  setting: string,
+  role: string,
+  chosen: HarnessSpec | undefined,
+  gated = false,
+  subCoordinator = false,
+): HarnessSpec | undefined => {
   // A repo sub-coordinator follows a forced Claude SDK too (its tools are served over MCP); global ones never move.
   if (subCoordinator && setting === "claude") return { kind: "claude", profiles: ["default"] }
   // A worker with its own Copilot permission gate (the finish worker's push gate) stays on the Copilot SDK.
@@ -358,7 +377,8 @@ export const claudeSessionId = (name: string): string => {
 export const claudeSessionOption = (configDir: string, name: string): { resume: string } | { sessionId: string } => {
   const id = claudeSessionId(name)
   const projects = path.join(configDir, "projects")
-  const found = existsSync(projects) && readdirSync(projects).some((d) => existsSync(path.join(projects, d, `${id}.jsonl`)))
+  const found =
+    existsSync(projects) && readdirSync(projects).some((d) => existsSync(path.join(projects, d, `${id}.jsonl`)))
   return found ? { resume: id } : { sessionId: id }
 }
 
@@ -428,7 +448,8 @@ export class Factory {
     setDecisionEngine(this.settings.decisions.engine, this.proxyUrl)
     this.approvals = new Approvals(this.root)
     // SF_MODEL is the worker default; coordinators use the settings (agent: global, subAgent: repo conversations).
-    if (this.settings.agent.model === "") this.settings = { ...this.settings, agent: { ...this.settings.agent, model: "gpt-6-astra" } }
+    if (this.settings.agent.model === "")
+      this.settings = { ...this.settings, agent: { ...this.settings.agent, model: "gpt-6-astra" } }
   }
 
   get(id: string): Worker {
@@ -464,11 +485,18 @@ export class Factory {
     const step = spec.step ? stepById(spec.step) : null
     // Skill preflight runs first, so a worker with an unusable skill fails before any model call.
     const { workdir, setup, skills } = this.prepareSpawn(spec, id, home, step)
-    const harness = workerHarness(this.settings.workers.harness, spec.role, spec.harness ?? step?.harness, spec.role === "worker" && !!spec.permissions, id.startsWith("sub-"))
+    const harness = workerHarness(
+      this.settings.workers.harness,
+      spec.role,
+      spec.harness ?? step?.harness,
+      spec.role === "worker" && !!spec.permissions,
+      id.startsWith("sub-"),
+    )
     if (harness) return this.spawnHarness(spec, id, home, workdir, harness, skills)
     const { model, source } = await this.spawnModel(spec, auth)
     const host = spec.shareRuntimeOf ? this.workers.get(spec.shareRuntimeOf) : undefined
-    if (host && !(host.client instanceof CopilotClient)) throw new Error(`cannot share the runtime of ${host.id}: not a Copilot runtime`)
+    if (host && !(host.client instanceof CopilotClient))
+      throw new Error(`cannot share the runtime of ${host.id}: not a Copilot runtime`)
     const client = host ? (host.client as CopilotClient) : await this.startClient(home, workdir, auth, setup)
     const worker = new Worker(id, spec.name, spec.role, auth, home, spec.task ?? null, client, model)
     worker.modelSource = source
@@ -489,7 +517,14 @@ export class Factory {
   }
 
   /** A Claude Agent SDK or Pi SDK worker with trx-composed profiles; the task runs through the profile's entry command. */
-  private async spawnHarness(spec: SpawnSpec, id: string, home: string, workdir: string, harness: HarnessSpec, skills: SkillCheck[] = []): Promise<Worker> {
+  private async spawnHarness(
+    spec: SpawnSpec,
+    id: string,
+    home: string,
+    workdir: string,
+    harness: HarnessSpec,
+    skills: SkillCheck[] = [],
+  ): Promise<Worker> {
     let worker: Worker | undefined
     const emit = (ev: HarnessEvent) => {
       worker?.observe(this, ev as SessionEvent)
@@ -497,8 +532,19 @@ export class Factory {
     }
     const stepSkills = skills.flatMap((s) => (s.dir ? [{ name: s.name, dir: s.dir }] : []))
     const { session, model, loaded } =
-      harness.kind === "claude" ? await this.claudeSession(spec, workdir, harness, emit, stepSkills, home) : await this.piSession(spec, workdir, harness, emit, stepSkills)
-    worker = new Worker(id, spec.name, spec.role, spec.auth ?? this.defaultAuth, home, spec.task ?? null, session, model)
+      harness.kind === "claude"
+        ? await this.claudeSession(spec, workdir, harness, emit, stepSkills, home)
+        : await this.piSession(spec, workdir, harness, emit, stepSkills)
+    worker = new Worker(
+      id,
+      spec.name,
+      spec.role,
+      spec.auth ?? this.defaultAuth,
+      home,
+      spec.task ?? null,
+      session,
+      model,
+    )
     worker.harness = harness.kind
     if (spec.model) worker.modelSource = { kind: "pinned" }
     worker.session = session
@@ -519,13 +565,21 @@ export class Factory {
     return this.register(worker, task && (harness.entry ? `${harness.entry} ${task}` : task))
   }
 
-  private async claudeSession(spec: SpawnSpec, workdir: string, harness: HarnessSpec, emit: (ev: HarnessEvent) => void, stepSkills: { name: string; dir: string }[] = [], home = workdir) {
+  private async claudeSession(
+    spec: SpawnSpec,
+    workdir: string,
+    harness: HarnessSpec,
+    emit: (ev: HarnessEvent) => void,
+    stepSkills: { name: string; dir: string }[] = [],
+    home = workdir,
+  ) {
     const launch = await composeClaude(harness.profiles, workdir)
     // The step's skills (ub-mode, security-audit, ...) load under their own names, as in a Copilot worker:
     // a .claude/skills folder in the worker's home, added as a working directory (a plugin would prefix them).
     const skillRoot = stepSkills.length ? stepSkillDir(path.join(home, "step-skills"), stepSkills) : null
     // Claude SDK prefers Anthropic models; an explicit model (reviewers use another family on purpose) wins.
-    const model = spec.model ?? launch.model ?? (/^claude/.test(this.defaultModel) ? this.defaultModel : "claude-sonnet-5.5")
+    const model =
+      spec.model ?? launch.model ?? (/^claude/.test(this.defaultModel) ? this.defaultModel : "claude-sonnet-5.5")
     const session = new ClaudeSession(
       {
         cwd: workdir,
@@ -539,10 +593,16 @@ export class Factory {
         canUseTool: spec.permissions ? gateFromPermissions(spec.permissions) : claudeGate,
         disallowedTools: ["AskUserQuestion"],
         // A coordinator: the factory tools as an in-process MCP server, and its role prompt after Claude Code's.
-        ...(spec.tools?.length ? { mcpServers: { [MCP_SERVER]: factoryMcpServer(spec.tools) }, allowedTools: mcpToolNames(spec.tools) } : {}),
-        ...(spec.system ? { systemPrompt: { type: "preset" as const, preset: "claude_code" as const, append: spec.system } } : {}),
+        ...(spec.tools?.length
+          ? { mcpServers: { [MCP_SERVER]: factoryMcpServer(spec.tools) }, allowedTools: mcpToolNames(spec.tools) }
+          : {}),
+        ...(spec.system
+          ? { systemPrompt: { type: "preset" as const, preset: "claude_code" as const, append: spec.system } }
+          : {}),
         // A coordinator keeps its memory across restarts (Claude session ids are UUIDs).
-        ...(spec.sessionId ? claudeSessionOption(launch.env.CLAUDE_CONFIG_DIR ?? path.join(homedir(), ".claude"), spec.sessionId) : {}),
+        ...(spec.sessionId
+          ? claudeSessionOption(launch.env.CLAUDE_CONFIG_DIR ?? path.join(homedir(), ".claude"), spec.sessionId)
+          : {}),
         // Text and thinking stream to the feed as deltas, like Copilot workers.
         includePartialMessages: true,
         // Own process group, like Copilot runtimes (src/isolate.ts).
@@ -553,11 +613,19 @@ export class Factory {
     return { session, model, loaded: `plugins ${launch.plugins.map((p) => path.basename(p)).join(", ")}` }
   }
 
-  private async piSession(spec: SpawnSpec, workdir: string, harness: HarnessSpec, emit: (ev: HarnessEvent) => void, stepSkills: { name: string; dir: string }[] = []) {
+  private async piSession(
+    spec: SpawnSpec,
+    workdir: string,
+    harness: HarnessSpec,
+    emit: (ev: HarnessEvent) => void,
+    stepSkills: { name: string; dir: string }[] = [],
+  ) {
     const launch = await composePi(harness.profiles, workdir)
     launch.skills.push(...stepSkills.map((s) => s.dir))
     // A pinned model (e.g. a Gemini reviewer) is added to the proxy provider in this worker's own agent dir.
-    const ready = spec.model ? withProxyModel(launch, spec.model, path.join(this.root, "pi-agents", crypto.randomUUID().slice(0, 8))) : launch
+    const ready = spec.model
+      ? withProxyModel(launch, spec.model, path.join(this.root, "pi-agents", crypto.randomUUID().slice(0, 8)))
+      : launch
     const session = await PiSession.start(ready, workdir, emit)
     return { session, model: session.model, loaded: `skills ${launch.skills.map((p) => path.basename(p)).join(", ")}` }
   }
@@ -592,7 +660,10 @@ export class Factory {
   private async startClient(home: string, workdir: string, auth: Auth, setup: ReturnType<typeof stepSetup>) {
     const client = new CopilotClient({
       // Own process group: a group kill in a worker's tool tree cannot reach the coordinator.
-      connection: RuntimeConnection.forTcp({ port: 0, path: isolatedLauncher(path.join(this.root, "bin"), await runtimePath()) }),
+      connection: RuntimeConnection.forTcp({
+        port: 0,
+        path: isolatedLauncher(path.join(this.root, "bin"), await runtimePath()),
+      }),
       baseDirectory: home,
       workingDirectory: workdir,
       ...(auth === "native" ? { gitHubToken: githubToken() } : {}),
@@ -677,9 +748,17 @@ export class Factory {
         signal: AbortSignal.timeout(25_000),
       })
       if (!res.ok) return null
-      const r: any = await res.json()
-      const ranked: string[] = [r.recommended?.id, ...(r.ranking ?? []).map((x: any) => x.id)].filter(Boolean)
-      const available = auth === "proxy" ? ranked : (await (this.get("coordinator").client as CopilotClient).listModels()).map((m) => m.id)
+      const r = (await res.json()) as {
+        recommended?: { id?: string } | null
+        ranking?: { id?: string }[] | null
+        confidence?: number
+        routed_by: string
+      }
+      const ranked = [r.recommended?.id, ...(r.ranking ?? []).map((x) => x.id)].filter(Boolean) as string[]
+      const available =
+        auth === "proxy"
+          ? ranked
+          : (await (this.get("coordinator").client as CopilotClient).listModels()).map((m) => m.id)
       const id = ranked.find((m) => available.includes(m))
       return id
         ? { id, confidence: r.confidence ?? 0, routedBy: id === r.recommended?.id ? r.routed_by : "jev-ranking" }
@@ -718,7 +797,6 @@ export class Factory {
       run: this.run,
       options: {
         navbarItems: S.NAVBAR_ITEMS,
-        panelPositions: S.PANEL_POSITIONS,
         hotkeyActions: S.HOTKEY_ACTIONS,
         efforts: S.EFFORTS,
         toolKinds: S.TOOL_KINDS,
@@ -762,7 +840,8 @@ export class Factory {
   }
 
   private async applyModelChange(prev: S.Settings, next: S.Settings): Promise<void> {
-    const same = (a: { model: string; reasoningEffort: string }, b: { model: string; reasoningEffort: string }) => a.model === b.model && a.reasoningEffort === b.reasoningEffort
+    const same = (a: { model: string; reasoningEffort: string }, b: { model: string; reasoningEffort: string }) =>
+      a.model === b.model && a.reasoningEffort === b.reasoningEffort
     if (same(next.agent, prev.agent) && same(next.subAgent, prev.subAgent)) return
     try {
       // Global coordinators (desk, General chats) follow `agent`; repo sub-coordinators follow `subAgent`.
@@ -775,7 +854,7 @@ export class Factory {
           }),
       )
     } catch (e) {
-      throw new Error(`model change rejected: ${e instanceof Error ? e.message : e}`)
+      throw new Error(`model change rejected: ${e instanceof Error ? e.message : e}`, { cause: e })
     }
   }
 
@@ -876,7 +955,10 @@ export const finishPermissions =
 /** Default gate for Copilot workers: never merge, push, or delete branches or worktrees; approve the rest. */
 export const workerPermissions: PermissionHandler = (request, invocation) =>
   request.kind === "shell" && forbiddenCommand(request.fullCommandText)
-    ? { kind: "reject", feedback: "Workers never merge, push, or delete branches or worktrees. Report it to the coordinator." }
+    ? {
+        kind: "reject",
+        feedback: "Workers never merge, push, or delete branches or worktrees. Report it to the coordinator.",
+      }
     : approveAll(request, invocation)
 
 const rssKb = (pid: number): number | null => {
