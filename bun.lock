@@ -76,7 +76,7 @@
         "ink": "7.1.1",
         "proper-lockfile": "4.1.2",
         "react": "19.2.4",
-        "react-devtools-core": "7.0.1",
+        "react-devtools-core": "8.0.0",
         "string-width": "8.2.2",
       },
       "devDependencies": {
@@ -887,7 +887,7 @@
 
     "react": ["react@19.2.4", "", {}, "sha1-Q45XuqGbd8sjqrUWz2Nc0Fee4Jo="],
 
-    "react-devtools-core": ["react-devtools-core@7.0.1", "", { "dependencies": { "shell-quote": "^1.6.1", "ws": "^7" } }, "sha1-m8g6xTF7NNBEX3ZesXJ51ioj9u4="],
+    "react-devtools-core": ["react-devtools-core@8.0.0", "", { "dependencies": { "shell-quote": "^1.6.1", "ws": "^7" } }, "sha512-DGXJX+sCn2zC3ZalHoJhmZJsvP4QTpERlmCQAOgExc4Vp74ywB9ZnO8992cKw5ZcOS5u8GtpchTUPbjTiu5zaw=="],
 
     "react-reconciler": ["react-reconciler@0.33.0", "", { "dependencies": { "scheduler": "^0.27.0" }, "peerDependencies": { "react": "^19.2.0" } }, "sha1-ndICCNRbqlsLRwF4H4WCNmV/FeE="],
 
