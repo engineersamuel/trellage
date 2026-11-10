@@ -267,12 +267,29 @@ rollback() {
 
 on_exit() {
   local status=$?
+  local new_runtime_present=false
+  local old_runtime_present=false
+  local installed_runtime_present=false
   trap - EXIT HUP INT TERM
   if [[ "$publication_active" == true ]]; then
     if rollback; then
       cleanup_staging
     else
+      if [[ -n "$staging_root" ]]; then
+        if [[ -e "$staging_root/new-runtime" || -L "$staging_root/new-runtime" ]]; then
+          new_runtime_present=true
+        fi
+        if [[ -e "$staging_root/old-runtime" || -L "$staging_root/old-runtime" ]]; then
+          old_runtime_present=true
+        fi
+      fi
+      if [[ -e "$install_root" || -L "$install_root" ]]; then
+        installed_runtime_present=true
+      fi
       printf 'trx install: rollback failed; recovery may be required\n' >&2
+      printf 'trx install state: runtime-swapped=%s publish-intent=%s staged-new=%s staged-old=%s installed=%s\n' \
+        "$runtime_swapped" "$runtime_publish_intent" "$new_runtime_present" \
+        "$old_runtime_present" "$installed_runtime_present" >&2
     fi
   else
     cleanup_staging
