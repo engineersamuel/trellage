@@ -11,7 +11,6 @@ from quality_checks import ROOT, GateError, digest, run_command, write_report
 PATHS = {
     "rust": "prototypes/simd-binary-search",
     "swift": "pocs/herdr-trx-guide/macos-overlay",
-    "web-react": "prototypes/software-factory/web-react",
     "web-foldkit": "prototypes/software-factory/web-foldkit",
     "coordinator": "prototypes/software-factory/coordinator",
 }
@@ -61,11 +60,10 @@ def commands(name: str) -> list[tuple[str, list[str], bool]]:
             ("test", ["bun", "test"], True),
             ("shared-test", ["bun", "test", "../shared/test"], True),
         ]
-    tests = ["bun", "test"] if name == "web-react" else ["npm", "run", "test"]
     result = [
         ("prepare", ["npm", "ci", "--no-audit", "--no-fund"], False),
         ("types", ["npm", "run", "check"], True),
-        ("test", tests, True),
+        ("test", ["npm", "run", "test"], True),
         ("build", ["npm", "exec", "--no", "--", "vite", "build"], True),
     ]
     if name == "web-foldkit":

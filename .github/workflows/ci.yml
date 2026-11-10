@@ -222,7 +222,7 @@ jobs:
       - name: Prepare prototype runtimes
         uses: ./.github/actions/quality-setup
         with:
-          prepare: ${{ contains(fromJSON('["coordinator","web-react","web-foldkit"]'), matrix.prototype) && 'true' || 'false' }}
+          prepare: ${{ contains(fromJSON('["coordinator","web-foldkit"]'), matrix.prototype) && 'true' || 'false' }}
       - name: Check the isolated prototype
         env:
           PROTOTYPE: ${{ matrix.prototype }}

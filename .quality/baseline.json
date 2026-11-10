@@ -5,32 +5,7 @@
         "prototypes/software-factory/web-foldkit/AGENTS.md": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "deab4273a2215766b88dae9adb23946307f2e4350702ea24b45388f8773fa83b"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/copilotkit-channels/SKILL.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "ba25348cc6d493293f4aa52d000244bc72f72d5a4d5eea522fe3ddabdfb3f16d"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/copilotkit-cli/SKILL.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "f77e047ab6c091d058762a3c245978e92cc59c7d07d4df5fecb8d87808acf630"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/copilotkit/SKILL.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "611a927ce644c6650750c2eb5bc4e52b28595730ab113ffc118431dd00865eae"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/setup-slack-channel/SKILL.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "8bff91baafb322287614ca788f172266b08a3b870fa82cce729d156b8d797cf4"
-        },
-        "prototypes/software-factory/web-react/AGENTS.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "c9d63b934db034ed3be5551896a4c05c0d4b73dbca0a4958a8c7287158ee6af4"
+          "sha256": "d25e07db24563f5d2563ce21812cf3a8a27323c4d6db3739678c708aac0a1628"
         }
       },
       "settings": "b97cbdf79a70a6e2a5004c43d8698f0ea0dfca3d269255fb1f43e831f8ca397a"
@@ -1677,7 +1652,7 @@
         },
         "prototypes/software-factory/coordinator/src/agui.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "0968d62ca473a295988a36b2f4a79096d3eabac2310fd910530dc66fc7fd75d5"
+          "sha256": "5256706d71bbd27091c0342b44eb6f7529b33b62d605114a9b6ae0244a9ca4af"
         },
         "prototypes/software-factory/coordinator/src/approvals.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -1685,7 +1660,7 @@
         },
         "prototypes/software-factory/coordinator/src/cards.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "3257ba5d30c89b315bddfeb6e5353fad5497426426713254a85c459546aa5900"
+          "sha256": "1e82182e075643655fd870e7f56ac7fae0f00f68983dc8ee5bb9c26e0ad63b64"
         },
         "prototypes/software-factory/coordinator/src/claude.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -1713,7 +1688,7 @@
         },
         "prototypes/software-factory/coordinator/src/factory.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "a66af45696e4a30e7b2688a43b90eb98aa168b809fc79439f05cff6dc2e4d0d8"
+          "sha256": "a7e5f3e22b7099b63eaa17e5421fe27b3ad3be4c01fe842142042f0b3e99d231"
         },
         "prototypes/software-factory/coordinator/src/files.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -1745,7 +1720,7 @@
         },
         "prototypes/software-factory/coordinator/src/main.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "ce81c51505f70de834019566a5d38e359e6f107156818efdc56157e1c600786a"
+          "sha256": "911605a0ac97aae34655e1642abf3c2bcd6372bc626bba37becfc2fd1a46182f"
         },
         "prototypes/software-factory/coordinator/src/pi.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -1757,7 +1732,7 @@
         },
         "prototypes/software-factory/coordinator/src/prompts.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "cf378efed62cd98a319447c0759a1aa29b6c732a7013550731d8afbb96894ce7"
+          "sha256": "56fe4f497f5fa7f4325e32c8785f945963904d1fc3d1e4d58dbaa8b3422962de"
         },
         "prototypes/software-factory/coordinator/src/readonly.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -1789,7 +1764,7 @@
         },
         "prototypes/software-factory/coordinator/src/settings.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "031af88417a989d47ea2daeee30ffdb06c0a923c82542dbca669c88bf3c29a58"
+          "sha256": "b7d7333598774d6c19285d05965a0696a00f6b61455e118d1309365ffac6b9bf"
         },
         "prototypes/software-factory/coordinator/src/shadow.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -1798,6 +1773,10 @@
         "prototypes/software-factory/coordinator/src/spec.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "152d90a682613a1839acde54da8f14d6296be32c3714e2f03e48fd0b9fcf6e7b"
+        },
+        "prototypes/software-factory/coordinator/src/statedir.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "6831c62795ca548b33887d3f05effce846f6d2e7a52bf6155bc979f1f3daaf75"
         },
         "prototypes/software-factory/coordinator/src/steps.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -1813,7 +1792,7 @@
         },
         "prototypes/software-factory/coordinator/src/tools.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "a7700f0829272763e065e1fc7cf422a6bdb6b03b5e1677c0da411b1d25f1cc47"
+          "sha256": "668e8b3c62070e49f1cd958f35d10b39b5c719b7b723527baeae4070c0235e34"
         },
         "prototypes/software-factory/coordinator/src/workflows.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -1833,7 +1812,7 @@
         },
         "prototypes/software-factory/coordinator/test/cards.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "a6f35f31d79b65e6538d4eb69fef88b25ff723baf84fc2f73f596b0480eb0d76"
+          "sha256": "bece4e30f34edc3e83e42292c26a068c68c130210cc20f59641186abdd683723"
         },
         "prototypes/software-factory/coordinator/test/claude.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -1883,6 +1862,10 @@
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "a008f15ffaf9f7bc7a2cbea406c1ccc5d4345163dfdb10688d296a48cf3bf67f"
         },
+        "prototypes/software-factory/coordinator/test/openui-cards.test.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "7833a722167da5f18eadec9bf7fe1e8aa3f17b665b0654f7812de735b82ae833"
+        },
         "prototypes/software-factory/coordinator/test/pi.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "6f0a24da7fa8fcf7a3fd6a61a72f3e2b3282025d894166d03139cc1639e61b23"
@@ -1911,6 +1894,10 @@
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "d8878143c2437dca23968d8a6ed2f5a4d76b9033df75dd83a26f7fa93627c074"
         },
+        "prototypes/software-factory/coordinator/test/settings.test.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "21c7ac5bc7cfa4fd6c897c3ec2b9ae873359cd10275354f4a4f2643ff9fcbbae"
+        },
         "prototypes/software-factory/coordinator/test/shadow.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "223c853c5856273f12b5d47ecb045a384352c0bdd28b56d97105157bb91bd93f"
@@ -1922,6 +1909,10 @@
         "prototypes/software-factory/coordinator/test/spec.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "a882caf7bd3aabe4d1e0fd9f3dc8b7b3c7bd75ec4d710d1fa8affd393ffa8a9e"
+        },
+        "prototypes/software-factory/coordinator/test/statedir.test.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "2c44cfddf7ae136750190bf51c365705aa0fe14834360ce495455e8d9239f1af"
         },
         "prototypes/software-factory/coordinator/test/steps.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -1941,7 +1932,7 @@
         },
         "prototypes/software-factory/coordinator/test/tools.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "36ee36249afe8d131c98e6f211b4a2acdec0f79f9dcf58bb893b2badbcf53eaf"
+          "sha256": "70a611a300c9242415abcfc63771130f8b7b3e5473cab1022df4ecced60f2fab"
         },
         "prototypes/software-factory/coordinator/test/transcript.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -1969,7 +1960,7 @@
         },
         "prototypes/software-factory/shared/cardviews.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "e16098545c5f2eed46cc61d69314db464b7c676b289f93326896ed72e3dc098b"
+          "sha256": "15f25afa419f7d370f491b619cf45548cbcacfac447a698a27ec4ae036520a7c"
         },
         "prototypes/software-factory/shared/decisions.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2007,9 +1998,13 @@
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "d74560311fa64ad8ec1feade987913ea0893ec610ecb7c91ea6a9f8f022e9744"
         },
+        "prototypes/software-factory/shared/openui-chat-library.json": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "ddb8bae7351b570d56cce2571d97f9cee9a71945ef8ea7628e4d06866593a44b"
+        },
         "prototypes/software-factory/shared/protos/core.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "9eb32042758d86822c675e98bd2d1541787696a9cda5eaac041dad2c0a2bc5f5"
+          "sha256": "af9e4029f08e34373cfdd5b73b319b0cf1c75b58da0963162f115fdf3fc46900"
         },
         "prototypes/software-factory/shared/protos/p2.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2021,7 +2016,7 @@
         },
         "prototypes/software-factory/shared/protos/p3.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "0a19f4593e1be3e3dcf4add887985f9f955db61970f2acac15d37b62fc3a9d2b"
+          "sha256": "50358228a09153880aa37f0e5b621806c79a1d35349e902890af2bc881df9f3d"
         },
         "prototypes/software-factory/shared/protos/stream.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2097,11 +2092,15 @@
         },
         "prototypes/software-factory/web-foldkit/src/agentInterfacePatch.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "222ef9c5577553a3fa64d1ef62dddf162010a80601658c94fded05160872f330"
+          "sha256": "c98e30beb256e18002e696b7491521f937bbf473082d2aa68c995d80e3c1d4c4"
         },
         "prototypes/software-factory/web-foldkit/src/api.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "3b1c3cf35433f1a945ea754dc975bc85ce87f280699170de8def90daae1f0453"
+        },
+        "prototypes/software-factory/web-foldkit/src/backend.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "3454fe58fbd313d783d4a0e2d5ee2f6c2e5e9f4e1fed00c200df5aaf11ba816c"
         },
         "prototypes/software-factory/web-foldkit/src/chat.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2113,7 +2112,7 @@
         },
         "prototypes/software-factory/web-foldkit/src/command.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "dff56f1b8f1977861cd9276b7b51c4d5c4055485b99d51af7d07a6f8970fa344"
+          "sha256": "68b486d4ebfd6be039096255f78c3f5afc97deda93f9f044c1fe65b0e8cf0000"
         },
         "prototypes/software-factory/web-foldkit/src/diffHighlight.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2121,7 +2120,7 @@
         },
         "prototypes/software-factory/web-foldkit/src/diffHighlight.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "a6071e9894b2a6cb2c07f747d5f92a18442d5e218c386b41e67fd3fa79e56afe"
+          "sha256": "b2d739e81788647216694a0b176aaac706ec049c16cb25679abbc16364a33ffb"
         },
         "prototypes/software-factory/web-foldkit/src/diffPanel/command.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2161,7 +2160,7 @@
         },
         "prototypes/software-factory/web-foldkit/src/domain.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "e3a782e987a3d09dc2706dc87b1497dddde0f2083984c2fb1d21b719d22c84c1"
+          "sha256": "26336030c71d2d31e0fe649737204aee630eb8ffc819697fe08e1f39ff03ce98"
         },
         "prototypes/software-factory/web-foldkit/src/feed.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2205,19 +2204,27 @@
         },
         "prototypes/software-factory/web-foldkit/src/main.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "e8dec9b14cd36235e3e721e63482c033b426a873d4b85619977cdf33bdc5b57e"
+          "sha256": "c81d755c7053321d3f51db00e4d61df85f01f5a661ebe5ad187723e12d22831e"
         },
         "prototypes/software-factory/web-foldkit/src/message.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "452ee91e77b7f90057a07eb1bc863821a8e5386e98418c0cfaff219b09dbc580"
+          "sha256": "11a2308166ee58503954e2c5022fc9935acfb9e80866564d13879efdb2011d6c"
         },
         "prototypes/software-factory/web-foldkit/src/model.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "9073de01d11ebb47901eb073c5751a947aa711117e9a814efa6a2dc1f33cae0b"
+          "sha256": "f7917a8a24ec34c7c2f24c8749da1cb56d68e38821d1e94b122520da17587aac"
         },
-        "prototypes/software-factory/web-foldkit/src/openui-card.ts": {
+        "prototypes/software-factory/web-foldkit/src/openUiCard.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "19129c1beab0c8dbee8266d6257e960b7c46f823941ae960ec9f0c28a94e7bf3"
+          "sha256": "1cdb7ebceb4f26ad9c1d19812f2cc013a5fab0021b342bea8007fb1360ddae7c"
+        },
+        "prototypes/software-factory/web-foldkit/src/openUiCard.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "94355c884600135ac5b16c23ded144ed7900071957bc87b903705c10f5c839c6"
+        },
+        "prototypes/software-factory/web-foldkit/src/openUiCatalog.test.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "9c14b999183b87c6f37fb78a9cbe918785ea633a47ea4893508e889f0fe650fc"
         },
         "prototypes/software-factory/web-foldkit/src/p2Render.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2226,6 +2233,46 @@
         "prototypes/software-factory/web-foldkit/src/p3Render.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "bc611d3777924f422a3d3987840a1c115c64f343b5bdfeee0fb7e94498f23c88"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/command.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "08fac2d1966af91adf868c0c1d601bc43837e3af6cf58f189857c8a65366db64"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/domain.test.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "fd4099db64d3bd17ccb20908ee5161702cbea02bad2eade7c6cf72081d65355d"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/domain.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "96a623979cab182761294655c82f039e29a0da62b0b9072dd38a899e79f26ff0"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/index.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "325918cf3718d3ad511441cbaeed0b2b2a622445eb3add33a606402e303cadae"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/message.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "3af25515af090ed8cf560641d39d6a0487c80aa0aa1a6f4410ce0377dffa71df"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/model.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "62fccee42940fbf28a11ede7562d018c4d9f91106161738bec9235c6445fd758"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/scene.test.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "b9c4f082d4308cefac44597ef47702be131b5e7a6e1d27da1eb6ed854abae2ae"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/subscription.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "91ec2568777b678c909ae7cb832254fb82806e251b93be26aafb155bbb2d7370"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/update.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "2b1c23e064628902d4ca9c98291395afd7f42eef2417965d5b59f7f2f6c486c3"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/view.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "89ec7d4bb03edfa62d0515ea95eb7dd71a89d24335dd0681a42c27ac95cf037a"
         },
         "prototypes/software-factory/web-foldkit/src/secureContextPolyfill.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2277,15 +2324,27 @@
         },
         "prototypes/software-factory/web-foldkit/src/story.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "d0c7603ea889cb3bc156d59c32394d8d054e957994ff5cf941a975596bee7067"
+          "sha256": "56190c9cd5c15364157601d83886b690b1663bff4f9ba831232b048de6c2f1a8"
+        },
+        "prototypes/software-factory/web-foldkit/src/streamOpenUi.test.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "a116a0a49d531b39e6dc20fa3959d57eb1da6f1e8e28408c98b6394f4bc0b02a"
         },
         "prototypes/software-factory/web-foldkit/src/subscription.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "3af2f07a5a21b7498cc1c86a294871fddf2e6f3083d0972a565667dc8b4198c2"
+          "sha256": "6c08a7210f426054bf7eba0acd91300df562fd4d59b79ea1a59b9411d9a21868"
         },
         "prototypes/software-factory/web-foldkit/src/subscription.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "50bffa59e2bb0f1b2be8dd3f6808c22016a4d30842af53cffcb782ec7522ae02"
+          "sha256": "39f755522faaab64d64cd243e9988779e61f1ab87e299a006a836af4f17c1971"
+        },
+        "prototypes/software-factory/web-foldkit/src/threads.test.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "c0362c81a8b9b545e8f82d422754dd8f636e99a3c2b63c65b3a7537b0833d905"
+        },
+        "prototypes/software-factory/web-foldkit/src/threads.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "sha256": "ba7ef975880f0079013b7605a93ab3aa122d926a98a196a7caf2462b0f566556"
         },
         "prototypes/software-factory/web-foldkit/src/transcriptRender.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2293,11 +2352,11 @@
         },
         "prototypes/software-factory/web-foldkit/src/update.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "da174177aa71ae1be19227c0d035c935ee768f3cf0ac098795ed947551803075"
+          "sha256": "38f04597b561c90a8a1b6d7b78af9d84e6ee71e234713b36a2346042bf620df8"
         },
         "prototypes/software-factory/web-foldkit/src/view.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "d41a94501dada40fa61a1d28d4bb8bf9d99ad82ba54f9ef8d728b3b2390c6e6d"
+          "sha256": "181d29e66957589e39f8a4f6488416bc107f8573a4352050cc56d77ec3b1aef7"
         },
         "prototypes/software-factory/web-foldkit/src/viewLazy.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2350,102 +2409,6 @@
         "prototypes/software-factory/web-foldkit/vite.config.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "b208638a94962fd2c6ff1e2a5634ec006064041560affb1ab8ce435e7e6a4872"
-        },
-        "prototypes/software-factory/web-react/src/chat/ActivityCards.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "0bcedc32f70a3da9e172938828f564a4f7bdd2f6dffb9f30c253db31008c66c1"
-        },
-        "prototypes/software-factory/web-react/src/chat/DecisionCard.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "222abdfe1ac2ce4feea89f1d3306a4699605deea7d1ec90d8aacf3cdfcefaf57"
-        },
-        "prototypes/software-factory/web-react/src/chat/ToolCards.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "98ae72ae521bb86a0ca8b0dfaf2c11d72b14361af3ec6673e11f2bd149c0c2a8"
-        },
-        "prototypes/software-factory/web-react/src/copilotkit.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "604cf9b3d22d72c0d1e560135e1c952239b351cccb3362341a52f82d50afd0cf"
-        },
-        "prototypes/software-factory/web-react/src/genui/Cards.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "dd5c27e658ae0ec46366890f388f731b842cd667676c04480a446b22d0be8f1b"
-        },
-        "prototypes/software-factory/web-react/src/genui/OpenUi.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "d011ccb25837a13a2be2cbe102e6d0ea9c846eeb15930e0ae9f22d6a13bcd131"
-        },
-        "prototypes/software-factory/web-react/src/genui/WorkerBoard.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "d59c5f89d92a16f3c799b1993d3c44d840abab0d5c84052e0915da7a3012712a"
-        },
-        "prototypes/software-factory/web-react/src/secure-context.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "f655b0f0f7677a324107d6832283d3ae12eaafe43809199e9d19268653b78a05"
-        },
-        "prototypes/software-factory/web-react/src/shared/CodeBlock.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "0af885978fa01aafa8c9106f9de11e67d1d8fe1d2a418aa7db76210c7b7f18f3"
-        },
-        "prototypes/software-factory/web-react/src/shared/FactoryShell.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "b939214bd9cce4b0ea4e064ea32616824691f629d0e328027b7857ef620f355d"
-        },
-        "prototypes/software-factory/web-react/src/shared/ReportViewer.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "37ebc149a10e999f9cdc0dabda8628c0959a5bfae1123b280e7407e82d210f75"
-        },
-        "prototypes/software-factory/web-react/src/shared/WorkerPanel.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "0d829ea291510cb45366ec1be3606017613cbd5148722de03764ac513ac0199a"
-        },
-        "prototypes/software-factory/web-react/src/shared/factory.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "deaecc26cb6510bf2c9d96fc3a2f03f91a24149bcf59af2c8a32a1b826ac5e33"
-        },
-        "prototypes/software-factory/web-react/src/state/chat.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "a3e2e7c61ae3be82087629208e0e39d4980003b0a4f89fc3f9516311be056b01"
-        },
-        "prototypes/software-factory/web-react/src/state/model.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "93e42c205388df5e5421e6a328482621a7dea479e055301302927fc4ef8874c8"
-        },
-        "prototypes/software-factory/web-react/src/state/store.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "e79a34b90e80d25dc892dfe12d8c92dc7ae427e469d20bb0619f97d259bec5ed"
-        },
-        "prototypes/software-factory/web-react/test/agui-client.test.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "4908c625064281d8d30a0d2ae23d373c366ad0d7ab41b96346eff91368e16b74"
-        },
-        "prototypes/software-factory/web-react/test/cards.test.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "feed3f7f76ea522010e479356d18bfc286caea19380404039b5e17b606a56b4b"
-        },
-        "prototypes/software-factory/web-react/test/model.test.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "f57095603bddec3fa36cee3ba583ca7c729b38031a0c1f0776bcaea08725727e"
-        },
-        "prototypes/software-factory/web-react/test/openui-cards.test.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "a216d6cd3b77ce5c4ebb741743dde2b030dc45bde90bef9283558e9ecdc53be3"
-        },
-        "prototypes/software-factory/web-react/test/report-model.test.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "1befcbb3fcd4f81c10c917e53dfaf8ceb84fbb454c4bf55aa7a0cdeeb4ee7720"
-        },
-        "prototypes/software-factory/web-react/test/worker-panel.test.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "2b99da644931961bcb6d5c812d91a0dd78f7152884202af9d5a65f7b459216b7"
-        },
-        "prototypes/software-factory/web-react/test/workerboard.test.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "c2e17f7719deb564f8d5fdbb1bfe36642721b4642acfd3454692aa86fcdd12d4"
-        },
-        "prototypes/software-factory/web-react/vite.config.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "6963268aa1917d5b5df6f078732aa8eb8e7f064b53c8dc614a3dad3fd640be6f"
         },
         "prototypes/trellage-agency-profiles/catalog.json": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -2649,23 +2612,23 @@
         },
         "tests/playwright/factory-approvals-store.spec.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "03f462889b5414778202c8a15bdea6e73f2b929b21f3dd5435b9e0ca9469f31e"
+          "sha256": "3fc7fa440c5a4b5abedbe807c91952dd16126de860f63f7e1ab1d7c04ee02e63"
         },
         "tests/playwright/factory-draft-node.spec.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "b5bad3822c0d456d617fc0b4ab359130896199b0382f35ce466a877343e5482a"
+          "sha256": "5068e8c58e74e99157779fe37c22383d54f54da2572dc3a642e34ac30bce9a98"
         },
         "tests/playwright/factory-foldkit-slow.spec.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "64b3fc057bd254ef850878bc71317695e13583cb90b03ea6cad6597a39a673e5"
+          "sha256": "2205f3e4144eaf9e33a93f2e063bbbd18c7ee9f9a8c4945d13a09708385e1e4d"
         },
         "tests/playwright/factory-report-viewer.spec.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "8eff4aeb07806f4e55f1640e21c0312b846df619be594726ea406e96c347eb3b"
+          "sha256": "077b6f37f4d39226afd426b8a2663afc7b44afeef1db45174db25d0782276230"
         },
         "tests/playwright/factory-thread-links.spec.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "15c8a86e1631f38a37c7d77664864d5633f6a636a3d7eb7eb307b10de8566fa6"
+          "sha256": "2da4d8bcb0a7667ccf64fe6c1eb836e416c99ed1d2915d2f5141bcb4b592296a"
         },
         "tests/playwright/playwright.config.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3166,7 +3129,7 @@
         "prototypes/software-factory/coordinator/src/agui.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "0968d62ca473a295988a36b2f4a79096d3eabac2310fd910530dc66fc7fd75d5"
+          "sha256": "5256706d71bbd27091c0342b44eb6f7529b33b62d605114a9b6ae0244a9ca4af"
         },
         "prototypes/software-factory/coordinator/src/approvals.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3176,7 +3139,7 @@
         "prototypes/software-factory/coordinator/src/cards.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "3257ba5d30c89b315bddfeb6e5353fad5497426426713254a85c459546aa5900"
+          "sha256": "1e82182e075643655fd870e7f56ac7fae0f00f68983dc8ee5bb9c26e0ad63b64"
         },
         "prototypes/software-factory/coordinator/src/claude.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3206,7 +3169,7 @@
         "prototypes/software-factory/coordinator/src/factory.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "a66af45696e4a30e7b2688a43b90eb98aa168b809fc79439f05cff6dc2e4d0d8"
+          "sha256": "a7e5f3e22b7099b63eaa17e5421fe27b3ad3be4c01fe842142042f0b3e99d231"
         },
         "prototypes/software-factory/coordinator/src/gates.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3221,7 +3184,7 @@
         "prototypes/software-factory/coordinator/src/main.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "ce81c51505f70de834019566a5d38e359e6f107156818efdc56157e1c600786a"
+          "sha256": "911605a0ac97aae34655e1642abf3c2bcd6372bc626bba37becfc2fd1a46182f"
         },
         "prototypes/software-factory/coordinator/src/pi.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3256,7 +3219,7 @@
         "prototypes/software-factory/coordinator/src/settings.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "031af88417a989d47ea2daeee30ffdb06c0a923c82542dbca669c88bf3c29a58"
+          "sha256": "b7d7333598774d6c19285d05965a0696a00f6b61455e118d1309365ffac6b9bf"
         },
         "prototypes/software-factory/coordinator/src/shadow.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3281,7 +3244,7 @@
         "prototypes/software-factory/coordinator/src/tools.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "a7700f0829272763e065e1fc7cf422a6bdb6b03b5e1677c0da411b1d25f1cc47"
+          "sha256": "668e8b3c62070e49f1cd958f35d10b39b5c719b7b723527baeae4070c0235e34"
         },
         "prototypes/software-factory/coordinator/test/agui.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3291,7 +3254,7 @@
         "prototypes/software-factory/coordinator/test/cards.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "a6f35f31d79b65e6538d4eb69fef88b25ff723baf84fc2f73f596b0480eb0d76"
+          "sha256": "bece4e30f34edc3e83e42292c26a068c68c130210cc20f59641186abdd683723"
         },
         "prototypes/software-factory/coordinator/test/claude.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3327,6 +3290,11 @@
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
           "sha256": "a008f15ffaf9f7bc7a2cbea406c1ccc5d4345163dfdb10688d296a48cf3bf67f"
+        },
+        "prototypes/software-factory/coordinator/test/openui-cards.test.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "reviewBy": "2027-02-07",
+          "sha256": "7833a722167da5f18eadec9bf7fe1e8aa3f17b665b0654f7812de735b82ae833"
         },
         "prototypes/software-factory/coordinator/test/pi.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3371,7 +3339,7 @@
         "prototypes/software-factory/coordinator/test/tools.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "36ee36249afe8d131c98e6f211b4a2acdec0f79f9dcf58bb893b2badbcf53eaf"
+          "sha256": "70a611a300c9242415abcfc63771130f8b7b3e5473cab1022df4ecced60f2fab"
         },
         "prototypes/software-factory/coordinator/test/transcript.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3386,7 +3354,7 @@
         "prototypes/software-factory/shared/cardviews.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "e16098545c5f2eed46cc61d69314db464b7c676b289f93326896ed72e3dc098b"
+          "sha256": "15f25afa419f7d370f491b619cf45548cbcacfac447a698a27ec4ae036520a7c"
         },
         "prototypes/software-factory/shared/decisions.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3426,7 +3394,7 @@
         "prototypes/software-factory/shared/protos/core.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "9eb32042758d86822c675e98bd2d1541787696a9cda5eaac041dad2c0a2bc5f5"
+          "sha256": "af9e4029f08e34373cfdd5b73b319b0cf1c75b58da0963162f115fdf3fc46900"
         },
         "prototypes/software-factory/shared/protos/p2.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3441,7 +3409,7 @@
         "prototypes/software-factory/shared/protos/p3.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "0a19f4593e1be3e3dcf4add887985f9f955db61970f2acac15d37b62fc3a9d2b"
+          "sha256": "50358228a09153880aa37f0e5b621806c79a1d35349e902890af2bc881df9f3d"
         },
         "prototypes/software-factory/shared/protos/stream.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3508,10 +3476,35 @@
           "reviewBy": "2027-02-07",
           "sha256": "fe4f94c86fc3bd2d39c57ace1bffb72ae2ed753358004b943538c35b4d4481c4"
         },
+        "prototypes/software-factory/web-foldkit/src/openUiCard.test.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "reviewBy": "2027-02-07",
+          "sha256": "1cdb7ebceb4f26ad9c1d19812f2cc013a5fab0021b342bea8007fb1360ddae7c"
+        },
         "prototypes/software-factory/web-foldkit/src/p3Render.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
           "sha256": "bc611d3777924f422a3d3987840a1c115c64f343b5bdfeee0fb7e94498f23c88"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/domain.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "reviewBy": "2027-02-07",
+          "sha256": "96a623979cab182761294655c82f039e29a0da62b0b9072dd38a899e79f26ff0"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/scene.test.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "reviewBy": "2027-02-07",
+          "sha256": "b9c4f082d4308cefac44597ef47702be131b5e7a6e1d27da1eb6ed854abae2ae"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/update.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "reviewBy": "2027-02-07",
+          "sha256": "2b1c23e064628902d4ca9c98291395afd7f42eef2417965d5b59f7f2f6c486c3"
+        },
+        "prototypes/software-factory/web-foldkit/src/reportViewer/view.ts": {
+          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
+          "reviewBy": "2027-02-07",
+          "sha256": "89ec7d4bb03edfa62d0515ea95eb7dd71a89d24335dd0681a42c27ac95cf037a"
         },
         "prototypes/software-factory/web-foldkit/src/settings/story.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3531,17 +3524,17 @@
         "prototypes/software-factory/web-foldkit/src/story.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "d0c7603ea889cb3bc156d59c32394d8d054e957994ff5cf941a975596bee7067"
+          "sha256": "56190c9cd5c15364157601d83886b690b1663bff4f9ba831232b048de6c2f1a8"
         },
         "prototypes/software-factory/web-foldkit/src/update.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "da174177aa71ae1be19227c0d035c935ee768f3cf0ac098795ed947551803075"
+          "sha256": "38f04597b561c90a8a1b6d7b78af9d84e6ee71e234713b36a2346042bf620df8"
         },
         "prototypes/software-factory/web-foldkit/src/view.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "d41a94501dada40fa61a1d28d4bb8bf9d99ad82ba54f9ef8d728b3b2390c6e6d"
+          "sha256": "181d29e66957589e39f8a4f6488416bc107f8573a4352050cc56d77ec3b1aef7"
         },
         "prototypes/software-factory/web-foldkit/src/viewLazy.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3557,46 +3550,6 @@
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
           "sha256": "4f72591440474fb38b5a66193dddb70890b94372bf536f31157dbb22283c0579"
-        },
-        "prototypes/software-factory/web-react/src/chat/ActivityCards.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "0bcedc32f70a3da9e172938828f564a4f7bdd2f6dffb9f30c253db31008c66c1"
-        },
-        "prototypes/software-factory/web-react/src/genui/Cards.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "dd5c27e658ae0ec46366890f388f731b842cd667676c04480a446b22d0be8f1b"
-        },
-        "prototypes/software-factory/web-react/src/shared/FactoryShell.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "b939214bd9cce4b0ea4e064ea32616824691f629d0e328027b7857ef620f355d"
-        },
-        "prototypes/software-factory/web-react/src/shared/ReportViewer.tsx": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "37ebc149a10e999f9cdc0dabda8628c0959a5bfae1123b280e7407e82d210f75"
-        },
-        "prototypes/software-factory/web-react/src/shared/report-model.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "1e416cd69f627ac7c120068e1d3e9e46859ecee877e027f3f6f85523b6bdf46a"
-        },
-        "prototypes/software-factory/web-react/src/state/model.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "93e42c205388df5e5421e6a328482621a7dea479e055301302927fc4ef8874c8"
-        },
-        "prototypes/software-factory/web-react/test/openui-cards.test.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "a216d6cd3b77ce5c4ebb741743dde2b030dc45bde90bef9283558e9ecdc53be3"
-        },
-        "prototypes/software-factory/web-react/test/report-model.test.ts": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "reviewBy": "2027-02-07",
-          "sha256": "1befcbb3fcd4f81c10c917e53dfaf8ceb84fbb454c4bf55aa7a0cdeeb4ee7720"
         },
         "prototypes/trellage-claude-common/tests/native-skills.test.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -3676,17 +3629,17 @@
         "tests/playwright/factory-draft-node.spec.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "b5bad3822c0d456d617fc0b4ab359130896199b0382f35ce466a877343e5482a"
+          "sha256": "5068e8c58e74e99157779fe37c22383d54f54da2572dc3a642e34ac30bce9a98"
         },
         "tests/playwright/factory-foldkit-slow.spec.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "64b3fc057bd254ef850878bc71317695e13583cb90b03ea6cad6597a39a673e5"
+          "sha256": "2205f3e4144eaf9e33a93f2e063bbbd18c7ee9f9a8c4945d13a09708385e1e4d"
         },
         "tests/playwright/factory-report-viewer.spec.ts": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "reviewBy": "2027-02-07",
-          "sha256": "8eff4aeb07806f4e55f1640e21c0312b846df619be594726ea406e96c347eb3b"
+          "sha256": "077b6f37f4d39226afd426b8a2663afc7b44afeef1db45174db25d0782276230"
         }
       },
       "settings": "68e817cdf22356ce2504eed5e784750e736c76190fd71dc0d8a9e6336a48a594"
@@ -4079,7 +4032,7 @@
         },
         "prototypes/software-factory/README.md": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "63444728d9240b90d3bb2fbe1f708409a84e8d1c7d475de7e1828de81d49df16"
+          "sha256": "f48f7be38185f7c880132f0665bd1f1686ac9c8ccd68bdae825172d6eb1d1f62"
         },
         "prototypes/software-factory/skills/factory-loop/SKILL.md": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -4087,7 +4040,7 @@
         },
         "prototypes/software-factory/web-foldkit/AGENTS.md": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "deab4273a2215766b88dae9adb23946307f2e4350702ea24b45388f8773fa83b"
+          "sha256": "d25e07db24563f5d2563ce21812cf3a8a27323c4d6db3739678c708aac0a1628"
         },
         "prototypes/software-factory/web-foldkit/CLAUDE.md": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
@@ -4096,50 +4049,6 @@
         "prototypes/software-factory/web-foldkit/foldkit-remove-react-port.md": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "7f2d6c413c0f9578f6bcd7bfe6e335af7c437cf1310fa0b5cd09f4811a88fc60"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/copilotkit-channels/SKILL.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "ba25348cc6d493293f4aa52d000244bc72f72d5a4d5eea522fe3ddabdfb3f16d"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/copilotkit-cli/SKILL.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "f77e047ab6c091d058762a3c245978e92cc59c7d07d4df5fecb8d87808acf630"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/inspector-docs/SKILL.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "64a6205fecf899663696c44343f10e1f8863d77af695a502ba1380b613a00818"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/inspector-workbench/SKILL.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "3b341c9e030b9e92ab24e519bc3ac1a10752e0d2edae99eedeec7d86c38a140c"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/intelligence-vocabulary/SKILL.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "91b7b121f89b1ac7cf29d9f6947d8048adf1d05375e9fe92202ef0dafbbf31de"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/intelligence-vocabulary/references/words.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "d4a270f2e2791ee59ddcae6c3b941ee5c2ca601625162568d6c189b892fa1470"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/setup-slack-channel/references/intelligence-channel.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "24815bd1edfccb0dbe2048b4810a54c8dd52b73c2cad0909c13e9c673b1e8d46"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/setup-slack-channel/references/slack-workspace-and-app.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "e7c8f7ce50ddd8ce0dffe5f4e2e16d9247fe667a418e86b0fcee9a67438997b4"
-        },
-        "prototypes/software-factory/web-react/.agents/skills/setup-slack-channel/references/troubleshooting.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "06de34607231980dd1d63cf9279b7d4a211f9a0f278b551f5ad7715576fea500"
-        },
-        "prototypes/software-factory/web-react/AGENTS.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "c9d63b934db034ed3be5551896a4c05c0d4b73dbca0a4958a8c7287158ee6af4"
-        },
-        "prototypes/software-factory/web-react/CLAUDE.md": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49"
         },
         "prototypes/trellage-claude-common/README.md": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",

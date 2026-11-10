@@ -44,7 +44,7 @@ class SelectionTests(unittest.TestCase):
         self.assertFalse(value["macos"])
         self.assertEqual(value["targets"], sorted(quality.BASE_TARGETS))
         value = quality.plan(["prototypes/software-factory/shared/model.ts"])
-        self.assertEqual(value["prototypes"], ["coordinator", "web-foldkit", "web-react"])
+        self.assertEqual(value["prototypes"], ["coordinator", "web-foldkit"])
         self.assertFalse(value["macos"])
 
     def test_factory_runs_when_linked_source_or_dependencies_change(self):

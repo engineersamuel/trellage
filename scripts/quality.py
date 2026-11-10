@@ -58,7 +58,6 @@ NATIVE = {
 PROTOTYPES = {
     "prototypes/simd-binary-search/": "rust",
     "pocs/herdr-trx-guide/macos-overlay/": "swift",
-    "prototypes/software-factory/web-react/": "web-react",
     "prototypes/software-factory/web-foldkit/": "web-foldkit",
     "prototypes/software-factory/coordinator/": "coordinator",
     "prototypes/software-factory/shared/": "web-shared",
@@ -155,7 +154,7 @@ def classify(path: str) -> dict:
         return {"targets": package, "macos": True, "analysis": True, "prototypes": {"coordinator"}}
     for prefix, name in PROTOTYPES.items():
         if path.startswith(prefix):
-            names = {"web-react", "web-foldkit", "coordinator"} if name == "web-shared" else {name}
+            names = {"web-foldkit", "coordinator"} if name == "web-shared" else {name}
             return {"prototypes": names}
     contracts = contract_selection(path)
     if contracts is not None:

@@ -16,7 +16,6 @@ updates:
         update-types: [minor, patch]
   - package-ecosystem: npm
     directories:
-      - /prototypes/software-factory/web-react
       - /prototypes/software-factory/web-foldkit
       - /tests/playwright
     schedule:

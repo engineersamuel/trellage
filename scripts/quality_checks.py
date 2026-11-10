@@ -22,7 +22,6 @@ ROOT = Path(__file__).resolve().parents[1]
 BASELINE = Path(".quality/baseline.json")
 EXCLUDED = (
     "prototypes/software-factory/web-foldkit/repos/",
-    "prototypes/software-factory/web-react/src/components/ui/",
     "reports/",
     ".quality-results/",
 )

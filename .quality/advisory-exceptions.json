@@ -10,13 +10,5 @@
   "prototypes/software-factory/web-foldkit/package-lock.json|npm|zod|3.25.76|GHSA-mrhx-c7xc-m3w5": {
     "reviewBy": "2026-12-09",
     "reason": "Existing AG-UI dependency requires Zod 3. The fix requires Zod 4 and must be adopted through a compatible AG-UI upgrade, not a global override. The separately used Zod 4 copy is fixed."
-  },
-  "prototypes/software-factory/web-react/package-lock.json|npm|katex|0.16.47|GHSA-238p-pmpm-9mq7": {
-    "reviewBy": "2026-12-09",
-    "reason": "Existing OpenUI transitive dependency. The fix is outside its 0.16.x compatibility range and needs a tested OpenUI upgrade; do not force a renderer API change in the quality-gate migration."
-  },
-  "prototypes/software-factory/web-react/package-lock.json|npm|zod|3.25.76|GHSA-mrhx-c7xc-m3w5": {
-    "reviewBy": "2026-12-09",
-    "reason": "Existing AG-UI dependency requires Zod 3. The fix requires Zod 4 and must be adopted through a coordinated CopilotKit and AG-UI upgrade, not a global override."
   }
 }
