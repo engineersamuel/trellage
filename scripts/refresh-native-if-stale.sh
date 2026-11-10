@@ -24,6 +24,7 @@ freshness_receipt="$runtime_parent/.native-stack-sources"
 # after it gets the lock, so it skips work the other refresh already did.
 refresh_lock="$runtime_parent/.native-refresh.lock"
 lock_wait_seconds=900
+# shellcheck disable=SC2174 # only the runtime folder itself needs 0700
 mkdir -p -m 0700 "$runtime_parent"
 [[ -d "$runtime_parent" && ! -L "$runtime_parent" ]] || fail "unsafe runtime parent: $runtime_parent"
 
@@ -32,9 +33,17 @@ release_lock() {
   rmdir -- "$refresh_lock" 2>/dev/null || true
 }
 
+# The claim is an exclusive create of the pid file (O_EXCL via noclobber), read back to confirm. A bare mkdir is
+# not enough: on some CI filesystems two processes both "create" the same directory at the same moment.
+claim_lock() {
+  mkdir -m 0700 "$refresh_lock" 2>/dev/null || true
+  (set -o noclobber; printf '%s\n' "$$" >"$refresh_lock/pid") 2>/dev/null \
+    && [[ "$(cat "$refresh_lock/pid" 2>/dev/null)" == "$$" ]]
+}
+
 acquire_lock() {
   local waited=0 holder
-  until mkdir -m 0700 "$refresh_lock" 2>/dev/null; do
+  until claim_lock; do
     holder="$(cat "$refresh_lock/pid" 2>/dev/null || true)"
     if [[ -n "$holder" ]] && ! kill -0 "$holder" 2>/dev/null; then
       printf 'refresh-native-if-stale: removing lock of exited refresh %s\n' "$holder" >&2
@@ -46,7 +55,6 @@ acquire_lock() {
     sleep 1
     waited=$((waited + 1))
   done
-  printf '%s\n' "$$" >"$refresh_lock/pid"
 }
 
 acquire_lock
