@@ -3772,10 +3772,6 @@
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "04cb1d3e0522ad410ac51ad8a424b3a62e42e5f61a6201dbf89b4a43a5efe1bd"
         },
-        "scripts/test-offline.py": {
-          "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
-          "sha256": "b566e3c0028f037ddafe276ec934360be02a3984c74ec4382b17a0636690ca3f"
-        },
         "scripts/test-performance-snapshot.py": {
           "reason": "Existing findings at quality-gate adoption; changes to this file must pass.",
           "sha256": "3213f55eefce891d95fd8690aec536018ea4a21dcba61f6d7885def4addf4ecb"

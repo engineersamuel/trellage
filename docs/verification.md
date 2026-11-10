@@ -70,6 +70,10 @@ The macOS launcher and runtime lanes run in parallel on separate runners. They
 retain the former macOS checks. Timing-sensitive Native contracts remain serial
 inside each Linux run. The default suite also covers root script tests, shell
 syntax, the profile matrix, and gate behavior.
+Offline macOS tests check that their private, non-setuid copy of `ps` can inspect
+real process identities inside Seatbelt. If the re-signed native slice cannot run,
+they try its Intel slice through Rosetta 2. Hosted macOS images include Rosetta;
+local Apple Silicon systems may need it. Neither path removes network isolation.
 Script contracts seed declared local skill sources and inject deterministic model
 selection. Provider isolation stays active. The exhaustive test source fingerprint
 hashes tracked repository-local links without following them; external or
@@ -131,7 +135,9 @@ It includes unchanged indexed context for local action and agent-document links.
 Local runs execute selected prototype checks. Swift requires macOS; other hosts
 report that requirement, and the required CI matrix supplies the macOS check.
 Swift checks retain the outer offline sandbox and use native SwiftPM to find CLT
-Testing macros. The existing standalone assertion runner also executes.
+Testing macros. The generated test runner receives the same framework search path;
+an empty test report fails the gate. The existing standalone assertion runner also
+executes.
 
 Static tools run on maintained files, not vendored Foldkit reference sources,
 verbatim shadcn components, dependencies, or generated artifacts. Knip analyzes

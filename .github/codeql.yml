@@ -6,7 +6,6 @@ paths:
   - scripts
   - packages
   - prototypes/trellage-claude-common
-  - prototypes/trellage-codex-common
   - prototypes/trellage-prime-profiles/assets
 paths-ignore:
   - "**/node_modules/**"

@@ -93,6 +93,27 @@ class InstalledToolTests(unittest.TestCase):
             results = checks.check_one(self.root, "syntax", ["first.sh", "second.sh"], {"checks": {}})
         self.assertTrue(any(result["exitCode"] != 0 for result in results))
 
+    def test_codeql_scan_roots_exist(self):
+        result = subprocess.run(
+            [
+                "bun",
+                "--no-env-file",
+                "--config=/dev/null",
+                "-e",
+                'console.log(JSON.stringify(Bun.YAML.parse(await Bun.file(".github/codeql.yml").text()).paths))',
+            ],
+            cwd=checks.ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        )
+        roots = json.loads(result.stdout)
+        self.assertTrue(roots, "CodeQL must scan maintained source roots")
+        for root in roots:
+            with self.subTest(root=root):
+                self.assertTrue((checks.ROOT / root).is_dir(), f"CodeQL source root does not exist: {root}")
+
     def test_secret_scanner_rejects_a_synthetic_token_without_validation(self):
         self.write("README.md", "# Public fixture\n")
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):

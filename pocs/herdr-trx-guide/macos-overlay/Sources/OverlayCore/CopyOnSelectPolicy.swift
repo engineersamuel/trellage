@@ -12,7 +12,7 @@ public enum CopyOnSelectPolicy {
         var inUI = false
         var observed: CopyOnSelectState?
         for rawLine in content.components(separatedBy: .newlines) {
-            let line = rawLine.split(separator: "#", maxSplits: 1).first?
+            let line = rawLine.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if line.hasPrefix("[") {
                 inUI = line == "[ui]"

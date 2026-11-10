@@ -448,8 +448,11 @@ assert_contains \
   "$fixture_root/reinstall-swap-failure.out"
 [[ "$("$fixture_bin/trx" --version)" == trx-v3-fixture ]] \
   || fail 'failed swap did not restore the usable router'
-[[ -z "$(find "$runtime_parent" -maxdepth 1 -name '.trx-install.*' -print)" ]] \
-  || fail 'failed swap left staging behind'
+if [[ -n "$(find "$runtime_parent" -maxdepth 1 -name '.trx-install.*' -print)" ]]; then
+  cat "$fixture_root/reinstall-failure.out" "$fixture_root/reinstall-swap-failure.out" >&2
+  find "$runtime_parent" -maxdepth 1 -name '.trx-install.*' -print >&2
+  fail 'failed swap left staging behind'
+fi
 "$prototype_root/install.sh" >"$fixture_root/reinstall.out"
 cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
   <(printf 'trellage-router-v3\n') \
