@@ -1,5 +1,22 @@
 pre-commit:
   jobs:
+    # Format staged files in place and re-stage them, so a commit never fails on formatting.
+    # Same file set as the oxfmt check in scripts/quality_checks.py. Jobs run in order: the check below sees the result.
+    - name: format staged files
+      glob: "*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc}"
+      exclude:
+        - "prototypes/software-factory/web-foldkit/repos/**"
+        - "reports/**"
+        - ".quality-results/**"
+        - "**/node_modules/**"
+        - "**/dist/**"
+        - "**/coverage/**"
+        - "**/package-lock.json"
+        - "**/npm-shrinkwrap.json"
+      # git add here (not only stage_fixed): lefthook re-stages after all jobs, so the check would see old content.
+      # Unstaged edits are hidden by lefthook during the hook, so only staged content is formatted and added.
+      run: node_modules/.bin/oxfmt --config .prettierrc.json {staged_files} && git add {staged_files}
+      stage_fixed: true
     - name: staged quality checks
       run: mise run quality:staged
 
