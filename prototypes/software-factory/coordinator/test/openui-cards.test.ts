@@ -1,8 +1,8 @@
-// The coordinator builds OpenUI programs for the Foldkit UI. Parse them with the catalog that UI draws (openuiChat,
-// the JSON schema agent-interface ships), so a card the coordinator writes is a card the UI can show.
+// The coordinator builds OpenUI programs for the Foldkit UI. Parse them with the catalog that UI draws (openuiChat).
+// shared/openui-chat-library.json is agent-interface's schema; web-foldkit/src/openUiCatalog.test.ts keeps it in sync.
 import { expect, test } from "bun:test"
 import { createParser } from "@openuidev/lang-core"
-import schema from "../../web-foldkit/node_modules/@plana-solutions/agent-interface/dist/client/genui/openui-chat-library.json"
+import schema from "../../shared/openui-chat-library.json"
 import { cardOpenUi, mergeCards } from "../src/cards.ts"
 const parser = createParser(schema, "Card")
 const W = { id: "w1", name: "Alpha \"x\"", status: "running", model: "m", rssKb: 51200, contextTokens: 10, contextLimit: 100 }

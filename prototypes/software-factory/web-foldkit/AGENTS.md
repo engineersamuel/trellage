@@ -26,7 +26,7 @@ a small `Runtime.makeElement` program that embeds the chat Submodel with one ans
 `genUiCardView` (added to agent-interface by the patch below). So a stream card has the same components, DOM,
 query tools and popovers as a chat card. "Continue the conversation" leaves the card through the `followUp` outbound
 Port; the host sends it to the agent that wrote the card. `src/openUiCard.test.ts` covers drawing and actions;
-`coordinator/test/openui-cards.test.ts` parses every coordinator card with the `openuiChat` catalog.
+`coordinator/test/openui-cards.test.ts` parses every coordinator card with the `openuiChat` catalog (copy in `shared/openui-chat-library.json`; `src/openUiCatalog.test.ts` keeps it in sync).
 
 `src/openUiParity.css` keeps the Select popover unclipped, as Radix does.
 
