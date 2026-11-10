@@ -46,8 +46,14 @@ call; `../shared/diffview.ts` `startToolDiffs` draws the file diffs in it), and
 list per messages array, so one chat Message does not rebuild them 4-6 times), and
 `node_modules/@plana-solutions/agent-interface/dist/client/thread-scroll-dom.js` (`WatchUserBubble` does not read layout
 on mount; one forced layout per bubble made every thread switch a slow Patch, and the ResizeObserver's first report
-gives the same value). OpenUI parity with `@openuidev/react-ui@0.18.1` (the React renderer this replaced; proven
-pixel-equal on the catalog): `node_modules/@plana-solutions/agent-interface/dist/features/genui/card.js` +
+gives the same value). Typing cost does not grow with the history:
+`node_modules/@plana-solutions/agent-interface/dist/features/messages.js` and
+`node_modules/@plana-solutions/agent-interface/dist/features/sidebar.js` memoize the message list and the sidebar on
+every Model field except `composerText` and `composer` (neither view reads them), and
+`node_modules/@plana-solutions/agent-interface/dist/client/update.js` keeps `timelines` and `threadScroll` as the same
+objects when their rebuilt value is equal, so that memo hits on each keystroke. OpenUI parity with
+`@openuidev/react-ui@0.18.1` (the React renderer this replaced; proven pixel-equal on the catalog):
+`node_modules/@plana-solutions/agent-interface/dist/features/genui/card.js` +
 `node_modules/@plana-solutions/agent-interface/dist/index.js`/`index.d.ts` (public `genUiCardView`;
 `node_modules/@plana-solutions/agent-interface/dist/features/genui/render.js` exports `rendererView`),
 `node_modules/@plana-solutions/agent-interface/dist/features/genui/medium-card-blocks.js` (composite card charts match

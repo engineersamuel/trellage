@@ -26,7 +26,10 @@ const live = new Map<HTMLElement, () => void>()
 export const setDiffStyle = (s: DiffStyle): void => {
   if (s === chosen) return
   chosen = s
-  for (const [host, draw] of live) host.isConnected ? draw() : live.delete(host)
+  for (const [host, draw] of live) {
+    if (host.isConnected) draw()
+    else live.delete(host)
+  }
 }
 
 /** The user picked a style: redraw now, then save it as the setting (every open UI follows). */
@@ -43,10 +46,46 @@ export const setDiffHighlighter = (h: Highlighter): void => {
 }
 
 const LANG: Record<string, string> = {
-  ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript", js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript",
-  py: "python", rs: "rust", go: "go", rb: "ruby", java: "java", kt: "kotlin", swift: "swift", c: "c", h: "c", cc: "cpp", cpp: "cpp", hpp: "cpp",
-  cs: "csharp", php: "php", sh: "bash", bash: "bash", zsh: "bash", fish: "bash", json: "json", jsonc: "json", yaml: "yaml", yml: "yaml",
-  toml: "ini", ini: "ini", md: "markdown", css: "css", scss: "scss", html: "xml", xml: "xml", svg: "xml", sql: "sql", lua: "lua",
+  ts: "typescript",
+  tsx: "typescript",
+  mts: "typescript",
+  cts: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  py: "python",
+  rs: "rust",
+  go: "go",
+  rb: "ruby",
+  java: "java",
+  kt: "kotlin",
+  swift: "swift",
+  c: "c",
+  h: "c",
+  cc: "cpp",
+  cpp: "cpp",
+  hpp: "cpp",
+  cs: "csharp",
+  php: "php",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  fish: "bash",
+  json: "json",
+  jsonc: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "ini",
+  ini: "ini",
+  md: "markdown",
+  css: "css",
+  scss: "scss",
+  html: "xml",
+  xml: "xml",
+  svg: "xml",
+  sql: "sql",
+  lua: "lua",
 }
 const langOf = (path: string) => LANG[path.split(".").pop()?.toLowerCase() ?? ""] ?? ""
 
@@ -80,7 +119,7 @@ const code = (text: string, lang: string, marks?: [number, number][]): HTMLEleme
 /** Word marks for each del/add pair inside a changed block (n-th removed line pairs with n-th added line). */
 const pairMarks = (lines: readonly Line[]): Map<Line, [number, number][]> => {
   const out = new Map<Line, [number, number][]>()
-  for (let s = 0; s < lines.length; ) {
+  for (let s = 0; s < lines.length;) {
     if (lines[s]!.kind !== "del") {
       s++
       continue
@@ -161,8 +200,9 @@ const unifiedRows = (f: FileDiff, style: DiffStyle, lines: readonly Line[]): HTM
       body.append(r)
       continue
     }
-    if (style === "github") r.append(el("span", "dv-num", l.old?.toString() ?? ""), el("span", "dv-num", l.new?.toString() ?? ""))
-    else r.append(el("span", "dv-num", (l.kind === "del" ? l.old : l.new ?? l.old)?.toString() ?? ""))
+    if (style === "github")
+      r.append(el("span", "dv-num", l.old?.toString() ?? ""), el("span", "dv-num", l.new?.toString() ?? ""))
+    else r.append(el("span", "dv-num", (l.kind === "del" ? l.old : (l.new ?? l.old))?.toString() ?? ""))
     r.append(el("span", "dv-sign", SIGN[l.kind]), code(l.text, lang, marks.get(l)))
     body.append(r)
   }
@@ -180,7 +220,7 @@ const splitRows = (f: FileDiff, lines: readonly Line[]): HTMLElement => {
     c.append(el("span", "dv-num", (side === "old" ? l.old : l.new)?.toString() ?? ""), code(l.text, lang, marks.get(l)))
     return c
   }
-  for (let i = 0; i < lines.length; ) {
+  for (let i = 0; i < lines.length;) {
     const l = lines[i]!
     if (l.kind === "gap") {
       const g = el("div", "dv-row gap")
@@ -195,7 +235,8 @@ const splitRows = (f: FileDiff, lines: readonly Line[]): HTMLElement => {
       const adds: Line[] = []
       while (i < lines.length && lines[i]!.kind === "del") dels.push(lines[i++]!)
       while (i < lines.length && lines[i]!.kind === "add") adds.push(lines[i++]!)
-      for (let k = 0; k < Math.max(dels.length, adds.length); k++) body.append(cell(dels[k], "old"), cell(adds[k], "new"))
+      for (let k = 0; k < Math.max(dels.length, adds.length); k++)
+        body.append(cell(dels[k], "old"), cell(adds[k], "new"))
     }
   }
   return body
@@ -225,7 +266,11 @@ const fileView = (f: FileDiff, style: DiffStyle, cap = CAP): HTMLElement => {
 }
 
 /** Fill `host` with the diffs and keep it in step with the chosen style. `cap`: lines shown before "show all". */
-export const renderDiffs = (host: HTMLElement, files: readonly FileDiff[], { cap = CAP }: { cap?: number } = {}): void => {
+export const renderDiffs = (
+  host: HTMLElement,
+  files: readonly FileDiff[],
+  { cap = CAP }: { cap?: number } = {},
+): void => {
   const draw = () => {
     const style = currentStyle()
     host.className = `dv dv-style-${style}`
@@ -291,7 +336,17 @@ export const startToolDiffs = (): void => {
     // Draw into a child: Foldkit owns the slot's own attributes.
     slot.replaceChildren(...(files.length ? [diffView(files)] : []))
   }
-  const sync = () => document.querySelectorAll<HTMLElement>("[data-sf-tool]").forEach(fill)
-  new MutationObserver(sync).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-sf-tool"] })
-  sync()
+  /** Slots in or under one node. */
+  const slotsIn = (node: Node): HTMLElement[] =>
+    node instanceof HTMLElement
+      ? [...(node.matches("[data-sf-tool]") ? [node] : []), ...node.querySelectorAll<HTMLElement>("[data-sf-tool]")]
+      : []
+  // Only the changed nodes are checked: a scan of the whole page on every DOM change cost each chat render.
+  new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.type === "attributes" && r.target instanceof HTMLElement) fill(r.target)
+      else r.addedNodes.forEach((n) => slotsIn(n).forEach(fill))
+    }
+  }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-sf-tool"] })
+  document.querySelectorAll<HTMLElement>("[data-sf-tool]").forEach(fill)
 }

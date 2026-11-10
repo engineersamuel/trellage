@@ -369,7 +369,8 @@ const reducedMotion = (): boolean =>
 // ---------- eyes follow the mouse when it is near ----------
 
 /** Last pointer position on the page; one listener for every critter. */
-const pointer = { x: 0, y: 0, isKnown: false }
+/** `moves` counts pointer moves, so a critter reads its own layout only after the pointer moved. */
+const pointer = { x: 0, y: 0, isKnown: false, moves: 0 }
 let isPointerTracked = false
 const trackPointer = (): void => {
   if (isPointerTracked || typeof window === "undefined") return
@@ -379,9 +380,15 @@ const trackPointer = (): void => {
     pointer.x = e.clientX
     pointer.y = e.clientY
     pointer.isKnown = true
+    pointer.moves++
   }
   window.addEventListener("pointermove", onMove, { passive: true })
-  document.addEventListener("pointerleave", () => void (pointer.isKnown = false))
+  // A scroll moves critters under a still pointer: read the layout again.
+  window.addEventListener("scroll", () => void pointer.moves++, { passive: true, capture: true })
+  document.addEventListener("pointerleave", () => {
+    pointer.isKnown = false
+    pointer.moves++
+  })
 }
 
 /** The mouse within this distance (px) of a critter makes it look up from its work. */
@@ -410,10 +417,17 @@ export const mountCritter = (element: Element, critter: Critter): (() => void) =
   let gaze: Gaze = { x: 0, y: 0, weight: 0 }
   let lastFrame = -1
   let frameId = 0
+  // Reading the layout right after other critters wrote theirs forces a page layout each frame. While the pointer
+  // stands still the gaze target does not change, so it is read again only after a move.
+  let target: Gaze = { x: 0, y: 0, weight: 0 }
+  let seenMoves = -1
   const tick = (now: number): void => {
     const frame = Math.floor((now / 1000) * FPS)
     if (frame !== lastFrame) {
-      const target = gazeTarget(element)
+      if (pointer.moves !== seenMoves) {
+        seenMoves = pointer.moves
+        target = gazeTarget(element)
+      }
       // Far away the direction stays where it was, so the eyes drift back to the work without swinging.
       gaze = {
         x: target.weight ? gaze.x + (target.x - gaze.x) * EASE : gaze.x,

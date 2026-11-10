@@ -3,7 +3,13 @@ import { AsyncData } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import { Lazy } from "foldkit/test"
 import * as Url from "foldkit/url"
-import { NO_ARTIFACTS, ThemeSetting, memoryNavigation, readFlags } from "@plana-solutions/agent-interface"
+import {
+  Message as ChatMessage,
+  NO_ARTIFACTS,
+  ThemeSetting,
+  memoryNavigation,
+  readFlags,
+} from "@plana-solutions/agent-interface"
 import { describe, expect, test, vi } from "vitest"
 import type { Decision } from "../../shared/approvals"
 import { chat } from "./chatProgram"
@@ -68,5 +74,64 @@ describe("root view memo", () => {
     expect(() => Lazy.expectAllReused({ view: twoModels, model: base })).toThrow(/ArgumentsChanged/)
     expect(chatView).toHaveBeenCalledTimes(1)
     chatView.mockRestore()
+  })
+})
+
+describe("chat message list memo (agent-interface patch)", () => {
+  /** The `.openui-agent-thread-messages` VNode of one render. */
+  type Node = Readonly<{ data?: { class?: Record<string, boolean> }; children?: ReadonlyArray<Node | string> }>
+  const findMessages = (node: Node | string | null | undefined): Node | undefined => {
+    if (node === null || node === undefined || typeof node === "string") return undefined
+    if (node.data?.class?.["openui-agent-thread-messages"]) return node
+    for (const child of node.children ?? []) {
+      const hit = findMessages(child)
+      if (hit) return hit
+    }
+    return undefined
+  }
+  /** Render `first`, then `second`, in one test frame (the same builder), as the app renders two Models in a row. */
+  const twoRenders = (first: Model, second: Model): [unknown, unknown] => {
+    const found: unknown[] = []
+    let renders = 0
+    const run = (_: Model, h: Parameters<typeof view>[1]) => {
+      const html = view(renders++ === 0 ? first : second, h)
+      found.push(findMessages(html.body))
+      return html
+    }
+    // Other slots may miss (the chat Model changed); this test reads the message VNodes, not the reuse report.
+    try {
+      Lazy.expectAllReused({ view: run, model: first })
+    } catch {}
+    return [found[0], found[1]]
+  }
+
+  test("typing reuses the message list; a new message rebuilds it", () => {
+    const withMessages = modifyFields(loaded, {
+      chat: modifyFields({ messages: () => [{ id: "m1", role: "user" as const, content: "hi" }] }),
+    })
+    const typed = modifyFields(withMessages, { chat: modifyFields({ composerText: () => "x" }) })
+    const [before, afterTyping] = twoRenders(withMessages, typed)
+    expect(before).toBeDefined()
+    expect(afterTyping).toBe(before)
+    const more = modifyFields(typed, {
+      chat: modifyFields({
+        messages: () => [...typed.chat.messages, { id: "m2", role: "user" as const, content: "again" }],
+      }),
+    })
+    const [, afterMessage] = twoRenders(typed, more)
+    expect(afterMessage).toBeDefined()
+    expect(afterMessage).not.toBe(before)
+  })
+})
+
+describe("chat timeline and scroll state (agent-interface patch)", () => {
+  test("a keystroke keeps the timelines and scroll state the same objects", () => {
+    const withMessages = modifyFields(loaded, {
+      chat: modifyFields({ messages: () => [{ id: "m1", role: "user" as const, content: "hi" }] }),
+    })
+    const typed = chat.update(withMessages.chat, ChatMessage.UpdatedComposerText({ value: "x" })).model
+    expect(typed.composerText).toBe("x")
+    expect(typed.timelines).toBe(withMessages.chat.timelines)
+    expect(typed.threadScroll).toBe(withMessages.chat.threadScroll)
   })
 })
