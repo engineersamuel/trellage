@@ -40,8 +40,7 @@ body,
   color: var(--sf-muted);
 }
 .fk-nav button,
-.fk-drawer button,
-.fk-panel button {
+.fk-drawer button {
   background: var(--sf-surface);
   color: var(--sf-text);
   border: 1px solid var(--sf-border);
@@ -67,11 +66,6 @@ body,
   background: color-mix(in srgb, var(--sf-accent) 22%, var(--sf-bg));
   border-bottom: 1px solid var(--sf-border);
 }
-.fk-layout {
-  display: grid;
-  flex: 1;
-  min-height: 0;
-}
 .fk-chat {
   position: relative;
   min-width: 0;
@@ -91,100 +85,12 @@ body,
   max-width: 100%;
   height: 100%;
 }
-.fk-panel {
-  display: grid;
-  grid-template-rows: auto auto 1fr;
-  min-height: 0;
-  min-width: 0;
-  border-left: 1px solid var(--sf-border);
-  border-right: 1px solid var(--sf-border);
-}
-.fk-workers {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--sf-border);
-  max-height: 35vh;
-  overflow: auto;
-}
-.fk-workers h2,
-.fk-peer h2 {
-  margin: 4px 0 8px;
-  font-size: 14px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.fk-panel .fk-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  width: 100%;
-  text-align: left;
-  padding: 6px 8px;
-  border: 0;
-  background: none;
-  color: inherit;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.fk-panel .fk-branch {
-  color: var(--sf-muted);
-  margin-right: -2px;
-}
-.fk-panel .fk-row.active {
-  background: color-mix(in srgb, var(--sf-accent) 25%, transparent);
-}
-.fk-critter {
-  width: 28px;
-  height: 28px;
-  flex: none;
-  display: inline-block;
-}
-.fk-critter svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
 .fk-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex: none;
   display: inline-block;
-}
-.fk-meta {
-  color: var(--sf-muted);
-  font-size: 12px;
-}
-.fk-peer {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: 8px 12px;
-}
-.fk-log {
-  flex: 1;
-  overflow: auto;
-  font:
-    12px ui-monospace,
-    monospace;
-  background: var(--sf-surface);
-  border: 1px solid var(--sf-border);
-  border-radius: 6px;
-  padding: 6px;
-}
-.fk-ev {
-  display: grid;
-  grid-template-columns: 200px 1fr;
-  gap: 8px;
-  padding: 2px 0;
-  border-bottom: 1px dotted var(--sf-border);
-}
-.fk-type {
-  color: var(--sf-accent);
-}
-.fk-text {
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 .fk-send {
   display: flex;
@@ -310,8 +216,7 @@ kbd {
   pointer-events: none;
 }
 .fk-root > .fk-nav,
-.fk-root > .fk-banner,
-.fk-root > .fk-layout {
+.fk-root > .fk-banner {
   position: relative;
   z-index: 1;
 }
@@ -320,15 +225,6 @@ kbd {
   inset: 0;
   z-index: 900;
   pointer-events: none;
-}
-.fk-raw {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--sf-muted);
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
 }
 
 /* Native chat: system font, dark bubbles, dark composer, driven by the theme variables. */
@@ -383,16 +279,6 @@ kbd {
     0 0 0 0.5px var(--sf-border),
     0 4px 16px rgba(0, 0, 0, 0.35) !important;
 }
-
-/* Panel body: the worker panel Submodel fills the grid rows of .fk-panel below the slot. */
-.fk-panel {
-  grid-template-rows: auto 1fr;
-}
-.fk-panel-body {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  min-height: 0;
-}
 .fk-list {
   list-style: none;
   margin: 0;
@@ -400,18 +286,6 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-.fk-toolbar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.fk-log-host {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
 .fk-field {
   display: flex;
@@ -493,35 +367,6 @@ kbd {
   inset: 0;
   background: #0006;
 }
-.fk-slider {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.fk-slider-root {
-  position: relative;
-  height: 16px;
-  display: flex;
-  align-items: center;
-}
-.fk-slider-track {
-  position: relative;
-  flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--sf-border);
-}
-.fk-slider-fill {
-  border-radius: 2px;
-  background: var(--sf-accent);
-}
-.fk-slider-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--sf-text);
-  cursor: grab;
-}
 /* Diff style preview (shared/diffview.ts): the chips above pick the style, so the header picker is hidden. */
 .sf-diff-preview {
   margin-top: 8px;
@@ -532,53 +377,6 @@ kbd {
 /* File diffs of the chat's tool calls (shared/diffview.ts startToolDiffs fills the slots). */
 .sf-tool-slot:not(:empty) {
   margin: 6px 0 4px;
-}
-/* Worker panel: a destructive action, and the dialog that confirms it. */
-.fk-panel button.fk-danger {
-  border-color: #dc2626;
-  color: #f87171;
-}
-.fk-confirm {
-  position: fixed;
-  top: 30%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(380px, calc(100vw - 32px));
-  box-sizing: border-box;
-  background: var(--sf-surface);
-  color: var(--sf-text);
-  border: 1px solid var(--sf-border);
-  border-radius: 8px;
-  padding: 16px;
-  z-index: 1000;
-  box-shadow: 0 8px 24px #0008;
-}
-.fk-confirm h2 {
-  margin: 0 0 6px;
-  font-size: 15px;
-}
-.fk-confirm p {
-  margin: 0 0 14px;
-  color: var(--sf-muted);
-  font-size: 13px;
-}
-.fk-confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-.fk-confirm button {
-  background: var(--sf-surface);
-  color: var(--sf-text);
-  border: 1px solid var(--sf-border);
-  border-radius: 6px;
-  padding: 4px 12px;
-  cursor: pointer;
-}
-.fk-confirm button.fk-danger {
-  background: #dc2626;
-  border-color: #dc2626;
-  color: #fff;
 }
 
 /* Chat cards (OpenUI answers that start with a CardHeader, e.g. the live factory cards): the factory card look.

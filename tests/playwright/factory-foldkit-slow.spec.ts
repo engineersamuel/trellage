@@ -32,6 +32,9 @@ test("foldkit: no slow-phase warnings after startup, on a 4x slower CPU", async 
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 })
   await page.goto(URL)
   await page.getByRole("heading", { level: 1, name: "Factory · Foldkit" }).waitFor({ timeout: 60_000 })
+  // Start an empty chat, as the old Classic layout showed: the Inbox opens a stored conversation, whose history makes
+  // every keystroke cost more (a separate issue).
+  await page.getByRole("button", { name: "＋ New General chat" }).click()
   await page.waitForTimeout(3_000)
   const startup = [...warnings]
   warnings.length = 0

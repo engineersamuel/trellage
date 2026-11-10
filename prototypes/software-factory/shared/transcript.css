@@ -8,7 +8,7 @@
 .sft-error { color: #ef4444; font-weight: 600; }
 [data-transcript-scroll] { min-width: 0; overflow-x: hidden; }
 [data-transcript], .sft-root { min-width: 0; max-width: 100%; box-sizing: border-box; }
-.sf-panel, .sf-peer, .fk-panel, .fk-peer, .sf-log, .fk-log { min-width: 0; }
+.sf-panel, .sf-peer, .sf-log { min-width: 0; }
 .sft-thinking { font-size: 12.5px; color: var(--sf-muted, #a3a3a3); }
 .sft-thinking summary { cursor: pointer; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; list-style: none; font-style: italic; }
 .sft-thought { padding: 4px 10px; white-space: pre-wrap; border-left: 2px solid var(--sf-border, #262626); margin-left: 6px; }
