@@ -1,6 +1,6 @@
 # Plan 003: Drive the software factory from config files
 
-Status: IN PROGRESS (increments 1-3 done, 4 open). Priority P1. Effort L (4 increments).
+Status: DONE (increments 1-4). Priority P1. Effort L (4 increments).
 Risk MEDIUM (prompt text, model choice, review gates).
 Planned against HEAD `47079db`, 2026-11-10. Code: `prototypes/software-factory/`.
 
@@ -80,6 +80,7 @@ Running workers keep their system prompt.
 ## STOP conditions
 
 - Stop if a comment-preserving TOML writer is not available in the current stack; ask before adding a library.
+  (Resolved: a line-level writer, `setTomlKey`, checks its result by parsing and refuses keys it cannot edit safely.)
 - Stop if moving tool descriptions changes tool parameter schemas.
 - Stop if any guard (no push/merge, approvals, fix-round limit) would read its rule from editable text.
 

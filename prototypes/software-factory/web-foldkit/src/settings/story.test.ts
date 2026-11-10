@@ -1,14 +1,22 @@
-import { Option } from "effect"
+import { Option, Result } from "effect"
 import { AsyncData } from "foldkit"
 import { Command, expectOutMessage, given, message, model, story } from "foldkit/story"
 import { modifyFields } from "foldkit/struct"
 import { describe, expect, test } from "vitest"
 import type { Delivery } from "../domain"
-import { AddCron, FetchDelivery, FetchSettings, PatchSettings, SyncExtensions } from "./command"
-import { document } from "./fixture"
+import {
+  AddCron,
+  ChangeConfig,
+  FetchConfig,
+  FetchDelivery,
+  FetchSettings,
+  PatchSettings,
+  SyncExtensions,
+} from "./command"
+import { config, document } from "./fixture"
 import { Message, OutMessage } from "./message"
 import { feedEventToMessage } from "./subscription"
-import { init, pressHotkey, update } from "./update"
+import { init, parseConfigValue, pressHotkey, update } from "./update"
 
 const delivery: Delivery = { steps: [], run: null, decisions: [], securityReviews: [] }
 
@@ -56,15 +64,18 @@ describe("loading", () => {
     )
   })
 
-  test("a feed gap refreshes settings and delivery", () => {
+  test("a feed gap refreshes settings, delivery and the factory config", () => {
     story(
       update,
-      given(modifyFields(loaded, { delivery: () => AsyncData.succeed(delivery) })),
+      given(
+        modifyFields(loaded, { delivery: () => AsyncData.succeed(delivery), config: () => AsyncData.succeed(config) }),
+      ),
       message(Message.ReceivedFeedGap()),
-      Command.expectExact(FetchSettings, FetchDelivery),
+      Command.expectExact(FetchSettings, FetchDelivery, FetchConfig),
       Command.resolveAll(
         [FetchSettings, Message.FailedFetchSettings({ error: "offline" })],
         [FetchDelivery, Message.SucceededFetchDelivery({ delivery })],
+        [FetchConfig, Message.SucceededFetchConfig({ config })],
       ),
       model((current) => expect(AsyncData.isStale(current.document)).toBe(true)),
     )
@@ -210,5 +221,74 @@ describe("feed events", () => {
   test("delivery events become ReceivedDeliveryChange; other kinds give nothing", () => {
     expect(feedEventToMessage(raw("factory.step_decided", null))).toEqual(Option.some(Message.ReceivedDeliveryChange()))
     expect(feedEventToMessage(raw("assistant.message", {}))).toEqual(Option.none())
+  })
+})
+
+describe("factory config", () => {
+  const withConfig = modifyFields(loaded, { config: () => AsyncData.succeed(config) })
+  const promoted = {
+    ...config,
+    values: config.values.map((v) => (v.key === "review.lens_threshold" ? { ...v, source: "file" as const } : v)),
+  }
+
+  test("a field edit sends a typed override; a bad number shows an error and sends nothing", () => {
+    story(
+      update,
+      given(withConfig),
+      message(Message.ChangedConfigValue({ key: "review.lens_threshold", value: "0.4" })),
+      Command.expectExact(ChangeConfig),
+      Command.resolve(ChangeConfig, Message.SucceededChangeConfig({ config })),
+      model((current) => expect(current.maybeConfigError).toEqual(Option.none())),
+      message(Message.ChangedConfigValue({ key: "review.lens_threshold", value: "lots" })),
+      Command.expectNone(),
+      model((current) => expect(Option.isSome(current.maybeConfigError)).toBe(true)),
+    )
+  })
+
+  test("save to file promotes the key; the server's view replaces the model", () => {
+    story(
+      update,
+      given(withConfig),
+      message(Message.ClickedPromoteConfig({ key: "review.lens_threshold" })),
+      Command.expectExact(ChangeConfig),
+      Command.resolve(ChangeConfig, Message.SucceededChangeConfig({ config: promoted })),
+      model((current) => expect(AsyncData.getData(current.config)).toEqual(Option.some(promoted))),
+    )
+  })
+
+  test("a refused change shows the server's reason", () => {
+    story(
+      update,
+      given(withConfig),
+      message(Message.ClickedClearConfigOverride({ key: "review.lens_threshold" })),
+      Command.expectExact(ChangeConfig),
+      Command.resolve(
+        ChangeConfig,
+        Message.FailedChangeConfig({ error: "runtime override: Expected a value between 0 and 1" }),
+      ),
+      model((current) =>
+        expect(current.maybeConfigError).toEqual(Option.some("runtime override: Expected a value between 0 and 1")),
+      ),
+    )
+  })
+
+  test("field text parses back to the key's type", () => {
+    expect(parseConfigValue(0.5, " 0.25 ")).toEqual(Result.succeed(0.25))
+    expect(parseConfigValue(true, "false")).toEqual(Result.succeed(false))
+    expect(parseConfigValue("gpt", "claude")).toEqual(Result.succeed("claude"))
+    expect(parseConfigValue(["a"], "high, critical,")).toEqual(Result.succeed(["high", "critical"]))
+    expect(Result.isFailure(parseConfigValue(true, "yes"))).toBe(true)
+  })
+
+  test("a config feed event becomes ReceivedConfigUpdate", () => {
+    const raw = {
+      seq: 1,
+      workerId: "coordinator",
+      type: "factory.config_updated",
+      agentId: null,
+      timestamp: "0",
+      data: config,
+    }
+    expect(feedEventToMessage(raw)).toEqual(Option.some(Message.ReceivedConfigUpdate({ config })))
   })
 })

@@ -2,7 +2,15 @@ import { Array, Option, Record } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Button, Checkbox, Dialog, Input, Select, Textarea } from "@foldkit/ui"
-import type { Delivery, JevDecision, SecurityReview, Settings, SettingsOptions } from "../domain"
+import type {
+  ConfigValue,
+  Delivery,
+  FactoryConfigView,
+  JevDecision,
+  SecurityReview,
+  Settings,
+  SettingsOptions,
+} from "../domain"
 import { DIFF_STYLES } from "../../../shared/diff"
 import { STYLES } from "../../../shared/diffview"
 import { TREE_STYLES, TREE_STYLE_LABELS } from "../../../shared/treeLines"
@@ -589,6 +597,86 @@ const hotkeySection = (settings: Settings, h: HtmlBuilder<Message>): Html =>
     h,
   )
 
+const SOURCE_LABEL: Record<ConfigValue["source"], string> = {
+  default: "default",
+  file: "your file",
+  override: "runtime override",
+}
+const RELOAD_LABEL: Record<ConfigValue["reload"], string> = {
+  live: "applies at once",
+  run: "applies to new delivery runs",
+}
+
+const configText = (value: ConfigValue["value"]): string =>
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? `${value}` : value.join(", ")
+
+const configRow = (v: ConfigValue, h: HtmlBuilder<Message>): Html =>
+  h.keyed("li")(
+    v.key,
+    [h.Class(`fk-config fk-config-${v.source}`)],
+    [
+      textField(
+        `config-${v.key}`,
+        v.key,
+        configText(v.value),
+        "",
+        (value) => Message.ChangedConfigValue({ key: v.key, value }),
+        h,
+      ),
+      h.span(
+        [h.Class("fk-muted"), h.Title(RELOAD_LABEL[v.reload])],
+        [`${SOURCE_LABEL[v.source]} · ${RELOAD_LABEL[v.reload]}`],
+      ),
+      ...(v.source === "override"
+        ? [
+            Button.view(
+              {
+                onClick: Message.ClickedPromoteConfig({ key: v.key }),
+                toView: (attributes) =>
+                  h.button([...attributes.button, h.Title("Write this value to your config file")], ["Save to file"]),
+              },
+              h,
+            ),
+            iconButton(`Clear override ${v.key}`, Message.ClickedClearConfigOverride({ key: v.key }), h),
+          ]
+        : []),
+    ],
+  )
+
+const configDetails = (config: FactoryConfigView, model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
+  h.p([h.Class("fk-muted")], [`Your file: ${config.path}. Edits here are runtime overrides until you save them.`]),
+  ...(config.error === null ? [] : [h.p([h.Class("fk-error"), h.Role("alert")], [`Config error: ${config.error}`])]),
+  ...Array.map(Record.toEntries(config.promptErrors), ([name, error]) =>
+    h.p([h.Class("fk-error"), h.Role("alert")], [`Prompt ${name}: ${error}`]),
+  ),
+  errorLine(model.maybeConfigError, h),
+  h.ul(
+    [h.Class("fk-list")],
+    Array.map(config.values, (v) => configRow(v, h)),
+  ),
+  h.p(
+    [h.Class("fk-muted")],
+    [`${config.prompts.length} prompts; edit them as files under prompts/ next to your config file.`],
+  ),
+]
+
+const configSection = (model: Model, h: HtmlBuilder<Message>): Html =>
+  section(
+    "Factory config",
+    AsyncData.match(model.config, {
+      onIdle: () => [],
+      onLoading: () => [h.p([h.Class("fk-muted")], ["Loading factory config…"])],
+      onRefreshing: (config) => configDetails(config, model, h),
+      onFailure: (error) => [h.p([h.Class("fk-error"), h.Role("alert")], [`Could not load factory config: ${error}`])],
+      onStale: ({ error, data }) => [
+        h.p([h.Class("fk-error"), h.Role("alert")], [`Factory config may be out of date: ${error}`]),
+        ...configDetails(data, model, h),
+      ],
+      onSuccess: (config) => configDetails(config, model, h),
+    }),
+    h,
+  )
+
 // ---------- Drawer ----------
 
 const drawerContent = (model: Model, render: Dialog.RenderInfo, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
@@ -610,6 +698,7 @@ const drawerContent = (model: Model, render: Dialog.RenderInfo, h: HtmlBuilder<M
       navbarSection(settings, options, h),
       deliverySection(model, settings, h),
       agentSection(settings, options, h),
+      configSection(model, h),
       cronSection(model, settings, h),
       extensionSection(settings, h),
       hotkeySection(settings, h),

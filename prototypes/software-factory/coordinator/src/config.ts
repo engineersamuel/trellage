@@ -1,9 +1,10 @@
 // Factory config: shipped defaults < the user's ~/.config/trellage/factory/config.toml.
 // Runtime overrides (UI and agent) stay in settings.json. An invalid edit keeps the last good config.
 import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, renameSync, watch, writeFileSync, type FSWatcher } from "node:fs"
 import path from "node:path"
 import { Schema } from "effect"
+import { stateDir } from "./statedir.ts"
 import {
   nativePresetProfiles,
   nativeSharedPresets,
@@ -151,32 +152,187 @@ export const loadFactoryConfig = (user: string, defaults = defaultsPath): Factor
   }
 }
 
-/** The current config, reloaded when the user file changes. Keeps the last good config on an invalid edit. */
+// ---------- Value sources, runtime overrides, promote to file ----------
+
+export type Source = "default" | "file" | "override"
+/** live: the next use reads it. run: a delivery run keeps the value it pinned at its first plan. */
+export type Reload = "live" | "run"
+export type Scalar = string | number | boolean | readonly string[]
+export type ConfigValue = { key: string; value: Scalar; source: Source; reload: Reload }
+
+/** Keys a running delivery reads from its pinned snapshot. */
+const RUN_KEYS = /^(review\.|gates\.|sdlc\.max_fix_rounds$|models\.review\.)/
+
+const isScalar = (v: unknown): v is Scalar =>
+  ["string", "number", "boolean"].includes(typeof v) || (Array.isArray(v) && v.every((x) => typeof x === "string"))
+
+/** Scalar leaves of a table as `section.key`; catalog text (steps, research, lens focus) stays file-only. */
+const leaves = (v: unknown, prefix = ""): [string, Scalar][] =>
+  isTable(v)
+    ? Object.entries(v).flatMap(([k, x]) => leaves(x, prefix ? `${prefix}.${k}` : k))
+    : isScalar(v) && !/^(steps|research)\.|^review\.lenses\.|\.question$/.test(prefix)
+      ? [[prefix, v]]
+      : []
+
+const getPath = (v: unknown, key: string): unknown =>
+  key.split(".").reduce<unknown>((x, k) => (isTable(x) ? x[k] : undefined), v)
+
+/** `{"a.b": 1}` as `{a: {b: 1}}`. */
+const nest = (flat: Record<string, unknown>): Record<string, unknown> => {
+  const out: Record<string, unknown> = {}
+  for (const [key, v] of Object.entries(flat)) {
+    const parts = key.split(".")
+    let t = out
+    for (const p of parts.slice(0, -1)) t = (t[p] ??= {}) as Record<string, unknown>
+    t[parts.at(-1)!] = v
+  }
+  return out
+}
+
+/** TOML for one scalar. JSON strings, numbers, booleans and string arrays are valid TOML values. */
+const tomlValue = (v: Scalar): string => JSON.stringify(v)
+
+/**
+ * Set `section.key = value` in TOML text, keeping comments and order. Adds the key under its table, or the table at
+ * the end. Throws when the key is written in another form (inline table, dotted key) that a line edit cannot change.
+ */
+export const setTomlKey = (text: string, dotted: string, value: Scalar): string => {
+  const parts = dotted.split(".")
+  const key = parts.at(-1)!
+  const section = parts.slice(0, -1).join(".")
+  const lines = text.split("\n")
+  const header = (l: string) => /^\s*\[([^[\]]+)\]\s*(#.*)?$/.exec(l)?.[1]?.trim()
+  const start = lines.findIndex((l) => header(l) === section)
+  const line = `${key} = ${tomlValue(value)}`
+  let next: string[]
+  if (start === -1) {
+    const body = text.replace(/\n*$/, "")
+    next = [...(body ? [body, ""] : []), `[${section}]`, line, ""]
+  } else {
+    let end = lines.findIndex((l, i) => i > start && header(l) !== undefined)
+    if (end === -1) end = lines.length
+    const at = lines.findIndex((l, i) => i > start && i < end && new RegExp(`^\\s*${key}\\s*=`).test(l))
+    next = [...lines]
+    if (at !== -1) next[at] = line
+    else {
+      let last = end
+      while (last - 1 > start && next[last - 1]!.trim() === "") last--
+      next.splice(last, 0, line)
+    }
+  }
+  const out = next.join("\n")
+  const refuse = () => new Error(`cannot safely edit ${dotted}; edit the file by hand`)
+  let parsed: unknown
+  try {
+    parsed = getPath(Bun.TOML.parse(out), dotted)
+  } catch (e) {
+    throw Object.assign(refuse(), { cause: e })
+  }
+  if (JSON.stringify(parsed) !== JSON.stringify(value)) throw refuse()
+  return out
+}
+
+/** The current config, reloaded when the user file changes. Keeps the last good config on an invalid edit.
+ *  Runtime overrides (UI, agent) sit over the user file and are saved in `overridesFile`. */
 export class ConfigStore {
   current: FactoryConfig
   error: string | null = null
+  private overrides: Record<string, Scalar> = {}
   private watcher: FSWatcher | null = null
   private timer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     readonly user = userConfigPath(),
     readonly defaults = defaultsPath,
+    readonly overridesFile: string | null = null,
   ) {
     // The shipped defaults must be valid; a bad user file then falls back to them.
     this.current = loadFactoryConfig("", defaults)
+    if (overridesFile && existsSync(overridesFile)) {
+      try {
+        const raw: unknown = JSON.parse(readFileSync(overridesFile, "utf8"))
+        if (isTable(raw)) for (const [k, v] of Object.entries(raw)) if (isScalar(v)) this.overrides[k] = v
+      } catch (e) {
+        console.error(`factory config: ignoring unreadable ${overridesFile}: ${e}`)
+      }
+    }
     this.reload()
+  }
+
+  private load(overrides: Record<string, Scalar>): FactoryConfig {
+    const base = loadFactoryConfig(this.user, this.defaults)
+    if (!Object.keys(overrides).length) return base
+    try {
+      return decode(overlay(base, nest(overrides)))
+    } catch (e) {
+      throw new Error(`runtime override: ${e instanceof Error ? e.message : String(e)}`, { cause: e })
+    }
   }
 
   /** Load again; true when the config is valid (it becomes current). */
   reload(): boolean {
     try {
-      this.current = loadFactoryConfig(this.user, this.defaults)
+      this.current = this.load(this.overrides)
       this.error = null
       return true
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
       return false
     }
+  }
+
+  /** Every scalar key with its value, where it comes from, and when a change applies. */
+  values(): ConfigValue[] {
+    const fileDoc = existsSync(this.user)
+      ? (() => {
+          try {
+            return Bun.TOML.parse(readFileSync(this.user, "utf8"))
+          } catch {
+            return {}
+          }
+        })()
+      : {}
+    return leaves(this.current).map(([key, value]) => ({
+      key,
+      value,
+      source: key in this.overrides ? "override" : getPath(fileDoc, key) !== undefined ? "file" : "default",
+      reload: RUN_KEYS.test(key) ? "run" : "live",
+    }))
+  }
+
+  /** Set (or with null, clear) one runtime override. Throws, and changes nothing, when the result is invalid. */
+  setOverride(key: string, value: Scalar | null): void {
+    if (value !== null && !leaves(this.current).some(([k]) => k === key)) throw new Error(`unknown config key ${key}`)
+    const next = { ...this.overrides }
+    if (value === null) delete next[key]
+    else next[key] = value
+    this.current = this.load(next)
+    this.overrides = next
+    this.error = null
+    this.saveOverrides()
+  }
+
+  /** Write one key's current value into the user file (comments kept), then drop its override. */
+  promote(key: string): void {
+    const v = leaves(this.current).find(([k]) => k === key)?.[1]
+    if (v === undefined) throw new Error(`unknown config key ${key}`)
+    const text = existsSync(this.user) ? readFileSync(this.user, "utf8") : ""
+    const out = setTomlKey(text, key, v)
+    mkdirSync(path.dirname(this.user), { recursive: true })
+    const tmp = `${this.user}.tmp-${process.pid}`
+    writeFileSync(tmp, out)
+    renameSync(tmp, this.user)
+    const next = { ...this.overrides }
+    delete next[key]
+    this.overrides = next
+    this.saveOverrides()
+    this.reload()
+  }
+
+  private saveOverrides(): void {
+    if (!this.overridesFile) return
+    mkdirSync(path.dirname(this.overridesFile), { recursive: true })
+    writeFileSync(this.overridesFile, JSON.stringify(this.overrides, null, 2))
   }
 
   /** Watch the user file's folder (editors replace files), debounced. `onChange` gets each reload result. */
@@ -235,7 +391,8 @@ export const pinnedConfig = (root: string, id: string | undefined): FactoryConfi
 
 let shared: ConfigStore | null = null
 /** The process-wide store. main.ts starts its watcher; tests point SF_CONFIG at a temp file. */
-export const configStore = (): ConfigStore => (shared ??= new ConfigStore())
+export const configStore = (): ConfigStore =>
+  (shared ??= new ConfigStore(userConfigPath(), defaultsPath, path.join(stateDir(), "config-overrides.json")))
 /** The current factory config. Read it at use time, not at import time, so edits apply. */
 export const factoryConfig = (): FactoryConfig => configStore().current
 /** Replace the process-wide store (tests). */

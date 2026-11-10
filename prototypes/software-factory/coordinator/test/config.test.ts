@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { mkdtempSync, renameSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -8,6 +8,7 @@ import {
   missingProfiles,
   pinnedConfig,
   setConfigStore,
+  setTomlKey,
   snapshotConfig,
   userConfigPath,
 } from "../src/config.ts"
@@ -154,4 +155,47 @@ test("a run keeps its pinned config after the config changes", () => {
   expect(pinnedConfig(root, id).sdlc.max_fix_rounds).toBe(2)
   expect(pinnedConfig(root, undefined).sdlc.max_fix_rounds).toBe(9)
   expect(snapshotConfig(root, pinnedConfig(root, id))).toBe(id)
+})
+
+test("setTomlKey keeps comments and order, adds missing keys and tables, refuses forms it cannot edit", () => {
+  const text = "# mine\n[review]\n# keep this\nlens_threshold = 0.5 # old\nmax_lenses = 2\n\n[sdlc]\ndone_below = 0.2\n"
+  expect(setTomlKey(text, "review.lens_threshold", 0.4)).toBe(
+    "# mine\n[review]\n# keep this\nlens_threshold = 0.4\nmax_lenses = 2\n\n[sdlc]\ndone_below = 0.2\n",
+  )
+  expect(setTomlKey(text, "review.max_rounds", 3)).toContain("max_lenses = 2\nmax_rounds = 3\n\n[sdlc]")
+  expect(setTomlKey(text, "models.review.gpt", "gpt-x")).toEndWith('[models.review]\ngpt = "gpt-x"\n')
+  expect(setTomlKey("", "fanout.max_workers", 2)).toBe("[fanout]\nmax_workers = 2\n")
+  expect(setTomlKey(text, "review.min_severity", ["high"])).toContain('min_severity = ["high"]')
+  expect(() => setTomlKey("review = { lens_threshold = 0.5 }\n", "review.lens_threshold", 0.4)).toThrow(
+    "cannot safely edit",
+  )
+})
+
+test("values report default, file and override sources; overrides persist, validate and promote", () => {
+  const d = dir()
+  const f = path.join(d, "config.toml")
+  const o = path.join(d, "overrides.json")
+  writeFileSync(f, "# my settings\n[sdlc]\ndone_below = 0.2\n")
+  const s = new ConfigStore(f, undefined, o)
+  stores.push(s)
+  const src = (k: string) => s.values().find((v) => v.key === k)
+  expect(src("sdlc.done_below")).toEqual({ key: "sdlc.done_below", value: 0.2, source: "file", reload: "live" })
+  expect(src("review.lens_threshold")).toMatchObject({ source: "default", reload: "run" })
+  expect(s.values().some((v) => v.key.startsWith("steps."))).toBe(false)
+
+  s.setOverride("review.lens_threshold", 0.45)
+  expect(src("review.lens_threshold")).toMatchObject({ value: 0.45, source: "override" })
+  expect(() => s.setOverride("review.lens_threshold", 3)).toThrow()
+  expect(() => s.setOverride("nope.key", 1)).toThrow("unknown config key")
+  expect(s.current.review.lens_threshold).toBe(0.45)
+
+  const again = new ConfigStore(f, undefined, o)
+  stores.push(again)
+  expect(again.current.review.lens_threshold).toBe(0.45)
+
+  s.promote("review.lens_threshold")
+  expect(readFileSync(f, "utf8")).toBe("# my settings\n[sdlc]\ndone_below = 0.2\n\n[review]\nlens_threshold = 0.45\n")
+  expect(src("review.lens_threshold")).toMatchObject({ value: 0.45, source: "file" })
+  s.setOverride("sdlc.done_below", null)
+  expect(src("sdlc.done_below")).toMatchObject({ value: 0.2, source: "file" })
 })

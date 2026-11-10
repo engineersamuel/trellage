@@ -1,7 +1,7 @@
 // Prompt templates: defaults/prompts/<name>.md, overridden one by one by ~/.config/trellage/factory/prompts/<name>.md.
 // `{{name}}` inserts a value; `{{#name}}...{{/name}}` keeps its body only when the value is truthy, `{{^name}}...{{/name}}` only when not.
 // Config values are available as `{{section.key}}`. Inserted values are never scanned again.
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { factoryConfig, userConfigPath, type FactoryConfig } from "./config.ts"
 
@@ -61,3 +61,10 @@ export const loadPrompt = (name: string, vars: Vars = {}): string => {
   } else promptErrors.delete(name)
   return render(read(path.join(defaultPromptsDir, `${name}.md`)), all)
 }
+
+/** Every shipped prompt name, e.g. `coordinator`, `jev/lens`. */
+export const promptNames = (dir = defaultPromptsDir): string[] =>
+  (readdirSync(dir, { recursive: true }) as string[])
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => f.slice(0, -3).split(path.sep).join("/"))
+    .sort()

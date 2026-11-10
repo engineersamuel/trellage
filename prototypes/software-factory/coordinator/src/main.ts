@@ -15,7 +15,8 @@ import {
 } from "./folders.ts"
 import { cardsPrompt, coordinatorPrompt, deskPrompt, globalPrompt, researchPrompt, subPrompt } from "./prompts.ts"
 import { loadPrompt } from "./prompt.ts"
-import { configStore } from "./config.ts"
+import { configStore, type Scalar } from "./config.ts"
+import { settleProposal } from "./configChanges.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
 import { findingTask, findReport } from "./reports.ts"
 import { CARD_TOOLS, cardOpenUi, reportFindings } from "./cards.ts"
@@ -44,7 +45,7 @@ import { ARTIFACTS_DIR, servableImage } from "./files.ts"
 import { checkoutCommit, GoalError, goalsDir, loopPrompt, makeGoals } from "./goals.ts"
 import { defineTool, type SessionEvent, type Tool } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
-import { cardData, coordinatorTools, globalTools, spawnHealing, type Scope } from "./tools.ts"
+import { cardData, coordinatorTools, factoryConfigView, globalTools, spawnHealing, type Scope } from "./tools.ts"
 import { DRAFT_NOTE, DraftError, draftNodeId, isUnstartedDraft, makeDrafts } from "./drafts.ts"
 import { enhanceWith, stopEnhance } from "./enhance.ts"
 import { Option, Schema } from "effect"
@@ -103,9 +104,12 @@ const threads = new Threads(factory.root)
 const instructions = readInstructions()
 const config = configStore()
 console.error(`factory config: ${config.user}${config.error ? ` (invalid, using defaults: ${config.error})` : ""}`)
-config.watch((c) =>
-  console.error(c.error ? `factory config: keeping the last good config; ${c.error}` : "factory config reloaded"),
-)
+/** Tell every open UI the config changed (file edit, override, promote, applied proposal). */
+const publishConfig = () => factory.publish("coordinator", "factory.config_updated", null, now(), factoryConfigView())
+config.watch((c) => {
+  console.error(c.error ? `factory config: keeping the last good config; ${c.error}` : "factory config reloaded")
+  publishConfig()
+})
 console.error(
   `global instructions: ${instructionsPath()} (${instructions ? `${instructions.length} chars` : "missing"})`,
 )
@@ -884,7 +888,22 @@ const feed = (req: Request, url: URL): Response => {
 }
 
 /** Deliver an approval answer to the coordinator of the approval's conversation, so it continues. */
-const answerApproval = (a: ReturnType<typeof factory.approvals.answer>) => deliverAndLog(a.threadId, answerPrompt(a))
+const answerApproval = (a: ReturnType<typeof factory.approvals.answer>) => {
+  // A config or prompt proposal applies here, on the human's answer, never in the agent's tool call.
+  try {
+    const settled = settleProposal(factory.root, a)
+    if (settled) {
+      publishConfig()
+      a = { ...a, note: [a.note, `factory config ${settled}`].filter(Boolean).join("; ") }
+    }
+  } catch (e) {
+    a = {
+      ...a,
+      note: [a.note, `factory config change failed: ${e instanceof Error ? e.message : e}`].filter(Boolean).join("; "),
+    }
+  }
+  return deliverAndLog(a.threadId, answerPrompt(a))
+}
 
 /** Shadow mode: Jev predicts each new decision's answer from INSTRUCTIONS.md (re-read each time, so edits apply at once). */
 factory.feed.subscribe((ev) => {
@@ -1224,6 +1243,24 @@ const routes: [string, RegExp, Handler][] = [
       }),
   ],
   ["GET", /^\/api\/settings$/, async () => json(await factory.settingsView())],
+  ["GET", /^\/api\/config$/, () => json(factoryConfigView())],
+  [
+    "PATCH",
+    /^\/api\/config$/,
+    async (req) => {
+      // {key, value}: set a runtime override; value null clears it. {key, promote: true}: write it to the user file.
+      try {
+        const b = bodyFields(await req.json())
+        const key = String(b.key)
+        if (b.promote === true) config.promote(key)
+        else config.setOverride(key, (b.value ?? null) as Scalar | null)
+        publishConfig()
+        return json(factoryConfigView())
+      } catch (e) {
+        return bad(e)
+      }
+    },
+  ],
   [
     "PATCH",
     /^\/api\/settings$/,

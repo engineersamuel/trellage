@@ -3,11 +3,12 @@ import { Subscription } from "foldkit"
 import { type FeedEvent, RESYNC } from "../../../shared/feed"
 import { StoredEvent } from "../../../shared/schemas"
 import { feedEvents } from "../feed"
-import { Settings } from "../domain"
+import { FactoryConfigView, Settings } from "../domain"
 import { Message } from "./message"
 import type { Model } from "./model"
 
 const decodeEvent = Schema.decodeUnknownOption(StoredEvent)
+const decodeConfigUpdate = Schema.decodeUnknownOption(FactoryConfigView)
 const decodeSettingsUpdate = Schema.decodeUnknownOption(Schema.Struct({ settings: Settings, css: Schema.String }))
 
 /** The feed events that change settings or delivery, as settings Messages. */
@@ -18,6 +19,9 @@ export const feedEventToMessage = (raw: FeedEvent): Option.Option<Message> =>
       Match.when(RESYNC, () => Option.some(Message.ReceivedFeedGap())),
       Match.when("factory.settings_updated", () =>
         Option.map(decodeSettingsUpdate(event.data), (document) => Message.ReceivedSettingsUpdate({ document })),
+      ),
+      Match.when("factory.config_updated", () =>
+        Option.map(decodeConfigUpdate(event.data), (config) => Message.ReceivedConfigUpdate({ config })),
       ),
       Match.when(Match.is("factory.run_started", "factory.step_decided", "factory.security_review"), () =>
         Option.some(Message.ReceivedDeliveryChange()),

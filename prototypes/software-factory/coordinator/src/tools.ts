@@ -5,7 +5,16 @@ import path from "node:path"
 import { defineTool, type Tool } from "@github/copilot-sdk"
 import { finishPermissions, maxFixRounds, now, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
 import { SETTINGS_TOOL_DOC } from "./prompts.ts"
-import { factoryConfig, pinnedConfig } from "./config.ts"
+import { configStore, factoryConfig, pinnedConfig, type Scalar } from "./config.ts"
+import {
+  APPLY,
+  REJECT,
+  checkProposal,
+  describe as describeProposal,
+  saveProposal,
+  type Proposal,
+} from "./configChanges.ts"
+import { promptErrors, promptNames } from "./prompt.ts"
 import type { ShipGrant } from "./approvals.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
 import { briefProblem } from "./reports.ts"
@@ -210,6 +219,7 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
     handler: () => json({ rendered: true }),
   }),
   ...browserTools(f, scope),
+  ...configTools(f, scope),
   defineTool("get_settings", {
     description: "Read the factory settings (the same document the UI edits) and the allowed values for each field.",
     parameters: obj({}),
@@ -654,6 +664,68 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
       return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
     },
   })
+}
+
+/** Read the factory config; propose a change to it or to a prompt. Only the human's answer applies a proposal. */
+const configTools = (f: Factory, scope: Scope): Tool<Args>[] => [
+  defineTool("get_factory_config", {
+    description:
+      "Read the factory config: every key with its value, source (default, file, override) and reload rule (live: next use; run: a delivery run keeps the value it started with), the prompt names, and load errors.",
+    parameters: obj({}),
+    handler: async () => json(factoryConfigView()),
+  }),
+  defineTool("propose_config_change", {
+    description:
+      "Propose a change to one factory config key (key + value) or to one prompt's full text (prompt + text). You cannot apply it: it opens a decision, and only the human's Apply writes it. Use it when the human asks to change factory behavior, thresholds, models or prompt wording. Keep every {{placeholder}} the prompt uses. End your turn after calling it.",
+    parameters: obj(
+      {
+        key: { type: "string", description: "Config key from get_factory_config, e.g. review.lens_threshold." },
+        value: {
+          description: "New value, same type as the current one (number, string, boolean, or list of strings).",
+        },
+        prompt: { type: "string", description: "Prompt name from get_factory_config, e.g. jev/lens." },
+        text: { type: "string", description: "The prompt's complete new text." },
+        reason: { type: "string", description: "Why, in one or two sentences, for the human." },
+      },
+      ["reason"],
+    ),
+    handler: async (a: Args) => {
+      try {
+        const reason = str(a, "reason")
+        const p: Proposal =
+          typeof a.prompt === "string"
+            ? { kind: "prompt", name: a.prompt, text: str(a, "text"), reason }
+            : { kind: "config", key: str(a, "key"), value: a.value as Scalar, reason }
+        checkProposal(p)
+        const item = f.approvals.open({
+          kind: "approval",
+          threadId: scope.threadId ?? f.currentThread,
+          ...describeProposal(p),
+          options: [APPLY, REJECT],
+          optionDetails: ["Write the change now", "Keep the current value"],
+          context: scope.label ?? "coordinator",
+          topic: "other",
+        })
+        saveProposal(f.root, item.id, p)
+        f.publish("coordinator", "factory.approval_requested", null, String(Date.now()), item)
+        return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) })
+      }
+    },
+  }),
+]
+
+/** Config values, prompt names and errors: what the UI and get_factory_config show. */
+export const factoryConfigView = () => {
+  const store = configStore()
+  return {
+    path: store.user,
+    error: store.error,
+    values: store.values(),
+    prompts: promptNames(),
+    promptErrors: Object.fromEntries(promptErrors),
+  }
 }
 
 /**

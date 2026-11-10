@@ -38,7 +38,7 @@ import {
 } from "./steps.ts"
 import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./claude.ts"
 import { composePi, withProxyModel, PiSession } from "./pi.ts"
-import { factoryConfig, missingProfiles, type FactoryConfig } from "./config.ts"
+import { factoryConfig, missingProfiles, userConfigPath, type FactoryConfig } from "./config.ts"
 import { setDecisionEngine } from "./decide.ts"
 import { acquireStateLock, migrateLegacyState, stateDir } from "./statedir.ts"
 
@@ -898,6 +898,11 @@ export class Factory {
   /** Coordinator permission gate: denies tool kinds disabled in settings. */
   readonly settingsPermissions: PermissionHandler = (request) => {
     const kind = (request as { kind?: string }).kind ?? ""
+    if (touchesFactoryConfig(request))
+      return {
+        kind: "reject",
+        feedback: `${configDir()} is the human's. Use propose_config_change; the human applies it.`,
+      }
     if (this.settings.agent.disabledTools.includes(kind))
       return { kind: "reject", feedback: `'${kind}' tools are disabled in factory settings` }
     return { kind: "approve-once" }
@@ -927,6 +932,27 @@ export class Factory {
             "The global coordinator never merges, pushes, or deletes branches or worktrees. Ask the human with request_approval.",
         }
       : this.settingsPermissions(request, invocation)
+}
+
+/** The human's factory config folder (config.toml, prompts/, INSTRUCTIONS.md). */
+const configDir = () => path.dirname(userConfigPath())
+
+/** A coordinator file write, or a shell command, that names the human's factory config folder. Code, not prompt text,
+ *  keeps config and prompt changes behind propose_config_change. */
+export const touchesFactoryConfig = (request: {
+  kind?: string
+  fileName?: unknown
+  fullCommandText?: unknown
+}): boolean => {
+  const dir = configDir()
+  const named = (text: unknown) =>
+    typeof text === "string" &&
+    (text.includes(dir) ||
+      /~\/\.config\/trellage\/factory|trellage\/factory\/(prompts|config\.toml|INSTRUCTIONS)/.test(text))
+  return (
+    (request.kind === "write" && named(request.fileName)) ||
+    (request.kind === "shell" && named(request.fullCommandText))
+  )
 }
 
 /** The first push plus this many fix rounds per ship approval; then the human decides. */
