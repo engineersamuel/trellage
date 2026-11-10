@@ -210,6 +210,8 @@ rollback() {
   fi
 
   if [[ "$runtime_swapped" == true ]]; then
+    printf 'trx install: restoring exchanged runtime (command-intent=%s rollback-ok=%s)\n' \
+      "$command_publish_intent" "$ok" >&2
     if [[ -d "$staging_root/old-runtime" && ! -L "$staging_root/old-runtime" \
       && ! -e "$staging_root/new-runtime" && ! -L "$staging_root/new-runtime" ]]; then
       restore_root="$staging_root/old-runtime"
@@ -227,8 +229,11 @@ rollback() {
         "${operation_output:-no diagnostic}" >&2
       return 1
     fi
-    [[ "$ok" == true ]]
-    return
+    if [[ "$ok" == true ]]; then
+      return 0
+    fi
+    printf 'trx install: runtime restored but an earlier rollback step failed\n' >&2
+    return 1
   fi
 
   if [[ "$runtime_publish_intent" == true \
@@ -287,8 +292,9 @@ on_exit() {
         installed_runtime_present=true
       fi
       printf 'trx install: rollback failed; recovery may be required\n' >&2
-      printf 'trx install state: runtime-swapped=%s publish-intent=%s staged-new=%s staged-old=%s installed=%s\n' \
-        "$runtime_swapped" "$runtime_publish_intent" "$new_runtime_present" \
+      printf 'trx install state: runtime-swapped=%s publish-intent=%s command-intent=%s staged-new=%s staged-old=%s installed=%s\n' \
+        "$runtime_swapped" "$runtime_publish_intent" "$command_publish_intent" \
+        "$new_runtime_present" \
         "$old_runtime_present" "$installed_runtime_present" >&2
     fi
   else
