@@ -38,7 +38,7 @@ esac
 runtime_root="${TRELLAGE_CLAUDE_RUNTIME_ROOT-}"
 [[ "$runtime_root" == /* && -d "$runtime_root" && ! -L "$runtime_root" ]] \
   || die "invalid runtime root: $runtime_root"
-resolved_runtime_root="$(CDPATH= cd -P -- "$runtime_root" && pwd)" \
+resolved_runtime_root="$(CDPATH='' cd -P -- "$runtime_root" && pwd)" \
   || die "could not resolve runtime root: $runtime_root"
 [[ "$resolved_runtime_root" == "$runtime_root" ]] \
   || die "redirected runtime root: $runtime_root"
@@ -97,7 +97,7 @@ require_command() {
 }
 
 canonical_directory() {
-  CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P
+  CDPATH='' cd -P -- "$1" >/dev/null 2>&1 && pwd -P
 }
 
 resolve_file() {
@@ -287,6 +287,8 @@ harness_update_command() {
 
   [[ "$#" -eq 0 ]] || die 'harness-update accepts no arguments'
   scrub_provider_environment
+  # The host updater must not write into the calling profile's config folder.
+  unset CLAUDE_CONFIG_DIR
   executable="$(claude_executable)"
   exec "$executable" update
 }
@@ -339,7 +341,8 @@ sync_cached_skills() {
 }
 
 ensure_onboarding() {
-  local home="$1" version="$2" onboarding="$home/.claude.json" staged
+  local home="$1" version="$2"
+  local onboarding="$home/.claude.json" staged
 
   # Claude stores theme choices in settings.json; preserve legacy fields but do not create one.
   [[ ! -L "$onboarding" && ( ! -e "$onboarding" || -f "$onboarding" ) ]] \
@@ -365,7 +368,8 @@ ensure_onboarding() {
 }
 
 verify_onboarding() {
-  local home="$1" onboarding="$home/.claude.json"
+  local home="$1"
+  local onboarding="$home/.claude.json"
 
   [[ -f "$onboarding" && ! -L "$onboarding" ]] \
     || die "Claude onboarding state is missing; run: $launcher_name repair"
@@ -380,7 +384,8 @@ verify_onboarding() {
 }
 
 ensure_trust() {
-  local home="$1" onboarding="$home/.claude.json" workspace staged
+  local home="$1"
+  local onboarding="$home/.claude.json" workspace staged
 
   workspace="$(pwd -P)" || die 'could not resolve current directory'
   [[ -f "$onboarding" && ! -L "$onboarding" ]] \
@@ -415,7 +420,8 @@ install_statusline() {
 }
 
 ensure_settings() {
-  local home="$1" settings="$home/settings.json" staged
+  local home="$1"
+  local settings="$home/settings.json" staged
 
   [[ ! -L "$settings" && ( ! -e "$settings" || -f "$settings" ) ]] \
     || die "unsafe Claude settings: $settings"
