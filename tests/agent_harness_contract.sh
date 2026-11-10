@@ -382,10 +382,15 @@ concurrent_refresh() {
   HOME="${refresh_home}" SOURCE_CONTRACT_ARGS="${source_args}" NATIVE_CONTRACT_COUNT="${rebuild_count}" \
     NATIVE_CONTRACT_BUSY="${lefthook_regression_root}/rebuild-busy" "${refresh_fixture}/scripts/refresh-native-if-stale.sh"
 }
-concurrent_refresh 2>/dev/null &
+concurrent_refresh_failed() {
+  printf '%s\n' "--- first refresh:" >&2; cat "${lefthook_regression_root}/refresh-first.err" >&2
+  printf '%s\n' "--- second refresh:" >&2; cat "${lefthook_regression_root}/refresh-second.err" >&2
+  fail "concurrent native refresh failed"
+}
+concurrent_refresh 2>"${lefthook_regression_root}/refresh-first.err" &
 first_refresh=$!
-concurrent_refresh 2>/dev/null || fail "concurrent native refresh failed"
-wait "${first_refresh}" || fail "concurrent native refresh failed"
+concurrent_refresh 2>"${lefthook_regression_root}/refresh-second.err" || concurrent_refresh_failed
+wait "${first_refresh}" || concurrent_refresh_failed
 [[ "$(wc -l <"${rebuild_count}" | tr -d ' ')" == 1 ]] || fail "concurrent native refreshes rebuilt more than once"
 [[ ! -e "${refresh_home}/.local/share/trellage/.native-refresh.lock" ]] || fail "native refresh left its lock behind"
 
