@@ -188,3 +188,32 @@ test("a runtime that exits without a stop ends its workers' turns with an error 
     [["sub-a"]],
   ])
 })
+
+test("a step's subagent model is Jev's pick for the step's route text; none without one or when routing fails", async () => {
+  type Spy = {
+    publish: () => void
+    routeModel: (task: string, auth: string) => Promise<{ id: string; confidence: number; routedBy: string } | null>
+    subagentModel: (spec: object, step: object | null) => Promise<string | null>
+    acceptsThinking: (model: string) => Promise<boolean>
+  }
+  const f = as<Spy>(new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-sub-")) }))
+  f.publish = () => {}
+  f.acceptsThinking = async () => true
+  const asked: string[] = []
+  f.routeModel = async (task) => (
+    asked.push(task),
+    { id: "claude-haiku-5.5", confidence: 0.5, routedBy: "jev", ranked: ["claude-haiku-5.5", "gpt-6-luna"] }
+  )
+  const spec = { name: "fw", role: "worker", task: "a long task that would hide the hint" }
+  expect(await f.subagentModel(spec, { subagentRoute: "Low-cost checks" })).toBe("claude-haiku-5.5")
+  expect(asked).toEqual(["Low-cost checks"])
+  // Claude Code sends `thinking` to subagents; a model that rejects it is skipped for the next in Jev's ranking.
+  f.acceptsThinking = async (m) => m !== "claude-haiku-5.5"
+  expect(await f.subagentModel(spec, { subagentRoute: "Low-cost checks" })).toBe("gpt-6-luna")
+  f.acceptsThinking = async () => false
+  expect(await f.subagentModel(spec, { subagentRoute: "Low-cost checks" })).toBeNull()
+  expect(await f.subagentModel(spec, {})).toBeNull()
+  expect(await f.subagentModel(spec, null)).toBeNull()
+  f.routeModel = async () => null
+  expect(await f.subagentModel(spec, { subagentRoute: "Low-cost checks" })).toBeNull()
+})

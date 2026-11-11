@@ -3,7 +3,15 @@ import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { DEBUG_ONLY, ensureClones, selectableSteps, SKILL_REPOS, stepById, stepSetup } from "../src/steps.ts"
+import {
+  DEBUG_ONLY,
+  ensureClones,
+  harnessPrefix,
+  selectableSteps,
+  SKILL_REPOS,
+  stepById,
+  stepSetup,
+} from "../src/steps.ts"
 
 test("implement loads the whole skills root, the gate tools on PATH, and says so", () => {
   const s = stepSetup(stepById("implement"), "/s", "/t")
@@ -81,4 +89,33 @@ test("a sparse repo checks out only its named folders", () => {
   ensureClones(path.join(dir, "out"), { r: { url: `file://${src}`, sparse: ["keep"] } })
   expect(existsSync(path.join(dir, "out/r/keep/a.md"))).toBe(true)
   expect(existsSync(path.join(dir, "out/r/drop"))).toBe(false)
+})
+
+test("five-whys is a selectable Claude step that loads only intercom's five-whys skill", () => {
+  const s = stepById("five-whys")
+  expect(selectableSteps().some((x) => x.id === "five-whys")).toBe(true)
+  expect(SKILL_REPOS["2x-skills"]).toEqual({
+    url: "https://github.com/intercom/2x-skills.git",
+    sparse: ["plugins/incident-tools/skills/five-whys"],
+  })
+  expect(s.harness).toEqual({ kind: "claude", profiles: ["default"] })
+  expect(s.skillDirs).toEqual(["2x-skills/plugins/incident-tools/skills"])
+  expect(s.instructions).toMatch(/do not fix/i)
+})
+
+test("debug and five-whys point at each other, so Jev can tell them apart", () => {
+  expect(stepById("debug").avoidFor.join(" ")).toMatch(/five-whys/)
+  expect(stepById("five-whys").avoidFor.join(" ")).toMatch(/use debug first/)
+})
+
+test("a Claude or Pi step's task prefix keeps the step's instructions", () => {
+  expect(harnessPrefix(["five-whys"], stepById("five-whys"))).toBe(
+    `Use the five-whys skill.\n${stepById("five-whys").instructions}`,
+  )
+  expect(harnessPrefix([], stepById("council"))).toBe("")
+})
+
+test("five-whys routes its subagents on a short low-cost text", () => {
+  expect(stepById("five-whys").subagentRoute).toMatch(/^Low-cost/)
+  expect(stepById("debug").subagentRoute).toBeUndefined()
 })
