@@ -112,7 +112,12 @@ const spec = decodeGoalOrThrow({
 describe("goal spec", () => {
   test("defaults fill approvals, limits, base and PR state", () => {
     expect(spec.base).toBe("main")
-    expect(spec.approvals).toEqual({ plan: "auto", findings: "auto", ship: "auto", other: "human" })
+    expect(spec.approvals).toEqual({
+      plan: "auto",
+      findings: "auto",
+      ship: "auto",
+      other: "human",
+    })
     expect(spec.limits).toEqual({ runs: 5, minutesPerRun: 90 })
     expect(spec.expect.steps.implement).toEqual({ min: 1 })
     expect(spec.expect.pr?.state).toBe("OPEN")
@@ -149,7 +154,10 @@ describe("goalUnmet", () => {
   })
   test("untouched entries ending in / match a folder", () => {
     const pr = { ...run.pr!, files: ["src/a.rs", "reports/x/y.json"] }
-    const want = { ...spec.expect, pr: { ...spec.expect.pr!, untouched: ["reports/", "src/b.rs"] } }
+    const want = {
+      ...spec.expect,
+      pr: { ...spec.expect.pr!, untouched: ["reports/", "src/b.rs"] },
+    }
     expect(goalUnmet({ ...run, pr }, want, spec.base).filter((u) => u.includes("untouched"))).toEqual([
       "PR #7 changes reports/, expected untouched",
     ])
@@ -176,7 +184,10 @@ describe("approval policy", () => {
     answer: null,
     options,
   })
-  const withPending = { ...run, approvals: [a("p", "plan"), a("s", "ship"), a("o", "other"), a("q", "plan", [])] }
+  const withPending = {
+    ...run,
+    approvals: [a("p", "plan"), a("s", "ship"), a("o", "other"), a("q", "plan", [])],
+  }
   test("auto topics go to the runner; human topics and free-text questions stop", () => {
     const { auto, human } = splitPending(withPending, spec.approvals)
     expect(auto.map((x) => x.id)).toEqual(["p", "s"])
@@ -189,7 +200,11 @@ describe("approval policy", () => {
       code: 3,
       reason: "reported blocked: x",
     })
-    const blocked = { ...run, status: "idle", report: { status: "blocked", summary: "x", gaps: [] } }
+    const blocked = {
+      ...run,
+      status: "idle",
+      report: { status: "blocked", summary: "x", gaps: [] },
+    }
     expect(stopReason({ ...blocked, status: "running" }, spec.approvals)).toBeNull()
     expect(stopReason(blocked, spec.approvals, "x")).toBeNull()
     expect(stopReason(blocked, spec.approvals, "older")?.code).toBe(3)
@@ -209,8 +224,20 @@ describe("goal store", () => {
     g.save({ id: "demo", repo: "/r", prompt: "p", expect: { steps: { implement: {} } } })
     expect(g.get("demo")?.prompt).toBe("p")
     expect(g.get("none")).toBeNull()
-    g.appendRun("demo", { at: 1, factoryCommit: "abc", threadId: "t1", outcome: "fail", unmet: ["x"] })
-    g.appendRun("demo", { at: 2, factoryCommit: "def", threadId: "t2", outcome: "pass", prUrl: "u" })
+    g.appendRun("demo", {
+      at: 1,
+      factoryCommit: "abc",
+      threadId: "t1",
+      outcome: "fail",
+      unmet: ["x"],
+    })
+    g.appendRun("demo", {
+      at: 2,
+      factoryCommit: "def",
+      threadId: "t2",
+      outcome: "pass",
+      prUrl: "u",
+    })
     expect(g.runs("demo").map((r) => [r.factoryCommit, r.outcome])).toEqual([
       ["abc", "fail"],
       ["def", "pass"],
@@ -283,12 +310,24 @@ test("loopPrompt drops the skill frontmatter and appends the spec", () => {
 })
 
 describe("goal form draft", () => {
+  test.each([0.5, -1, Infinity])(
+    "invalid improvement retry count %s is rejected with the same form problem",
+    (maxRetries) => {
+      const invalid = { ...spec, improve: { approval: "human" as const, maxRetries } }
+      const problem = "improve.maxRetries must be a whole number >= 0"
+      expect(goalProblems(invalid)).toContain(problem)
+      expect(() => decodeGoalOrThrow(invalid)).toThrow(problem)
+      expect(draftToSpec(specToDraft(invalid))).toEqual({ ok: false, problems: [problem] })
+    },
+  )
   test("an unrelated title edit preserves benchmarks and zero retries", () => {
     const saved = decodeGoalOrThrow({
       id: "latency",
       repo: "/r",
       prompt: "Keep latency low",
-      expect: { benchmarks: [{ id: "latency", baseline: 25, higherIsBetter: false, tolerance: 2 }] },
+      expect: {
+        benchmarks: [{ id: "latency", baseline: 25, higherIsBetter: false, tolerance: 2 }],
+      },
       improve: { maxRetries: 0 },
     })
     expect(draftToSpec({ ...specToDraft(saved), title: "Edited" })).toEqual({
@@ -328,7 +367,12 @@ describe("goal form draft", () => {
       finish: { min: 1, max: 1 },
       review: { min: 2 },
     })
-    expect(r.spec.expect.pr).toEqual({ state: "OPEN", checks: "SUCCESS", bodyIncludes: ["18080", "OK"], untouched: [] })
+    expect(r.spec.expect.pr).toEqual({
+      state: "OPEN",
+      checks: "SUCCESS",
+      bodyIncludes: ["18080", "OK"],
+      untouched: [],
+    })
     const again = draftToSpec(specToDraft(r.spec))
     expect(again.ok && again.spec).toEqual(r.spec)
   })
@@ -416,7 +460,10 @@ const goalSpec = decodeGoalOrThrow({
   id: "demo",
   repo: "/r",
   prompt: "p",
-  expect: { pr: { checks: "SUCCESS" }, benchmarks: [{ id: "latency", baseline: 100, higherIsBetter: false }] },
+  expect: {
+    pr: { checks: "SUCCESS" },
+    benchmarks: [{ id: "latency", baseline: 100, higherIsBetter: false }],
+  },
 })
 
 describe("criteriaResults", () => {
@@ -428,7 +475,11 @@ describe("criteriaResults", () => {
   })
   test("pass, fail and missing per criterion; unprovenCriteria keeps its output", () => {
     const evidence = "AC-1: PASS — make test — ok\nAC-2: FAIL — make lint — 3 errors\n"
-    expect(criteriaResults(["a", "b", "c"], evidence)).toEqual({ "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" })
+    expect(criteriaResults(["a", "b", "c"], evidence)).toEqual({
+      "AC-1": "pass",
+      "AC-2": "fail",
+      "AC-3": "missing",
+    })
     expect(criteriaResults(["a"], null)).toEqual({ "AC-1": "missing" })
     expect(unprovenCriteria(["a", "b", "c"], evidence)).toEqual(["AC-2", "AC-3"])
   })
@@ -442,7 +493,16 @@ describe("grade evidence files", () => {
         '[{"number":3,"url":"u","state":"OPEN","headRefOid":"h","baseRefName":"main","body":null,"files":null,"statusCheckRollup":null}]',
       ),
     ).toEqual({
-      pr: { number: 3, url: "u", state: "OPEN", head: "h", base: "main", body: "", files: [], checks: "NONE" },
+      pr: {
+        number: 3,
+        url: "u",
+        state: "OPEN",
+        head: "h",
+        base: "main",
+        body: "",
+        files: [],
+        checks: "NONE",
+      },
     })
     expect("error" in parsePrList("<html>rate limited")).toBe(true)
     expect("error" in parsePrList("{}")).toBe(true)
@@ -529,7 +589,10 @@ describe("buildGrade", () => {
   test("criteria rate is passed / evaluated; a regression against the fixed baseline fails", () => {
     const g = buildGrade(
       greenRun,
-      inputs({ criteria: { "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" }, benchmarks: { latency: 130 } }),
+      inputs({
+        criteria: { "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" },
+        benchmarks: { latency: 130 },
+      }),
       goalSpec,
     )
     expect(g.criteria).toMatchObject({ passed: 1, evaluated: 2, total: 3, rate: 0.5 })
@@ -561,7 +624,13 @@ describe("buildGrade", () => {
       inputs({ criteria: { "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" } }),
       goalSpec,
     )
-    const base = { at: g.at, factoryCommit: "abc1234", threadId: "thread-1", unmet: [], prUrl: null }
+    const base = {
+      at: g.at,
+      factoryCommit: "abc1234",
+      threadId: "thread-1",
+      unmet: [],
+      prUrl: null,
+    }
     expect(runLine({ ...base, outcome: "fail", grade: g })).toContain("grade fail")
     expect(runLine({ ...base, outcome: "fail", grade: g })).toContain("AC 1/2 g1")
     expect(runLine({ ...base, outcome: "pass" })).not.toContain("grade")
@@ -715,6 +784,20 @@ describe("improvement proposals", () => {
     ).toBe("refuse")
     expect(nextImprovementAction({ ...proposal, status: "rejected" }, policy, approval(), false).kind).toBe("refuse")
   })
+  test.each([0, 0.5, 1, 1.5, 2.9])(
+    "launches cannot exceed the retry budget %s, even for an unvalidated policy",
+    (maxRetries) => {
+      let current = proposal
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const action = nextImprovementAction(current, { ...policy, maxRetries }, approval(), false)
+        if (action.kind !== "launch") break
+        current = { ...current, status: "launch-failed", attempts: current.attempts + 1 }
+      }
+      expect(current.attempts).toBe(1 + Math.floor(maxRetries))
+      expect(current.attempts).toBeLessThanOrEqual(1 + maxRetries)
+      expect(nextImprovementAction(current, { ...policy, maxRetries }, approval(), false).kind).toBe("refuse")
+    },
+  )
   test("an improvement thread's own grade never launches more work", () => {
     expect(nextImprovementAction(proposal, policy, approval(), true).kind).toBe("refuse")
     expect(nextImprovementAction(null, policy, approval(), false).kind).toBe("refuse")
