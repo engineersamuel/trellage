@@ -138,6 +138,9 @@ dropped, so a restart never duplicates a grade):
 - **Saved goal** (the thread was created with `goalId`): a `GoalRun` line with a `grade` in
   `docs/goals/factory/<id>.runs.jsonl`. Its `outcome` is the grade status. `sf goal list` and the run limit count only
   lines without a grade; `sf goal history` marks grade lines `grade` with the criteria rate and grading version.
+  The thread retains the validated goal snapshot from launch, so edits or deletion cannot change its benchmarks or
+  retry policy. Older threads without a snapshot report goal lookup failures as grading errors, never as plain prompts.
+  Grades are also saved on the thread, keeping them available through the run API if the goal log cannot be read or written.
 - **Plain prompt**: in the thread's `grades` in `threads.json`; `subject.id` is the first 12 hex digits of the prompt's
   sha256.
 - Each grade links the thread, the factory commit, the report commit, the grading version and its evidence (files read
@@ -146,7 +149,9 @@ dropped, so a restart never duplicates a grade):
   merged.
 
 Improvement policy: a failed grade opens one improvement proposal, a desk approval ("Launch improvement run" or
-"Reject"). Only a human answer launches it: the answer must have no `by` (goal runners always send one), the goal's
+"Reject"). Each distinct failed grade can propose new work, even after an earlier proposal was rejected; earlier
+proposals retain their own approval routing and retry state. Only a human answer launches it: the answer must have no `by`
+(goal runners always send one), the goal's
 `improve.approval` can only be `"human"`, and the proposal is not part of any goal run's approvals. On "Launch", the
 coordinator starts one Factory improvement conversation in the factory checkout. A failed launch is retried at most
 `improve.maxRetries` times (default 1). A run started to improve the Factory never opens a proposal of its own, and

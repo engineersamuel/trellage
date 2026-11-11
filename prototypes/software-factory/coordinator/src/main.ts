@@ -1,6 +1,5 @@
 // Software factory coordinator: HTTP API, raw feed, and AG-UI over SSE.
 import { KEEP_PER_WORKER } from "./events.ts"
-import { createHash } from "node:crypto"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Translator } from "./agui.ts"
@@ -41,20 +40,8 @@ import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, reportNudge, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, type Run } from "./run.ts"
-import { artifact, criteriaResults, readLessons, unprovenCriteria } from "./sdlc.ts"
-import {
-  buildGrade,
-  DEFAULT_IMPROVE,
-  goalUnmet,
-  nextImprovementAction,
-  parseBenchmarks,
-  parseQuality,
-  proposeImprovement,
-  type GoalSpec,
-  type Grade,
-  type GradeInputs,
-  type ImprovementProposal,
-} from "../../shared/goal.ts"
+import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
+import { makeGrading } from "./grading.ts"
 import { postMergeCheck } from "./postmerge.ts"
 import { ARTIFACTS_DIR, servableImage } from "./files.ts"
 import { checkoutCommit, GoalError, goalsDir, loopPrompt, makeGoals } from "./goals.ts"
@@ -1231,10 +1218,6 @@ const prOf = async (t: Thread): Promise<Pick<Run, "pr" | "prError">> => {
   return "error" in r ? { pr: null, prError: r.error } : { pr: r.pr }
 }
 
-/** Grades of a conversation: from its goal's run log, or its own thread record for a plain prompt. */
-const gradesOf = (t: Thread): Grade[] =>
-  t.goalId ? goals.runs(t.goalId).flatMap((r) => (r.grade && r.threadId === t.id ? [r.grade] : [])) : (t.grades ?? [])
-
 /** The delivery record of a repo conversation; null when the thread does not exist. */
 const runRecord = async (threadId: string): Promise<Run | null> => {
   const t = threads.get(threadId)
@@ -1275,175 +1258,24 @@ const runRecord = async (threadId: string): Promise<Run | null> => {
 
 // ---------- grading and human-gated improvement (README "Grading") ----------
 
-/** Kill switch: SF_GRADING=off skips grading and improvement retries. */
-const GRADING = process.env.SF_GRADING !== "off"
-const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
-const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
-
-/** What every grade of this report shares, before any evidence is read. */
-const gradeBase = (t: Thread, r: Report, spec: GoalSpec | null): GradeInputs => ({
-  at: Date.now(),
-  factoryCommit: checkoutCommit(FACTORY_DIR),
-  subject: spec
-    ? { kind: "goal", id: spec.id }
-    : {
-        kind: "prompt",
-        id: sha256(threads.messages(t.id).find((m) => m.role === "user")?.content ?? t.title).slice(0, 12),
-      },
-  report: { status: r.status, commit: r.commit },
-  criteria: {},
-  benchmarks: null,
-  evidence: [],
-  quality: [],
-  errors: [],
+const {
+  enabled: GRADING,
+  gradesOf,
+  gradeThread,
+  improvementAnswered,
+  retryImprovements,
+} = makeGrading({
+  threads,
+  goals,
+  approvals: factory.approvals,
+  runRecord,
+  openConversation,
+  criteria: (id) => factory.sdlc.get(subId(id))?.criteria ?? [],
+  deskThreadId: () => deskThread().id,
+  factoryDir: FACTORY_DIR,
+  publish: (type, data) => factory.publish("coordinator", type, null, now(), data),
 })
 
-/** Criteria, benchmarks and judged quality from the worktree's `.factory/`, each file read recorded with its sha256. */
-const readEvidence = (t: Thread, base: GradeInputs): GradeInputs => {
-  const evidence: Grade["evidence"][number][] = []
-  const errors: string[] = []
-  const read = (name: string): string | null => {
-    const f = t.worktree && artifact(t.worktree, name)
-    if (!f || !existsSync(f)) return null
-    try {
-      const text = readFileSync(f, "utf8")
-      evidence.push({ kind: "file", ref: f, sha256: sha256(text) })
-      return text
-    } catch (e) {
-      errors.push(`${name} unreadable: ${errorMessage(e)}`)
-      return null
-    }
-  }
-  const criteria = criteriaResults(factory.sdlc.get(subId(t.id))?.criteria ?? [], read("evidence.md"))
-  const benchmarks = parseBenchmarks(read("benchmarks.json"))
-  const quality = parseQuality(read("quality.json"))
-  if ("error" in benchmarks) errors.push(benchmarks.error)
-  if (quality.note) evidence.push({ kind: "note", ref: quality.note })
-  return {
-    ...base,
-    criteria,
-    benchmarks: "error" in benchmarks ? null : benchmarks.values,
-    quality: quality.entries,
-    evidence,
-    errors,
-  }
-}
-
-/** A grading read; on failure it logs and gives null, which grades as an error. */
-const orNull = async <A>(what: string, read: () => A | Promise<A>): Promise<A | null> => {
-  try {
-    return await read()
-  } catch (e) {
-    console.error(`grading: ${what}: ${errorMessage(e)}`)
-    return null
-  }
-}
-
-/** Grade a done or blocked report. Never throws: a grader failure becomes an `error` grade, so report_up never fails. */
-const gradeThread = async (threadId: string, r: Report): Promise<void> => {
-  const t = threads.get(threadId)
-  if (!GRADING || !t || (r.status !== "done" && r.status !== "blocked")) return
-  const goalId = t.goalId
-  const spec = goalId ? await orNull(`goal ${goalId}`, () => goals.get(goalId)) : null
-  const run = await orNull(`run ${t.id}`, () => runRecord(t.id))
-  const base = gradeBase(t, r, spec)
-  const grade = run
-    ? buildGrade(run, readEvidence(t, base), spec)
-    : buildGrade({ threadId: t.id, pr: null }, { ...base, errors: ["grader could not read the run record"] }, spec)
-  const unmet = run && spec ? goalUnmet(run, spec.expect, spec.base) : []
-  try {
-    recordGrade(threads.get(t.id) ?? t, grade, spec, unmet)
-  } catch (e) {
-    console.error(`grade ${grade.key} not saved: ${errorMessage(e)}`)
-  }
-}
-
-/** A human-only desk approval for a failed grade. It has no reportThreadId, so goal runners never see it. */
-const openProposal = (t: Thread, g: Grade): string => {
-  const item = factory.approvals.open({
-    threadId: deskThread().id,
-    title: `Improve the Factory after a failed grade of "${t.title}"`.slice(0, 120),
-    summary: `Grade \`${g.key}\` failed: criteria ${g.criteria.passed}/${g.criteria.evaluated} passed, PR checks ${g.prChecks.state}, ${g.benchmarks.filter((b) => b.regressed).length} benchmark regressions.\n\nOnly a human may answer. Launching starts one Factory improvement conversation in the factory checkout; it never merges.`,
-    options: ["Launch improvement run", "Reject"],
-    optionDetails: ["Start one improvement conversation for the Factory", "Do nothing"],
-    context: "factory grader · human only",
-  })
-  factory.publish("coordinator", "factory.approval_requested", null, now(), item)
-  return item.id
-}
-
-/** Save a grade where its run lives (goal log or thread), once per key; a failed grade opens one proposal. */
-const recordGrade = (t: Thread, g: Grade, spec: GoalSpec | null, unmet: string[]): void => {
-  if (gradesOf(t).some((x) => x.key === g.key)) return
-  const draft = t.improvement ? null : proposeImprovement(g, "", !!t.improvementOf)
-  const proposal = draft && { ...draft, approvalId: openProposal(t, g) }
-  const graded = proposal ? { ...g, proposalId: proposal.approvalId } : g
-  if (spec)
-    goals.appendGrade(spec.id, {
-      at: g.at,
-      factoryCommit: g.factoryCommit,
-      threadId: t.id,
-      outcome: g.status,
-      unmet,
-      prUrl: g.prChecks.url,
-      grade: graded,
-    })
-  else threads.addGrade(t.id, graded)
-  if (proposal) threads.setMeta(t.id, { improvement: proposal })
-  factory.publish("coordinator", "factory.graded", null, now(), { threadId: t.id, key: g.key, status: g.status })
-  factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
-}
-
-const improvePolicy = (t: Thread) => (t.goalId ? goals.get(t.goalId)?.improve : undefined) ?? DEFAULT_IMPROVE
-const setProposal = (t: Thread, p: ImprovementProposal) => {
-  threads.setMeta(t.id, { improvement: p })
-  factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
-}
-
-const improvementTask = (t: Thread, p: ImprovementProposal): string =>
-  `Improve the Software Factory (prototypes/software-factory) so conversation ${t.id} ("${t.title}") would pass its grade \`${p.sourceKey}\`. Read GET /api/runs/${t.id} for the grade, its evidence and errors. Find the Factory cause, fix it with tests, and open a PR. A human merges.`
-
-/** One launch attempt in the factory checkout; `sent` rejecting is a launch failure the retry loop may retry. */
-const launchImprovement = async (t: Thread, p: ImprovementProposal, approvedBy: string): Promise<void> => {
-  const attempt: ImprovementProposal = { ...p, status: "approved", approvedBy, attempts: p.attempts + 1 }
-  setProposal(t, attempt)
-  try {
-    const { info, sent } = await openConversation(FACTORY_DIR, improvementTask(t, p), { improvementOf: t.id })
-    await sent.sent
-    setProposal(t, { ...attempt, status: "launched", launchedThreadId: info.threadId, lastError: null })
-  } catch (e) {
-    setProposal(t, { ...attempt, status: "launch-failed", lastError: errorMessage(e) })
-  }
-}
-
-/** Act on a proposal: launch, or close it when refused. A refused launched proposal stays launched. */
-const advanceImprovement = (t: Thread, a: Parameters<typeof nextImprovementAction>[2]): void => {
-  const p = t.improvement
-  if (!p) return
-  const policy = improvePolicy(t)
-  const next = nextImprovementAction(p, policy, a, !!t.improvementOf)
-  if (next.kind === "launch") void launchImprovement(t, p, "human")
-  else if (next.kind === "refuse" && p.status !== "launched")
-    setProposal(t, {
-      ...p,
-      status: p.attempts >= 1 + policy.maxRetries ? "exhausted" : "rejected",
-      lastError: next.reason,
-    })
-}
-
-/** True when `a` is an improvement proposal: it is acted on here and never relayed to a coordinator. */
-const improvementAnswered = (a: ReturnType<typeof factory.approvals.answer>): boolean => {
-  const t = threads.list().find((x) => x.improvement?.approvalId === a.id)
-  if (t) advanceImprovement(t, a)
-  return !!t
-}
-
-/** Retry launch-failed proposals within the policy's limit. */
-const retryImprovements = () => {
-  for (const t of threads.list())
-    if (t.improvement?.status === "launch-failed")
-      advanceImprovement(t, factory.approvals.get(t.improvement.approvalId))
-}
 if (GRADING) loop("improvement-retry", "1 minute", retryImprovements)
 
 const routes: [string, RegExp, Handler][] = [
@@ -1866,13 +1698,14 @@ const routes: [string, RegExp, Handler][] = [
       try {
         const base = typeof b.base === "string" && b.base.trim() ? b.base.trim() : undefined
         const goalId = typeof b.goalId === "string" ? b.goalId : undefined
-        if (goalId && !goals.get(goalId)) throw new Error(`no goal ${goalId}`)
+        const goalSpec = goalId ? goals.get(goalId) : null
+        if (goalId && !goalSpec) throw new Error(`no goal ${goalId}`)
         const t = createThread(
           typeof first === "string" ? first : null,
           threads.folder(folderId) ? folderId : GENERAL.id,
           base,
         )
-        if (goalId) threads.setMeta(t.id, { goalId })
+        if (goalId && goalSpec) threads.setMeta(t.id, { goalId, goalSpec })
         return json(threads.get(t.id) ?? t)
       } catch (e) {
         return bad(e)

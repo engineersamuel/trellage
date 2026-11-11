@@ -3,7 +3,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { addFolder, GENERAL, type Folder, type Worktree } from "./folders.ts"
-import type { Grade, ImprovementProposal } from "../../shared/goal.ts"
+import type { GoalSpec, Grade, ImprovementProposal } from "../../shared/goal.ts"
 
 export type DraftAction = "council" | "debate" | "research" | "hyperresearch"
 export type DraftVersion = {
@@ -35,11 +35,16 @@ export type Thread = {
   /** The Factory desk thread. */ desk?: boolean
   draft?: Draft
   /** Saved goal this run belongs to; its grades go to the goal's run log. */ goalId?: string
-  /** Grades of a plain-prompt run. */ grades?: Grade[]
-  /** Proposal opened by a failed grade of this thread. */ improvement?: ImprovementProposal
+  /** Validated goal configuration captured before launch. */ goalSpec?: GoalSpec
+  /** Durable grades, including saved-goal grades if the goal log is unavailable. */ grades?: Grade[]
+  /** Latest proposal, retained for existing API clients. */ improvement?: ImprovementProposal
+  /** All proposals, keyed by source grade; older approvals must remain routable. */ improvements?: ImprovementProposal[]
   /** Source thread when this is a Factory improvement run. */ improvementOf?: string
 } & Partial<Worktree>
-type Meta = Pick<Thread, "parentThreadId" | "desk" | "goalId" | "improvement" | "improvementOf">
+type Meta = Pick<
+  Thread,
+  "parentThreadId" | "desk" | "goalId" | "goalSpec" | "improvement" | "improvements" | "improvementOf"
+>
 export type ChatMessage =
   | { id: string; role: "user"; content: string }
   | {
@@ -155,7 +160,7 @@ export class Threads {
     }
   }
 
-  /** Add a plain-prompt grade; false (nothing saved) when the thread is unknown or already has a grade with that key. */
+  /** Add a grade; false (nothing saved) when the thread is unknown or already has a grade with that key. */
   addGrade(id: string, g: Grade): boolean {
     const t = this.doc.threads.find((x) => x.id === id)
     if (!t || t.grades?.some((x) => x.key === g.key)) return false

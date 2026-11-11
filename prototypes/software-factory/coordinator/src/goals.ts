@@ -55,12 +55,17 @@ export const makeGoals = (dir: string, knownSteps: readonly string[]) => {
   }
   const decodeLine = (id: string, u: unknown): GoalRun => {
     if (!get(id)) throw new GoalError(`no goal ${id}`)
+    return decodeRun(u)
+  }
+  const decodeRun = (u: unknown): GoalRun => {
     const exit = decodeGoalRun(u)
     if (!Exit.isSuccess(exit)) throw new GoalError(`invalid run: ${errorText(exit)}`)
     return exit.value
   }
   const write = (id: string, line: GoalRun): GoalRun => {
-    appendFileSync(file(id, ".runs.jsonl"), `${JSON.stringify(line)}\n`)
+    const target = file(id, ".runs.jsonl")
+    mkdirSync(dir, { recursive: true })
+    appendFileSync(target, `${JSON.stringify(line)}\n`)
     return line
   }
   const get = (id: string): GoalSpec | null => {
@@ -96,7 +101,7 @@ export const makeGoals = (dir: string, knownSteps: readonly string[]) => {
     appendRun: (id: string, u: unknown): GoalRun => write(id, decodeLine(id, u)),
     /** Append a grade line; null (nothing written) when a line with the same grade key exists, so a replay adds nothing. */
     appendGrade: (id: string, u: unknown): GoalRun | null => {
-      const line = decodeLine(id, u)
+      const line = decodeRun(u)
       const key = line.grade?.key
       if (!key) throw new GoalError("a grade line needs a grade")
       return runs(id).some((r) => r.grade?.key === key) ? null : write(id, line)
