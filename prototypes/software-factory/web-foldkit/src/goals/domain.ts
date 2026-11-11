@@ -1,7 +1,7 @@
 // Payloads of /api/goals, /api/steps and /api/folders the goal form reads. The spec Schema is shared/goal.ts.
 import { Array, Effect, Order, Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { GoalSpec, Grade } from "../../../shared/goal"
+import { Benchmark, GoalSpec, Grade, ImprovePolicy } from "../../../shared/goal"
 import { Folder } from "../../../shared/schemas"
 
 const Policy = Schema.Literals(["auto", "human"])
@@ -26,6 +26,8 @@ export const GoalDraft = Schema.Struct({
   approvals: Schema.Struct({ plan: Policy, findings: Policy, ship: Policy, other: Policy }),
   runs: Schema.String,
   minutesPerRun: Schema.String,
+  benchmarks: Schema.Array(Benchmark),
+  improve: ImprovePolicy,
 })
 export type GoalDraft = typeof GoalDraft.Type
 

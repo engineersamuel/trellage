@@ -13,11 +13,11 @@ import {
   type,
 } from "foldkit/scene"
 import { Dialog } from "@foldkit/ui"
-import { Exit } from "effect"
+import { Exit, Schema } from "effect"
 import { assert, describe, test } from "vitest"
-import { type GoalSpec, type Grade, decodeGoal } from "../../../shared/goal"
+import { type GoalSpec, type Grade, decodeGoal, draftToSpec, specToDraft } from "../../../shared/goal"
 import { FetchCatalog, FetchGoals, SaveGoal } from "./command"
-import { type GoalList, gradeGroups } from "./domain"
+import { GoalDraft, type GoalList, gradeGroups } from "./domain"
 import { Message } from "./message"
 import { init, update } from "./update"
 import { view } from "./view"
@@ -44,6 +44,19 @@ const openDialog = [
 ] as const
 
 describe("goal dialog", () => {
+  test("the form schema preserves hidden benchmark and retry configuration", () => {
+    const saved: GoalSpec = {
+      ...specOf("latency"),
+      expect: {
+        steps: {},
+        skills: [],
+        benchmarks: [{ id: "latency", baseline: 25, higherIsBetter: false, tolerance: 2 }],
+      },
+      improve: { approval: "human", maxRetries: 0 },
+    }
+    const draft = Schema.decodeUnknownSync(GoalDraft)(specToDraft(saved))
+    assert.deepEqual(draftToSpec({ ...draft, title: "Edited" }), { ok: true, spec: { ...saved, title: "Edited" } })
+  })
   test("shows catalog steps and skills, explains problems, then shows the paste line", () => {
     scene(
       { update, view },

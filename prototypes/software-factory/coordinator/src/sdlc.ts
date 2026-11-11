@@ -41,14 +41,14 @@ export const criteriaMarkdown = (criteria: string[]): string =>
   `# Acceptance criteria\n\n${criteria.map((c, i) => `AC-${i + 1}: ${c.trim()}`).join("\n")}\n`
 export const parseCriteria = (md: string): string[] => [...md.matchAll(/^AC-(\d+):\s*(.+)$/gm)].map((m) => m[2]!.trim())
 
-/** Each criterion's verdict from evidence.md lines (`AC-n: PASS|FAIL — command — output`): a PASS line proves it,
- *  else a FAIL line fails it, else it is missing. */
+/** Each criterion's verdict from evidence.md lines (`AC-n: PASS|FAIL — command — output`).
+ *  Any FAIL takes precedence over PASS; neither means missing. */
 export const criteriaResults = (criteria: string[], evidence: string | null): Record<string, Verdict> => {
   const lines = (word: string) =>
     new Set([...(evidence ?? "").matchAll(new RegExp(`^AC-(\\d+):\\s*${word}\\b`, "gim"))].map((m) => Number(m[1])))
   const [passed, failed] = [lines("PASS"), lines("FAIL")]
   return Object.fromEntries(
-    criteria.map((_, i) => [`AC-${i + 1}`, passed.has(i + 1) ? "pass" : failed.has(i + 1) ? "fail" : "missing"]),
+    criteria.map((_, i) => [`AC-${i + 1}`, failed.has(i + 1) ? "fail" : passed.has(i + 1) ? "pass" : "missing"]),
   )
 }
 

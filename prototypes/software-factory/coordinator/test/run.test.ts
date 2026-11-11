@@ -249,6 +249,19 @@ test("loopPrompt drops the skill frontmatter and appends the spec", () => {
 })
 
 describe("goal form draft", () => {
+  test("an unrelated title edit preserves benchmarks and zero retries", () => {
+    const saved = decodeGoalOrThrow({
+      id: "latency",
+      repo: "/r",
+      prompt: "Keep latency low",
+      expect: { benchmarks: [{ id: "latency", baseline: 25, higherIsBetter: false, tolerance: 2 }] },
+      improve: { maxRetries: 0 },
+    })
+    expect(draftToSpec({ ...specToDraft(saved), title: "Edited" })).toEqual({
+      ok: true,
+      spec: { ...saved, title: "Edited" },
+    })
+  })
   test("empty draft names its problems", () => {
     const r = draftToSpec(emptyDraft(), ["implement", "verify", "security", "finish"])
     expect(r.ok).toBe(false)
@@ -373,6 +386,12 @@ const goalSpec = decodeGoalOrThrow({
 })
 
 describe("criteriaResults", () => {
+  test("a FAIL wins over a conflicting PASS in either order", () => {
+    for (const evidence of ["AC-1: PASS\nAC-1: FAIL", "AC-1: FAIL\nAC-1: PASS"]) {
+      expect(criteriaResults(["a"], evidence)).toEqual({ "AC-1": "fail" })
+      expect(unprovenCriteria(["a"], evidence)).toEqual(["AC-1"])
+    }
+  })
   test("pass, fail and missing per criterion; unprovenCriteria keeps its output", () => {
     const evidence = "AC-1: PASS — make test — ok\nAC-2: FAIL — make lint — 3 errors\n"
     expect(criteriaResults(["a", "b", "c"], evidence)).toEqual({ "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" })

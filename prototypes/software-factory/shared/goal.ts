@@ -559,6 +559,8 @@ export type GoalDraft = {
   approvals: Approvals
   runs: string
   minutesPerRun: string
+  benchmarks: readonly Benchmark[]
+  improve: ImprovePolicy
 }
 
 const DEFAULT_STEPS: Record<string, StepRow> = {
@@ -586,6 +588,8 @@ export const emptyDraft = (): GoalDraft => ({
   approvals: { plan: "auto", findings: "auto", ship: "auto", other: "human" },
   runs: "5",
   minutesPerRun: "90",
+  benchmarks: [],
+  improve: DEFAULT_IMPROVE,
 })
 
 const csv = (s: string) =>
@@ -622,6 +626,7 @@ export const draftToSpec = (
     expect: {
       steps,
       skills: d.skills,
+      benchmarks: d.benchmarks,
       ...(d.expectPr
         ? {
             pr: {
@@ -635,6 +640,7 @@ export const draftToSpec = (
       ...(d.expectSdlc ? { sdlc: { criteriaProven: true, gatesRun: d.gatesRun, gatesSkipped: d.gatesSkipped } } : {}),
     },
     approvals: d.approvals,
+    improve: d.improve,
     limits: { runs: runs ?? 5, minutesPerRun: minutesPerRun ?? 90 },
   }
   const exit = decodeGoal(raw)
@@ -667,4 +673,6 @@ export const specToDraft = (s: GoalSpec): GoalDraft => ({
   approvals: s.approvals,
   runs: String(s.limits.runs),
   minutesPerRun: String(s.limits.minutesPerRun),
+  benchmarks: s.expect.benchmarks,
+  improve: s.improve,
 })

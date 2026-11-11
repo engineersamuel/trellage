@@ -109,12 +109,13 @@ Metrics, each reported separately on every grade:
 
 - **Criteria pass rate** = passed / evaluated. Each `AC-n` of the run's SDLC acceptance criteria is `pass` (an `AC-n … PASS`
   line in `.factory/evidence.md`), `fail` (a `FAIL` line) or `missing`. Missing criteria are not evaluated, so the rate
-  is `-` when none were evaluated; `total` is reported beside it.
+  is `-` when none were evaluated; `total` is reported beside it. Any `FAIL` takes precedence over conflicting `PASS` lines.
 - **PR checks**: the PR's check rollup (`SUCCESS`, `FAILURE`, `PENDING`, `NONE`, `missing`). Checks are required when
   the goal sets `expect.pr.checks`; for a prompted `done` run, when the PR reported any.
 - **Benchmarks**: `expect.benchmarks` is a list of `{id, baseline, higherIsBetter, tolerance}` with fixed baselines.
   The run writes the values to `.factory/benchmarks.json` (`{"id": number}`); a value worse than the baseline by more
-  than the tolerance has regressed.
+  than the tolerance has regressed. Editing a goal in Foldkit preserves its benchmarks and improvement policy,
+  even though those settings are not editable in the form.
 - **Quality** (optional `.factory/quality.json`): model-judged scores, each with its judge model and harness. They are
   stored but **never change the status**.
 
