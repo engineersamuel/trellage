@@ -513,7 +513,7 @@ describe("gradeStatus", () => {
 describe("buildGrade", () => {
   test("goal subject: linked to thread, factory commit, grading version and evidence; results reported separately", () => {
     const g = buildGrade(greenRun, inputs({ benchmarks: { latency: 90 } }), goalSpec)
-    expect(g.key).toBe(`t|c0ffee|done|${GRADING_VERSION}`)
+    expect(g.key).toBe(`t|c0ffee|done|SUCCESS|${GRADING_VERSION}`)
     expect([g.threadId, g.factoryCommit, g.gradingVersion, g.subject]).toEqual([
       "t",
       "f00d",
