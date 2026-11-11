@@ -394,33 +394,51 @@ describe("settling grades and interrupted launches", () => {
     const threads = new Threads(f.root)
     const restarted = makeGrading({ ...f.deps, threads })
     const t = threads.get(f.t.id)!
-    const summary = restarted.gradesOf(t)[0]!.report
+    const pending = restarted.gradesOf(t)[0]!
+    const summary = pending.report
     expect(summary).toEqual({ status: "done", commit: report.commit })
+    expect(pending.key).toBe(`${t.id}|${report.commit}|done|g1`)
 
     f.run.pr!.checks = "SUCCESS"
     await restarted.gradeThread(t.id, summary)
     await restarted.gradeThread(t.id, summary)
+    expect(new Threads(f.root).get(t.id)!.grades).toEqual([pending])
+    await restarted.regradePending()
+    await restarted.regradePending()
     const grades = new Threads(f.root).get(t.id)!.grades!
-    expect(grades.map((g) => g.status)).toEqual(["unknown", "pass"])
-    expect(grades[1]!.report).toEqual(summary)
+    expect(grades.map((g) => g.status)).toEqual(["pass"])
+    expect(grades[0]).toMatchObject({ key: pending.key, report: summary, prChecks: { state: "SUCCESS" } })
+    if (saved) expect(f.goals.runs(f.spec.id).map((r) => r.grade)).toEqual(grades)
     expect(f.approvals.list()).toHaveLength(0)
     expect(f.launches).toHaveLength(0)
   })
 
-  test("a grade taken while checks are PENDING is superseded when they fail", async () => {
-    const f = fixture()
+  test.each([true, false])("pending checks settle to one failed grade and proposal (saved goal: %s)", async (saved) => {
+    const f = fixture(saved)
     f.run.pr!.checks = "PENDING"
     await f.grading.gradeThread(f.t.id, report)
+    const pending = f.grading.gradesOf(f.t)[0]!
     await f.grading.regradePending()
-    expect(f.grading.gradesOf(f.t)).toHaveLength(1)
-    expect(f.grading.gradesOf(f.t)[0]).toMatchObject({ status: "unknown" })
+    expect(new Threads(f.root).get(f.t.id)!.grades).toEqual([pending])
     f.run.pr!.checks = "FAILURE"
+    await f.grading.gradeThread(f.t.id, report)
+    expect(new Threads(f.root).get(f.t.id)!.grades).toEqual([pending])
+    await Promise.all([f.grading.regradePending(), f.grading.regradePending()])
+    const grades = new Threads(f.root).get(f.t.id)!.grades!
+    expect(grades.map((g) => g.status)).toEqual(["fail"])
+    expect(grades[0]).toMatchObject({ key: pending.key, prChecks: { state: "FAILURE" } })
+    expect(f.threads.get(f.t.id)?.improvement?.sourceKey).toBe(pending.key)
+    expect(grades[0]!.proposalId).toBe(f.t.improvement!.approvalId)
+    if (saved) expect(f.goals.runs(f.spec.id).map((r) => r.grade)).toEqual(grades)
     await f.grading.regradePending()
-    const grades = f.grading.gradesOf(f.t)
-    expect(grades.map((g) => g.status)).toEqual(["unknown", "fail"])
-    expect(f.threads.get(f.t.id)?.improvement?.sourceKey).toBe(grades[1]!.key)
-    await f.grading.regradePending()
-    expect(f.grading.gradesOf(f.t)).toHaveLength(2)
+    const threads = new Threads(f.root)
+    const restarted = makeGrading({ ...f.deps, threads })
+    f.run.pr!.checks = "SUCCESS"
+    await restarted.gradeThread(f.t.id, report)
+    await restarted.regradePending()
+    expect(new Threads(f.root).get(f.t.id)!.grades).toEqual(grades)
+    expect(f.approvals.list()).toHaveLength(1)
+    expect(f.launches).toHaveLength(0)
   })
 
   test("an approved proposal left by a restart is retried, then launches", async () => {

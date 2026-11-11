@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { Effect, Exit } from "effect"
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs"
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -619,6 +619,49 @@ describe("buildGrade", () => {
 })
 
 describe("grade persistence", () => {
+  test.each(["unknown", "pass", "fail", "error"] as const)(
+    "only an explicit regrade replaces an unknown grade, not a %s grade otherwise",
+    (status) => {
+      const root = mkdtempSync(path.join(tmpdir(), "sf-regrade-"))
+      try {
+        const goals = makeGoals(root, [])
+        goals.save({ id: "demo", repo: "/r", prompt: "p" })
+        const threads = new Threads(root)
+        const t = threads.create("do it")
+        const original = { ...buildGrade(greenRun, inputs(), goalSpec), status, threadId: t.id }
+        const settled = { ...original, status: "pass" as const, at: original.at + 1 }
+        const line = { at: original.at, factoryCommit: "factory", threadId: t.id, outcome: status, grade: original }
+        const replacement = { ...line, at: settled.at, outcome: settled.status, grade: settled }
+        const other = { ...line, grade: { ...original, key: "another-report" } }
+        const file = path.join(root, "demo.runs.jsonl")
+        const before = ' { "at":1,"factoryCommit":"old","threadId":"t","outcome":"blocked" }\r\n\n'
+        const after = `\n ${JSON.stringify(other)} \r\n{"legacy":"unrecognized"}\n`
+        const bytes = `${before}${JSON.stringify(line)}${after}`
+        writeFileSync(file, bytes)
+        expect(threads.addGrade(t.id, original)).toBe(true)
+        const warn = spyOn(console, "warn").mockImplementation(() => {})
+        try {
+          expect(goals.appendGrade("demo", replacement)).toBeNull()
+          expect(threads.addGrade(t.id, settled)).toBe(false)
+          expect(readFileSync(file, "utf8")).toBe(bytes)
+          expect(new Threads(root).get(t.id)!.grades).toEqual([original])
+          const replaced = status === "unknown"
+          expect(goals.appendGrade("demo", replacement, true)).toEqual(replaced ? replacement : null)
+          expect(threads.addGrade(t.id, settled, true)).toBe(replaced)
+          expect(readFileSync(file, "utf8")).toBe(
+            replaced ? `${before}${JSON.stringify(replacement)}${after}` : bytes,
+          )
+          expect(new Threads(root).get(t.id)!.grades).toEqual([replaced ? settled : original])
+          expect(readdirSync(root).sort()).toEqual(["demo.json", "demo.runs.jsonl", "threads.json"])
+        } finally {
+          warn.mockRestore()
+        }
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
+
   test("goal: appendGrade round-trips, a replayed completion adds no second grade, run counts ignore grade lines", () => {
     const g = makeGoals(path.join(mkdtempSync(path.join(tmpdir(), "sf-grades-")), "goals"), ["implement"])
     g.save({ id: "demo", repo: "/r", prompt: "p" })
