@@ -284,8 +284,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const r = el("div", `p3-w s-${n.status} ${n.id === cur ? "on" : ""}`)
     r.dataset.testid = "tree-row"
     spawnedTitle(r, n)
+    // No status dot: the tree leaf and the status text already show the status.
+    const critter = critterFor(n, "p3-critter")
     r.append(
-      critterFor(n, "p3-critter") ?? el("i", "p3-dot"),
+      ...(critter ? [critter] : []),
       ...badge(n),
       el(
         "b",
@@ -338,7 +340,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     spawnedTitle(c, n)
     const hd = el("div", "p3-row")
     const name = n.kind === "worker" ? (n.agent?.name ?? n.title) : `${ICON[n.kind]} ${KIND[n.kind]}`
-    hd.append(critterFor(n, "p3-critter") ?? el("i", "p3-dot"), ...badge(n), el("b", "p3-ell", name), pill(n))
+    const critter = critterFor(n, "p3-critter")
+    hd.append(...(critter ? [critter] : []), ...badge(n), el("b", "p3-ell", name), pill(n))
     const text = n.kind === "worker" ? (n.agent?.task ?? "") : n.title
     const meta = [n.thread?.folderId, n.agent?.model, ago(bornAt(n))].filter(Boolean).join(" · ")
     c.append(hd, el("div", "p3-cv-title", text), el("div", "p3-sub p3-ell", meta))
