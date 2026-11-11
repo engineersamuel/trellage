@@ -35,6 +35,29 @@ must never be what enforces it.
   A `research/<id>.md` needs a `steps/<id>.md`. A step with `harness` needs profiles trx knows; otherwise its
   worker is refused at spawn, and the error names the fix.
 
+## Your folder: ~/.config/trellage/factory/
+
+```text
+~/.config/trellage/factory/
+  config.toml        every shipped key, commented out at its default; uncomment a line to change it
+  INSTRUCTIONS.md    your decision rules (Jev shadow mode)
+  README.md          points here
+  prompts/           a file here replaces the shipped file at the same path, e.g. prompts/jev/growth.md
+    <name>.md          top level: coordinator system prompts (desk, global, coordinator, ...)
+    jev/               Jev questions; jev/security/ = security triage answers
+    tasks/             worker task texts
+    steps/ lenses/ research/ gates/ status/   catalogs: one file per item; add a file to add an item
+```
+
+- A key you leave commented out keeps following the shipped default when the repo changes it. Only uncomment what
+  you mean to own.
+- A prompt copy replaces the whole shipped file, front matter included; keep its `inputs` and `based_on`. When the
+  repo changes that prompt later, Settings shows it as stale: compare and update, or delete your copy to go back.
+- To start a copy: copy `defaults/prompts/<name>.md` to `prompts/<name>.md`, or let the agent propose the change and
+  press Apply (it writes the copy with `based_on` for you).
+- Delete a file or comment out a key to return to the shipped default. The coordinator never writes this folder
+  except when you press Save to file (config) or Apply (proposals).
+
 ## Prompt file format
 
 ```text
