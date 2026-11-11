@@ -1303,8 +1303,11 @@ process.stdout.write(`${JSON.stringify({
 })}\n`)
 EOF
 refresh_fixture_source
-"$fixture_bin/trx" >"$fixture_root/bare-compose.json" || fail 'bare trx did not dispatch the run composer'
-"$fixture_bin/trx" run --dry-run >"$fixture_root/run-compose.json" || fail 'trx run did not dispatch the run composer'
+# A key in the caller's shell must not leak in: these two runs assert that no transcript key reaches the composer.
+env -u TRANSCRIPT_API_KEY "$fixture_bin/trx" >"$fixture_root/bare-compose.json" \
+  || fail 'bare trx did not dispatch the run composer'
+env -u TRANSCRIPT_API_KEY "$fixture_bin/trx" run --dry-run >"$fixture_root/run-compose.json" \
+  || fail 'trx run did not dispatch the run composer'
 TRANSCRIPT_API_KEY=fixture-explicit-key "$fixture_bin/trx" run --dry-run >"$fixture_root/run-compose-key.json" \
   || fail 'trx run did not preserve the explicit transcript key for the composer'
 jq -e --arg router "$runtime_parent/trx/bin/trx" \
