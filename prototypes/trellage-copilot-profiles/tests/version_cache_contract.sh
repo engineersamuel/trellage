@@ -6,6 +6,7 @@ prototype_root="$PWD"
 launcher="$prototype_root/bin/cpx"
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/cpx-version-cache.XXXXXX")"
 trap 'rm -rf "$fixture_root"' EXIT
+essential() { [[ "${TRELLAGE_TEST_SCOPE-}" == essential ]]; }
 
 fake_bin="$fixture_root/bin"
 cache_root="$fixture_root/cache"
@@ -52,6 +53,10 @@ run_cpx list --json --cached-capabilities >"$fixture_root/cached.json"
 [[ "$(<"$count_file")" == 1 ]] || { printf 'cached-only hit invoked Copilot\n' >&2; exit 1; }
 jq -e 'all(.profiles[]; .headless.prompt == true)' "$fixture_root/cached.json" >/dev/null
 
+cache_file="$cache_root/trellage/cpx/copilot-version.json"
+# Full scope only: cache invalidation on binary, package metadata, and symlink
+# retarget changes, and corrupt-cache rejection.
+if ! essential; then
 # Replace the executable, then change nearby package metadata.
 printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
   'count="$(cat "$CPX_VERSION_COUNT")"' \
@@ -83,10 +88,13 @@ ln -sf copilot-two "$fake_bin/copilot"
 run_cpx list --json >/dev/null
 [[ "$(<"$count_file")" == 6 ]] || { printf 'symlink retarget did not invalidate cache\n' >&2; exit 1; }
 
-cache_file="$cache_root/trellage/cpx/copilot-version.json"
 printf '%s\n' '{broken' >"$cache_file"
 run_cpx list --json >/dev/null
 [[ "$(<"$count_file")" == 7 ]] || { printf 'corrupt cache was trusted\n' >&2; exit 1; }
+else
+  # The skipped block made six probes; keep the later absolute counts valid.
+  printf '7\n' >"$count_file"
+fi
 rm -f "$cache_file"
 ln -s "$fixture_root/missing-cache" "$cache_file"
 run_cpx list --json >/dev/null

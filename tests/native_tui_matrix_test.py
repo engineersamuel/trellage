@@ -22,6 +22,7 @@ from unittest.mock import patch
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 RUNNER = REPOSITORY_ROOT / "scripts" / "verify-native-tuis"
 PRODUCTION_CONFIG = REPOSITORY_ROOT / "scripts" / "native-tui-adapters.json"
+FULL_SCOPE_ONLY = unittest.skipIf(os.environ.get("TRELLAGE_TEST_SCOPE") == "essential", "edge case; full scope only")
 
 
 class NativeTuiMatrixTest(unittest.TestCase):
@@ -209,8 +210,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
                 "turnOnePrompt": "Decode these decimal ASCII values: {encodedMarker}",
                 "turnTwoPrompt": "Append these decimal ASCII values: {encodedSuffix}",
                 "skillPrompt": (
-                    "{skillPrefix}Use justify, include its canonical verdict label, "
-                    "and decode: {encodedMarker}"
+                    "{skillPrefix}Use justify, include its canonical verdict label, and decode: {encodedMarker}"
                 ),
                 "skillRequiredPatterns": ["Verdict:"],
             },
@@ -277,7 +277,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
                     ],
                     "allowedExitCodes": [0],
                     "skillPrefix": "/justify ",
-                }
+                },
             },
             "harnesses": {
                 "fx": "fixture",
@@ -339,11 +339,15 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertEqual(Path(payload["evidenceDirectory"]).stat().st_mode & 0o777, 0o700)
         self.assertEqual((Path(payload["evidenceDirectory"]) / "result.json").stat().st_mode & 0o777, 0o600)
         events = (self.state / "events.log").read_text().splitlines()
-        self.assertEqual([line for line in events if line.startswith("launch\t")], [
-            "launch\tfx\tcurrent",
-            "launch\tfx\tfuture",
-        ])
+        self.assertEqual(
+            [line for line in events if line.startswith("launch\t")],
+            [
+                "launch\tfx\tcurrent",
+                "launch\tfx\tfuture",
+            ],
+        )
 
+    @FULL_SCOPE_ONLY
     def test_lifecycle_supports_frame_then_quiet_readiness(self) -> None:
         result = self.run_matrix([self.profile("current", harness="fy")])
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -351,6 +355,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertEqual(profile["stages"]["ready"], "pass")
         self.assertEqual(profile["stages"]["exit"], "pass")
 
+    @FULL_SCOPE_ONLY
     def test_lifecycle_can_send_three_control_c_exit_keys(self) -> None:
         result = self.run_matrix([self.profile("triple-exit", harness="fv")])
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -361,6 +366,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
             ["CTRL_C", "CTRL_C", "CTRL_C"],
         )
 
+    @FULL_SCOPE_ONLY
     def test_pty_constructor_reaps_child_when_initialization_is_interrupted(self) -> None:
         namespace = runpy.run_path(str(RUNNER), run_name="native_tui_runner")
         pty_module = namespace["pty"]
@@ -396,6 +402,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         with self.assertRaises(ProcessLookupError):
             os.kill(spawned[0], 0)
 
+    @FULL_SCOPE_ONLY
     def test_pty_cleanup_reaps_child_before_delivering_pending_sigint(self) -> None:
         namespace = runpy.run_path(str(RUNNER), run_name="native_tui_runner")
         process = namespace["PtyProcess"](
@@ -431,12 +438,14 @@ class NativeTuiMatrixTest(unittest.TestCase):
         with self.assertRaises(ProcessLookupError):
             os.kill(pid, 0)
 
+    @FULL_SCOPE_ONLY
     def test_adapter_environment_overrides_inherited_quiet_mode(self) -> None:
         result = self.run_matrix([self.profile("quiet-env", harness="fy")])
         self.assertEqual(result.returncode, 0, result.stderr)
         profile = json.loads(result.stdout)["profiles"][0]
         self.assertEqual(profile["stages"]["ready"], "pass")
 
+    @FULL_SCOPE_ONLY
     def test_live_mode_supports_startup_only_readiness_marker(self) -> None:
         result = self.run_matrix(
             [self.profile("startup-only", harness="fy")],
@@ -471,16 +480,14 @@ class NativeTuiMatrixTest(unittest.TestCase):
                 self.sent.append((self.now, data))
                 if data == b"\r":
                     self.pending_output.append((self.now, b"RESULT\nREADY>\n"))
-                    self.pending_output.extend(
-                        (round(self.now + offset, 9), b"ACTIVE\n")
-                        for offset in redraw_times
-                    )
+                    self.pending_output.extend((round(self.now + offset, 9), b"ACTIVE\n") for offset in redraw_times)
 
             def poll(self) -> int | None:
                 return self.status
 
         return ControlledProcess()
 
+    @FULL_SCOPE_ONLY
     def test_live_mode_waits_for_active_turn_output_to_stop(self) -> None:
         namespace = runpy.run_path(str(RUNNER), run_name="native_tui_runner")
         adapter = replace(
@@ -488,32 +495,30 @@ class NativeTuiMatrixTest(unittest.TestCase):
             ready_settle=0,
             submit_delay=0,
         )
-        process = self.controlled_turn_process(
-            namespace, [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40]
-        )
+        process = self.controlled_turn_process(namespace, [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40])
         # Replace only the runner's clock; turn, input, and readiness logic stay real.
         with patch.dict(
             namespace["run_turn"].__globals__,
             {"time": SimpleNamespace(monotonic=lambda: process.now)},
         ):
-            cursor = namespace["run_turn"](
-                process, adapter, 0, "first prompt", "RESULT", 2
-            )
+            cursor = namespace["run_turn"](process, adapter, 0, "first prompt", "RESULT", 2)
             self.assertAlmostEqual(process.now, 0.55)
             self.assertEqual(process.pending_output, [])
-            namespace["run_turn"](
-                process, adapter, cursor, "second prompt", "RESULT", 3
-            )
+            namespace["run_turn"](process, adapter, cursor, "second prompt", "RESULT", 3)
 
-        self.assertEqual(process.sent, [
-            (0.0, b"first prompt"),
-            (0.0, b"\r"),
-            (0.55, b"second prompt"),
-            (0.55, b"\r"),
-        ])
+        self.assertEqual(
+            process.sent,
+            [
+                (0.0, b"first prompt"),
+                (0.0, b"\r"),
+                (0.55, b"second prompt"),
+                (0.55, b"\r"),
+            ],
+        )
         self.assertAlmostEqual(process.now, 1.10)
         self.assertEqual(process.pending_output, [])
 
+    @FULL_SCOPE_ONLY
     def test_live_mode_accepts_a_quiet_gap_before_later_redraws(self) -> None:
         namespace = runpy.run_path(str(RUNNER), run_name="native_tui_runner")
         adapter = replace(
@@ -521,9 +526,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
             ready_settle=0,
             submit_delay=0,
         )
-        process = self.controlled_turn_process(
-            namespace, [0.05, 0.25, 0.30, 0.35, 0.40]
-        )
+        process = self.controlled_turn_process(namespace, [0.05, 0.25, 0.30, 0.35, 0.40])
         with patch.dict(
             namespace["run_turn"].__globals__,
             {"time": SimpleNamespace(monotonic=lambda: process.now)},
@@ -535,6 +538,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertEqual(len(process.pending_output), 4)
         self.assertAlmostEqual(process.pending_output[0][0], 0.25)
 
+    @FULL_SCOPE_ONLY
     def test_live_mode_tracks_numbered_readiness_markers(self) -> None:
         result = self.run_matrix(
             [self.profile("numbered", harness="fz")],
@@ -576,6 +580,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertIn("no PTY adapter for discovered harness: newx", result.stderr)
         self.assertFalse((self.state / "events.log").exists())
 
+    @FULL_SCOPE_ONLY
     def test_unknown_extra_filter_fails_closed(self) -> None:
         result = self.run_matrix(
             [self.profile("current")],
@@ -588,6 +593,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertIn("harness filter was not discovered: missing", result.stderr)
         self.assertFalse((self.state / "events.log").exists())
 
+    @FULL_SCOPE_ONLY
     def test_incompatible_combined_filter_fails_closed(self) -> None:
         result = self.run_matrix(
             [self.profile("default"), self.profile("pstack", harness="fy")],
@@ -620,6 +626,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertIn("TUI blocked by: CONSENT REQUIRED", profile["errors"])
         self.assertTrue(Path(profile["rawOutput"]).is_file())
 
+    @FULL_SCOPE_ONLY
     def test_delayed_blocking_screen_fails_after_readiness(self) -> None:
         namespace = runpy.run_path(str(RUNNER), run_name="native_tui_runner")
         adapter = namespace["load_config"](self.config).adapters["fixture"]
@@ -630,13 +637,9 @@ class NativeTuiMatrixTest(unittest.TestCase):
             namespace["perform_exit"].__globals__,
             {"time": SimpleNamespace(monotonic=lambda: process.now)},
         ):
-            cursor = process.wait_for_event(
-                adapter.ready_patterns, adapter.blocked_patterns, 0, adapter.ready_timeout
-            )
+            cursor = process.wait_for_event(adapter.ready_patterns, adapter.blocked_patterns, 0, adapter.ready_timeout)
             self.assertEqual(cursor, len(b"READY>"))
-            with self.assertRaisesRegex(
-                namespace["MatrixFailure"], "TUI blocked by: CONSENT REQUIRED"
-            ):
+            with self.assertRaisesRegex(namespace["MatrixFailure"], "TUI blocked by: CONSENT REQUIRED"):
                 namespace["perform_exit"](process, adapter, cursor)
         self.assertAlmostEqual(process.now, 0.05)
         self.assertEqual(process.sent, [])
@@ -649,6 +652,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertIn("TUI blocked by: CONSENT REQUIRED", profile["errors"])
         self.assertFalse((self.state / "input.log").exists())
 
+    @FULL_SCOPE_ONLY
     def test_blocking_screen_during_exit_still_fails(self) -> None:
         result = self.run_matrix([self.profile("exit-blocked")])
         self.assertEqual(result.returncode, 1)
@@ -657,6 +661,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertEqual(profile["stages"]["exit"], "fail")
         self.assertIn("TUI blocked by: CONSENT REQUIRED", profile["errors"])
 
+    @FULL_SCOPE_ONLY
     def test_cursor_movement_does_not_join_marker_text(self) -> None:
         result = self.run_matrix([self.profile("cursor-split")])
         self.assertEqual(result.returncode, 1)
@@ -664,6 +669,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertEqual(profile["stages"]["ready"], "fail")
         self.assertIn("timed out waiting for TUI marker", profile["errors"][0])
 
+    @FULL_SCOPE_ONLY
     def test_ready_then_immediate_exit_fails_lifecycle(self) -> None:
         result = self.run_matrix([self.profile("ready-exit")])
         self.assertEqual(result.returncode, 1)
@@ -692,6 +698,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertIn("evidence directory must be empty", second.stderr)
         self.assertEqual((evidence / "result.json").read_bytes(), original)
 
+    @FULL_SCOPE_ONLY
     def test_rejected_evidence_directory_keeps_permissions(self) -> None:
         evidence = self.root / "shared-evidence"
         evidence.mkdir(mode=0o775)
@@ -812,7 +819,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
     def test_production_config_covers_matrix_eligible_router_harnesses(self) -> None:
         config = json.loads(PRODUCTION_CONFIG.read_text())
         presets = (REPOSITORY_ROOT / "packages" / "trellage-runtime" / "src" / "native-run" / "presets.ts").read_text()
-        discovered = set(re.findall(r'^  ([a-z0-9]+): \[', presets, re.MULTILINE)) | {"grok"}
+        discovered = set(re.findall(r"^  ([a-z0-9]+): \[", presets, re.MULTILINE)) | {"grok"}
         # Headlong keeps its background mind after TUI exit; Uji is a direct route, not a managed profile.
         matrix_exclusions = {"headlong", "uji", "nodecode", "empryo"}
         self.assertEqual(set(config["harnesses"]) | matrix_exclusions, discovered)
@@ -820,9 +827,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         for adapter_name in ("agency", "copilot"):
             self.assertNotIn("--mode", config["adapters"][adapter_name]["launchArgs"])
         self.assertEqual(len(config["adapters"]["grok"]["exitSteps"]), 2)
-        self.assertTrue(
-            all(step["data"] == "\u0004" for step in config["adapters"]["grok"]["exitSteps"])
-        )
+        self.assertTrue(all(step["data"] == "\u0004" for step in config["adapters"]["grok"]["exitSteps"]))
         self.assertEqual(config["adapters"]["grok"]["readyPatterns"], ["\u276f"])
         self.assertEqual(config["adapters"]["grok"]["readySettleMilliseconds"], 5000)
         self.assertEqual(config["adapters"]["jcode"]["numberedReadyPattern"], "{turn}> ")
@@ -843,6 +848,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
         )
         self.assertEqual(config["live"]["skillRequiredPatterns"], ["Verdict:"])
 
+    @FULL_SCOPE_ONLY
     def test_makefile_and_readme_publish_matrix_commands(self) -> None:
         makefile = (REPOSITORY_ROOT / "Makefile").read_text()
         readme = (REPOSITORY_ROOT / "README.md").read_text()
