@@ -117,7 +117,18 @@ jobs:
         with:
           tools: static
       - name: Install system test prerequisites
-        run: sudo apt-get update -qq && sudo apt-get install --yes --no-install-recommends fish ripgrep libseccomp2
+        # The runner's package mirror sometimes fails DNS for a minute; retry so one network blip does not fail
+        # the job (and with it the deterministic-contracts gate).
+        run: |
+          for attempt in 1 2 3; do
+            if sudo apt-get -o Acquire::Retries=5 update -qq &&
+              sudo apt-get -o Acquire::Retries=5 install --yes --no-install-recommends fish ripgrep libseccomp2; then
+              exit 0
+            fi
+            echo "::warning::apt attempt $attempt failed; retrying in $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
+          exit 1
       - name: Verify system test prerequisites
         run: bash scripts/check-quality-prerequisites.sh
       - name: Load the exact check plan
