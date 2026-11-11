@@ -386,6 +386,37 @@ describe("report grading orchestration", () => {
   })
 })
 
+describe("settling grades and interrupted launches", () => {
+  test("a grade taken while checks are PENDING is superseded when they fail", async () => {
+    const f = fixture()
+    f.run.pr!.checks = "PENDING"
+    await f.grading.gradeThread(f.t.id, report)
+    await f.grading.regradePending()
+    expect(f.grading.gradesOf(f.t)).toHaveLength(1)
+    expect(f.grading.gradesOf(f.t)[0]).toMatchObject({ status: "unknown" })
+    f.run.pr!.checks = "FAILURE"
+    await f.grading.regradePending()
+    const grades = f.grading.gradesOf(f.t)
+    expect(grades.map((g) => g.status)).toEqual(["unknown", "fail"])
+    expect(f.threads.get(f.t.id)?.improvement?.sourceKey).toBe(grades[1]!.key)
+    await f.grading.regradePending()
+    expect(f.grading.gradesOf(f.t)).toHaveLength(2)
+  })
+
+  test("an approved proposal left by a restart is retried, then launches", async () => {
+    const f = fixture()
+    f.write("benchmarks.json", '{"latency":30}')
+    await f.grading.gradeThread(f.t.id, report)
+    const p = f.threads.get(f.t.id)!.improvement!
+    f.approvals.answer(p.approvalId, "Launch improvement run", null, null)
+    const stale = { ...p, status: "approved" as const, approvedBy: "human" as const, attempts: 1 }
+    f.threads.setMeta(f.t.id, { improvement: stale, improvements: [stale] })
+    await f.grading.retryImprovements()
+    expect(f.launches).toHaveLength(1)
+    expect(f.threads.get(f.t.id)?.improvement).toMatchObject({ status: "launched", attempts: 2 })
+  })
+})
+
 describe("human improvement retries", () => {
   test("older pending approvals still launch their own grade and concurrent answers do not double-launch", async () => {
     const f = fixture(false)

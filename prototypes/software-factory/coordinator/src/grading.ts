@@ -74,6 +74,7 @@ const improvementTask = (t: Thread, p: ImprovementProposal): string =>
 
 class Grading {
   readonly enabled: boolean
+  private readonly launching = new Set<string>()
 
   constructor(private readonly d: GradingDependencies) {
     this.enabled = (d.env ?? process.env).SF_GRADING !== "off"
@@ -220,6 +221,7 @@ class Grading {
       attempts: p.attempts + 1,
     }
     this.setProposal(t, attempt)
+    this.launching.add(p.approvalId)
     try {
       const { info, sent } = await this.d.openConversation(this.d.factoryDir, improvementTask(t, p), {
         improvementOf: t.id,
@@ -233,6 +235,8 @@ class Grading {
       })
     } catch (e) {
       this.setProposal(t, { ...attempt, status: "launch-failed", lastError: errorMessage(e) })
+    } finally {
+      this.launching.delete(p.approvalId)
     }
   }
 
@@ -278,11 +282,30 @@ class Grading {
     return !!t
   }
 
+  /** An 'approved' proposal nobody is launching was interrupted by a restart; it re-enters the bounded retry path. */
+  private recoverStale(t: Thread, p: ImprovementProposal): ImprovementProposal {
+    if (p.status !== "approved" || p.launchedThreadId || this.launching.has(p.approvalId)) return p
+    const failed: ImprovementProposal = { ...p, status: "launch-failed", lastError: "launch interrupted" }
+    this.setProposal(t, failed)
+    return failed
+  }
+
+  /** CI is usually PENDING when a run reports; re-grade such threads so the settled check state is recorded. */
+  async regradePending(): Promise<void> {
+    if (!this.enabled) return
+    for (const t of this.d.threads.list()) {
+      const latest = this.gradesOf(t).reduce<Grade | null>((a, g) => (!a || g.at >= a.at ? g : a), null)
+      if (latest?.status === "unknown" && latest.prChecks.state === "PENDING")
+        await this.gradeThread(t.id, latest.report)
+    }
+  }
+
   async retryImprovements(): Promise<void> {
     if (!this.enabled) return
     for (const t of this.d.threads.list())
       for (const p of proposalsOf(t))
-        if (p.status === "launch-failed") await this.advanceImprovement(t, this.d.approvals.get(p.approvalId))
+        if (this.recoverStale(t, p).status === "launch-failed")
+          await this.advanceImprovement(t, this.d.approvals.get(p.approvalId))
   }
 }
 
@@ -295,5 +318,6 @@ export const makeGrading = (d: GradingDependencies) => {
     advanceImprovement: grading.advanceImprovement.bind(grading),
     improvementAnswered: grading.improvementAnswered.bind(grading),
     retryImprovements: grading.retryImprovements.bind(grading),
+    regradePending: grading.regradePending.bind(grading),
   }
 }

@@ -1264,6 +1264,7 @@ const {
   gradeThread,
   improvementAnswered,
   retryImprovements,
+  regradePending,
 } = makeGrading({
   threads,
   goals,
@@ -1276,7 +1277,10 @@ const {
   publish: (type, data) => factory.publish("coordinator", type, null, now(), data),
 })
 
-if (GRADING) loop("improvement-retry", "1 minute", retryImprovements)
+if (GRADING) {
+  loop("improvement-retry", "1 minute", retryImprovements)
+  loop("grade-pending-checks", "1 minute", regradePending)
+}
 
 const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/$/, () => new Response(landing, { headers: { "content-type": "text/html" } })],
