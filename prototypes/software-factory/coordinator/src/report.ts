@@ -1,6 +1,5 @@
 // Report-up loop: a sub-coordinator reports its finished or blocked delivery to the global coordinator.
-import { loadPrompt } from "./prompt.ts"
-import { factoryConfig } from "./config.ts"
+import { activeConfig, loadPrompt } from "./prompt.ts"
 
 export type ReportStatus = "done" | "blocked" | "needs-decision"
 export type Check = { name: string; result: string; evidence: string }
@@ -125,6 +124,6 @@ export const shouldReport = ({ turn, runningWorkers, pendingReview, pendingDecis
   runningWorkers === 0 &&
   !pendingReview &&
   !pendingDecision &&
-  ((turn.moreWork !== null && turn.moreWork < factoryConfig().sdlc.done_below) || failed || turn.blocked)
+  ((turn.moreWork !== null && turn.moreWork < activeConfig().sdlc.done_below) || failed || turn.blocked)
 
 export const reportNudge = () => loadPrompt("report-nudge")

@@ -171,7 +171,28 @@ export const loadSettings = (file: string): Settings => {
   }
 }
 
-export const saveSettings = (file: string, s: Settings): void => writeFileSync(file, JSON.stringify(s, null, 2))
+/** Coordinator models live in the factory config, not here: saved settings drop them. */
+export const saveSettings = (file: string, s: Settings): void => {
+  const { model: _a, ...agent } = s.agent
+  const { model: _s, ...subAgent } = s.subAgent
+  writeFileSync(file, JSON.stringify({ ...s, agent, subAgent }, null, 2))
+}
+
+/** The coordinator models a settings.json from before the move still holds. */
+export const readStoredModels = (file: string): { agent?: string; subAgent?: string } => {
+  try {
+    const raw = JSON.parse(readFileSync(file, "utf8")) as {
+      agent?: { model?: unknown }
+      subAgent?: { model?: unknown }
+    }
+    return {
+      ...(typeof raw.agent?.model === "string" ? { agent: raw.agent.model } : {}),
+      ...(typeof raw.subAgent?.model === "string" ? { subAgent: raw.subAgent.model } : {}),
+    }
+  } catch {
+    return {}
+  }
+}
 
 /** Apply a JSON merge patch (RFC 7386) and validate the result. Throws a readable message. */
 export const patched = (current: Settings, patch: unknown): Settings => {

@@ -14,7 +14,8 @@ import {
   saveProposal,
   type Proposal,
 } from "./configChanges.ts"
-import { promptErrors, promptNames } from "./prompt.ts"
+import { promptErrors, promptFile, promptNames, stalePrompts } from "./prompt.ts"
+import { evaluatePrompt } from "./promptEval.ts"
 import type { ShipGrant } from "./approvals.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
 import { briefProblem } from "./reports.ts"
@@ -24,6 +25,7 @@ import { codeReviewIn, pendingCodeReview } from "./review.ts"
 import {
   afterImplement,
   afterVerify,
+  inRun,
   countWorker,
   planSdlc,
   sdlcBusy,
@@ -103,7 +105,7 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       if (busy) return json({ step: "wait_gates", note: `${busy}. Call next_step again in a moment.` })
       const state = { request: str(a, "request"), progress: str(a, "progress"), lastOutput: str(a, "lastOutput") }
       try {
-        const d = await decideNext(state)
+        const d = await inRun(f, f.sdlc.get(scope.id), () => decideNext(state))
         if (scope.workdir) f.turn(scope.id).moreWork = d.moreWork
         // Tagged with the deciding coordinator, so each conversation's delivery card shows only its own steps.
         const entry = {
@@ -697,10 +699,15 @@ const configTools = (f: Factory, scope: Scope): Tool<Args>[] => [
             ? { kind: "prompt", name: a.prompt, text: str(a, "text"), reason }
             : { kind: "config", key: str(a, "key"), value: a.value as Scalar, reason }
         checkProposal(p)
+        // Prompt proposals: replay recorded decisions with the current and the new text (bounded; never blocks).
+        const evaluation =
+          p.kind === "prompt"
+            ? await evaluatePrompt(f.root, f.approvals.list(), p.name, promptFile(p.name).body, p.text)
+            : undefined
         const item = f.approvals.open({
           kind: "approval",
           threadId: scope.threadId ?? f.currentThread,
-          ...describeProposal(p),
+          ...describeProposal(p, evaluation),
           options: [APPLY, REJECT],
           optionDetails: ["Write the change now", "Keep the current value"],
           context: scope.label ?? "coordinator",
@@ -725,6 +732,8 @@ export const factoryConfigView = () => {
     values: store.values(),
     prompts: promptNames(),
     promptErrors: Object.fromEntries(promptErrors),
+    /** Your prompt copies made from an older shipped version: compare them with the new default. */
+    stalePrompts: stalePrompts(),
   }
 }
 

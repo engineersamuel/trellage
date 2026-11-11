@@ -5,7 +5,16 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import type { Approval } from "./approvals.ts"
 import { configStore, type Scalar } from "./config.ts"
-import { defaultPromptsDir, loadPrompt, render, userPromptsDir } from "./prompt.ts"
+import {
+  checkTemplate,
+  declaredInputs,
+  defaultPromptsDir,
+  parsePromptFile,
+  promptFile,
+  userCopy,
+  userPromptsDir,
+} from "./prompt.ts"
+import { describeEvaluation, type Evaluation } from "./promptEval.ts"
 
 export const APPLY = "Apply"
 export const REJECT = "Reject"
@@ -43,22 +52,13 @@ export const checkProposal = (p: Proposal): void => {
   if (!PROMPT_NAME.test(p.name) || !existsSync(path.join(defaultPromptsDir, `${p.name}.md`)))
     throw new Error(`unknown prompt ${p.name}; see get_factory_config`)
   if (!p.text.trim()) throw new Error("prompt text is empty")
-  // Same placeholders as the shipped prompt: render with dummy values for every name the default uses.
-  const names = new Set(
-    [...readFileSync(path.join(defaultPromptsDir, `${p.name}.md`), "utf8").matchAll(/\{\{[#^/]?([\w.-]+)\}\}/g)].map(
-      (m) => m[1]!,
-    ),
-  )
-  const config = Object.fromEntries(
-    configStore()
-      .values()
-      .map((v) => [v.key, String(v.value)]),
-  )
-  render(p.text, { ...config, ...Object.fromEntries([...names].map((n) => [n, config[n] ?? "x"])) })
+  // The new text may use only the inputs the shipped prompt declares, and config keys.
+  const shipped = parsePromptFile(readFileSync(path.join(defaultPromptsDir, `${p.name}.md`), "utf8"))
+  checkTemplate(p.text, declaredInputs(shipped))
 }
 
-/** The decision text the human reads. */
-export const describe = (p: Proposal): { title: string; summary: string } =>
+/** The decision text the human reads. A prompt proposal shows its replay test result. */
+export const describe = (p: Proposal, evaluation?: Evaluation): { title: string; summary: string } =>
   p.kind === "config"
     ? {
         title: `Change factory config ${p.key}`,
@@ -70,7 +70,7 @@ export const describe = (p: Proposal): { title: string; summary: string } =>
       }
     : {
         title: `Change prompt ${p.name}`,
-        summary: `Why: ${p.reason}\n\nApply writes ${path.join(userPromptsDir(), `${p.name}.md`)} (overrides the shipped prompt).\n\nNew text:\n\`\`\`\n${p.text}\n\`\`\`\n\nCurrent text:\n\`\`\`\n${loadPrompt(p.name)}\n\`\`\``,
+        summary: `Why: ${p.reason}\n\n${evaluation ? `${describeEvaluation(evaluation)}\n\n` : ""}Apply writes ${path.join(userPromptsDir(), `${p.name}.md`)} (overrides the shipped prompt; new delivery runs use it).\n\nNew text:\n\`\`\`\n${p.text}\n\`\`\`\n\nCurrent text:\n\`\`\`\n${promptFile(p.name).body}\n\`\`\``,
       }
 
 export const saveProposal = (root: string, approvalId: string, p: Proposal) =>
@@ -90,6 +90,6 @@ export const settleProposal = (root: string, a: Pick<Approval, "id" | "answer">)
   }
   const out = path.join(userPromptsDir(), `${p.name}.md`)
   mkdirSync(path.dirname(out), { recursive: true })
-  writeFileSync(out, `${p.text.replace(/\n$/, "")}\n`)
+  writeFileSync(out, userCopy(p.name, p.text))
   return `applied: ${out}`
 }

@@ -1,3 +1,6 @@
++++
+inputs = ["folder", "repo", "worktree", "branch", "lessons", "prBase"]
++++
 # Your repo
 You coordinate one conversation in the repo folder "{{folder}}" ({{repo}}). Your working directory is its git worktree {{worktree}} on branch {{branch}}. Every worker you spawn works in this worktree. Ignore the settings field `repo` and the run worktree. Never edit the main checkout {{repo}}. You never push, merge, or delete branches yourself; the shell rejects it.
 # SDLC (only the necessary steps; Jev picks the optional gates, code enforces them)

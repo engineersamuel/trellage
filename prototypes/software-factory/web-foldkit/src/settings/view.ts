@@ -654,9 +654,19 @@ const configDetails = (config: FactoryConfigView, model: Model, h: HtmlBuilder<M
     [h.Class("fk-list")],
     Array.map(config.values, (v) => configRow(v, h)),
   ),
+  ...Array.map(config.stalePrompts, ({ name }) =>
+    h.p(
+      [h.Class("fk-error"), h.Role("alert")],
+      [
+        `Your prompt ${name} was copied from an older default; the shipped prompt changed since. Compare and update it.`,
+      ],
+    ),
+  ),
   h.p(
     [h.Class("fk-muted")],
-    [`${config.prompts.length} prompts; edit them as files under prompts/ next to your config file.`],
+    [
+      `${config.prompts.length} prompts (instructions, Jev questions, steps, lenses, gates); edit them as files under prompts/ next to your config file. A delivery run keeps the prompts it started with.`,
+    ],
   ),
 ]
 

@@ -6,8 +6,8 @@ import { parseEnv } from "node:util"
 import { choice, noul } from "@typesafe-ai/sdk"
 import { decisionsAvailable, systemOne } from "./decide.ts"
 import { guideOptimizeSkills } from "../../../../packages/trellage-launcher/src/guide-optimize-catalog.ts"
-import { loadPrompt } from "./prompt.ts"
-import { factoryConfig, type FactoryConfig } from "./config.ts"
+import { catalogNames, loadPrompt, promptFile } from "./prompt.ts"
+import { recordCase } from "./promptEval.ts"
 
 export type Step = {
   id: string
@@ -34,28 +34,43 @@ export type HarnessSpec = { kind: "claude" | "pi"; profiles: string[]; entry?: s
 /** The debug worker finds the cause; the coordinator decides what happens next (research, implement, or nothing). */
 export const DEBUG_ONLY = (): string => stepById("debug").instructions ?? ""
 
-/** Steps from [steps.<id>] in the factory config. */
-const configSteps = (c: FactoryConfig): Step[] =>
-  Object.entries(c.steps).map(([id, x]) => ({
-    id,
-    description: x.description,
-    bestFor: [...x.best_for],
-    avoidFor: [...x.avoid_for],
-    skills: [...x.skills],
-    ...(x.skill_dirs ? { skillDirs: [...x.skill_dirs] } : {}),
-    ...(x.instructions ? { instructions: x.instructions } : {}),
-    ...(x.gate_tools !== undefined ? { gateTools: x.gate_tools } : {}),
-    ...(x.factory_only ? { factoryOnly: true } : {}),
-    ...(x.harness
+/** A step file's front matter, checked: prompts/steps/<id>.md. A bad user file fails loudly at use. */
+const stepMeta = (id: string, meta: Record<string, unknown>) => {
+  const strings = (k: string): string[] => {
+    const v = meta[k] ?? []
+    if (!Array.isArray(v) || !v.every((x) => typeof x === "string"))
+      throw new Error(`steps/${id}: ${k} must be a list of strings`)
+    return v
+  }
+  const h = meta.harness as { kind?: unknown; profiles?: unknown; entry?: unknown } | undefined
+  if (h !== undefined && (!["claude", "pi"].includes(String(h.kind)) || !Array.isArray(h.profiles)))
+    throw new Error(`steps/${id}: harness needs kind "claude" or "pi" and a profiles list`)
+  return {
+    bestFor: strings("best_for"),
+    avoidFor: strings("avoid_for"),
+    skills: strings("skills"),
+    ...(meta.skill_dirs !== undefined ? { skillDirs: strings("skill_dirs") } : {}),
+    ...(typeof meta.instructions === "string" ? { instructions: meta.instructions } : {}),
+    ...(typeof meta.gate_tools === "boolean" ? { gateTools: meta.gate_tools } : {}),
+    ...(meta.factory_only === true ? { factoryOnly: true } : {}),
+    ...(h
       ? {
           harness: {
-            kind: x.harness.kind,
-            profiles: [...x.harness.profiles],
-            ...(x.harness.entry ? { entry: x.harness.entry } : {}),
+            kind: h.kind as HarnessSpec["kind"],
+            profiles: (h.profiles as unknown[]).map(String),
+            ...(typeof h.entry === "string" ? { entry: h.entry } : {}),
           },
         }
       : {}),
-  }))
+  }
+}
+
+/** Steps from prompts/steps/<id>.md: the body is the description Jev reads, the front matter the worker setup. */
+const fileSteps = (): Step[] =>
+  catalogNames("steps").map((id) => {
+    const f = promptFile(`steps/${id}`)
+    return { id, description: f.body, ...stepMeta(id, f.meta) }
+  })
 
 /** Skill directories (under the skills directory) for the GitHub repos Optimize skills come from. */
 const OPTIMIZE_SKILL_DIRS: Record<string, string> = { "mattpocock/skills": "mattpocock-skills/skills/engineering" }
@@ -78,10 +93,10 @@ const OPTIMIZE_STEPS: Step[] = guideOptimizeSkills.map((skill) => {
 })
 
 /** Every step: the config's, then the Optimize steps. Read at use time, so config edits apply. */
-export const steps = (c: FactoryConfig = factoryConfig()): Step[] => [...configSteps(c), ...OPTIMIZE_STEPS]
+export const steps = (): Step[] => [...fileSteps(), ...OPTIMIZE_STEPS]
 
 /** Steps the coordinator and Jev may choose. */
-export const selectableSteps = (c: FactoryConfig = factoryConfig()): Step[] => steps(c).filter((s) => !s.factoryOnly)
+export const selectableSteps = (): Step[] => steps().filter((s) => !s.factoryOnly)
 
 /** A repo URL, or a URL with the only folders to check out (a sparse clone, for large repos). */
 export type Repo = string | { url: string; sparse: string[] }
@@ -195,8 +210,8 @@ export const prepareStepSkills = (
   return checks
 }
 
-export const stepById = (id: string, c: FactoryConfig = factoryConfig()): Step => {
-  const all = steps(c)
+export const stepById = (id: string): Step => {
+  const all = steps()
   const s = all.find((x) => x.id === id)
   if (!s) throw new Error(`unknown step '${id}'; one of ${all.map((x) => x.id).join(", ")}`)
   return s
@@ -252,7 +267,11 @@ export const decideNext = async (state: {
   const criteria = Object.fromEntries(
     selectableSteps().map((s) => [
       s.id,
-      `${s.description} Best for: ${s.bestFor.join("; ")}. Avoid for: ${s.avoidFor.join("; ")}.`,
+      loadPrompt("jev/step-criteria", {
+        description: s.description,
+        best_for: s.bestFor.join("; "),
+        avoid_for: s.avoidFor.join("; "),
+      }),
     ]),
   )
   const res = await systemOne({
@@ -263,6 +282,8 @@ export const decideNext = async (state: {
     },
   })
   const a = res.answers
+  if (typeof a.more?.noul === "number")
+    recordCase({ prompt: "jev/more-work", vars: {}, state: JSON.stringify(state), answer: a.more.noul })
   if (typeof a.more?.noul !== "number" || typeof a.next?.choice !== "string")
     throw new Error("next step not decided: the decision engine gave no answer")
   return {

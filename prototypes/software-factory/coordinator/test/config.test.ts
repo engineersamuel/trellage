@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { steps } from "../src/steps.ts"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -101,39 +102,56 @@ test("user path follows SF_CONFIG, then XDG_CONFIG_HOME, then HOME", () => {
   expect(userConfigPath({ HOME: "/h" })).toBe("/h/.config/trellage/factory/config.toml")
 })
 
-test("catalog overrides: a lens, a gate threshold and a step description change without code", async () => {
+test("a gate threshold is config; a gate question, lens or step is a prompt file the user can add or replace", async () => {
   const f = path.join(dir(), "config.toml")
-  writeFileSync(
-    f,
-    '[review.lenses.security-ux]\nfocus = "confusing security prompts"\n[gates.docs]\nthreshold = 0.9\nquestion = "Docs?"\n[steps.plan]\ndescription = "Plan it."\nbest_for = ["x"]\navoid_for = ["y"]\nskills = []\n',
-  )
+  writeFileSync(f, "[gates]\ndocs = 0.9\n")
   const c = loadFactoryConfig(f)
-  const { lenses } = await import("../src/review.ts")
-  const { gateDefs } = await import("../src/sdlc.ts")
-  const { stepById } = await import("../src/steps.ts")
-  expect(lenses(c).map((l) => l.id)).toContain("security-ux")
-  expect(gateDefs(c).find((g) => g.id === "docs")).toEqual({
-    id: "docs",
-    phase: "diff",
-    threshold: 0.9,
-    question: "Docs?",
-  })
-  expect(stepById("plan", c).description).toBe("Plan it.")
-  expect(stepById("implement", c).skills).toEqual(["ub-mode"])
+  const prompts = path.join(path.dirname(process.env.SF_CONFIG!), "prompts")
+  mkdirSync(path.join(prompts, "lenses"), { recursive: true })
+  mkdirSync(path.join(prompts, "gates"), { recursive: true })
+  mkdirSync(path.join(prompts, "steps"), { recursive: true })
+  writeFileSync(path.join(prompts, "lenses", "security-ux.md"), "+++\norder = 9\n+++\nconfusing security prompts\n")
+  writeFileSync(path.join(prompts, "gates", "docs.md"), "Docs?\n")
+  writeFileSync(
+    path.join(prompts, "steps", "plan.md"),
+    '+++\nbest_for = ["x"]\navoid_for = ["y"]\nskills = []\n+++\nPlan it.\n',
+  )
+  try {
+    const { lenses } = await import("../src/review.ts")
+    const { gateDefs } = await import("../src/sdlc.ts")
+    const { stepById } = await import("../src/steps.ts")
+    expect(lenses().map((l) => l.id)).toEqual([
+      "correctness",
+      "tests",
+      "design",
+      "performance",
+      "operability",
+      "security-ux",
+    ])
+    expect(gateDefs(c).find((g) => g.id === "docs")).toEqual({
+      id: "docs",
+      phase: "diff",
+      threshold: 0.9,
+      question: "Docs?",
+    })
+    expect(stepById("plan")).toMatchObject({ description: "Plan it.", bestFor: ["x"], avoidFor: ["y"] })
+    expect(stepById("implement").skills).toEqual(["ub-mode"])
+  } finally {
+    rmSync(prompts, { recursive: true, force: true })
+  }
 })
 
-test("a research workflow needs a step of the same id", () => {
+test("catalog text in config.toml is refused: it belongs in a prompt file", () => {
   const f = path.join(dir(), "config.toml")
-  writeFileSync(f, '[research.debate]\ndescription = "Debate it."\n')
-  expect(() => loadFactoryConfig(f)).toThrow("research.debate has no [steps.debate]")
+  writeFileSync(f, '[steps.plan]\ndescription = "Plan it."\n')
+  expect(() => loadFactoryConfig(f)).toThrow(f)
 })
 
 test("a step whose trx profile does not exist is refused; presets and declared profiles pass", () => {
   const d = dir()
   const env = { HOME: d, TRELLAGE_CONFIG: path.join(d, "trellage.toml") }
   writeFileSync(env.TRELLAGE_CONFIG, '[native.profiles.mine]\nlabel = "x"\nharnesses = ["claude"]\n')
-  const c = loadFactoryConfig("/nonexistent")
-  for (const [id, s] of Object.entries(c.steps)) expect(missingProfiles(id, s.harness, env)).toEqual([])
+  for (const s of steps()) expect(missingProfiles(s.id, s.harness, env)).toEqual([])
   expect(missingProfiles("council", { kind: "claude", profiles: ["mine", "nope"] }, env)).toEqual([
     `step council: profile 'nope' is not a claude profile; add [native.profiles.nope] to ${env.TRELLAGE_CONFIG}`,
   ])
@@ -179,7 +197,8 @@ test("values report default, file and override sources; overrides persist, valid
   const s = new ConfigStore(f, undefined, o)
   stores.push(s)
   const src = (k: string) => s.values().find((v) => v.key === k)
-  expect(src("sdlc.done_below")).toEqual({ key: "sdlc.done_below", value: 0.2, source: "file", reload: "live" })
+  expect(src("sdlc.done_below")).toEqual({ key: "sdlc.done_below", value: 0.2, source: "file", reload: "run" })
+  expect(src("fanout.max_workers")).toMatchObject({ reload: "live" })
   expect(src("review.lens_threshold")).toMatchObject({ source: "default", reload: "run" })
   expect(s.values().some((v) => v.key.startsWith("steps."))).toBe(false)
 

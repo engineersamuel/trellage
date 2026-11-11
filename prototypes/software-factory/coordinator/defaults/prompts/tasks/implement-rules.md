@@ -1,3 +1,6 @@
++++
+inputs = ["criteria", "design", "testFirst", "docs", "scopeWarning"]
++++
 ## Factory SDLC rules for this change
 Acceptance criteria (.factory/acceptance.md):
 {{criteria}}

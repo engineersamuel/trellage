@@ -89,3 +89,18 @@ Running workers keep their system prompt.
 - Writing factory keys into the main `config.toml`.
 - Editable tool schemas or guard logic.
 - Migrating `INSTRUCTIONS.md`.
+
+## Revision 2 (2026-11-10): one home per kind of text
+
+Pressure test found a split brain: catalog text in TOML, prompts in Markdown, some Jev questions still in code; two
+runtime override stores; coordinator models stored in both config and settings.json; runs pinned config but not
+prompts. Changes (user chose option B and all recommendations):
+
+- Rule: model-read text → prompt files; numbers/models → config; contracts with code → code (`coordinator/AGENTS.md`).
+- Catalogs (steps, research, lenses, gate questions, status notes, security triage criteria) are prompt files with TOML
+  front matter; `config.toml` holds only numbers, models and switches.
+- Prompt files declare `inputs`; callers must pass them; templates may use only those and config keys.
+- A delivery run pins prompts with its config (`Sdlc.promptsId`); every run hook reads the pinned copy.
+- Coordinator models live only in the config; old settings.json values move to a runtime override at start.
+- User prompt copies record `based_on`; the UI warns when the shipped prompt moved on.
+- Prompt proposals for decision prompts get a replay score on the decision card (shown, not blocking).

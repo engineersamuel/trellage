@@ -49,4 +49,5 @@ export const config: FactoryConfigView = {
   ],
   prompts: ["coordinator", "jev/lens"],
   promptErrors: {},
+  stalePrompts: [],
 }

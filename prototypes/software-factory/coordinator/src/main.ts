@@ -17,6 +17,7 @@ import { cardsPrompt, coordinatorPrompt, deskPrompt, globalPrompt, researchPromp
 import { loadPrompt } from "./prompt.ts"
 import { configStore, type Scalar } from "./config.ts"
 import { settleProposal } from "./configChanges.ts"
+import { inRun } from "./gates.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
 import { findingTask, findReport } from "./reports.ts"
 import { CARD_TOOLS, cardOpenUi, reportFindings } from "./cards.ts"
@@ -28,7 +29,7 @@ import {
   factorySnapshot,
   genId,
   reportTarget,
-  STATUS_NOTE,
+  statusNote,
 } from "./general.ts"
 import { specView } from "./spec.ts"
 import { onTrack, steps } from "./steps.ts"
@@ -105,7 +106,10 @@ const instructions = readInstructions()
 const config = configStore()
 console.error(`factory config: ${config.user}${config.error ? ` (invalid, using defaults: ${config.error})` : ""}`)
 /** Tell every open UI the config changed (file edit, override, promote, applied proposal). */
-const publishConfig = () => factory.publish("coordinator", "factory.config_updated", null, now(), factoryConfigView())
+const publishConfig = () => {
+  factory.publish("coordinator", "factory.config_updated", null, now(), factoryConfigView())
+  void factory.onConfigChanged()
+}
 config.watch((c) => {
   console.error(c.error ? `factory config: keeping the last good config; ${c.error}` : "factory config reloaded")
   publishConfig()
@@ -138,7 +142,7 @@ const globalScopeTools = (id: string, chat: string | null) => [
       const status = statusOf(tid)
       return {
         status,
-        ...(STATUS_NOTE[status] ? { note: STATUS_NOTE[status] } : {}),
+        ...(statusNote(status) ? { note: statusNote(status) } : {}),
         lastMessage: w?.lastMessage ?? null,
       }
     },
@@ -467,7 +471,7 @@ const watchSub = (w: Worker, threadId: string, ev: SessionEvent) => {
       owned.some((x) => x.status === "error" && x.lastActivity >= turn.start) ||
       reviews.some((r) => r.scopeId === w.id && r.status === "failed" && r.at >= turn.start),
   }
-  if (!shouldReport(state)) return
+  if (!inRun(factory, factory.sdlc.get(w.id), () => shouldReport(state))) return
   turn.nudged = true
   deliverAndLog(threadId, reportNudge())
 }

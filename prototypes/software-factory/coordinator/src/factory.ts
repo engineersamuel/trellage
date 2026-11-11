@@ -38,7 +38,7 @@ import {
 } from "./steps.ts"
 import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./claude.ts"
 import { composePi, withProxyModel, PiSession } from "./pi.ts"
-import { factoryConfig, missingProfiles, userConfigPath, type FactoryConfig } from "./config.ts"
+import { configStore, factoryConfig, missingProfiles, userConfigPath, type FactoryConfig } from "./config.ts"
 import { setDecisionEngine } from "./decide.ts"
 import { acquireStateLock, migrateLegacyState, stateDir } from "./statedir.ts"
 
@@ -410,7 +410,18 @@ export class Factory {
   get defaultModel(): string {
     return this.env.SF_MODEL ?? factoryConfig().models.worker
   }
-  settings: S.Settings
+  /** Stored settings (settings.json). Coordinator models are not stored here: see `settings`. */
+  private stored: S.Settings
+  /** The settings document. The coordinator models come from the factory config (one home: models.coordinator,
+   *  models.sub_coordinator); a patch to them sets a config runtime override. */
+  get settings(): S.Settings {
+    const m = factoryConfig().models
+    return {
+      ...this.stored,
+      agent: { ...this.stored.agent, model: m.coordinator },
+      subAgent: { ...this.stored.subAgent, model: m.sub_coordinator },
+    }
+  }
   private readonly settingsFile: string
   /** Latest browser-side extension errors, keyed by "extension@ui". */
   readonly extensionErrors = new Map<string, unknown>()
@@ -447,12 +458,32 @@ export class Factory {
     this.defaultAuth = env.SF_AUTH === "proxy" ? "proxy" : "native"
     this.proxyUrl = env.SF_PROXY_URL ?? "http://localhost:8080/v1"
     this.settingsFile = S.settingsPath(this.root)
-    this.settings = S.loadSettings(this.settingsFile)
-    setDecisionEngine(this.settings.decisions.engine, this.proxyUrl)
+    this.stored = this.loadStored()
+    setDecisionEngine(this.stored.decisions.engine, this.proxyUrl)
     this.approvals = new Approvals(this.root)
-    // SF_MODEL is the worker default; coordinators use the settings (agent: global, subAgent: repo conversations).
-    if (this.settings.agent.model === "")
-      this.settings = { ...this.settings, agent: { ...this.settings.agent, model: factoryConfig().models.coordinator } }
+  }
+
+  /** settings.json, once moved: coordinator models it still holds become config runtime overrides, so they keep
+   *  applying, and the file stops storing them. */
+  private loadStored(): S.Settings {
+    const s = S.loadSettings(this.settingsFile)
+    const raw = S.readStoredModels(this.settingsFile)
+    const store = configStore()
+    for (const [key, model] of [
+      ["models.coordinator", raw.agent],
+      ["models.sub_coordinator", raw.subAgent],
+    ] as const) {
+      if (!model || model === store.current.models[key === "models.coordinator" ? "coordinator" : "sub_coordinator"])
+        continue
+      try {
+        store.setOverride(key, model)
+        console.error(`factory config: moved ${key} = ${model} from settings.json to a runtime override`)
+      } catch (e) {
+        console.error(`factory config: could not move ${key} from settings.json: ${e}`)
+      }
+    }
+    if (raw.agent !== undefined || raw.subAgent !== undefined) S.saveSettings(this.settingsFile, s)
+    return s
   }
 
   get(id: string): Worker {
@@ -827,13 +858,23 @@ export class Factory {
     const next = S.patched(prev, patch)
     this.validateRepoChange(prev, next)
     await this.applyModelChange(prev, next)
+    // Coordinator models live in the factory config: a change is a runtime override there.
+    const store = configStore()
+    if (next.agent.model !== prev.agent.model) store.setOverride("models.coordinator", next.agent.model)
+    if (next.subAgent.model !== prev.subAgent.model) store.setOverride("models.sub_coordinator", next.subAgent.model)
     // Code changed: old error reports no longer apply.
     this.clearChangedExtensionErrors(prev, next)
-    this.settings = next
+    this.stored = next
     setDecisionEngine(next.decisions.engine)
     S.saveSettings(this.settingsFile, next)
-    this.publish("coordinator", "factory.settings_updated", null, now(), { settings: next, css: S.css(next) })
-    return next
+    this.publishSettings()
+    return this.settings
+  }
+
+  /** Tell every open UI the settings changed (also after a config change moved a coordinator model). */
+  publishSettings(): void {
+    const s = this.settings
+    this.publish("coordinator", "factory.settings_updated", null, now(), { settings: s, css: S.css(s) })
   }
 
   private validateRepoChange(prev: S.Settings, next: S.Settings): void {
@@ -844,6 +885,24 @@ export class Factory {
       throw new Error(`repo: '${next.repo}' is not a git repository`)
     }
     this.run = null
+  }
+
+  /** After any config change: switch live coordinators whose model changed, and tell the UIs. Never throws. */
+  async onConfigChanged(): Promise<void> {
+    const next = this.settings
+    const live = [...this.workers.values()].filter((w) => w.role === "coordinator")
+    await Promise.all(
+      live.map(async (w) => {
+        const c = w.id.startsWith("sub-") ? next.subAgent : next.agent
+        if (w.model === c.model) return
+        try {
+          await w.setModel(c.model, c.reasoningEffort)
+        } catch (e) {
+          console.error(`factory config: ${w.id} kept ${w.model}; ${e instanceof Error ? e.message : e}`)
+        }
+      }),
+    )
+    this.publishSettings()
   }
 
   private async applyModelChange(prev: S.Settings, next: S.Settings): Promise<void> {

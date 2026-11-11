@@ -3,12 +3,12 @@ import { noul } from "@typesafe-ai/sdk"
 import { decisionsAvailable, systemOne } from "./decide.ts"
 import { guideOptimizeSkills } from "../../../../packages/trellage-launcher/src/guide-optimize-catalog.ts"
 import { optimizeStepId } from "./steps.ts"
-import { loadPrompt } from "./prompt.ts"
+import { catalogNames, loadPrompt, promptFile } from "./prompt.ts"
 import { factoryConfig, type FactoryConfig } from "./config.ts"
 
 /** Deliberation and research workflows from [research.<id>]; each runs the step of the same id (see steps.ts). */
-export const researchWorkflows = (c: FactoryConfig = factoryConfig()) =>
-  Object.entries(c.research).map(([id, w]) => ({ id, description: w.description }))
+export const researchWorkflows = (_c?: FactoryConfig) =>
+  catalogNames("research").map((id) => ({ id, description: promptFile(`research/${id}`).body }))
 
 type Choice = { readonly id: string; readonly description: string }
 

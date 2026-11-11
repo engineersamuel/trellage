@@ -1,3 +1,6 @@
++++
+inputs = ["file", "conversation", "title", "body"]
++++
 Implement this optimization from the report {{file}} (conversation "{{conversation}}").
 
 ## {{title}}

@@ -250,5 +250,7 @@ export const FactoryConfigView = Schema.Struct({
   values: Schema.Array(ConfigValue),
   prompts: Schema.Array(Schema.String),
   promptErrors: Schema.Record(Schema.String, Schema.String),
+  /** User prompt copies made from an older shipped version. */
+  stalePrompts: Schema.Array(Schema.Struct({ name: Schema.String, basedOn: Schema.String, shipped: Schema.String })),
 })
 export type FactoryConfigView = typeof FactoryConfigView.Type

@@ -8,12 +8,14 @@ import { decisionsAvailable, systemOne } from "./decide.ts"
 import { now, type Auth, type Factory, type Worker } from "./factory.ts"
 import { stopAll } from "./security.ts"
 import type { Scope } from "./tools.ts"
-import { loadPrompt } from "./prompt.ts"
+import { catalogNames, loadPrompt, promptFile } from "./prompt.ts"
 import { factoryConfig, type FactoryConfig } from "./config.ts"
+import { recordCase } from "./promptEval.ts"
 
-/** Review lenses from the config: id and the focus a reviewer reads the diff through. */
-export const lenses = (c: FactoryConfig = factoryConfig()) =>
-  Object.entries(c.review.lenses).map(([id, l]) => ({ id, focus: l.focus }))
+/** Review lenses: prompts/lenses/<id>.md, the focus a reviewer reads the diff through. The first two are the fallback
+ *  when no decision engine answers; the first is the re-review lens. */
+export const lenses = (_c?: FactoryConfig): { id: string; focus: string }[] =>
+  catalogNames("lenses").map((id) => ({ id, focus: promptFile(`lenses/${id}`).body }))
 export type Lens = ReturnType<typeof lenses>[number]
 export type LensId = string
 
@@ -172,7 +174,9 @@ const askLenses = async (state: Record<string, unknown>, c: FactoryConfig): Prom
     return Object.fromEntries(
       lenses(c).flatMap((l) => {
         const p = res.answers[l.id]?.noul
-        return typeof p === "number" ? [[l.id, p]] : []
+        if (typeof p !== "number") return []
+        recordCase({ prompt: "jev/lens", vars: { focus: l.focus }, state: JSON.stringify(state), answer: p })
+        return [[l.id, p]]
       }),
     )
   } catch {

@@ -4,6 +4,7 @@ import { writeFileSync } from "node:fs"
 import { now, type Auth, type Factory } from "./factory.ts"
 import { codeReview, codeReviewDoneSince, lenses, reviewModelFor } from "./review.ts"
 import { pinnedConfig, snapshotConfig } from "./config.ts"
+import { loadPrompt, snapshotPrompts, withPinned } from "./prompt.ts"
 import {
   artifact,
   askGates,
@@ -35,7 +36,7 @@ import { execFileSync } from "node:child_process"
 import { noul } from "@typesafe-ai/sdk"
 import { decisionLabel, decisionsAvailable, systemOne } from "./decide.ts"
 import type { Scope } from "./tools.ts"
-import { loadPrompt } from "./prompt.ts"
+import { recordCase } from "./promptEval.ts"
 
 const publish = (f: Factory, s: Sdlc) => {
   f.sdlc.set(s.scopeId, s)
@@ -60,20 +61,34 @@ export const planSdlc = async (
   ensureFactoryDir(workdir)
   writeFileSync(artifact(workdir, "acceptance.md"), criteriaMarkdown(criteria))
   const prev = f.sdlc.get(scope.id) ?? newSdlc(scope.id, scope.threadId)
-  // The run pins the factory config at its first plan; later config edits apply to new runs only.
+  // The run pins the factory config and the prompt files at its first plan; later edits apply to new runs only.
   const configId = prev.configId ?? snapshotConfig(f.root)
-  const c = pinnedConfig(f.root, configId)
-  const { probabilities, error } = await askGates("plan", { request, plan, criteria }, c)
-  const s: Sdlc = withGates(
-    { ...prev, request, criteria, checks: repoChecks(workdir), configId },
-    decide("plan", probabilities, null, error, c),
-  )
-  publish(f, s)
-  return s
+  const promptsId = prev.promptsId ?? snapshotPrompts(f.root)
+  const pinned = { ...prev, configId, promptsId }
+  return inRun(f, pinned, async () => {
+    const c = pinnedConfig(f.root, configId)
+    const { probabilities, error } = await askGates("plan", { request, plan, criteria }, c)
+    const s: Sdlc = withGates(
+      { ...pinned, request, criteria, checks: repoChecks(workdir) },
+      decide("plan", probabilities, null, error, c),
+    )
+    publish(f, s)
+    return s
+  })
 }
 
+/** Run `fn` with the delivery run's pinned config and prompts (no run yet: the live ones). */
+export const inRun = <T>(f: Factory, s: Pick<Sdlc, "configId" | "promptsId"> | undefined, fn: () => T): T =>
+  withPinned(f.root, { promptsId: s?.promptsId, configId: s?.configId }, pinnedConfig(f.root, s?.configId), fn)
+
+/** `fn` in the pinned run of `scope`'s conversation. */
+const inScopeRun = <T>(f: Factory, scope: Scope, fn: () => T): T => inRun(f, f.sdlc.get(scope.id), fn)
+
 /** The implement or verify task with the factory's rules appended; other steps unchanged. */
-export const sdlcTask = (f: Factory, scope: Scope, step: string | undefined, task: string): string => {
+export const sdlcTask = (f: Factory, scope: Scope, step: string | undefined, task: string): string =>
+  inScopeRun(f, scope, () => sdlcTaskIn(f, scope, step, task))
+
+const sdlcTaskIn = (f: Factory, scope: Scope, step: string | undefined, task: string): string => {
   const s = f.sdlc.get(scope.id)
   if (!s) return task
   if (step === "implement") return task + implementAddendum(s)
@@ -104,7 +119,10 @@ const growthNeeded = async (state: Record<string, unknown>): Promise<number | nu
       state: JSON.stringify(state),
       questions: { needed: noul(loadPrompt("jev/growth")) },
     })
-    return typeof res.answers?.needed?.noul === "number" ? res.answers.needed.noul : null
+    const p = res.answers?.needed?.noul
+    if (typeof p !== "number") return null
+    recordCase({ prompt: "jev/growth", vars: {}, state: JSON.stringify(state), answer: p })
+    return p
   } catch {
     return null
   }
@@ -116,12 +134,10 @@ const growthNeeded = async (state: Record<string, unknown>): Promise<number | nu
  * supply-chain scan, and one code review round. A later implement re-reviews only the lines since the last review,
  * and only when they are rereviewLines() or more. The security review is not here: it runs last, at ship time.
  */
-export const afterImplement = async (
-  f: Factory,
-  scope: Scope,
-  implementWorkerId: string,
-  scopeAuth: Auth | undefined,
-) => {
+export const afterImplement = (f: Factory, scope: Scope, implementWorkerId: string, scopeAuth: Auth | undefined) =>
+  inScopeRun(f, scope, () => afterImplementIn(f, scope, implementWorkerId, scopeAuth))
+
+const afterImplementIn = async (f: Factory, scope: Scope, implementWorkerId: string, scopeAuth: Auth | undefined) => {
   const s0prev = f.sdlc.get(scope.id) ?? newSdlc(scope.id, scope.threadId)
   const s0 = { ...s0prev, implementerModel: f.workers.get(implementWorkerId)?.model ?? s0prev.implementerModel ?? null }
   const c = pinnedConfig(f.root, s0.configId)
@@ -251,7 +267,10 @@ const blockersBeforeSecurity = (f: Factory, scope: Scope): string[] => {
  * The final security review: started when every other gate is ready and none is running, over the whole diff.
  * Jev triages its findings; kept ones get a fix and a verify worker. Returns a note while it runs.
  */
-export const startFinalSecurity = (f: Factory, scope: Scope): string | null => {
+export const startFinalSecurity = (f: Factory, scope: Scope): string | null =>
+  inScopeRun(f, scope, () => startFinalSecurityIn(f, scope))
+
+const startFinalSecurityIn = (f: Factory, scope: Scope): string | null => {
   if (!scope.workdir) return null
   const s = f.sdlc.get(scope.id)
   if (!s || blockersBeforeSecurity(f, scope).length || sdlcBusy(f, scope.id)) return null
@@ -266,10 +285,12 @@ export const startFinalSecurity = (f: Factory, scope: Scope): string | null => {
     f.workers.get(scope.id)?.auth,
     reviewModelFor(s.implementerModel, process.env.SF_SECURITY_MODEL, true, pinnedConfig(f.root, s.configId)),
   )
-  return "Everything else is ready, so the final security review started now (it reviews the whole diff last; Jev picks which findings to fix). Wait with next_step until it is done, then ask to ship again."
+  return loadPrompt("final-security-started")
 }
 
-export const afterVerify = async (f: Factory, scope: Scope) => {
+export const afterVerify = (f: Factory, scope: Scope) => inScopeRun(f, scope, () => afterVerifyIn(f, scope))
+
+const afterVerifyIn = async (f: Factory, scope: Scope) => {
   const s = f.sdlc.get(scope.id)
   if (!s) return
   publish(f, { ...s, verifyDoneAt: Date.now() })

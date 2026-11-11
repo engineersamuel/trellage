@@ -4,6 +4,7 @@
 // Every coordinator sees the whole factory through factory_status: live state, never accumulated memory.
 import type { Thread } from "./threads.ts"
 import { DRAFT_NOTE, isUnstartedDraft } from "./drafts.ts"
+import { catalogNames, loadPrompt } from "./prompt.ts"
 
 export const DESK_ID = "coordinator"
 export const genId = (threadId: string) => `gen-${threadId.slice(0, 8)}`
@@ -23,11 +24,9 @@ export const conversationStatus = (
   return messageCount > 0 ? "stopped" : "not started"
 }
 
-export const STATUS_NOTE: Partial<Record<ConversationStatus, string>> = {
-  stopped: "No live sub-coordinator: the factory restarted or the run was stopped. Its work is not progressing. Start a new run if the human still wants it.",
-  deleted: "The human deleted this conversation. Ignore it; do not wait for it, quote it, or reuse it.",
-  merged: "Its branch was merged and its worktree removed.",
-}
+/** Note shown to coordinators next to a conversation status: prompts/status/<status>.md, when there is one. */
+export const statusNote = (status: ConversationStatus): string | undefined =>
+  catalogNames("status").includes(status) ? loadPrompt(`status/${status}`) : undefined
 
 type Agent = { id: string; name: string; status: string; owner: string }
 type Decision = { id: string; title: string; threadId: string | null }
@@ -53,7 +52,7 @@ export const factorySnapshot = (
       title: t.title,
       branch: t.branch ?? null,
       status,
-      ...(isUnstartedDraft(t) ? { note: DRAFT_NOTE } : STATUS_NOTE[status] ? { note: STATUS_NOTE[status] } : {}),
+      ...(isUnstartedDraft(t) ? { note: DRAFT_NOTE } : statusNote(status) ? { note: statusNote(status) } : {}),
       ...(t.archivedAt ? { archived: true } : {}),
       ...(t.parentThreadId ? { startedFrom: t.parentThreadId } : {}),
       workers: { running: workers.filter((w) => w.status === "running").length, total: workers.length },
@@ -64,9 +63,13 @@ export const factorySnapshot = (
   return {
     at: new Date().toISOString(),
     conversations,
-    generalChats: agents.filter((a) => a.id.startsWith("gen-")).map((a) => ({ id: a.id, name: a.name, status: a.status })),
+    generalChats: agents
+      .filter((a) => a.id.startsWith("gen-"))
+      .map((a) => ({ id: a.id, name: a.name, status: a.status })),
     pendingDecisions: decisions.map((d) => ({ id: d.id, title: d.title, conversation: d.threadId })),
-    needsAttention: conversations.filter((c) => c.status === "stopped" || c.status === "error" || c.pendingDecisions).map((c) => c.id),
+    needsAttention: conversations
+      .filter((c) => c.status === "stopped" || c.status === "error" || c.pendingDecisions)
+      .map((c) => c.id),
   }
 }
 

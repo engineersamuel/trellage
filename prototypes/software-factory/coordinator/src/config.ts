@@ -1,5 +1,6 @@
-// Factory config: shipped defaults < the user's ~/.config/trellage/factory/config.toml.
-// Runtime overrides (UI and agent) stay in settings.json. An invalid edit keeps the last good config.
+// Factory config: numbers, model names and switches. Shipped defaults < the user's
+// ~/.config/trellage/factory/config.toml < runtime overrides ($SF_STATE_DIR/config-overrides.json, UI and approved
+// agent proposals). An invalid edit keeps the last good config. Text a model reads is in prompt files (prompt.ts).
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, renameSync, watch, writeFileSync, type FSWatcher } from "node:fs"
 import path from "node:path"
@@ -14,25 +15,6 @@ const Probability = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 const Model = Schema.String.check(Schema.isNonEmpty())
 
-const Text = Schema.String.check(Schema.isNonEmpty())
-const Texts = Schema.Array(Text)
-const Gate = Schema.Struct({ threshold: Probability, question: Text })
-
-const Step = Schema.Struct({
-  description: Text,
-  best_for: Texts,
-  avoid_for: Texts,
-  skills: Texts,
-  skill_dirs: Schema.optional(Texts),
-  /** Extra rules after the skill sentence, e.g. where to stop in the skill. */
-  instructions: Schema.optional(Text),
-  gate_tools: Schema.optional(Schema.Boolean),
-  factory_only: Schema.optional(Schema.Boolean),
-  harness: Schema.optional(
-    Schema.Struct({ kind: Schema.Literals(["claude", "pi"]), profiles: Texts, entry: Schema.optional(Text) }),
-  ),
-})
-
 const FactoryConfigSchema = Schema.Struct({
   models: Schema.Struct({
     coordinator: Model,
@@ -42,7 +24,6 @@ const FactoryConfigSchema = Schema.Struct({
     claude_worker: Model,
   }),
   review: Schema.Struct({
-    lenses: Schema.Record(Schema.String, Schema.Struct({ focus: Text })),
     lens_threshold: Probability,
     max_lenses: Count,
     min_lenses_t2: Count,
@@ -54,17 +35,15 @@ const FactoryConfigSchema = Schema.Struct({
   }),
   sdlc: Schema.Struct({ done_below: Probability, max_fix_rounds: Count }),
   fanout: Schema.Struct({ max_workers: Count, select_threshold: Probability }),
-  /** Fixed ids: code decides each gate's phase and floors. */
+  /** Jev probability at or above which each gate runs. The question is prompts/gates/<id>.md. */
   gates: Schema.Struct({
-    design: Gate,
-    testFirst: Gate,
-    codeReview: Gate,
-    supplyChain: Gate,
-    docs: Gate,
-    postMerge: Gate,
+    design: Probability,
+    testFirst: Probability,
+    codeReview: Probability,
+    supplyChain: Probability,
+    docs: Probability,
+    postMerge: Probability,
   }),
-  research: Schema.Record(Schema.String, Schema.Struct({ description: Text })),
-  steps: Schema.Record(Schema.String, Step),
 })
 export type FactoryConfig = typeof FactoryConfigSchema.Type
 
@@ -108,13 +87,7 @@ export const missingProfiles = (
     )
 }
 
-/** Schema, then the links between sections. */
-const decode = (raw: unknown): FactoryConfig => {
-  const c = decodeSchema(raw)
-  for (const id of Object.keys(c.research)) if (!c.steps[id]) throw new Error(`research.${id} has no [steps.${id}]`)
-  if (Object.keys(c.review.lenses).length < 2) throw new Error("review.lenses needs at least 2 lenses")
-  return c
-}
+const decode = (raw: unknown): FactoryConfig => decodeSchema(raw)
 
 export const defaultsPath = path.join(import.meta.dir, "..", "defaults", "config.toml")
 
@@ -161,16 +134,16 @@ export type Scalar = string | number | boolean | readonly string[]
 export type ConfigValue = { key: string; value: Scalar; source: Source; reload: Reload }
 
 /** Keys a running delivery reads from its pinned snapshot. */
-const RUN_KEYS = /^(review\.|gates\.|sdlc\.max_fix_rounds$|models\.review\.)/
+const RUN_KEYS = /^(review\.|gates\.|sdlc\.|models\.review\.)/
 
 const isScalar = (v: unknown): v is Scalar =>
   ["string", "number", "boolean"].includes(typeof v) || (Array.isArray(v) && v.every((x) => typeof x === "string"))
 
-/** Scalar leaves of a table as `section.key`; catalog text (steps, research, lens focus) stays file-only. */
+/** Scalar leaves of a table as `section.key`. */
 const leaves = (v: unknown, prefix = ""): [string, Scalar][] =>
   isTable(v)
     ? Object.entries(v).flatMap(([k, x]) => leaves(x, prefix ? `${prefix}.${k}` : k))
-    : isScalar(v) && !/^(steps|research)\.|^review\.lenses\.|\.question$/.test(prefix)
+    : isScalar(v)
       ? [[prefix, v]]
       : []
 

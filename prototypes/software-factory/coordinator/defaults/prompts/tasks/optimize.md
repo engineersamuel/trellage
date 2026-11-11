@@ -1,3 +1,6 @@
++++
+inputs = ["request", "title", "lens", "report"]
++++
 {{request}}
 
 Apply only the "{{title}}" lens to this repository as it is now:

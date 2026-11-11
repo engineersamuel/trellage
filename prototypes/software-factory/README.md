@@ -189,10 +189,13 @@ directory), so they survive a restart; an old `approvals.json` is imported once.
 
 ## Factory config and prompts
 
-Prompts, models, review and SDLC thresholds, lenses, gates, research workflows and steps are files:
-`coordinator/defaults/config.toml` and `coordinator/defaults/prompts/*.md`. Override them key by key in
-`~/.config/trellage/factory/config.toml` and file by file in `~/.config/trellage/factory/prompts/`. Edits apply live;
-a delivery run keeps the config it started with. See `coordinator/AGENTS.md`.
+One rule: text a model reads is a prompt file, numbers and model names are config, contracts with code stay in code.
+
+- Prompt files: `coordinator/defaults/prompts/` (system prompts, worker tasks, Jev questions, and the catalogs
+  `steps/`, `research/`, `lenses/`, `gates/`). Override one by putting a file at the same path under
+  `~/.config/trellage/factory/prompts/`; add a catalog item by adding a file.
+- Config: `coordinator/defaults/config.toml`, overridden key by key in `~/.config/trellage/factory/config.toml`.
+- Edits apply live; a delivery run keeps the config and prompts it started with. See `coordinator/AGENTS.md`.
 
 ## Self-updating UI (agent access parity)
 

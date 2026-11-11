@@ -1,3 +1,6 @@
++++
+inputs = ["base", "focus", "criteria", "out", "schema"]
++++
 Review only the changes in `git diff {{base}}` of this worktree through one lens: {{focus}}.
 
 {{#criteria}}Acceptance criteria:
