@@ -372,3 +372,8 @@ export const factoryConfig = (): FactoryConfig => configStore().current
 export const setConfigStore = (store: ConfigStore): void => {
   shared = store
 }
+/** Drop the process-wide store; the next use builds it again from the env (tests). */
+export const resetConfigStore = (): void => {
+  shared?.close()
+  shared = null
+}

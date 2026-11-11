@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from "bun:test"
+import { beforeEach, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -12,7 +12,7 @@ import { OPTIMIZE_SKILLS, optimizeTask, researchTask } from "../src/workflows.ts
 
 let home = ""
 const user = () => path.join(home, "config.toml")
-beforeAll(() => {
+beforeEach(() => {
   home = mkdtempSync(path.join(tmpdir(), "sf-prompts-"))
   process.env.SF_CONFIG = user()
   setConfigStore(new ConfigStore(user()))
