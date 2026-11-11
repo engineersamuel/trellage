@@ -70,7 +70,7 @@ PRs; a human merges.
 | Part | Where |
 |---|---|
 | Spec Schema, scoring, form draft | `shared/goal.ts` (one Schema for the UI, the API and `sf`) |
-| Specs and run logs | `docs/goals/factory/<id>.json`, `<id>.runs.jsonl` (append only; each line has the factory commit) |
+| Specs and run logs | `docs/goals/factory/<id>.json`, `<id>.runs.jsonl` (append only except unknown-grade regrading; each line has the factory commit) |
 | API | `GET/POST /api/goals`, `GET /api/goals/<id>`, `GET /api/goals/<id>/prompt`, `GET/POST /api/goals/<id>/runs`, `GET /api/runs/<thread>` |
 | Form | Foldkit navbar **◎ Goals**: steps and skills come from `/api/steps`, repos from `/api/folders` |
 | CLI | `sf goal list | show ID | new | save FILE | run ID [--thread T] | check ID THREAD | history ID` |
@@ -135,12 +135,17 @@ numbers the run writes. One grade per report is not a statistic: compare pass ra
 Where grades live (key `threadId|reportCommit|reportStatus|gradingVersion`; a replayed report with the same key is
 dropped, so a restart never duplicates a grade):
 
+- Every minute, the coordinator regrades an `unknown` grade whose PR checks were `PENDING`. Once checks settle,
+  it replaces that grade under the same key, never appending a second grade. Settled grades cannot be superseded,
+  and replaying a completion does not regrade it.
 - **Saved goal** (the thread was created with `goalId`): a `GoalRun` line with a `grade` in
   `docs/goals/factory/<id>.runs.jsonl`. Its `outcome` is the grade status. `sf goal list` and the run limit count only
   lines without a grade; `sf goal history` marks grade lines `grade` with the criteria rate and grading version.
   The thread retains the validated goal snapshot from launch, so edits or deletion cannot change its benchmarks or
   retry policy. Older threads without a snapshot report goal lookup failures as grading errors, never as plain prompts.
   Grades are also saved on the thread, keeping them available through the run API if the goal log cannot be read or written.
+  Regrading atomically replaces the matching grade line using a temporary file and rename; all other lines,
+  including runner lines, remain byte-identical.
 - **Plain prompt**: in the thread's `grades` in `threads.json`; `subject.id` is the first 12 hex digits of the prompt's
   sha256.
 - Each grade links the thread, the factory commit, the report commit, the grading version and its evidence (files read
@@ -149,7 +154,8 @@ dropped, so a restart never duplicates a grade):
   merged.
 
 Improvement policy: a failed grade opens one improvement proposal, a desk approval ("Launch improvement run" or
-"Reject"). Each distinct failed grade can propose new work, even after an earlier proposal was rejected; earlier
+"Reject"), keyed by the grade key. A pending grade that settles to failure opens at most one proposal.
+Each distinct failed grade can propose new work, even after an earlier proposal was rejected; earlier
 proposals retain their own approval routing and retry state. Only a human answer launches it: the answer must have no `by`
 (goal runners always send one), the goal's
 `improve.approval` can only be `"human"`, and the proposal is not part of any goal run's approvals. On "Launch", the

@@ -513,7 +513,7 @@ describe("gradeStatus", () => {
 describe("buildGrade", () => {
   test("goal subject: linked to thread, factory commit, grading version and evidence; results reported separately", () => {
     const g = buildGrade(greenRun, inputs({ benchmarks: { latency: 90 } }), goalSpec)
-    expect(g.key).toBe(`t|c0ffee|done|SUCCESS|${GRADING_VERSION}`)
+    expect(g.key).toBe(`t|c0ffee|done|${GRADING_VERSION}`)
     expect([g.threadId, g.factoryCommit, g.gradingVersion, g.subject]).toEqual([
       "t",
       "f00d",
@@ -630,7 +630,15 @@ describe("grade persistence", () => {
         const t = threads.create("do it")
         const original = { ...buildGrade(greenRun, inputs(), goalSpec), status, threadId: t.id }
         const settled = { ...original, status: "pass" as const, at: original.at + 1 }
-        const line = { at: original.at, factoryCommit: "factory", threadId: t.id, outcome: status, grade: original }
+        const line = {
+          at: original.at,
+          factoryCommit: "factory",
+          threadId: t.id,
+          outcome: status,
+          unmet: [],
+          prUrl: null,
+          grade: original,
+        }
         const replacement = { ...line, at: settled.at, outcome: settled.status, grade: settled }
         const other = { ...line, grade: { ...original, key: "another-report" } }
         const file = path.join(root, "demo.runs.jsonl")
@@ -648,9 +656,7 @@ describe("grade persistence", () => {
           const replaced = status === "unknown"
           expect(goals.appendGrade("demo", replacement, true)).toEqual(replaced ? replacement : null)
           expect(threads.addGrade(t.id, settled, true)).toBe(replaced)
-          expect(readFileSync(file, "utf8")).toBe(
-            replaced ? `${before}${JSON.stringify(replacement)}${after}` : bytes,
-          )
+          expect(readFileSync(file, "utf8")).toBe(replaced ? `${before}${JSON.stringify(replacement)}${after}` : bytes)
           expect(new Threads(root).get(t.id)!.grades).toEqual([replaced ? settled : original])
           expect(readdirSync(root).sort()).toEqual(["demo.json", "demo.runs.jsonl", "threads.json"])
         } finally {

@@ -160,11 +160,16 @@ export class Threads {
     }
   }
 
-  /** Add a grade; false (nothing saved) when the thread is unknown or already has a grade with that key. */
-  addGrade(id: string, g: Grade): boolean {
+  /** Replays are no-ops; only an explicit regrade may replace an unknown grade with the same key. */
+  addGrade(id: string, g: Grade, regrade = false): boolean {
     const t = this.doc.threads.find((x) => x.id === id)
-    if (!t || t.grades?.some((x) => x.key === g.key)) return false
-    ;(t.grades ??= []).push(g)
+    if (!t) return false
+    const grades = (t.grades ??= [])
+    const index = grades.findIndex((x) => x.key === g.key)
+    if (index >= 0) {
+      if (!regrade || grades[index]!.status !== "unknown") return false
+      grades[index] = g
+    } else grades.push(g)
     this.save()
     return true
   }

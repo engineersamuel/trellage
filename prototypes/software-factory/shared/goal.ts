@@ -409,7 +409,7 @@ export const buildGrade = (run: GradedRun, i: GradeInputs, spec?: GoalSpec | nul
   const benchmarks = benchmarkResults(spec, i.benchmarks)
   const errors = [...i.errors, ...(run.prError ? [`PR lookup failed: ${run.prError}`] : [])]
   return {
-    key: `${run.threadId}|${i.report.commit}|${i.report.status}|${prChecks.state}|${GRADING_VERSION}`,
+    key: `${run.threadId}|${i.report.commit}|${i.report.status}|${GRADING_VERSION}`,
     at: i.at,
     subject: i.subject,
     threadId: run.threadId,

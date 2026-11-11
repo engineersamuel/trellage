@@ -147,12 +147,12 @@ class Grading {
     }
   }
 
-  async gradeThread(threadId: string, r: Grade["report"]): Promise<void> {
+  async gradeThread(threadId: string, r: Grade["report"], regrade = false): Promise<void> {
     const t = this.d.threads.get(threadId)
     if (!this.enabled || !t || (r.status !== "done" && r.status !== "blocked")) return
     const { grade, unmet } = await this.evaluate(t, r)
     try {
-      this.recordGrade(this.d.threads.get(t.id) ?? t, grade, unmet)
+      this.recordGrade(this.d.threads.get(t.id) ?? t, grade, unmet, regrade)
     } catch (e) {
       console.error(`grade ${grade.key} not saved: ${errorMessage(e)}`)
     }
@@ -171,31 +171,36 @@ class Grading {
     return item.id
   }
 
-  private recordGrade(t: Thread, g: Grade, unmet: string[]): void {
-    if (this.gradesOf(t).some((x) => x.key === g.key)) return
+  private recordGrade(t: Thread, g: Grade, unmet: string[], regrade: boolean): void {
+    const existing = this.gradesOf(t).find((x) => x.key === g.key)
+    if (existing && (!regrade || existing.status !== "unknown" || g.prChecks.state === "PENDING")) return
     const previous = proposalsOf(t).find((p) => p.sourceKey === g.key)
     const draft = proposeImprovement(g, "", !!t.improvementOf)
     const proposal = previous ?? (draft && { ...draft, approvalId: this.openProposal(t, g) })
     const graded = proposal ? { ...g, proposalId: proposal.approvalId } : g
     if (proposal) this.setProposal(t, proposal)
-    this.d.threads.addGrade(t.id, graded)
-    this.appendGoalGrade(t, graded, unmet)
+    this.d.threads.addGrade(t.id, graded, regrade)
+    this.appendGoalGrade(t, graded, unmet, regrade)
     this.d.publish("factory.graded", { threadId: t.id, key: g.key, status: g.status })
     this.d.publish("factory.thread_updated", { threadId: t.id })
   }
 
-  private appendGoalGrade(t: Thread, g: Grade, unmet: string[]): void {
+  private appendGoalGrade(t: Thread, g: Grade, unmet: string[], regrade: boolean): void {
     if (!t.goalId) return
     try {
-      this.d.goals.appendGrade(t.goalId, {
-        at: g.at,
-        factoryCommit: g.factoryCommit,
-        threadId: t.id,
-        outcome: g.status,
-        unmet,
-        prUrl: g.prChecks.url,
-        grade: g,
-      })
+      this.d.goals.appendGrade(
+        t.goalId,
+        {
+          at: g.at,
+          factoryCommit: g.factoryCommit,
+          threadId: t.id,
+          outcome: g.status,
+          unmet,
+          prUrl: g.prChecks.url,
+          grade: g,
+        },
+        regrade,
+      )
     } catch (e) {
       console.error(`grade ${g.key} saved on thread but not goal log: ${errorMessage(e)}`)
     }
@@ -295,7 +300,7 @@ class Grading {
     for (const t of this.d.threads.list()) {
       const latest = this.gradesOf(t).reduce<Grade | null>((a, g) => (!a || g.at >= a.at ? g : a), null)
       if (latest?.status === "unknown" && latest.prChecks.state === "PENDING")
-        await this.gradeThread(t.id, latest.report)
+        await this.gradeThread(t.id, latest.report, true)
     }
   }
 
