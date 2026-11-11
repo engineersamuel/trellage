@@ -17,7 +17,6 @@ import {
 } from "../../shared/goal.ts"
 import type { Approval, Approvals } from "./approvals.ts"
 import { checkoutCommit, type Goals } from "./goals.ts"
-import type { Report } from "./report.ts"
 import { artifact, criteriaResults } from "./sdlc.ts"
 import type { Thread, Threads } from "./threads.ts"
 
@@ -96,7 +95,7 @@ class Grading {
     }
   }
 
-  private gradeBase(t: Thread, r: Report): GradeInputs {
+  private gradeBase(t: Thread, r: Grade["report"]): GradeInputs {
     return {
       at: Date.now(),
       factoryCommit: checkoutCommit(this.d.factoryDir),
@@ -136,7 +135,7 @@ class Grading {
     return spec
   }
 
-  private async evaluate(t: Thread, r: Report): Promise<{ grade: Grade; unmet: string[] }> {
+  private async evaluate(t: Thread, r: Grade["report"]): Promise<{ grade: Grade; unmet: string[] }> {
     const base = this.gradeBase(t, r)
     const spec = await orNull(`goal ${t.goalId}`, base.errors, () => this.goalOf(t))
     const run = await orNull(`run ${t.id}`, base.errors, () => this.d.runRecord(t.id))
@@ -148,7 +147,7 @@ class Grading {
     }
   }
 
-  async gradeThread(threadId: string, r: Report): Promise<void> {
+  async gradeThread(threadId: string, r: Grade["report"]): Promise<void> {
     const t = this.d.threads.get(threadId)
     if (!this.enabled || !t || (r.status !== "done" && r.status !== "blocked")) return
     const { grade, unmet } = await this.evaluate(t, r)
