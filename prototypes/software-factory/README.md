@@ -154,7 +154,9 @@ proposals retain their own approval routing and retry state. Only a human answer
 (goal runners always send one), the goal's
 `improve.approval` can only be `"human"`, and the proposal is not part of any goal run's approvals. On "Launch", the
 coordinator starts one Factory improvement conversation in the factory checkout. A failed launch is retried at most
-`improve.maxRetries` times (default 1). A run started to improve the Factory never opens a proposal of its own, and
+`improve.maxRetries` times (default 1). This must be a whole number >= 0; goal saves and Foldkit drafts reject
+fractional, negative, or nonfinite counts rather than rounding them. Zero allows only the initial launch.
+A run started to improve the Factory never opens a proposal of its own, and
 merging its PR stays human. Risk: the approval API is unauthenticated, as for every approval; any local caller that
 omits `by` counts as the human.
 

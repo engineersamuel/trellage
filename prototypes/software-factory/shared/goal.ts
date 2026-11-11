@@ -119,6 +119,8 @@ export const goalProblems = (g: GoalSpec, knownSteps?: readonly string[]): strin
     if (c.min < 0 || (c.max !== undefined && c.max < c.min)) out.push(`step ${s}: need 0 <= min <= max`)
   }
   if (g.limits.runs < 1 || g.limits.minutesPerRun < 1) out.push("limits must be at least 1")
+  if (!Number.isInteger(g.improve.maxRetries) || g.improve.maxRetries < 0)
+    out.push("improve.maxRetries must be a whole number >= 0")
   return out
 }
 
@@ -492,7 +494,7 @@ const closedReason = (
   if (sourceIsImprovement) return "improvement runs never propose more work"
   if (!p) return "no proposal"
   if (p.status === "launched" || p.status === "rejected" || p.status === "exhausted") return `proposal is ${p.status}`
-  return p.attempts >= 1 + policy.maxRetries ? `exhausted: ${p.attempts} launch attempts` : null
+  return p.attempts >= 1 + Math.floor(policy.maxRetries) ? `exhausted: ${p.attempts} launch attempts` : null
 }
 
 /** Whether to launch improvement work now. Only a recorded human answer of the first option launches, at most 1 + maxRetries times. */
