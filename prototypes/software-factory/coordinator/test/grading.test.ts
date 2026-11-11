@@ -387,6 +387,26 @@ describe("report grading orchestration", () => {
 })
 
 describe("settling grades and interrupted launches", () => {
+  test.each([true, false])("regrades a persisted report summary after restart (saved goal: %s)", async (saved) => {
+    const f = fixture(saved)
+    f.run.pr!.checks = "PENDING"
+    await f.grading.gradeThread(f.t.id, report)
+    const threads = new Threads(f.root)
+    const restarted = makeGrading({ ...f.deps, threads })
+    const t = threads.get(f.t.id)!
+    const summary = restarted.gradesOf(t)[0]!.report
+    expect(summary).toEqual({ status: "done", commit: report.commit })
+
+    f.run.pr!.checks = "SUCCESS"
+    await restarted.gradeThread(t.id, summary)
+    await restarted.gradeThread(t.id, summary)
+    const grades = new Threads(f.root).get(t.id)!.grades!
+    expect(grades.map((g) => g.status)).toEqual(["unknown", "pass"])
+    expect(grades[1]!.report).toEqual(summary)
+    expect(f.approvals.list()).toHaveLength(0)
+    expect(f.launches).toHaveLength(0)
+  })
+
   test("a grade taken while checks are PENDING is superseded when they fail", async () => {
     const f = fixture()
     f.run.pr!.checks = "PENDING"
