@@ -1,10 +1,31 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync } from "node:fs"
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { draftToSpec, emptyDraft, goalProblems, goalUnmet, specToDraft, splitPending, stopReason, type GoalSpec, type Run } from "../../shared/goal.ts"
+import {
+  buildGrade,
+  decodeGoal,
+  decodeGoalRun,
+  draftToSpec,
+  emptyDraft,
+  goalProblems,
+  goalUnmet,
+  GRADING_VERSION,
+  gradeStatus,
+  nextImprovementAction,
+  proposeImprovement,
+  specToDraft,
+  splitPending,
+  stopReason,
+  type GoalSpec,
+  type Grade,
+  type GradeInputs,
+  type Run,
+} from "../../shared/goal.ts"
 import { checksState, pastWorkers, runWorkers } from "../src/run.ts"
-import { decodeGoalOrThrow, loopPrompt, makeGoals } from "../src/goals.ts"
+import { decodeGoalOrThrow, goalsDir, loopPrompt, makeGoals } from "../src/goals.ts"
+import { criteriaResults, unprovenCriteria } from "../src/sdlc.ts"
+import { Threads } from "../src/threads.ts"
 import { parseSteps, scoreCard } from "../goal-cli.ts"
 
 describe("runWorkers", () => {
@@ -194,5 +215,196 @@ describe("sdlc expectations", () => {
       "tier T2, expected at most T1",
     ])
     expect(goalUnmet(run, e)).toEqual(["no SDLC record (sdlc_plan never ran)"])
+  })
+})
+
+// ---- Grading (AC-1, AC-3, AC-4, AC-6, AC-7, AC-8) ----
+
+const inputs = (over: Partial<GradeInputs> = {}): GradeInputs => ({
+  at: 10,
+  factoryCommit: "f00d",
+  subject: { kind: "goal", id: "demo" },
+  report: { status: "done", commit: "c0ffee" },
+  criteria: { "AC-1": "pass", "AC-2": "pass" },
+  benchmarks: null,
+  evidence: [{ kind: "file", ref: ".factory/evidence.md", sha256: "abc" }],
+  quality: [],
+  errors: [],
+  ...over,
+})
+const greenRun: Run = { ...run, pr: { ...run.pr!, checks: "SUCCESS" } }
+const goalSpec = decodeGoalOrThrow({ id: "demo", repo: "/r", prompt: "p", expect: { pr: { checks: "SUCCESS" }, benchmarks: [{ id: "latency", baseline: 100, higherIsBetter: false }] } })
+
+describe("criteriaResults", () => {
+  test("pass, fail and missing per criterion; unprovenCriteria keeps its output", () => {
+    const evidence = "AC-1: PASS — make test — ok\nAC-2: FAIL — make lint — 3 errors\n"
+    expect(criteriaResults(["a", "b", "c"], evidence)).toEqual({ "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" })
+    expect(criteriaResults(["a"], null)).toEqual({ "AC-1": "missing" })
+    expect(unprovenCriteria(["a", "b", "c"], evidence)).toEqual(["AC-2", "AC-3"])
+  })
+})
+
+describe("gradeStatus", () => {
+  const base = { criteria: { "AC-1": "pass" as const }, prChecks: { required: true, state: "SUCCESS" as const }, benchmarks: [], errors: [], prRequired: true, prFound: true }
+  test.each([
+    ["all required results pass", {}, "pass"],
+    ["a failed criterion fails", { criteria: { "AC-1": "fail", "AC-2": "missing" } }, "fail"],
+    ["a failed PR check fails", { prChecks: { required: false, state: "FAILURE" } }, "fail"],
+    ["a regressed benchmark fails", { benchmarks: [{ value: 120, regressed: true }] }, "fail"],
+    ["fail beats a grader error", { criteria: { "AC-1": "fail" }, errors: ["gh: timeout"] }, "fail"],
+    ["a grader error is error, not fail", { errors: ["gh: timeout"], prFound: false, prChecks: { required: true, state: "missing" } }, "error"],
+    ["a missing criterion is unknown", { criteria: { "AC-1": "pass", "AC-2": "missing" } }, "unknown"],
+    ["no criteria is unknown", { criteria: {} }, "unknown"],
+    ["pending required checks are unknown", { prChecks: { required: true, state: "PENDING" } }, "unknown"],
+    ["no PR when one is required is unknown", { prFound: false, prChecks: { required: false, state: "missing" } }, "unknown"],
+    ["a benchmark that did not run is unknown", { benchmarks: [{ value: null, regressed: null }] }, "unknown"],
+    ["NONE checks that are not required pass", { prChecks: { required: false, state: "NONE" } }, "pass"],
+  ] as const)("%s", (_name, over, want) => {
+    expect(gradeStatus({ ...base, ...over } as Parameters<typeof gradeStatus>[0])).toBe(want)
+  })
+})
+
+describe("buildGrade", () => {
+  test("goal subject: linked to thread, factory commit, grading version and evidence; results reported separately", () => {
+    const g = buildGrade(greenRun, inputs({ benchmarks: { latency: 90 } }), goalSpec)
+    expect(g.key).toBe(`t|c0ffee|done|${GRADING_VERSION}`)
+    expect([g.threadId, g.factoryCommit, g.gradingVersion, g.subject]).toEqual(["t", "f00d", GRADING_VERSION, { kind: "goal", id: "demo" }])
+    expect(g.evidence).toEqual([
+      { kind: "file", ref: ".factory/evidence.md", sha256: "abc" },
+      { kind: "pr", ref: "u" },
+      { kind: "commit", ref: "c0ffee" },
+    ])
+    expect(g.criteria).toEqual({ results: { "AC-1": "pass", "AC-2": "pass" }, passed: 2, evaluated: 2, total: 2, rate: 1 })
+    expect(g.prChecks).toEqual({ required: true, state: "SUCCESS", url: "u" })
+    expect(g.benchmarks).toEqual([{ id: "latency", baseline: 100, value: 90, regressed: false }])
+    expect(g.status).toBe("pass")
+  })
+  test("criteria rate is passed / evaluated; a regression against the fixed baseline fails", () => {
+    const g = buildGrade(greenRun, inputs({ criteria: { "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" }, benchmarks: { latency: 130 } }), goalSpec)
+    expect(g.criteria).toMatchObject({ passed: 1, evaluated: 2, total: 3, rate: 0.5 })
+    expect(g.benchmarks[0]?.regressed).toBe(true)
+    expect(g.status).toBe("fail")
+  })
+  test("prompt subject: PR required when done, checks required only when CI reported", () => {
+    const prompt = inputs({ subject: { kind: "prompt", id: "0123456789ab" } })
+    const g = buildGrade({ ...run, pr: { ...run.pr!, checks: "NONE" } }, prompt)
+    expect([g.subject.kind, g.threadId, g.factoryCommit, g.gradingVersion]).toEqual(["prompt", "t", "f00d", GRADING_VERSION])
+    expect(g.prChecks).toEqual({ required: false, state: "NONE", url: "u" })
+    expect(g.benchmarks).toEqual([])
+    expect(g.status).toBe("pass")
+    expect(buildGrade({ ...run, pr: null }, prompt).status).toBe("unknown")
+    expect(buildGrade({ ...run, pr: null }, inputs({ subject: prompt.subject, report: { status: "blocked", commit: "c0ffee" } })).status).toBe("pass")
+  })
+  test("a gh error is a grading error, not a failed grade or 'no PR'", () => {
+    const g = buildGrade({ ...run, pr: null, prError: "gh: HTTP 502" }, inputs(), goalSpec)
+    expect(g.status).toBe("error")
+    expect(g.errors).toEqual(["PR lookup failed: gh: HTTP 502"])
+    expect(goalUnmet({ ...run, pr: null, prError: "gh: HTTP 502" }, goalSpec.expect)).toContain("PR lookup failed: gh: HTTP 502")
+    expect(goalUnmet({ ...run, pr: null, prError: "gh: HTTP 502" }, goalSpec.expect)).not.toContain("no PR for the branch")
+  })
+  test("a model-judged quality score never changes the status", () => {
+    const judged = [{ score: 0, scale: "0-10", judge: { model: "m", harness: "h" }, evidence: "quality.json" }]
+    for (const over of [{}, { criteria: { "AC-1": "fail" as const } }, { criteria: { "AC-1": "missing" as const } }]) {
+      const plain = buildGrade(greenRun, inputs(over), goalSpec)
+      const withScore = buildGrade(greenRun, inputs({ ...over, quality: judged }), goalSpec)
+      expect(withScore.status).toBe(plain.status)
+      expect(withScore.quality).toEqual(judged)
+    }
+  })
+})
+
+describe("grade persistence", () => {
+  test("goal: appendGrade round-trips, a replayed completion adds no second grade, run counts ignore grade lines", () => {
+    const g = makeGoals(path.join(mkdtempSync(path.join(tmpdir(), "sf-grades-")), "goals"), ["implement"])
+    g.save({ id: "demo", repo: "/r", prompt: "p" })
+    g.appendRun("demo", { at: 1, factoryCommit: "abc", threadId: "t", outcome: "blocked" })
+    const grade = buildGrade(greenRun, inputs(), goalSpec)
+    const line = { at: grade.at, factoryCommit: grade.factoryCommit, threadId: grade.threadId, outcome: grade.status, grade }
+    expect(g.appendGrade("demo", line)?.grade?.key).toBe(grade.key)
+    expect(g.appendGrade("demo", line)).toBeNull()
+    expect(g.runs("demo").filter((r) => r.grade).map((r) => r.grade!.key)).toEqual([grade.key])
+    const [listed] = g.list()
+    expect([listed?.runs, listed?.last?.outcome, listed?.grades.map((x) => x.key)]).toEqual([1, "blocked", [grade.key]])
+    // The same thread and commit reporting again with another status is a second, real grading.
+    const later = buildGrade(greenRun, inputs({ report: { status: "blocked", commit: "c0ffee" } }), goalSpec)
+    expect(g.appendGrade("demo", { ...line, grade: later })).not.toBeNull()
+    expect(g.list()[0]?.grades).toHaveLength(2)
+  })
+  test("prompt: Threads.addGrade stores one grade per key, across a restart", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "sf-thread-grades-"))
+    const th = new Threads(root)
+    const t = th.create("do it")
+    const grade = buildGrade(greenRun, inputs({ subject: { kind: "prompt", id: "abc" } }))
+    expect(th.addGrade(t.id, grade)).toBe(true)
+    expect(th.addGrade(t.id, grade)).toBe(false)
+    expect(new Threads(root).addGrade(t.id, grade)).toBe(false)
+    expect(new Threads(root).get(t.id)?.grades?.map((x) => x.key)).toEqual([grade.key])
+  })
+})
+
+describe("improvement proposals", () => {
+  const failed: Grade = buildGrade(greenRun, inputs({ criteria: { "AC-1": "fail" } }), goalSpec)
+  const policy = goalSpec.improve
+  const approval = (over: Partial<{ status: string; answer: string | null; answeredBy: string | null }> = {}) => ({
+    status: "answered",
+    answer: "Launch improvement run",
+    options: ["Launch improvement run", "Reject"],
+    answeredBy: null,
+    ...over,
+  })
+  const proposal = proposeImprovement(failed, "ap1", false)!
+
+  test("a failed grade proposes; other grades and improvement runs never do", () => {
+    expect(proposal).toEqual({ sourceKey: failed.key, sourceThreadId: "t", approvalId: "ap1", status: "proposed", approvedBy: null, attempts: 0, launchedThreadId: null, lastError: null })
+    expect(proposeImprovement(buildGrade(greenRun, inputs(), goalSpec), "ap1", false)).toBeNull()
+    expect(proposeImprovement({ ...failed, status: "error" }, "ap1", false)).toBeNull()
+    expect(proposeImprovement(failed, "ap1", true)).toBeNull()
+  })
+  test("no improvement run starts before a human approval", () => {
+    expect(nextImprovementAction(proposal, policy, undefined, false).kind).toBe("wait")
+    expect(nextImprovementAction(proposal, policy, approval({ status: "pending", answer: null }), false).kind).toBe("wait")
+    expect(nextImprovementAction(proposal, policy, approval(), false).kind).toBe("launch")
+  })
+  test("the goal auto-approval policy cannot answer it", () => {
+    expect(nextImprovementAction(proposal, policy, approval({ answeredBy: "goal demo (policy other=auto)" }), false).kind).toBe("refuse")
+    expect(nextImprovementAction(proposal, policy, approval({ answer: "Reject" }), false).kind).toBe("refuse")
+    expect(decodeGoal({ id: "demo", repo: "/r", prompt: "p", improve: { approval: "auto" } })._tag).toBe("Failure")
+  })
+  test("retries stop at 1 + maxRetries launch attempts; launched proposals never relaunch", () => {
+    expect(policy).toEqual({ approval: "human", maxRetries: 1 })
+    expect(nextImprovementAction({ ...proposal, status: "launch-failed", attempts: 1 }, policy, approval(), false).kind).toBe("launch")
+    expect(nextImprovementAction({ ...proposal, status: "launch-failed", attempts: 2 }, policy, approval(), false).kind).toBe("refuse")
+    expect(nextImprovementAction({ ...proposal, status: "launch-failed", attempts: 1 }, { approval: "human", maxRetries: 0 }, approval(), false).kind).toBe("refuse")
+    expect(nextImprovementAction({ ...proposal, status: "launched", attempts: 1 }, policy, approval(), false).kind).toBe("refuse")
+  })
+  test("an improvement thread's own grade never launches more work", () => {
+    expect(nextImprovementAction(proposal, policy, approval(), true).kind).toBe("refuse")
+    expect(nextImprovementAction(null, policy, approval(), false).kind).toBe("refuse")
+  })
+})
+
+describe("backward compatibility", () => {
+  test("verbatim pre-change run lines decode", () => {
+    const lines = [
+      '{"at":1794170801542,"factoryCommit":"6703f38185db","threadId":"a63a0a8b-ffeb-4778-b4ef-dfec57c93731","outcome":"blocked","unmet":["step security never ran","step finish never ran","skill security-audit never invoked","gate supplyChain is failed, expected done","no PR for the branch"],"prUrl":null}',
+      '{"at":1794153034077,"factoryCommit":"0d84ca9b93d0","threadId":"732d73de-74be-43e6-8d09-3dd04dd5ed1d","outcome":"timeout","unmet":["step finish ran 2x, expected at most 1"],"prUrl":"https://github.com/engineersamuel/copilot-proxy-rs/pull/60"}',
+    ]
+    for (const l of lines) {
+      const exit = decodeGoalRun(JSON.parse(l))
+      expect(exit._tag).toBe("Success")
+      if (exit._tag === "Success") expect(exit.value.grade).toBeUndefined()
+    }
+  })
+  test("every saved spec and run log in docs/goals/factory decodes", () => {
+    const dir = goalsDir({})
+    const names = readdirSync(dir)
+    expect(names.filter((n) => n.endsWith(".json")).length).toBeGreaterThan(0)
+    for (const n of names.filter((n) => n.endsWith(".json"))) {
+      const spec = decodeGoalOrThrow(JSON.parse(readFileSync(path.join(dir, n), "utf8")))
+      expect(spec.improve).toEqual({ approval: "human", maxRetries: 1 })
+      expect(spec.expect.benchmarks).toEqual([])
+    }
+    for (const n of names.filter((n) => n.endsWith(".runs.jsonl")))
+      for (const l of readFileSync(path.join(dir, n), "utf8").split("\n").filter((x) => x.trim())) expect(decodeGoalRun(JSON.parse(l))._tag).toBe("Success")
   })
 })
