@@ -7,6 +7,8 @@ root="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
 
+essential() { [[ "${TRELLAGE_TEST_SCOPE-}" == essential ]]; }
+
 fail() {
   printf 'cldx contract failed: %s\n' "$1" >&2
   exit 1
@@ -289,7 +291,10 @@ for asset in rundown.md NOTICE.md; do
     || fail "installed asset differs: $asset"
 done
 
+# Skipped in essential scope: repeat install.
+if ! essential; then
 "$installer" >"$fixture_root/reinstall.out" || fail 'repeat install failed'
+fi
 
 "$command_path" list >"$fixture_root/list.out" || fail 'list failed'
 grep -Fqx $'default\tIsolated Claude Code for autonomous engineering and Rundown status output, routed keylessly to Claude Sonnet 5.5 with Opus 5.5 plan mode through the local proxy.' \
@@ -328,6 +333,8 @@ jq -e '
   })
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'
 
+# Skipped in essential scope: drifted-version headless list and invalid catalog rejection.
+if ! essential; then
 FAKE_CLAUDE_VERSION=2.1.230 "$command_path" list --json >"$fixture_root/list-drift.json" \
   || fail 'drifted JSON list failed'
 jq -e '
@@ -372,6 +379,7 @@ fi
 grep -Fq 'cldx: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err" \
   || fail 'unsupported Trellage event contract diagnostic differs'
 mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
+fi
 
 harness_update_log="$fixture_root/harness-update.log"
 run_harness_update() {
@@ -380,6 +388,8 @@ run_harness_update() {
     "$command_path" harness-update "$@"
 }
 
+# Skipped in essential scope: harness update output, exit status, and argument edge cases.
+if ! essential; then
 printf 'Claude updated\n' >"$fixture_root/updater-stdout.txt"
 FAKE_PROXY_HEALTH=down FAKE_CLAUDE_STDOUT_FILE="$fixture_root/updater-stdout.txt" \
   run_harness_update >"$fixture_root/harness-update.out" \
@@ -417,6 +427,7 @@ for argument in default --all --check; do
 done
 [[ "$(wc -l <"$harness_update_log" | tr -d ' ')" == "$calls_before" ]] \
   || fail 'invalid harness update arguments reached Claude'
+fi
 
 trx_run_claude default -p 'canonical-before-setup-probe' \
   >"$fixture_root/canonical-before-setup.out" 2>"$fixture_root/canonical-before-setup.err" \
@@ -498,10 +509,13 @@ cmp -s "$session_bridge" "$root/../../scripts/trellage-session-bridge.py" \
 if grep -Fq 'pane.report_agent_session' "$session_bridge"; then
   fail 'session bridge includes forbidden agent-session reporting'
 fi
+# Skipped in essential scope: repeat setup idempotence.
+if ! essential; then
 settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"
 "$command_path" setup >"$fixture_root/setup-repeat.out" || fail 'repeat setup failed'
 [[ "$(shasum -a 256 "$settings" | awk '{print $1}')" == "$settings_hash" ]] \
   || fail 'repeated setup changed session bridge hook settings'
+fi
 
 trx_run_claude default || fail 'bare canonical launch failed'
 jq -s -e '
@@ -592,11 +606,14 @@ grep -Fqx 'ANTHROPIC_AUTH_TOKEN=trellage-local-proxy' "$env_dump" \
 grep -Fqx 'ANTHROPIC_BASE_URL=http://127.0.0.1:8080' "$env_dump" \
   || fail 'launch did not set the managed ANTHROPIC_BASE_URL'
 
+# Skipped in essential scope: explicit model override variant.
+if ! essential; then
 trx_run_claude default --model claude-sonnet-5 -p override \
   || fail 'model override launch failed'
 jq -s -e '
   .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-sonnet-5", "--effort", "medium", "-p", "override"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit model override was changed'
+fi
 
 trx_run_claude default --plan -p planning \
   || fail 'canonical plan launch failed'
@@ -604,6 +621,8 @@ jq -s -e '
   .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "max", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5.5", "--permission-mode", "plan", "-p", "planning"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'canonical plan launch did not apply the plan policy'
 
+# Skipped in essential scope: explicit model and effort variants of plan mode.
+if ! essential; then
 trx_run_claude default --model opusplan --plan -p planning \
   || fail 'explicit model and plan mode launch failed'
 jq -s -e '
@@ -615,6 +634,7 @@ trx_run_claude default --plan --effort=high -p planning \
 jq -s -e '
   .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "high", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5.5", "--permission-mode", "plan", "-p", "planning"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit plan effort was changed'
+fi
 
 headless_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
 headless_initial_stream="$fixture_root/headless-initial.jsonl"
@@ -649,6 +669,8 @@ jq -s -e '
   .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5.5", "--effort", "medium", "--output-format", "stream-json", "--verbose", "-p", "machine output"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'Claude JSONL argument vector differs'
 
+# Skipped in essential scope: headless resume and malformed-output variants.
+if ! essential; then
 headless_resume_stream="$fixture_root/headless-resume.jsonl"
 printf '%s\n' \
   '{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","model":"claude-sonnet-5.5"}' \
@@ -682,6 +704,7 @@ cmp -s "$headless_malformed_stream" "$fixture_root/headless-malformed.out" \
 if jq -se 'all(.[]; type == "object")' "$fixture_root/headless-malformed.out" >/dev/null 2>&1; then
   fail 'malformed Claude output passed JSONL validation'
 fi
+fi
 
 status=0
 FAKE_CLAUDE_EXIT_STATUS=37 trx_run_claude default -p exit-probe || status=$?
@@ -708,6 +731,8 @@ grep -Fqx TERM "$FAKE_CLAUDE_SIGNAL_LOG" \
 grep -Fq 'cldx doctor: OK (2.1.233, claude-sonnet-5.5)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
 
+# Skipped in essential scope: doctor failure diagnostics (missing Python, missing model, bad proxy health).
+if ! essential; then
 no_python_bin="$fixture_root/no-python-bin"
 mkdir "$no_python_bin"
 for command_name in bash dirname jq readlink; do
@@ -734,6 +759,7 @@ FAKE_PROXY_HEALTH_JSON=invalid "$command_path" doctor \
   && fail 'doctor accepted invalid proxy health JSON'
 grep -Fq 'copilot-proxy-rs health response is invalid' "$fixture_root/health-json.out" \
   || fail 'proxy health JSON error differs'
+fi
 
 jq '.theme = "light" | .preserve = "user-state" | .hasCompletedOnboarding = false' \
   "$profile_home/.claude.json" >"$fixture_root/onboarding.json"
@@ -777,6 +803,8 @@ jq -e '.statusLine.command == "echo custom"' "$settings" >/dev/null \
   || fail 'custom Claude statusLine was replaced'
 [[ "$(<"$profile_home/unrelated-state")" == preserve ]] \
   || fail 'repair changed unrelated profile state'
+# Skipped in essential scope: repeat repair idempotence and missing Claude Code diagnostic.
+if ! essential; then
 settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"
 "$command_path" repair >"$fixture_root/repair-repeat.out" || fail 'repeat repair failed'
 [[ "$(shasum -a 256 "$settings" | awk '{print $1}')" == "$settings_hash" ]] \
@@ -788,6 +816,7 @@ mv "$fake_bin/claude" "$fake_bin/claude.absent"
 grep -Fq 'required command not found: claude' "$fixture_root/missing.out" \
   || fail 'missing Claude Code error differs'
 mv "$fake_bin/claude.absent" "$fake_bin/claude"
+fi
 
 mv "$settings" "$fixture_root/valid-settings.json"
 ln -s /dev/null "$settings"
@@ -797,6 +826,8 @@ grep -Fq 'unsafe Claude settings' "$fixture_root/settings-symlink.err" \
   || fail 'symlinked Claude settings diagnostic differs'
 rm "$settings"
 mv "$fixture_root/valid-settings.json" "$settings"
+# Skipped in essential scope: malformed settings.json permutations for repair.
+if ! essential; then
 printf '{invalid json\n' >"$settings"
 "$command_path" repair >"$fixture_root/settings-invalid.out" 2>"$fixture_root/settings-invalid.err" \
   && fail 'repair accepted invalid Claude settings'
@@ -810,6 +841,7 @@ grep -Fq 'invalid Claude settings' "$fixture_root/settings-multiple.err" \
   || fail 'multiple Claude settings diagnostic differs'
 [[ "$(grep -Fxc '{}' "$settings")" == 2 ]] \
   || fail 'multiple Claude settings documents were replaced'
+fi
 printf '{"outputStyle":"Explanatory","preserve":"user-state"}\n' >"$settings"
 
 rm -f "$output_style"
@@ -819,19 +851,25 @@ ln -s /dev/null "$output_style"
 grep -Fq 'unsafe managed output style' "$fixture_root/style-symlink.err" \
   || fail 'symlinked output style diagnostic differs'
 rm -f "$output_style"
+# Skipped in essential scope: stale output style refresh.
+if ! essential; then
 printf 'stale\n' >"$output_style"
 "$command_path" repair >"$fixture_root/style-repair.out" || fail 'repair failed'
 cmp -s "$output_style" "$root/assets/rundown/rundown.md" \
   || fail 'repair did not refresh the output style'
+fi
 
 
-# --- delegation: cldx must actually call the shared native Claude runtime,
-# not reimplement its logic. Swap the installed shared runtime for a stub
-# and confirm cldx's own output changes accordingly.
 native_claude="$runtime_root/lib/native-claude"
 export TRELLAGE_CLAUDE_LAUNCHER_NAME=cldx
 TRELLAGE_CLAUDE_RUNTIME_ROOT="$(CDPATH='' cd -P -- "$runtime_root" && pwd)"
 export TRELLAGE_CLAUDE_RUNTIME_ROOT
+
+# --- delegation: cldx must actually call the shared native Claude runtime,
+# not reimplement its logic. Swap the installed shared runtime for a stub
+# and confirm cldx's own output changes accordingly.
+# Skipped in essential scope: delegation stub checks.
+if ! essential; then
 cp "$native_claude" "$fixture_root/native-claude.real"
 cat >"$native_claude" <<'STUB'
 #!/usr/bin/env bash
@@ -850,6 +888,7 @@ chmod 0755 "$native_claude"
   || fail 'doctor failed after restoring the shared native Claude runtime'
 grep -Fq 'cldx doctor: OK (2.1.233, claude-sonnet-5.5)' "$fixture_root/delegation-restored.out" \
   || fail 'doctor output differs after restoring the shared native Claude runtime'
+fi
 
 # --- prepare/doctor must scrub the provider/token environment before
 # probing `claude --version`, not only before launch's final exec, since a
@@ -939,6 +978,8 @@ mv "$fixture_root/settings-with-unrelated.json" "$settings"
 jq -e 'any(.hooks.SessionStart[]; any(.hooks[]; .command == "unrelated-user-hook"))' \
   "$settings" >/dev/null || fail 'bridge fixture setup: unrelated hook missing'
 
+# Skipped in essential scope: doctor bridge-mismatch diagnostic.
+if ! essential; then
 "$native_claude" doctor --home "$profile_home" \
   --marker "$profile_root/.managed-by-trellage-claude-profiles" \
   --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
@@ -946,6 +987,7 @@ jq -e 'any(.hooks.SessionStart[]; any(.hooks[]; .command == "unrelated-user-hook
   && fail 'doctor accepted --bridge disabled while the bridge was installed'
 grep -Fq 'session bridge is still installed' "$fixture_root/bridge-doctor-mismatch.out" \
   || fail 'bridge-still-installed diagnostic differs'
+fi
 
 "$native_claude" prepare --home "$profile_home" \
   --marker "$profile_root/.managed-by-trellage-claude-profiles" \
@@ -967,6 +1009,8 @@ jq -e '[.hooks.SessionStart[]?.hooks[]?
   --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
   >"$fixture_root/bridge-doctor-disabled.out" \
   || fail 'doctor rejected a correctly disabled bridge'
+# Skipped in essential scope: doctor bridge-missing diagnostic.
+if ! essential; then
 "$native_claude" doctor --home "$profile_home" \
   --marker "$profile_root/.managed-by-trellage-claude-profiles" \
   --marker-value trellage-claude-profile-v1 --bridge enabled --profile default \
@@ -974,6 +1018,7 @@ jq -e '[.hooks.SessionStart[]?.hooks[]?
   && fail 'doctor accepted --bridge enabled while the bridge was absent'
 grep -Fq 'session bridge is missing' "$fixture_root/bridge-doctor-enabled.out" \
   || fail 'bridge-missing diagnostic differs'
+fi
 
 "$command_path" repair >"$fixture_root/bridge-restore.out" || fail 'repair failed to reinstall the bridge'
 [[ -f "$bridge_path" && ! -L "$bridge_path" && -x "$bridge_path" ]] \
@@ -1014,6 +1059,8 @@ grep -Fq 'stale session bridge hook for another profile is installed' \
   "$fixture_root/stale-profile-doctor.out" \
   || fail 'stale-other-profile doctor diagnostic differs'
 
+# Skipped in essential scope: stale other-profile hook at launch (second variant).
+if ! essential; then
 "$native_claude" launch --home "$profile_home" \
   --marker "$profile_root/.managed-by-trellage-claude-profiles" \
   --marker-value trellage-claude-profile-v1 --bridge enabled --profile default \
@@ -1022,6 +1069,7 @@ grep -Fq 'stale session bridge hook for another profile is installed' \
 grep -Fq 'stale session bridge hook for another profile is installed' \
   "$fixture_root/stale-profile-launch.err" \
   || fail 'stale-other-profile launch diagnostic differs'
+fi
 
 "$command_path" repair >"$fixture_root/stale-profile-repair.out" \
   || fail 'repair failed to prune the stale other-profile hook'
@@ -1037,6 +1085,8 @@ jq -e '[.hooks.SessionStart[]?.hooks[]?
   | length == 1' "$settings" >/dev/null \
   || fail 'repair did not leave exactly one current managed hook'
 
+# Skipped in essential scope: stale other-profile hook with bridge disabled (third variant).
+if ! essential; then
 jq --arg cmd "$stale_hook_command" '.hooks.SessionStart += [
   {"matcher": "*", "hooks": [{"type": "command", "command": $cmd}]}
 ]' "$settings" >"$fixture_root/settings-with-stale-profile-2.json"
@@ -1053,6 +1103,7 @@ jq -e '[.hooks.SessionStart[]?.hooks[]?
 jq -e 'any(.hooks.SessionStart[]; any(.hooks[]; .command == "unrelated-user-hook"))' \
   "$settings" >/dev/null \
   || fail 'prepare --bridge disabled removed an unrelated hook while pruning a stale profile'
+fi
 
 "$command_path" repair >"$fixture_root/bridge-restore-3.out" || fail 'repair failed to reinstall the bridge'
 
@@ -1095,6 +1146,8 @@ grep -Fq 'session bridge hook is still installed' "$fixture_root/launch-stale-ho
 [[ -f "$bridge_path" && ! -L "$bridge_path" && -x "$bridge_path" ]] \
   || fail 'repair did not reinstall the session bridge executable after launch checks'
 
+# Skipped in essential scope: malformed, boolean-false, missing, and symlinked settings.json permutations for doctor/launch.
+if ! essential; then
 # --- doctor_bridge_state must not silently treat a malformed, missing, or
 # symlinked settings.json as "zero managed hooks" in --bridge disabled
 # mode. An owned profile always has a settings.json from prepare's
@@ -1176,6 +1229,7 @@ mv "$fixture_root/settings-before-symlink-safety.json" "$settings"
   || fail 'repair failed to reinstall the bridge after settings-safety checks'
 [[ -f "$bridge_path" && ! -L "$bridge_path" && -x "$bridge_path" ]] \
   || fail 'repair did not reinstall the session bridge executable after settings-safety checks'
+fi
 
 # --- --home itself must be validated, not only the marker's parent chain.
 # Replacing the profile home with a symlink must be refused before any
@@ -1199,6 +1253,8 @@ grep -Fq 'unsafe profile home' "$fixture_root/symlinked-home-doctor.err" \
 grep -Fq 'unsafe profile home' "$fixture_root/symlinked-home-launch.err" \
   || fail 'symlinked --home launch diagnostic differs'
 
+# Skipped in essential scope: spaced-path quoting variant.
+if ! essential; then
 # --- spaced paths: the installed hook .command must shell-quote the bridge
 # path/profile exactly like Python's shlex.join/shlex.quote, and disabling
 # the bridge must remove only that exact hook, never an unrelated one.
@@ -1250,6 +1306,7 @@ jq -e --arg cmd "$expected_spaced_hook_command" \
   '[.hooks.SessionStart[]?.hooks[]? | select(.command == $cmd)] | length == 0' \
   "$spaced_settings" >/dev/null \
   || fail 'prepare --bridge disabled left the managed session bridge hook at a spaced-path home'
+fi
 
 office_home="$HOME/.local/share/trellage/profiles/claude/office/home"
 charts_home="$HOME/.local/share/trellage/profiles/claude/office-charts/home"
@@ -1281,6 +1338,8 @@ jq -se '
   and (.[-1].args | index("Office contract")) != null
 ' "$FAKE_CLAUDE_LOG" >/dev/null \
   || fail 'Office launch leaked credentials, omitted the plugin, or used the wrong home'
+# Skipped in essential scope: Office plugin repair edge cases, skills update, and office-charts variant.
+if ! essential; then
 : >"$office_home/.fixture-document-disabled"
 jq '.enabledPlugins["document-skills@anthropic-agent-skills"] = false' \
   "$office_home/settings.json" >"$fixture_root/office-disabled-settings.json"
@@ -1315,13 +1374,21 @@ trx_run_claude office -p 'repair disabled lifecycle plugin' \
   && ! -e "$office_home/skills/slide-maker" ]] \
   || fail 'lifecycle setup installed chart profile skills outside canonical composition'
 "$command_path" doctor office-charts >/dev/null || fail 'chart profile doctor failed'
+fi
 "$uninstaller" >"$fixture_root/uninstall.out" || fail 'uninstall failed'
 [[ ! -e "$runtime_root" ]] || fail 'uninstaller left runtime'
 [[ ! -e "$command_path" && ! -L "$command_path" ]] || fail 'uninstaller left command'
 [[ -d "$profile_home" ]] || fail 'uninstaller removed profile state'
 
+native_skills_filter=()
+# Essential scope runs only the cldx update happy path and the skills security checks
+# (credential scrub, unsafe ownership, redirected caches); other harnesses and edge cases are skipped.
+if essential; then
+  native_skills_filter=(--test-name-pattern '^(cldx updates every catalog profile|cldx refuses missing profiles|Claude skills management scrubs provider credentials|cache-only updates reject redirected caches)')
+fi
 bun --no-install --no-env-file "--config=$root/../../packages/trellage-runtime/bunfig.toml" \
-  test "$root/../trellage-claude-common/tests/native-skills.test.ts" \
+  test ${native_skills_filter[@]+"${native_skills_filter[@]}"} \
+  "$root/../trellage-claude-common/tests/native-skills.test.ts" \
   || fail 'Native skills-only contracts failed'
 
 printf 'cldx contract: PASS\n'

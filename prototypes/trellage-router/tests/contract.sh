@@ -21,6 +21,9 @@ real_jq="$(command -v jq)"
 fixture_source="$runtime_parent/trx/source"
 fixture_picker="$fixture_source/packages/trellage-launcher/src/cli.tsx"
 
+# TRELLAGE_TEST_SCOPE=essential keeps smoke and security checks; unset runs the full contract.
+essential() { [[ "${TRELLAGE_TEST_SCOPE-}" == essential ]]; }
+
 refresh_fixture_source() {
   "$real_bun" --no-install --no-env-file \
     "--config=$prototype_root/../../packages/trellage-runtime/bunfig.toml" \
@@ -398,6 +401,8 @@ cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
   || fail 'installer ownership marker differs'
 assert_contains 'Installed trx' "$fixture_root/install.out"
 
+# Full scope only: Reinstall: lock refusal, injected failure rollback, repeat install.
+if ! essential; then
 printf 'trellage-router-v3\n' \
   >"$runtime_parent/trx/.managed-by-trellage-router"
 cat >"$runtime_parent/trx/bin/trx" <<'EOF'
@@ -471,6 +476,7 @@ fi
 cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
   <(printf 'trellage-router-v3\n') \
   || fail 'repeat install changed the router ownership marker'
+fi
 [[ -x "$runtime_parent/trx/bin/trx" ]] || fail 'repeat install removed launcher'
 [[ -f "$fixture_picker" ]] \
   || fail 'upgrade did not install the Ink launcher'
@@ -527,6 +533,8 @@ assert_contains 'trx upgrade all [--yes | --dry-run]' "$fixture_root/help.out"
 assert_contains 'trx upgrade HARNESS [--all | PROFILE]' "$fixture_root/help.out"
 assert_contains 'Bare trx opens the run composer.' "$fixture_root/help.out"
 
+# Full scope only: Retired routes, guide and upgrade help text, invalid upgrade arguments.
+if ! essential; then
 for retired_args in '--profile agency' '--profile=agency'; do
   status=0
   "$fixture_bin/trx" $retired_args >"$fixture_root/retired-route.out" 2>&1 || status=$?
@@ -570,6 +578,7 @@ for invalid_upgrade in \
   [[ "$status" == 1 ]] || fail "invalid upgrade arguments exited $status instead of 1"
   assert_contains 'upgrade requires all [--yes | --dry-run]' "$fixture_root/upgrade-invalid.err"
 done
+fi
 cat >"$fixture_bin/nodecode-updater" <<'EOF'
 #!/bin/sh
 if [ "$#" -eq 1 ] && [ "$1" = --version ]; then
@@ -590,6 +599,8 @@ export TRELLAGE_NODECODE_BIN="$fixture_bin/nodecode-updater"
 TRELLAGE_NODECODE_BIN="$fixture_bin/nodecode-updater" NODECODE_TEST_ARGS="$fixture_root/nodecode-update.args" \
   "$fixture_bin/trx" upgrade nodecode --all --yes
 [[ "$(cat "$fixture_root/nodecode-update.args")" == update ]] || fail 'Nodecode upgrade must invoke native update only'
+# Full scope only: Nodecode upgrade dry-run and failure status; externally managed upgrade refusals.
+if ! essential; then
 rm "$fixture_root/nodecode-update.args"
 TRELLAGE_NODECODE_BIN="$fixture_bin/nodecode-updater" NODECODE_TEST_ARGS="$fixture_root/nodecode-update.args" \
   "$fixture_bin/trx" upgrade nodecode --dry-run >"$fixture_root/nodecode-update-dry.out"
@@ -606,6 +617,7 @@ for unmanaged in codex grok headlong pi uji; do
   [[ "$status" == 1 ]] || fail "unmanaged $unmanaged upgrade exited $status instead of 1"
   assert_contains "$unmanaged is installed and updated outside Trellage" "$fixture_root/upgrade-unmanaged.out"
 done
+fi
 
 # The fixture-only basket preview must short-circuit before profile loading.
 # No legacy command exists on PATH at this point in the run, so the only
@@ -619,6 +631,8 @@ if grep -Fq 'trellage command not found' "$fixture_root/preview.out"; then
   fail 'preview mode loaded a composition catalog'
 fi
 
+# Full scope only: Fork, review, and prompt-library shortcut variants; review PTY handoff; skills status.
+if ! essential; then
 # The fork preview short-circuits on the same path, so it gets the same guard.
 forks_status=0
 "$fixture_bin/trx" guide --forks </dev/null >"$fixture_root/forks.out" 2>&1 \
@@ -715,6 +729,7 @@ jq -e '
 ' "$fixture_root/skills-status.json" >/dev/null \
   || fail 'skills status output differs'
 mv "$fixture_root/cpx-link" "$fixture_bin/cpx"
+fi
 
 rm "$fixture_bin/bun"
 cat >"$fixture_bin/bun" <<'EOF'
@@ -735,11 +750,14 @@ grep -Fq '/scripts/skills-update.ts' "$fixture_root/skills-update.argv" \
 rm "$fixture_bin/bun"
 ln -s "$real_bun" "$fixture_bin/bun"
 
+# Full scope only: Invalid skills action.
+if ! essential; then
 status=0
 "$fixture_bin/trx" skills refresh >"$fixture_root/skills-invalid.out" \
   2>"$fixture_root/skills-invalid.err" || status=$?
 [[ "$status" == 1 ]] || fail "invalid skills action exited $status instead of 1"
 assert_contains 'skills requires status, update, or check --json' "$fixture_root/skills-invalid.err"
+fi
 
 "$fixture_bin/trx" list >"$fixture_root/list.out" \
   || fail 'human list failed'
@@ -776,6 +794,8 @@ jq -e '
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'JSON list schema 2 shape differs'
 
+# Full scope only: Run catalog listing; source-mode listing refuses stale dependencies.
+if ! essential; then
 "$fixture_bin/trx" run list --json >"$fixture_root/run-list.json" \
   || fail 'Native run catalog failed'
 
@@ -794,6 +814,7 @@ TRELLAGE_TRX_SOURCE_ROOT="$fixture_source/prototypes/trellage-router" \
 cmp -s "$fixture_root/source-list.json" "$fixture_root/run-list.json" || fail 'source and installed catalog differ'
 mv "$fixture_root/source-ownership.saved" "$fixture_source/.managed-by-trellage-source"
 refresh_fixture_source
+fi
 
 
 
@@ -882,6 +903,8 @@ jq -e \
   || fail 'guide mode rejected an omitted interactive intent'
 jq -e '.args == []' "$fixture_root/guide-no-args.json" >/dev/null \
   || fail 'guide mode added arguments when the interactive intent was omitted'
+# Full scope only: Guide engagement, review, and next-steps modes and their flag conflicts.
+if ! essential; then
 "$fixture_bin/trx" guide --engagement --intent "What's the next step in this engagement" \
   >"$fixture_root/guide-engagement.json" \
   || fail 'guide engagement mode was not forwarded'
@@ -948,6 +971,7 @@ for conflicting_flag in --next-steps --next-steps=value --json --stdin --intent=
   [[ "$status" -ne 0 ]] || fail "guide next-steps accepted conflicting flag: $conflicting_flag"
   assert_contains '--next-steps' "$fixture_root/guide-next-steps-invalid.err"
 done
+fi
 
 # Optional Jev key: Varlock loads TYPESAFE_API_KEY from the Trellage config
 # directory and hands it to the launcher under a private name.
@@ -993,6 +1017,8 @@ jq -e '.jevKey.privateValue == null' "$fixture_root/guide-jev-unsafe.json" >/dev
 assert_contains 'Jev decisions stay off' "$fixture_root/guide-jev-unsafe.err"
 rm -f -- "$jev_environment/.env.schema" "$jev_environment/.env.local"
 
+# Full scope only: Admin argument and non-terminal refusals.
+if ! essential; then
 status=0
 "$fixture_bin/trx" admin extra-arg >"$fixture_root/admin-invalid.out" \
   2>"$fixture_root/admin-invalid.err" || status=$?
@@ -1004,6 +1030,7 @@ status=0
   2>"$fixture_root/admin-non-tty.err" || status=$?
 [[ "$status" == 1 ]] || fail "non-TTY admin invocation exited $status instead of 1"
 assert_contains 'an interactive terminal is required' "$fixture_root/admin-non-tty.err"
+fi
 
 TRELLAGE_TRX_COMMAND_PATH=/unrelated/trx \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/admin-catalog.out" \
@@ -1020,6 +1047,8 @@ jq -e \
   || fail 'admin mode arguments or environment differ'
 
 for upgrade_flag in '' '--yes' '--dry-run'; do
+  # Full scope only: --yes and --dry-run forwarding.
+  if essential && [[ -n "$upgrade_flag" ]]; then continue; fi
   upgrade_cli_args=(all)
   [[ -z "$upgrade_flag" ]] || upgrade_cli_args+=("$upgrade_flag")
   TRELLAGE_TRX_COMMAND_PATH=/unrelated/trx \
@@ -1032,6 +1061,8 @@ for upgrade_flag in '' '--yes' '--dry-run'; do
   ' "$fixture_root/upgrade-catalog.json" >/dev/null \
     || fail 'upgrade mode changed its arguments or environment'
 done
+# Full scope only: Upgrade child exit status; source-checkout router keeps its own executable.
+if ! essential; then
 for expected_status in 1 2 130; do
   status=0
   TRX_UPGRADE_CLI_EXIT="$expected_status" "$fixture_bin/trx" upgrade all --yes \
@@ -1058,6 +1089,7 @@ TRELLAGE_TRX_COMMAND_PATH="$fixture_bin/trx" TRELLAGE_TRX_SOURCE_ROOT="$source_u
     '' '' "$source_upgrade_router/bin/trx" admin || fail 'source Admin router did not retain its own executable'
 jq -e --arg router "$source_upgrade_router/bin/trx" '.routerCommandPath == $router' \
   "$fixture_root/admin-source-catalog.json" >/dev/null || fail 'source Admin selected an unrelated installed router'
+fi
 
 
 mv "$fixture_root/picker.saved" "$fixture_picker"
@@ -1164,6 +1196,8 @@ assert_contains 'Harness summary:' "$fixture_root/upgrade-yes.out"
 assert_contains 'shared cache: updated.' "$fixture_root/upgrade-yes.out"
 assert_contains 'Updated Native skills native:agency/azure' "$fixture_root/upgrade-yes.out"
 
+# Full scope only: Upgrade-all failure, legacy launcher, skills failure, cancel, confirm, and signal variants.
+if ! essential; then
 reset_upgrade_logs
 status=0
 TRX_UPGRADE_LOG="$upgrade_log" TRX_UPGRADE_FAIL=cldx \
@@ -1255,11 +1289,14 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_UPGRADE_WAIT=cldx \
 [[ "$status" == 130 ]] || fail "interrupted router upgrade exited $status instead of 130"
 assert_contains 'Update all cancelled.' "$fixture_root/upgrade-signal.out"
 [[ ! -s "$skills_cache_log" && ! -s "$skills_update_log" ]] || fail 'router cancellation started a later Native skills phase'
+fi
 mv -f "$fixture_root/floating-skills.saved" "$fixture_skills_manager"
 refresh_fixture_source
 unset TRX_SKILLS_CACHE_LOG TRX_SKILLS_UPDATE_LOG
 mv "$fixture_root/bootstrap.saved" "$runtime_parent/trx/lib/bootstrap-development-dependencies.sh"
 
+# Full scope only: Invalid list, unknown command or harness, retired models, unsupported skill harness.
+if ! essential; then
 status=0
 "$fixture_bin/trx" list --json-full >"$fixture_root/list-invalid.out" \
   2>"$fixture_root/list-invalid.err" || status=$?
@@ -1292,6 +1329,7 @@ status=0
 "$fixture_bin/trx" skill codex example prompt >"$fixture_root/skill-invalid.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail "unsupported skill harness exited $status instead of 1"
 assert_contains 'skill supports only jcode' "$fixture_root/skill-invalid.out"
+fi
 
 run_select_cli="$fixture_source/packages/trellage-launcher/src/run-select-cli.tsx"
 mv "$run_select_cli" "$fixture_root/run-select-cli.saved"
@@ -1334,6 +1372,8 @@ jq -e '
 ' <<<"$inventory_output" >/dev/null \
   || fail 'trx inventory did not return the expected readiness contract'
 
+# Full scope only: Inventory busy readiness and invalid inventory arguments.
+if ! essential; then
 busy_inventory_output="$(TRX_INVENTORY_READINESS=busy \
   "$fixture_bin/trx" inventory prime default --json)" \
   || fail 'trx inventory rejected a busy harness/profile'
@@ -1359,6 +1399,7 @@ status=0
 "$fixture_bin/trx" inventory copilot hve --goal-features >"$fixture_root/inventory-goal-features.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail "non-Codex --goal-features exited $status instead of 1"
 assert_contains 'inventory requires HARNESS [PROFILE...] [--no-always] --json' "$fixture_root/inventory-goal-features.out"
+fi
 
 
 cat >"$fixture_root/minimal-native-config.toml" <<'EOF'

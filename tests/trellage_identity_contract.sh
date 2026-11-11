@@ -49,13 +49,20 @@ scan_legacy_identity() {
 [[ ! -e "$repo_root/prototypes/harness-profiles" ]] || fail 'legacy Copilot profiles prototype path remains'
 [[ ! -e "$repo_root/prototypes/harness-grok-profiles" ]] || fail 'legacy Grok profiles prototype path remains'
 
-for target in native-copilot-profiles native-agency-profile native-jcode-profile; do
+grep -Eq "^\\.PHONY:.* native-copilot-profiles( |$)" "$repo_root/Makefile" \
+  || fail "Makefile does not declare native-copilot-profiles phony"
+grep -Eq "^PARALLEL_TEST_TARGETS :=.* native-copilot-profiles( |$)" "$repo_root/Makefile" \
+  || fail "Makefile test does not run native-copilot-profiles"
+for target in native-prime-profile native-agency-profile native-jcode-profile native-omp-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
-  grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
-    || fail "Makefile test does not run ${target}"
+  grep -Eq "^PROFILE_ONLY_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
+    || fail "Makefile does not keep ${target} for profile-only runs"
+  if grep -Eq "^(PARALLEL_TEST_TARGETS|TIMING_SENSITIVE_TEST_TARGETS|FINAL_TEST_TARGETS) :=.* ${target}( |$)" "$repo_root/Makefile"; then
+    fail "Makefile full run still runs profile-only ${target}"
+  fi
 done
-for target in native-omp-profile native-claude-profile native-tui-matrix-test; do
+for target in native-claude-profile native-tui-matrix-test; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^TIMING_SENSITIVE_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
