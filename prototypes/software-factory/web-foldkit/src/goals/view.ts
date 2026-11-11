@@ -1,48 +1,52 @@
-import { Array, Option } from "effect";
-import { AsyncData, Submodel } from "foldkit";
-import type { Html, HtmlBuilder } from "foldkit/html";
-import { Button, Checkbox, Dialog, Input, Select, Textarea } from "@foldkit/ui";
-import { APPROVAL_TOPICS, SDLC_GATES } from "../../../shared/goal";
-import { Message } from "./message";
-import type { Model } from "./model";
-import { catalogSkills, stepRows } from "./update";
+import { Array, Option } from "effect"
+import { AsyncData, Submodel } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { Button, Checkbox, Dialog, Input, Select, Textarea } from "@foldkit/ui"
+import { APPROVAL_TOPICS, type Grade, type GradeStatus, SDLC_GATES } from "../../../shared/goal"
+import { type GoalList, type GradeGroup, gradeGroups } from "./domain"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { catalogSkills, stepRows } from "./update"
 
 const POLICY_HINT: Record<(typeof APPROVAL_TOPICS)[number], string> = {
   plan: "plan before implement",
   findings: "apply review findings",
   ship: "push and open the PR",
   other: "any other question",
-};
+}
 
-const checkbox = (id: string, label: string, isChecked: boolean, onToggle: (isChecked: boolean) => Message, h: HtmlBuilder<Message>): Html =>
+const checkbox = (
+  id: string,
+  label: string,
+  isChecked: boolean,
+  onToggle: (isChecked: boolean) => Message,
+  h: HtmlBuilder<Message>,
+): Html =>
   Checkbox.view(
     {
       id,
       isChecked,
       onToggle,
       toView: (attributes) =>
-        h.span([h.Class("fk-check-row")], [
-          h.button([...attributes.checkbox, h.Class("fk-check")], isChecked ? ["✓"] : []),
-          h.label([...attributes.label], [label]),
-        ]),
+        h.span(
+          [h.Class("fk-check-row")],
+          [
+            h.button([...attributes.checkbox, h.Class("fk-check")], isChecked ? ["✓"] : []),
+            h.label([...attributes.label], [label]),
+          ],
+        ),
     },
     h,
-  );
+  )
 
-const input = (id: string, label: string, value: string, placeholder: string, onInput: (value: string) => Message, h: HtmlBuilder<Message>): Html =>
-  Input.view(
-    {
-      id,
-      value,
-      placeholder,
-      onInput,
-      toView: (attributes) => h.span([h.Class("fk-field")], [h.label([...attributes.label], [label]), h.input([...attributes.input])]),
-    },
-    h,
-  );
-
-/** A small number box inside a step row; its label is for assistive tech only. */
-const countInput = (id: string, label: string, value: string, placeholder: string, onInput: (value: string) => Message, h: HtmlBuilder<Message>): Html =>
+const input = (
+  id: string,
+  label: string,
+  value: string,
+  placeholder: string,
+  onInput: (value: string) => Message,
+  h: HtmlBuilder<Message>,
+): Html =>
   Input.view(
     {
       id,
@@ -50,20 +54,130 @@ const countInput = (id: string, label: string, value: string, placeholder: strin
       placeholder,
       onInput,
       toView: (attributes) =>
-        h.span([h.Class("fk-goal-count")], [h.label([...attributes.label, h.Class("fk-visually-hidden")], [label]), h.input([...attributes.input])]),
+        h.span([h.Class("fk-field")], [h.label([...attributes.label], [label]), h.input([...attributes.input])]),
     },
     h,
-  );
+  )
+
+/** A small number box inside a step row; its label is for assistive tech only. */
+const countInput = (
+  id: string,
+  label: string,
+  value: string,
+  placeholder: string,
+  onInput: (value: string) => Message,
+  h: HtmlBuilder<Message>,
+): Html =>
+  Input.view(
+    {
+      id,
+      value,
+      placeholder,
+      onInput,
+      toView: (attributes) =>
+        h.span(
+          [h.Class("fk-goal-count")],
+          [h.label([...attributes.label, h.Class("fk-visually-hidden")], [label]), h.input([...attributes.input])],
+        ),
+    },
+    h,
+  )
 
 const chip = (label: string, isOn: boolean, onClick: Message, h: HtmlBuilder<Message>): Html =>
   Button.view(
-    { onClick, toView: (attributes) => h.button([...attributes.button, h.Class(isOn ? "on" : ""), h.AriaPressed(isOn ? "true" : "false")], [label]) },
+    {
+      onClick,
+      toView: (attributes) =>
+        h.button([...attributes.button, h.Class(isOn ? "on" : ""), h.AriaPressed(isOn ? "true" : "false")], [label]),
+    },
     h,
-  );
+  )
 
-const section = (title: string, children: ReadonlyArray<Html>, h: HtmlBuilder<Message>): Html => h.section([], [h.h3([], [title]), ...children]);
+const section = (title: string, children: ReadonlyArray<Html>, h: HtmlBuilder<Message>): Html =>
+  h.section([], [h.h3([], [title]), ...children])
 
 // ---------- Sections ----------
+
+const STATUS_COLOUR: Record<GradeStatus, string> = {
+  pass: "#4ade80",
+  fail: "#f87171",
+  unknown: "#a3a3a3",
+  error: "#fbbf24",
+}
+const CHART = { width: 240, height: 60, pad: 6 }
+
+const chartX = (i: number, n: number) =>
+  CHART.pad + (n > 1 ? (i * (CHART.width - 2 * CHART.pad)) / (n - 1) : (CHART.width - 2 * CHART.pad) / 2)
+const chartY = (rate: number) => CHART.height - CHART.pad - rate * (CHART.height - 2 * CHART.pad)
+const pct = (rate: number | null) => (rate === null ? "-" : `${Math.round(rate * 100)}%`)
+
+/** The chart's text equivalent: counts by status and the latest criteria pass rate. */
+export const gradeSummary = ({ goalId, gradingVersion, points }: GradeGroup): string => {
+  const count = (s: GradeStatus) => points.filter((p) => p.status === s).length
+  const n = points.length
+  return `${goalId} · ${gradingVersion}: ${n} grade${n === 1 ? "" : "s"} · ${count("pass")} pass, ${count("fail")} fail, ${count("unknown")} unknown, ${count("error")} error · last criteria rate ${pct(points.at(-1)?.criteria.rate ?? null)}`
+}
+
+/** A point per grade, coloured by status; a grade with no evaluated criteria sits hollow on the axis. */
+const gradePoint = (g: Grade, i: number, n: number, h: HtmlBuilder<Message>): Html =>
+  h.circle(
+    [
+      h.Cx(String(chartX(i, n))),
+      h.Cy(String(chartY(g.criteria.rate ?? 0))),
+      h.R("4"),
+      h.Fill(g.criteria.rate === null ? "none" : STATUS_COLOUR[g.status]),
+      h.Stroke(STATUS_COLOUR[g.status]),
+      h.StrokeWidth("2"),
+    ],
+    [
+      h.title(
+        [],
+        [
+          `${new Date(g.at).toISOString().slice(0, 16)} · ${g.status} · criteria ${pct(g.criteria.rate)} · factory ${g.factoryCommit}`,
+        ],
+      ),
+    ],
+  )
+
+/** Criteria pass rate over time for one goal and grading version. */
+const gradeChart = (group: GradeGroup, h: HtmlBuilder<Message>): Html => {
+  const { goalId, gradingVersion, points } = group
+  const name = `${goalId}, grading ${gradingVersion}`
+  const line = points
+    .flatMap((g, i) => (g.criteria.rate === null ? [] : [`${chartX(i, points.length)},${chartY(g.criteria.rate)}`]))
+    .join(" ")
+  return h.keyed("figure")(
+    `${goalId}|${gradingVersion}`,
+    [h.Class("fk-grade-chart")],
+    [
+      h.svg(
+        [
+          h.Role("img"),
+          h.AriaLabel(`Grades of ${name}`),
+          h.ViewBox(`0 0 ${CHART.width} ${CHART.height}`),
+          h.Width(String(CHART.width)),
+          h.Height(String(CHART.height)),
+        ],
+        [
+          h.polyline([h.Points(line), h.Fill("none"), h.Stroke("currentColor"), h.StrokeWidth("1")]),
+          ...points.map((g, i) => gradePoint(g, i, points.length, h)),
+        ],
+      ),
+      h.figcaption([h.AriaLabel(`Summary of ${name}`)], [gradeSummary(group)]),
+    ],
+  )
+}
+
+const gradeHistory = (goals: GoalList["goals"], h: HtmlBuilder<Message>): Html =>
+  Array.match(gradeGroups(goals), {
+    onEmpty: () => h.empty,
+    onNonEmpty: (groups) =>
+      section(
+        "Grade history",
+        Array.map(groups, (g) => gradeChart(g, h)),
+        h,
+      ),
+  })
 
 const savedGoals = (model: Model, h: HtmlBuilder<Message>): Html =>
   AsyncData.matchDataSplitEmpty(model.goals, {
@@ -80,44 +194,62 @@ const savedGoals = (model: Model, h: HtmlBuilder<Message>): Html =>
               h.ul(
                 [h.Class("fk-list")],
                 Array.map(list, ({ spec, runs, last }) =>
-                  h.keyed("li")(spec.id, [h.Class("fk-cron")], [
-                    chip(spec.id, spec.id === model.draft.id, Message.ClickedEditGoal({ id: spec.id }), h),
-                    h.span([h.Class("fk-muted")], [` ${runs} runs · last ${last?.outcome ?? "-"}`]),
-                  ]),
+                  h.keyed("li")(
+                    spec.id,
+                    [h.Class("fk-cron")],
+                    [
+                      chip(spec.id, spec.id === model.draft.id, Message.ClickedEditGoal({ id: spec.id }), h),
+                      h.span([h.Class("fk-muted")], [` ${runs} runs · last ${last?.outcome ?? "-"}`]),
+                    ],
+                  ),
                 ),
               ),
           }),
           chip("+ new goal", false, Message.ClickedNewGoal(), h),
+          gradeHistory(goals, h),
         ],
         h,
       ),
-  });
+  })
 
 const repoSelect = (model: Model, h: HtmlBuilder<Message>): Html => {
-  const folders = Option.match(AsyncData.getData(model.catalog), { onNone: () => [], onSome: ({ folders }) => folders });
+  const folders = Option.match(AsyncData.getData(model.catalog), { onNone: () => [], onSome: (c) => c.folders })
   return Select.view(
     {
       id: "goal-repo",
       value: model.draft.repo,
       onChange: (value) => Message.SelectedRepo({ value }),
       toView: (attributes) =>
-        h.span([h.Class("fk-field")], [
-          h.label([...attributes.label], ["Repo"]),
-          h.select([...attributes.select], [
-            h.option([h.Value("")], ["choose a repo folder"]),
-            ...Array.map(folders, ({ name, path }) => h.option([h.Value(path)], [`${name} · ${path}`])),
-          ]),
-        ]),
+        h.span(
+          [h.Class("fk-field")],
+          [
+            h.label([...attributes.label], ["Repo"]),
+            h.select(
+              [...attributes.select],
+              [
+                h.option([h.Value("")], ["choose a repo folder"]),
+                ...Array.map(folders, ({ name, path }) => h.option([h.Value(path)], [`${name} · ${path}`])),
+              ],
+            ),
+          ],
+        ),
     },
     h,
-  );
-};
+  )
+}
 
 const whatSection = (model: Model, h: HtmlBuilder<Message>): Html =>
   section(
     "What to build",
     [
-      input("goal-id", "Goal id", model.draft.id, "e.g. cpr-process-compose", (value) => Message.UpdatedId({ value }), h),
+      input(
+        "goal-id",
+        "Goal id",
+        model.draft.id,
+        "e.g. cpr-process-compose",
+        (value) => Message.UpdatedId({ value }),
+        h,
+      ),
       input("goal-title", "Title", model.draft.title, "one line", (value) => Message.UpdatedTitle({ value }), h),
       repoSelect(model, h),
       input("goal-base", "Base branch", model.draft.base, "main", (value) => Message.UpdatedBase({ value }), h),
@@ -128,29 +260,50 @@ const whatSection = (model: Model, h: HtmlBuilder<Message>): Html =>
           rows: 8,
           onInput: (value) => Message.UpdatedPrompt({ value }),
           toView: (attributes) =>
-            h.span([h.Class("fk-field fk-goal-prompt")], [h.label([...attributes.label], ["Prompt"]), h.textarea([...attributes.textarea])]),
+            h.span(
+              [h.Class("fk-field fk-goal-prompt")],
+              [h.label([...attributes.label], ["Prompt"]), h.textarea([...attributes.textarea])],
+            ),
         },
         h,
       ),
     ],
     h,
-  );
+  )
 
 /** One row per catalog step: on/off, and the min and max number of workers on that step. */
 const stepsSection = (model: Model, h: HtmlBuilder<Message>): Html => {
-  const steps = Option.match(AsyncData.getData(model.catalog), { onNone: () => [], onSome: ({ steps }) => steps });
+  const steps = Option.match(AsyncData.getData(model.catalog), { onNone: () => [], onSome: (c) => c.steps })
   return section(
     "Workers that must run (step · min · max)",
     [
       h.ul(
         [h.Class("fk-list fk-goal-steps")],
         Array.map(steps, ({ id, description }) => {
-          const row = model.draft.steps[id] ?? { on: false, min: "1", max: "" };
-          return h.keyed("li")(id, [h.Title(description)], [
-            checkbox(`goal-step-${id}`, id, row.on, (isChecked) => Message.ToggledStep({ step: id, isChecked }), h),
-            countInput(`goal-step-${id}-min`, `${id} at least`, row.min, "1", (value) => Message.UpdatedStepMin({ step: id, value }), h),
-            countInput(`goal-step-${id}-max`, `${id} at most`, row.max, "any", (value) => Message.UpdatedStepMax({ step: id, value }), h),
-          ]);
+          const row = model.draft.steps[id] ?? { on: false, min: "1", max: "" }
+          return h.keyed("li")(
+            id,
+            [h.Title(description)],
+            [
+              checkbox(`goal-step-${id}`, id, row.on, (isChecked) => Message.ToggledStep({ step: id, isChecked }), h),
+              countInput(
+                `goal-step-${id}-min`,
+                `${id} at least`,
+                row.min,
+                "1",
+                (value) => Message.UpdatedStepMin({ step: id, value }),
+                h,
+              ),
+              countInput(
+                `goal-step-${id}-max`,
+                `${id} at most`,
+                row.max,
+                "any",
+                (value) => Message.UpdatedStepMax({ step: id, value }),
+                h,
+              ),
+            ],
+          )
         }),
       ),
       // Steps kept from a spec that the catalog no longer has, so they are not silently dropped.
@@ -160,8 +313,8 @@ const stepsSection = (model: Model, h: HtmlBuilder<Message>): Html => {
       ),
     ],
     h,
-  );
-};
+  )
+}
 
 const skillsSection = (model: Model, h: HtmlBuilder<Message>): Html =>
   section(
@@ -170,30 +323,66 @@ const skillsSection = (model: Model, h: HtmlBuilder<Message>): Html =>
       h.div(
         [h.Class("fk-chips")],
         Array.map(catalogSkills(model), (skill) =>
-          h.keyed("span")(skill, [], [
-            checkbox(`goal-skill-${skill}`, skill, model.draft.skills.includes(skill), (isChecked) => Message.ToggledSkill({ skill, isChecked }), h),
-          ]),
+          h.keyed("span")(
+            skill,
+            [],
+            [
+              checkbox(
+                `goal-skill-${skill}`,
+                skill,
+                model.draft.skills.includes(skill),
+                (isChecked) => Message.ToggledSkill({ skill, isChecked }),
+                h,
+              ),
+            ],
+          ),
         ),
       ),
     ],
     h,
-  );
+  )
 
 const prSection = (model: Model, h: HtmlBuilder<Message>): Html =>
   section(
     "Pull request",
     [
-      checkbox("goal-pr", "expect an open PR (never merged by the factory)", model.draft.expectPr, (isChecked) => Message.ToggledExpectPr({ isChecked }), h),
+      checkbox(
+        "goal-pr",
+        "expect an open PR (never merged by the factory)",
+        model.draft.expectPr,
+        (isChecked) => Message.ToggledExpectPr({ isChecked }),
+        h,
+      ),
       ...(model.draft.expectPr
         ? [
-            checkbox("goal-checks", "all checks green", model.draft.greenChecks, (isChecked) => Message.ToggledGreenChecks({ isChecked }), h),
-            input("goal-body", "PR body includes", model.draft.bodyIncludes, "comma separated", (value) => Message.UpdatedBodyIncludes({ value }), h),
-            input("goal-untouched", "Files left untouched", model.draft.untouched, "comma separated", (value) => Message.UpdatedUntouched({ value }), h),
+            checkbox(
+              "goal-checks",
+              "all checks green",
+              model.draft.greenChecks,
+              (isChecked) => Message.ToggledGreenChecks({ isChecked }),
+              h,
+            ),
+            input(
+              "goal-body",
+              "PR body includes",
+              model.draft.bodyIncludes,
+              "comma separated",
+              (value) => Message.UpdatedBodyIncludes({ value }),
+              h,
+            ),
+            input(
+              "goal-untouched",
+              "Files left untouched",
+              model.draft.untouched,
+              "comma separated",
+              (value) => Message.UpdatedUntouched({ value }),
+              h,
+            ),
           ]
         : []),
     ],
     h,
-  );
+  )
 
 const GATE_HINT: Record<(typeof SDLC_GATES)[number], string> = {
   design: "design note before code",
@@ -202,33 +391,62 @@ const GATE_HINT: Record<(typeof SDLC_GATES)[number], string> = {
   supplyChain: "secrets, vulnerabilities, licenses",
   docs: "README / docs / changelog updated",
   postMerge: "main's checks watched after merge",
-};
+}
 
 /** Floors always apply (criteria proven, verify, security). Per optional gate: must run, must be skipped, or Jev decides. */
 const sdlcSection = (model: Model, h: HtmlBuilder<Message>): Html =>
   section(
     "SDLC gates",
     [
-      checkbox("goal-sdlc", "check the SDLC record (criteria proven, verify and security always)", model.draft.expectSdlc, (isChecked) => Message.ToggledExpectSdlc({ isChecked }), h),
+      checkbox(
+        "goal-sdlc",
+        "check the SDLC record (criteria proven, verify and security always)",
+        model.draft.expectSdlc,
+        (isChecked) => Message.ToggledExpectSdlc({ isChecked }),
+        h,
+      ),
       ...(model.draft.expectSdlc
         ? [
             h.ul(
               [h.Class("fk-list")],
               Array.map(SDLC_GATES, (gate) => {
-                const current = model.draft.gatesRun.includes(gate) ? "run" : model.draft.gatesSkipped.includes(gate) ? "skip" : "any";
-                return h.keyed("li")(gate, [h.Class("fk-chips")], [
-                  h.span([], [`${gate} `, h.span([h.Class("fk-muted")], [GATE_HINT[gate]])]),
-                  chip(`${gate}: must run`, current === "run", Message.ClickedGateExpectation({ gate, expectation: "run" }), h),
-                  chip(`${gate}: must skip`, current === "skip", Message.ClickedGateExpectation({ gate, expectation: "skip" }), h),
-                  chip(`${gate}: Jev decides`, current === "any", Message.ClickedGateExpectation({ gate, expectation: "any" }), h),
-                ]);
+                const current = model.draft.gatesRun.includes(gate)
+                  ? "run"
+                  : model.draft.gatesSkipped.includes(gate)
+                    ? "skip"
+                    : "any"
+                return h.keyed("li")(
+                  gate,
+                  [h.Class("fk-chips")],
+                  [
+                    h.span([], [`${gate} `, h.span([h.Class("fk-muted")], [GATE_HINT[gate]])]),
+                    chip(
+                      `${gate}: must run`,
+                      current === "run",
+                      Message.ClickedGateExpectation({ gate, expectation: "run" }),
+                      h,
+                    ),
+                    chip(
+                      `${gate}: must skip`,
+                      current === "skip",
+                      Message.ClickedGateExpectation({ gate, expectation: "skip" }),
+                      h,
+                    ),
+                    chip(
+                      `${gate}: Jev decides`,
+                      current === "any",
+                      Message.ClickedGateExpectation({ gate, expectation: "any" }),
+                      h,
+                    ),
+                  ],
+                )
               }),
             ),
           ]
         : []),
     ],
     h,
-  );
+  )
 
 const approvalsSection = (model: Model, h: HtmlBuilder<Message>): Html =>
   section(
@@ -237,27 +455,54 @@ const approvalsSection = (model: Model, h: HtmlBuilder<Message>): Html =>
       h.ul(
         [h.Class("fk-list")],
         Array.map(APPROVAL_TOPICS, (topic) =>
-          h.keyed("li")(topic, [h.Class("fk-chips")], [
-            h.span([], [`${topic} `, h.span([h.Class("fk-muted")], [POLICY_HINT[topic]])]),
-            chip(`${topic}: loop`, model.draft.approvals[topic] === "auto", Message.ClickedPolicy({ topic, policy: "auto" }), h),
-            chip(`${topic}: me`, model.draft.approvals[topic] === "human", Message.ClickedPolicy({ topic, policy: "human" }), h),
-          ]),
+          h.keyed("li")(
+            topic,
+            [h.Class("fk-chips")],
+            [
+              h.span([], [`${topic} `, h.span([h.Class("fk-muted")], [POLICY_HINT[topic]])]),
+              chip(
+                `${topic}: loop`,
+                model.draft.approvals[topic] === "auto",
+                Message.ClickedPolicy({ topic, policy: "auto" }),
+                h,
+              ),
+              chip(
+                `${topic}: me`,
+                model.draft.approvals[topic] === "human",
+                Message.ClickedPolicy({ topic, policy: "human" }),
+                h,
+              ),
+            ],
+          ),
         ),
       ),
       input("goal-runs", "Max runs", model.draft.runs, "5", (value) => Message.UpdatedRuns({ value }), h),
-      input("goal-minutes", "Minutes per run", model.draft.minutesPerRun, "90", (value) => Message.UpdatedMinutes({ value }), h),
+      input(
+        "goal-minutes",
+        "Minutes per run",
+        model.draft.minutesPerRun,
+        "90",
+        (value) => Message.UpdatedMinutes({ value }),
+        h,
+      ),
     ],
     h,
-  );
+  )
 
 const copyBlock = (label: string, text: string, model: Model, h: HtmlBuilder<Message>, isPre = false): Html =>
-  h.div([h.Class("fk-goal-copy")], [
-    isPre ? h.pre([h.AriaLabel(label)], [text]) : h.code([h.AriaLabel(label)], [text]),
-    Button.view(
-      { onClick: Message.ClickedCopy({ text }), toView: (attributes) => h.button([...attributes.button], [model.isCopied ? "Copied" : `Copy ${label}`]) },
-      h,
-    ),
-  ]);
+  h.div(
+    [h.Class("fk-goal-copy")],
+    [
+      isPre ? h.pre([h.AriaLabel(label)], [text]) : h.code([h.AriaLabel(label)], [text]),
+      Button.view(
+        {
+          onClick: Message.ClickedCopy({ text }),
+          toView: (attributes) => h.button([...attributes.button], [model.isCopied ? "Copied" : `Copy ${label}`]),
+        },
+        h,
+      ),
+    ],
+  )
 
 const result = (model: Model, h: HtmlBuilder<Message>): Html =>
   Option.match(model.maybeSaved, {
@@ -273,29 +518,40 @@ const result = (model: Model, h: HtmlBuilder<Message>): Html =>
         ],
         h,
       ),
-  });
+  })
 
 const form = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.form([h.Class("fk-goal-form"), h.OnSubmit(Message.SubmittedGoal())], [
-    whatSection(model, h),
-    stepsSection(model, h),
-    skillsSection(model, h),
-    prSection(model, h),
-    sdlcSection(model, h),
-    approvalsSection(model, h),
-    ...Array.match(model.problems, {
-      onEmpty: () => [],
-      onNonEmpty: (problems) => [h.ul([h.Class("fk-error"), h.Role("alert")], Array.map(problems, (p) => h.li([], [p])))],
-    }),
-    Button.view({ type: "submit", toView: (attributes) => h.button([...attributes.button], ["Save goal"]) }, h),
-  ]);
+  h.form(
+    [h.Class("fk-goal-form"), h.OnSubmit(Message.SubmittedGoal())],
+    [
+      whatSection(model, h),
+      stepsSection(model, h),
+      skillsSection(model, h),
+      prSection(model, h),
+      sdlcSection(model, h),
+      approvalsSection(model, h),
+      ...Array.match(model.problems, {
+        onEmpty: () => [],
+        onNonEmpty: (problems) => [
+          h.ul(
+            [h.Class("fk-error"), h.Role("alert")],
+            Array.map(problems, (p) => h.li([], [p])),
+          ),
+        ],
+      }),
+      Button.view({ type: "submit", toView: (attributes) => h.button([...attributes.button], ["Save goal"]) }, h),
+    ],
+  )
 
 const content = (model: Model, render: Dialog.RenderInfo, h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
-  h.header([], [
-    h.h2([...render.title], ["Factory goals"]),
-    h.span([...render.description, h.Class("fk-muted")], [" · test cases for the self-improve loop"]),
-    h.button([...render.closeButton, h.AriaLabel("Close goals")], ["✕"]),
-  ]),
+  h.header(
+    [],
+    [
+      h.h2([...render.title], ["Factory goals"]),
+      h.span([...render.description, h.Class("fk-muted")], [" · test cases for the self-improve loop"]),
+      h.button([...render.closeButton, h.AriaLabel("Close goals")], ["✕"]),
+    ],
+  ),
   savedGoals(model, h),
   AsyncData.matchDataSplitEmpty(model.catalog, {
     onIdle: () => h.empty,
@@ -304,7 +560,7 @@ const content = (model: Model, render: Dialog.RenderInfo, h: HtmlBuilder<Message
     onData: () => form(model, h),
   }),
   result(model, h),
-];
+]
 
 /** The goal form: a modal Dialog styled as a wide side panel. */
 export const view = Submodel.defineView<Model, Message>((model, h) =>
@@ -318,21 +574,25 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
         h.dialog(
           [...render.dialog, h.Class("fk-dialog")],
           render.isVisible
-            ? [h.div([...render.backdrop, h.Class("fk-backdrop")]), h.div([...render.panel, h.Class("fk-drawer fk-goals")], content(model, render, h))]
+            ? [
+                h.div([...render.backdrop, h.Class("fk-backdrop")]),
+                h.div([...render.panel, h.Class("fk-drawer fk-goals")], content(model, render, h)),
+              ]
             : [],
         ),
     },
     toParentMessage: (message: Dialog.Message) => Message.GotDialogMessage({ message }),
   }),
-);
+)
 
 /** The navbar button that opens the goal form. */
 export const navButton = Submodel.defineView<Model, Message>((_model, h) =>
   Button.view(
     {
       onClick: Message.ClickedOpenGoals(),
-      toView: (attributes) => h.button([...attributes.button, h.AriaLabel("Open factory goals"), h.Title("Factory goals")], ["◎ Goals"]),
+      toView: (attributes) =>
+        h.button([...attributes.button, h.AriaLabel("Open factory goals"), h.Title("Factory goals")], ["◎ Goals"]),
     },
     h,
   ),
-);
+)

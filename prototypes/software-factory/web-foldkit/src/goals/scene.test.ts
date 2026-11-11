@@ -1,12 +1,26 @@
-import { Command, Mount, Subscription, change, click, expect, given, label, role, scene, submit, type } from "foldkit/scene";
-import { Dialog } from "@foldkit/ui";
-import { describe, expect as expectValue, test } from "vitest";
-import { decodeGoal, type Grade, type GoalSpec } from "../../../shared/goal";
-import { FetchCatalog, FetchGoals, SaveGoal } from "./command";
-import { gradeGroups, type GoalList } from "./domain";
-import { Message } from "./message";
-import { init, update } from "./update";
-import { view } from "./view";
+import {
+  Command,
+  Mount,
+  Subscription,
+  change,
+  click,
+  expect,
+  given,
+  label,
+  role,
+  scene,
+  submit,
+  type,
+} from "foldkit/scene"
+import { Dialog } from "@foldkit/ui"
+import { Exit } from "effect"
+import { assert, describe, test } from "vitest"
+import { type GoalSpec, type Grade, decodeGoal } from "../../../shared/goal"
+import { FetchCatalog, FetchGoals, SaveGoal } from "./command"
+import { type GoalList, gradeGroups } from "./domain"
+import { Message } from "./message"
+import { init, update } from "./update"
+import { view } from "./view"
 
 const catalog = {
   steps: [
@@ -16,15 +30,18 @@ const catalog = {
     { id: "finish", description: "Ship", skills: [] },
   ],
   folders: [{ id: "cpr", name: "cpr", path: "/r/cpr" }],
-};
-const goals = { dir: "/d", factoryCommit: "abc123", goals: [] };
+}
+const goals = { dir: "/d", factoryCommit: "abc123", goals: [] }
 
 const openDialog = [
   Subscription.emit(Message.ClickedOpenGoals()),
-  Command.resolveAll([FetchGoals, Message.SucceededFetchGoals({ goals })], [FetchCatalog, Message.SucceededFetchCatalog({ catalog })]),
+  Command.resolveAll(
+    [FetchGoals, Message.SucceededFetchGoals({ goals })],
+    [FetchCatalog, Message.SucceededFetchCatalog({ catalog })],
+  ),
   Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
   Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
-] as const;
+] as const
 
 describe("goal dialog", () => {
   test("shows catalog steps and skills, explains problems, then shows the paste line", () => {
@@ -43,19 +60,22 @@ describe("goal dialog", () => {
       change(label("Repo"), "/r/cpr"),
       expect(role("checkbox", { name: "ub-mode" })).toBeChecked(),
       submit(role("form")),
-      Command.resolve(SaveGoal, Message.SucceededSaveGoal({ saved: { skill: "/factory-loop demo", prompt: "# Factory loop" } })),
+      Command.resolve(
+        SaveGoal,
+        Message.SucceededSaveGoal({ saved: { skill: "/factory-loop demo", prompt: "# Factory loop" } }),
+      ),
       Command.resolve(FetchGoals, Message.SucceededFetchGoals({ goals })),
       expect(role("code", { name: "command" })).toHaveText("/factory-loop demo"),
       expect(role("button", { name: "Copy command" })).toExist(),
-    );
-  });
-});
+    )
+  })
+})
 
 const specOf = (id: string): GoalSpec => {
-  const exit = decodeGoal({ id, repo: "/r/cpr", prompt: "p" });
-  if (exit._tag !== "Success") throw new Error("bad spec");
-  return exit.value;
-};
+  const exit = decodeGoal({ id, repo: "/r/cpr", prompt: "p" })
+  if (!Exit.isSuccess(exit)) throw new Error("bad spec")
+  return exit.value
+}
 const grade = (at: number, gradingVersion: string, status: Grade["status"], rate: number | null): Grade => ({
   key: `t${at}|c|done|${gradingVersion}`,
   at,
@@ -72,24 +92,32 @@ const grade = (at: number, gradingVersion: string, status: Grade["status"], rate
   quality: [],
   errors: [],
   proposalId: null,
-});
+})
 const graded: GoalList = {
   dir: "/d",
   factoryCommit: "abc123",
   goals: [
-    { spec: specOf("goal-a"), runs: 2, last: null, grades: [grade(30, "g2", "pass", 1), grade(10, "g1", "fail", 0.5), grade(20, "g1", "unknown", null)] },
+    {
+      spec: specOf("goal-a"),
+      runs: 2,
+      last: null,
+      grades: [grade(30, "g2", "pass", 1), grade(10, "g1", "fail", 0.5), grade(20, "g1", "unknown", null)],
+    },
     { spec: specOf("goal-b"), runs: 0, last: null, grades: [] },
   ],
-};
+}
 
 describe("gradeGroups", () => {
   test("one group per goal and grading version, points in time order, never merged", () => {
-    expectValue(gradeGroups(graded.goals).map((g) => [g.goalId, g.gradingVersion, g.points.map((p) => p.at)])).toEqual([
-      ["goal-a", "g1", [10, 20]],
-      ["goal-a", "g2", [30]],
-    ]);
-  });
-});
+    assert.deepEqual(
+      gradeGroups(graded.goals).map((g) => [g.goalId, g.gradingVersion, g.points.map((p) => p.at)]),
+      [
+        ["goal-a", "g1", [10, 20]],
+        ["goal-a", "g2", [30]],
+      ],
+    )
+  })
+})
 
 describe("grade history", () => {
   test("goal A at two grading versions renders two separately labelled charts", () => {
@@ -97,15 +125,22 @@ describe("grade history", () => {
       { update, view },
       given(init().model),
       Subscription.emit(Message.ClickedOpenGoals()),
-      Command.resolveAll([FetchGoals, Message.SucceededFetchGoals({ goals: graded })], [FetchCatalog, Message.SucceededFetchCatalog({ catalog })]),
+      Command.resolveAll(
+        [FetchGoals, Message.SucceededFetchGoals({ goals: graded })],
+        [FetchCatalog, Message.SucceededFetchCatalog({ catalog })],
+      ),
       Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
       Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
       expect(role("heading", { name: "Grade history" })).toExist(),
       expect(role("img", { name: "Grades of goal-a, grading g1" })).toExist(),
       expect(role("img", { name: "Grades of goal-a, grading g2" })).toExist(),
       expect(role("img", { name: "Grades of goal-b, grading g1" })).toBeAbsent(),
-      expect(label("Summary of goal-a, grading g1")).toHaveText("goal-a · g1: 2 grades · 0 pass, 1 fail, 1 unknown, 0 error · last criteria rate -"),
-      expect(label("Summary of goal-a, grading g2")).toHaveText("goal-a · g2: 1 grade · 1 pass, 0 fail, 0 unknown, 0 error · last criteria rate 100%"),
-    );
-  });
-});
+      expect(label("Summary of goal-a, grading g1")).toHaveText(
+        "goal-a · g1: 2 grades · 0 pass, 1 fail, 1 unknown, 0 error · last criteria rate -",
+      ),
+      expect(label("Summary of goal-a, grading g2")).toHaveText(
+        "goal-a · g2: 1 grade · 1 pass, 0 fail, 0 unknown, 0 error · last criteria rate 100%",
+      ),
+    )
+  })
+})
