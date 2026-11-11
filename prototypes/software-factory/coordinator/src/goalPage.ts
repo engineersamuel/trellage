@@ -1369,12 +1369,12 @@ export const makeGoalPage = (d: GoalPageDeps) => {
  * goes to `logDir/goal-<id>-<time>.log`. Resolves with the thread id the CLI prints first; rejects if none comes in 60 s.
  */
 export const startGoalRun =
-  (coordinatorUrl: string, logDir: string) =>
+  (coordinatorUrl: string, logDir: string, cli = path.join(import.meta.dir, "..", "cli.ts")) =>
   (goalId: string): Promise<string> => {
     mkdirSync(logDir, { recursive: true })
     const logFile = path.join(logDir, `goal-${goalId}-${new Date().toISOString().replace(/[:.]/g, "-")}.log`)
     const out = openSync(logFile, "a")
-    const child = spawn(process.execPath, [path.join(import.meta.dir, "..", "cli.ts"), "goal", "run", goalId], {
+    const child = spawn(process.execPath, [cli, "goal", "run", goalId], {
       cwd: path.join(import.meta.dir, ".."),
       env: { ...process.env, SF_URL: coordinatorUrl },
       detached: true,

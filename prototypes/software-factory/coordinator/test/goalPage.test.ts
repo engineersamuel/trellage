@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { ConfigStore, setConfigStore } from "../src/config.ts"
@@ -94,40 +94,23 @@ test("launch refuses an unknown step", async () => {
 })
 
 test("startGoalRun resolves with the thread the CLI prints, and logs its output", async () => {
-  const hits: string[] = []
-  const server = Bun.serve({
-    port: 0,
-    hostname: "127.0.0.1",
-    fetch(req) {
-      const p = new URL(req.url).pathname
-      hits.push(`${req.method} ${p}`)
-      if (p === "/api/goals/g1")
-        return Response.json({
-          id: "g1",
-          repo: root,
-          base: "main",
-          prompt: "p",
-          expect: {},
-          approvals: {},
-          limits: { runs: 5, minutesPerRun: 720 },
-        })
-      if (p === "/api/goals/g1/runs") return Response.json([])
-      if (p === "/api/folders") return Response.json({ id: "f" })
-      if (p === "/api/threads/create") return Response.json({ id: "11111111-2222-3333-4444-555555555555" })
-      if (p === "/api/agui") return new Response("", { headers: { "content-type": "text/event-stream" } })
-      return new Response("gone", { status: 500 })
-    },
-  })
+  // A stand-in for cli.ts: prints what `sf goal run` prints first (no server, no port).
+  const cli = path.join(root, "cli.ts")
+  writeFileSync(
+    cli,
+    'console.error(`goal ${process.argv[4]}: run 1 to ${process.env.SF_URL}`)\nconsole.error("thread 11111111-2222-3333-4444-555555555555")\n',
+  )
   const logs = path.join(root, "logs")
-  try {
-    expect(await startGoalRun(`http://127.0.0.1:${server.port}`, logs)("g1")).toBe(
-      "11111111-2222-3333-4444-555555555555",
-    )
-    expect(hits).toContain("POST /api/threads/create")
-  } finally {
-    server.stop(true)
-  }
-  const [log] = require("node:fs").readdirSync(logs) as string[]
+  expect(await startGoalRun("http://coord", logs, cli)("g1")).toBe("11111111-2222-3333-4444-555555555555")
+  const [log] = readdirSync(logs)
   expect(log).toStartWith("goal-g1-")
-  expect(existsSync(path.join(logs, log!)) && readFileSync(path.join(logs, log!), "utf8")).toContain("thread 11111111")
+  expect(readFileSync(path.join(logs, log!), "utf8")).toContain("goal g1: run 1 to http://coord")
+})
+
+test("startGoalRun rejects when the CLI exits without a thread", async () => {
+  const cli = path.join(root, "cli.ts")
+  writeFileSync(cli, 'console.error("400 not found"); process.exit(1)\n')
+  await expect(startGoalRun("http://coord", path.join(root, "logs"), cli)("g1")).rejects.toThrow(
+    "exited 1 before it started a thread",
+  )
 })
