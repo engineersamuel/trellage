@@ -1,7 +1,7 @@
 .PHONY: native-harness-version test dependency-bootstrap development-resolution-contract publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation launcher conversation-source source-runtime trellage-identity trellage-session-bridge azure-fresh-install-contract agent-harness native-copilot-profiles native-agency-profile native-claude-profile native-jcode-profile native-omp-profile native-prime-profile native-profile-router manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test native-tui-matrix native-tui-matrix-live native-tui-matrix-test headless-matrix headless-matrix-live headless-matrix-test headless-matrix-static-test build compare compare-down clean trellage-statusline
 
 .PHONY: profile-compiler-fingerprint
-.PHONY: test-command factory-test
+.PHONY: test-command factory-test test-suite
 .PHONY: test-pr shell-syntax quality-static
 .PHONY: rebuild-profiles-bun-runtime
 
@@ -22,6 +22,11 @@ PARALLEL_TEST_TARGETS += source-checks
 PARALLEL_TEST_TARGETS += quality-contract script-tests shell-syntax profile-matrix-test
 
 test: quality-static
+	+$(MAKE) --no-print-directory test-suite
+
+# The offline suite without the static checks. The quality gate runs the static checks itself (CI `static` job,
+# pre-push check_plan), then this, so a full run does not repeat them.
+test-suite:
 	+$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-llm-contract
 	+python3 scripts/test-offline.py -- $(MAKE) --no-print-directory test-offline-workload
 

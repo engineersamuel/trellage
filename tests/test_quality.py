@@ -75,6 +75,11 @@ class SelectionTests(unittest.TestCase):
                     self.assertFalse(quality.gate_results(value, results | {name: {"result": status}}))
         self.assertFalse(quality.gate_results(value, {}))
 
+    def test_full_linux_run_skips_the_static_checks_the_gate_already_ran(self):
+        value = quality.plan([".github/workflows/ci.yml"])
+        self.assertTrue(value["full"])
+        self.assertEqual(dict(quality.test_commands(value, "linux"))["full-offline"], ["make", "test-suite"])
+
     def test_timing_sensitive_native_tests_are_serial(self):
         value = quality.plan(["prototypes/trellage-omp-profiles/bin/omp"])
         commands = dict(quality.test_commands(value, "linux"))

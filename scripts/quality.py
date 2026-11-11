@@ -433,7 +433,8 @@ def test_commands(value: dict, lane: str) -> list[tuple[str, list[str]]]:
             ("macos-runtime", ["make", "conversation-source", "source-runtime", "profile-guide-contract"]),
         ]
     elif value["full"]:
-        commands = [("offline-prepare", ["make", "test-prepare"]), ("full-offline", ["make", "test"])]
+        # Static checks already ran in this gate (CI `static` job; check_plan before run_tests): not `make test`.
+        commands = [("offline-prepare", ["make", "test-prepare"]), ("full-offline", ["make", "test-suite"])]
     else:
         commands = [("isolation-canaries", ["make", "offline-llm-contract"])]
         if set(value["targets"]) - BASE_TARGETS:
