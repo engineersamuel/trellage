@@ -553,7 +553,14 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         task: sdlcTask(f, scope, a.step as string | undefined, str(a, "task")),
         ...(typeof a.step === "string" ? { step: a.step } : {}),
         ...(ship
-          ? { permissions: finishPermissions(ship, (g) => f.approvals.setPushes(g), runFixRounds(f, scope)) }
+          ? {
+              permissions: finishPermissions(
+                ship,
+                (g) => f.approvals.setPushes(g),
+                runFixRounds(f, scope),
+                () => f.settings.workers.forceWithLease,
+              ),
+            }
           : {}),
         ...(!ship && (a.harness === "claude" || a.harness === "pi")
           ? { harness: { kind: a.harness, profiles: Array.isArray(a.profiles) ? a.profiles.map(String) : [] } }

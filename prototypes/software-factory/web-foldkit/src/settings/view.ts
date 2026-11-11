@@ -420,6 +420,13 @@ const agentSection = (settings: Settings, options: SettingsOptions, h: HtmlBuild
           ),
         ),
       ),
+      checkbox(
+        "force-with-lease",
+        "finish workers may push --force-with-lease (after a rebase)",
+        settings.workers.forceWithLease,
+        (isChecked) => Message.ToggledForceWithLease({ isChecked }),
+        h,
+      ),
       h.h4([], ["Decision engine (gates, reviews, next step)"]),
       h.div(
         [h.Class("fk-chips")],

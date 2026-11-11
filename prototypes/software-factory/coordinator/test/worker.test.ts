@@ -81,6 +81,22 @@ test("finish workers push only their branch, may edit files, and never merge", a
   expect(gate(write, inv)).toEqual({ kind: "approve-once" })
 })
 
+test("finish workers may --force-with-lease their branch while the setting is on; unchecking it applies at the next push", async () => {
+  const { finishPermissions } = await import("../src/factory.ts")
+  let allowed = true
+  const gate = finishPermissions(
+    { id: "a", scopeId: "s", branch: "factory/x", pushes: 0 },
+    () => {},
+    5,
+    () => allowed,
+  )
+  const lease = shell("git push --force-with-lease -u origin factory/x")
+  expect(gate(lease, inv)).toEqual({ kind: "approve-once" })
+  expect(decision(gate(shell("git push --force origin factory/x"), inv)).kind).toBe("reject")
+  allowed = false
+  expect(decision(gate(lease, inv)).feedback).toContain("turned off --force-with-lease")
+})
+
 test("a finish grant allows the first push and 5 fix rounds, then rejects the next push but not other commands", async () => {
   const { finishPermissions, maxFixRounds } = await import("../src/factory.ts")
   const grant = { id: "a", scopeId: "s", branch: "factory/x", pushes: 0 }
@@ -149,4 +165,26 @@ test("stepSkillDir links the step's skills into .claude/skills (no plugin prefix
   writeFileSync(path.join(root, "src", "ub-mode", "SKILL.md"), "---\nname: ub-mode\ndescription: x\n---\n")
   const dir = stepSkillDir(path.join(root, "step"), [{ name: "ub-mode", dir: path.join(root, "src", "ub-mode") }])
   expect(existsSync(path.join(dir, ".claude", "skills", "ub-mode", "SKILL.md"))).toBe(true)
+})
+
+test("a runtime that exits without a stop ends its workers' turns with an error and unregisters them", async () => {
+  const f = new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-w-")) })
+  const client = as<Client>({})
+  const a = new Worker("sub-a", "sub", "coordinator", "native", "/tmp/h", null, client, "m")
+  const other = new Worker("w-b", "impl", "worker", "native", "/tmp/h", null, as<Client>({}), "m")
+  await f.register(a)
+  await f.register(other)
+  a.status = "running"
+  const idle = a.waitIdle(5_000)
+  const exited: string[][] = []
+  f.onRuntimeExit = (ids) => exited.push(ids)
+  f.runtimeExited(client, "runtime exited (SIGTERM)")
+  expect(await idle).toBe(true)
+  expect([a.status, a.lastError, f.workers.has("sub-a"), f.workers.has("w-b"), exited]).toEqual([
+    "error",
+    "runtime exited (SIGTERM)",
+    false,
+    true,
+    [["sub-a"]],
+  ])
 })

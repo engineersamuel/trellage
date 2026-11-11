@@ -194,9 +194,11 @@ export const Settings = Schema.Struct({
     Schema.withDecodingDefaultKey(Effect.succeed({ model: "claude-opus-5.5", reasoningEffort: "high" })),
   ),
   /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
-  workers: Schema.Struct({ harness: Schema.String }).pipe(
-    Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" })),
-  ),
+  /** forceWithLease: finish workers may `git push --force-with-lease` their own branch (after a rebase). */
+  workers: Schema.Struct({
+    harness: Schema.String,
+    forceWithLease: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
+  }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto", forceWithLease: true }))),
   /** Engine behind every factory decision (gates, lenses, findings, triage, next step). Hot-swappable: the next decision uses it. */
   decisions: Schema.Struct({ engine: Schema.String }).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed({ engine: "jev" })),

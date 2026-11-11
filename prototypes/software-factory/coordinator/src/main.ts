@@ -58,9 +58,6 @@ const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.u
 const landing = asset("landing.html")
 const openuiPrompt = asset("openui-prompt.txt")
 
-if (process.env.SF_DISABLE_STARTUP_CHILD_CLEANUP !== "1")
-  Bun.spawnSync(["pkill", "-f", new URL("../node_modules/@github/copilot-sdk-", import.meta.url).pathname])
-
 const factory = (() => {
   try {
     return new Factory()
@@ -445,9 +442,9 @@ const deliverToThread = async (threadId: string | null, text: string): Promise<D
 /** A sub-coordinator's report goes to the General chat that started its conversation, else to the Factory desk. */
 const reportToGeneral = async (folder: string, t: Thread, r: Report): Promise<void> => {
   const target = reportTarget(t, threads.list(), deskThread().id)
-  await (
-    await deliverToThread(target, reportPrompt(folder, t.title, t.id, r))
-  ).sent
+  // Queued, not awaited: the target may be busy waiting for this sub (read_conversation wait=true), and the sub's
+  // report_up would wait for it in turn. A failed delivery is logged.
+  logFailure(await deliverToThread(target, reportPrompt(folder, t.title, t.id, r)))
 }
 
 /** Deliver without waiting; failures are logged. */
@@ -1824,6 +1821,12 @@ const shutdown = async (signal: string) => {
   await stopLoops()
   await factory.stopAll()
   process.exit(0)
+}
+// The desk is a fixed session the whole service uses: when its runtime dies, restart the service (process-compose
+// restarts it). Other workers are unregistered by the factory and start again on their next message.
+factory.onRuntimeExit = (ids) => {
+  console.error(`runtime of ${ids.join(", ")} exited without a stop`)
+  if (ids.includes(DESK_ID)) void shutdown("desk runtime exit")
 }
 process.on("SIGINT", () => void shutdown("SIGINT"))
 process.on("SIGTERM", () => void shutdown("SIGTERM"))

@@ -240,6 +240,7 @@ export const update = (model: Model, message: Message) =>
     SelectedSubModel: ({ model: subModel }) => patch({ subAgent: { model: subModel } })(model),
     SelectedSubEffort: ({ effort }) => patch({ subAgent: { reasoningEffort: effort } })(model),
     ClickedWorkerHarness: ({ harness }) => patch({ workers: { harness } })(model),
+    ToggledForceWithLease: ({ isChecked }) => patch({ workers: { forceWithLease: isChecked } })(model),
     ClickedDecisionEngine: ({ engine }) => patch({ decisions: { engine } })(model),
     ToggledDisabledTool: ({ tool }) =>
       withSettings(model, (settings) => ({
