@@ -1,6 +1,6 @@
-import { Schema } from "effect";
-import { Dialog } from "@foldkit/ui";
-import { GoalCatalogAsyncData, GoalDraft, GoalListAsyncData, LoopPrompt } from "./domain";
+import { Schema } from "effect"
+import { Dialog } from "@foldkit/ui"
+import { GoalCatalogAsyncData, GoalDraft, GoalListAsyncData, LoopPrompt } from "./domain"
 
 export const Model = Schema.Struct({
   dialog: Dialog.Model,
@@ -14,5 +14,7 @@ export const Model = Schema.Struct({
   /** After a save: the line and the full prompt to paste into an agent. */
   maybeSaved: Schema.Option(LoopPrompt),
   isCopied: Schema.Boolean,
-});
-export type Model = typeof Model.Type;
+  /** The form shows only for a saved goal; new goals use the guided page (/goal-page/index.html). */
+  isEditing: Schema.Boolean,
+})
+export type Model = typeof Model.Type

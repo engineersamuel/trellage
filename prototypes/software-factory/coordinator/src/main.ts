@@ -50,6 +50,7 @@ import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thre
 import { cardData, coordinatorTools, factoryConfigView, globalTools, spawnHealing, type Scope } from "./tools.ts"
 import { DRAFT_NOTE, DraftError, draftNodeId, isUnstartedDraft, makeDrafts } from "./drafts.ts"
 import { enhanceWith, stopEnhance } from "./enhance.ts"
+import { makeGoalPage, startGoalRun } from "./goalPage.ts"
 import { Option, Schema } from "effect"
 import { worktreeDiff } from "./worktreeDiff.ts"
 
@@ -1159,6 +1160,25 @@ const goals = makeGoals(
 /** prototypes/software-factory: its commit (and dirty flag) is the factory version a goal run ran on. */
 const FACTORY_DIR = path.resolve(new URL(".", import.meta.url).pathname, "../..")
 
+const [hostname, port] = (process.env.SF_ADDR ?? "127.0.0.1:7700").split(":")
+
+/** Guided goal page (web-foldkit/public/goal-page/): routes /api/goal-page/<name>. */
+const goalPage = makeGoalPage({
+  proxyUrl: () => factory.proxyUrl,
+  folders: () => threads.folders().filter((f) => f.path),
+  knownSteps: () => steps().map((step) => step.id),
+  goals,
+  startResearch: async (folderId, brief) => {
+    const t = drafts.create(folderId, brief)
+    const d = await drafts.act(t.id, "research")
+    const r = d.reports.find((x) => x.action === "research")!
+    return { threadId: t.id, workerId: r.workerId, worktree: t.worktree!, report: r.path }
+  },
+  workerState: (id) => factory.workers.get(id)?.summary(),
+  removeDraft: (id) => drafts.remove(id),
+  startRun: startGoalRun(`http://${hostname}:${port}`, path.join(factory.root, "logs", "goal-runs")),
+})
+
 /** JSON reply for a goal route: GoalError is 400, anything else 500. */
 const goalReply = async (run: () => unknown): Promise<Response> => {
   try {
@@ -1769,6 +1789,8 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => draftReply(() => drafts.run(id!))],
   ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => draftReply(() => drafts.remove(id!))],
   ["GET", /^\/api\/artifacts$/, () => json({ artifacts: [] })],
+  ["GET", /^\/api\/goal-page\/(info|repos)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
+  ["POST", /^\/api\/goal-page\/([a-z]+(?:\/[a-z]+)?)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
 ]
 
 const cors = {
@@ -1777,7 +1799,6 @@ const cors = {
   "access-control-allow-headers": "*",
 }
 
-const [hostname, port] = (process.env.SF_ADDR ?? "127.0.0.1:7700").split(":")
 const server = Bun.serve({
   hostname,
   port: Number(port),

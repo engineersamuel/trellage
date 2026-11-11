@@ -1,0 +1,2345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>New goal · Software Factory</title>
+<style>
+:root{
+  --bg:#0a0a0a; --surface:#171717; --surface2:#1c1a18; --surface3:#232019; --border:#262626; --border2:#34302a;
+  --text:#e5e5e5; --muted:#a3a3a3; --dim:#737373;
+  --accent:#f59e42; --accent2:#fbbf24; --accentSoft:rgba(245,158,66,.12); --accentLine:rgba(245,158,66,.35);
+  --add:#22c55e; --addBg:rgba(34,197,94,.09); --del:#f87171; --delBg:rgba(239,68,68,.09);
+  --warn:#fbbf24; --warnBg:rgba(251,191,36,.08);
+  --c1:#fb923c; --c2:#facc15; --c3:#2dd4bf;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ease:cubic-bezier(.2,.8,.2,1);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+code,.mono{font-family:var(--mono);font-size:12px}
+code{background:#26221d;border:1px solid #332d25;padding:0 4px;border-radius:4px;color:#f3d9b8}
+a{color:var(--accent)}
+
+/* top bar */
+.top{height:44px;display:flex;align-items:center;gap:14px;padding:0 16px;border-bottom:1px solid var(--border);background:#0d0c0b}
+.top .label{font-size:12px;color:var(--muted);letter-spacing:.02em}
+.top .label b{color:var(--text);font-weight:600}
+.top a.back{font-size:12px;color:var(--muted);text-decoration:none;padding:3px 8px;border-radius:6px;border:1px solid transparent}
+.top a.back:hover{color:var(--text);border-color:var(--border)}
+.top .sp{flex:1}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border2);background:var(--surface2);padding:6px 12px;border-radius:8px;font-size:13px;transition:background .15s,border-color .15s,transform .1s}
+.btn:hover{background:var(--surface3);border-color:#4a4237}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#1b1006;font-weight:600}
+.btn.primary:hover{background:#ffb15e;border-color:#ffb15e}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn.ghost:hover{color:var(--text);background:var(--surface2)}
+.btn.sm{padding:3px 9px;font-size:12px;border-radius:7px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.kbd{font-family:var(--mono);font-size:10.5px;border:1px solid #3a342c;border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--muted);background:#141210}
+
+/* layout */
+/* 3 panes: stage rail | one focused stage | live goal card. Rail and card are resizable (widths in localStorage). */
+.app{--railW:260px;--cardW:clamp(400px,30vw,620px);display:grid;grid-template-columns:var(--railW) minmax(0,1fr) var(--cardW);height:calc(100% - 44px);position:relative}
+.app>*{min-width:0}
+.split{position:absolute;top:0;bottom:0;width:8px;cursor:col-resize;z-index:6;touch-action:none}
+.split:after{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:transparent;transition:background .15s}
+.split:hover:after,.split.drag:after,.split:focus-visible:after{background:var(--accentLine)}
+.split[data-split="rail"]{left:calc(var(--railW) - 4px)}
+.split[data-split="card"]{right:calc(var(--cardW) - 4px)}
+body.dragging{cursor:col-resize;user-select:none}
+.center{display:flex;flex-direction:column;min-height:0;overflow:hidden;background:linear-gradient(180deg,#120f0c 0,#0b0a09 260px)}
+.cardcol{min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px 14px 60px;border-left:1px solid var(--border);background:radial-gradient(700px 400px at 70% -10%,rgba(245,158,66,.07),transparent 60%),#0c0b0a;container-type:inline-size}
+
+/* jev stage */
+.jevstage{display:flex;gap:6px;align-items:flex-start;padding:16px 28px 10px;width:100%;max-width:860px;margin:0 auto;border-bottom:1px solid #1f1c18}
+.jevwrap{flex:0 0 118px;position:relative}
+#jev{width:118px;height:110px;display:block;overflow:visible}
+.bubble{position:relative;flex:1;min-width:0;overflow-wrap:anywhere;background:#201c17;border:1px solid #3a3229;border-radius:14px;padding:11px 13px;font-size:13.5px;line-height:1.45;min-height:72px;margin-top:8px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.bubble:before{content:"";position:absolute;left:-7px;top:24px;width:12px;height:12px;background:#201c17;border-left:1px solid #3a3229;border-bottom:1px solid #3a3229;transform:rotate(45deg)}
+.bubble.pop{animation:pop .28s var(--ease)}
+.bubble .who{font-size:11px;color:var(--accent);font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin-bottom:2px;display:flex;gap:6px;align-items:center}
+.bubble.worried{border-color:rgba(251,191,36,.45)}
+.conf{font-family:var(--mono);font-size:11px;padding:0 6px;border-radius:999px;background:var(--accentSoft);color:var(--accent);border:1px solid var(--accentLine);text-transform:none;letter-spacing:0}
+.conf.low{background:var(--warnBg);color:var(--warn);border-color:rgba(251,191,36,.4)}
+@keyframes pop{from{opacity:.2;transform:translateY(4px) scale(.98)}to{opacity:1;transform:none}}
+
+/* jev svg parts */
+#jev .bodyg{transform-box:view-box;transform-origin:70px 120px;animation:breathe 3.2s ease-in-out infinite}
+@keyframes breathe{0%,100%{transform:scale(1,1)}50%{transform:scale(1.015,.985)}}
+#jev.pose-happy .bodyg{animation:hop .55s var(--ease) 1, breathe 3.2s ease-in-out .55s infinite}
+@keyframes hop{0%{transform:translateY(0)}35%{transform:translateY(-9px) scale(.98,1.03)}70%{transform:translateY(0) scale(1.03,.97)}100%{transform:none}}
+#jev .eye{transform-box:fill-box;transform-origin:center;transition:transform .09s}
+#jev.blink .eye{transform:scaleY(.12)}
+#jev .pupil{transition:transform .12s ease-out}
+#jev .brow,#jev .sweat,#jev .dots,#jev .spark{opacity:0;transition:opacity .2s}
+#jev.pose-worried .brow.w,#jev.pose-thinking .brow.t{opacity:1}
+#jev.pose-worried .sweat{opacity:1;animation:drip 1.8s ease-in infinite}
+@keyframes drip{0%{transform:translateY(0)}70%{transform:translateY(5px)}100%{transform:translateY(5px);opacity:0}}
+#jev.pose-thinking .dots{opacity:1}
+#jev .dots circle{animation:dot 1.2s ease-in-out infinite}
+#jev .dots circle:nth-child(2){animation-delay:.15s}#jev .dots circle:nth-child(3){animation-delay:.3s}
+@keyframes dot{0%,100%{opacity:.3}50%{opacity:1}}
+#jev .mouth{display:none}
+#jev.pose-neutral .m-neutral,#jev.pose-happy .m-happy,#jev.pose-worried .m-worried,#jev.pose-thinking .m-thinking,#jev.pose-salute .m-happy{display:inline}
+#jev .arm{transform-box:view-box;transition:transform .45s var(--ease)}
+#jev .arm.r{transform-origin:104px 80px;transform:rotate(-22deg)}
+#jev .arm.l{transform-origin:36px 80px;transform:rotate(22deg)}
+#jev.pose-salute .arm.r{transform:translate(-2px,-6px) rotate(166deg)}
+#jev.pose-salute .bodyg{transform:rotate(-3deg)}
+#jev.pose-happy .arm.r{transform:rotate(-70deg)}
+#jev.pose-happy .arm.l{transform:rotate(70deg)}
+#jev.pose-thinking .arm.l{transform:rotate(128deg)}
+#jev.pose-salute .spark,#jev.pose-happy .spark{opacity:1}
+#jev .led{animation:led 2.4s ease-in-out infinite}
+@keyframes led{0%,100%{opacity:.5}50%{opacity:1}}
+
+/* quest rail */
+.rail{display:flex;flex-direction:column;min-height:0;overflow-y:auto;overflow-x:hidden;padding:18px 16px 16px;border-right:1px solid var(--border);background:linear-gradient(180deg,#110e0b,#0a0a0a)}
+.goalname{font-weight:650;font-size:14px;margin:0 0 20px;overflow-wrap:anywhere}
+.goalname small{display:block;color:var(--dim);font-weight:400;font-family:var(--mono);font-size:11px;margin-top:2px}
+.steps{list-style:none;margin:0;padding:0}
+.node{position:relative;padding:0 0 16px 36px}
+.node:before{content:"";position:absolute;left:12px;top:27px;bottom:1px;width:2px;background:#2b2620;border-radius:2px}
+.node:last-child:before{display:none}
+.node.done:before{background:linear-gradient(var(--accent),#3a2716)}
+.node .dot{position:absolute;left:0;top:0;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:600;border:1.5px solid #3a342c;background:#141210;color:var(--dim);transition:all .2s}
+.node.done .dot{background:#3a2716;border-color:var(--accent);color:var(--accent)}
+.node.cur .dot{background:var(--accent);border-color:var(--accent);color:#1b1006;box-shadow:0 0 0 4px rgba(245,158,66,.18)}
+.node .sbtn{all:unset;display:block;width:100%;cursor:pointer;border-radius:8px}
+.node .sbtn:disabled{cursor:default}
+.node .sbtn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.node .nl{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:14px;font-weight:550;line-height:26px;color:var(--dim)}
+.node.done .nl,.node.reached .nl{color:var(--muted)}
+.node.cur .nl{color:var(--text)}
+.node .sbtn:not(:disabled):hover .nl{color:var(--text)}
+.node .ssum{font-size:12px;color:var(--dim);line-height:1.4;overflow-wrap:anywhere}
+.pill{font-size:10.5px;line-height:1.6;padding:0 7px;border-radius:99px;background:var(--warnBg);border:1px solid rgba(251,191,36,.35);color:var(--warn);font-weight:600}
+.pill.ok{background:var(--accentSoft);border-color:var(--accentLine);color:var(--accent)}
+.railfoot{margin-top:auto;padding-top:18px;font-size:12px;color:var(--dim);display:flex;flex-direction:column;gap:6px;line-height:1.9}
+
+/* panel */
+.panel{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0}
+.stagewrap{max-width:860px;margin:0 auto;padding:22px 28px 0}
+.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:650;margin-bottom:8px}
+.panel h2{font-size:30px;line-height:1.18;margin:0 0 8px;font-weight:650;letter-spacing:-.02em;overflow-wrap:anywhere}
+.panel .sub{color:var(--muted);font-size:16px;margin:0 0 22px;max-width:640px}
+.panel .foot{display:flex;gap:8px;align-items:center;margin-top:16px;flex-wrap:wrap}
+.panel .foot.nav{position:sticky;bottom:0;z-index:3;margin-top:28px;padding:18px 0 18px;background:linear-gradient(transparent,#0b0a09 18px)}
+.panel .foot.nav .btn{padding:9px 16px;font-size:14px}
+.stagewrap>div>*:not(.foot):not(h2):not(.sub){overflow-wrap:anywhere}
+.panel .foot .sp{flex:1}
+.enter{animation:enter .3s var(--ease)}
+@keyframes enter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.field label{font-size:12px;color:var(--muted)}
+.input{background:#121110;border:1px solid var(--border2);border-radius:9px;padding:9px 11px;outline:none;transition:border-color .15s,box-shadow .15s;width:100%}
+.input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,158,66,.15)}
+textarea.input{resize:vertical;min-height:70px}
+.repos{display:grid;gap:8px}
+.repo{display:flex;gap:10px;align-items:center;text-align:left;background:#121110;border:1px solid var(--border2);border-radius:10px;padding:9px 12px;transition:border-color .15s,background .15s}
+.repo:hover{border-color:#4a4237}
+.repo.on{border-color:var(--accent);background:#1d150d}
+.repo .r{width:14px;height:14px;border-radius:50%;border:2px solid #4a4237;flex:0 0 auto}
+.repo.on .r{border-color:var(--accent);background:radial-gradient(circle,var(--accent) 40%,transparent 45%)}
+.repo .p{color:var(--dim);font-family:var(--mono);font-size:11px}
+
+.fact{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--border);background:var(--surface);border-radius:10px;margin-bottom:8px}
+.enter .fact,.enter .idea{opacity:0;animation:enter .35s var(--ease) forwards}
+.fact .ic{color:var(--accent);flex:0 0 auto;margin-top:1px}
+.fact .src{display:inline-block;margin-top:4px;color:var(--dim);font-family:var(--mono);font-size:11px}
+
+/* interview */
+.qmeta{display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--muted);font-size:12px}
+.pips{display:flex;gap:4px}
+.pips button{width:22px;height:6px;border-radius:3px;border:0;background:#2b2620;padding:0}
+.pips button.a{background:#8a5a2b}.pips button.c{background:var(--accent)}
+.qcard{border:1px solid var(--border2);background:var(--surface);border-radius:14px;padding:16px}
+.qcard .q{font-size:16px;font-weight:600;margin-bottom:12px}
+.opt{display:flex;width:100%;align-items:center;gap:10px;text-align:left;border:1px solid var(--border2);background:#121110;border-radius:10px;padding:10px 12px;margin-bottom:8px;transition:border-color .15s,background .15s,transform .1s}
+.opt:hover{border-color:#5a4c3c;background:#18140f}
+.opt .n{font-family:var(--mono);font-size:11px;color:var(--dim);width:16px}
+.opt .t{flex:1}
+.opt.jev{border-color:var(--accentLine);background:#1d150d}
+.opt.chosen{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.opt .tag{font-size:11px;color:var(--accent);font-weight:600;display:flex;gap:6px;align-items:center}
+.minijev{width:16px;height:16px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffc28a,#ef7d48);display:inline-block;position:relative;flex:0 0 auto}
+.minijev:before,.minijev:after{content:"";position:absolute;top:5px;width:3px;height:4px;border-radius:2px;background:#1a1410}
+.minijev:before{left:4px}.minijev:after{right:4px}
+.otherrow{display:flex;gap:8px;margin-top:4px}
+.answered{margin-top:16px}
+.answered .h{font-size:12px;color:var(--muted);margin-bottom:6px}
+.ans{display:flex;gap:8px;align-items:baseline;width:100%;text-align:left;border:0;background:none;padding:5px 6px;border-radius:7px;font-size:12.5px;color:var(--muted)}
+.ans:hover{background:var(--surface2);color:var(--text)}
+.ans b{color:var(--text);font-weight:500}
+.ans .ov{color:var(--warn);font-size:11px}
+
+/* review */
+.stat{display:flex;gap:10px;margin-bottom:12px}
+.stat>div{flex:1;border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:10px 12px}
+.stat .v{font-size:22px;font-weight:650}
+.stat .l{font-size:11.5px;color:var(--muted)}
+.tip{display:flex;gap:10px;font-size:12.5px;color:var(--muted);border:1px dashed #3a342c;border-radius:10px;padding:10px 12px;margin-bottom:8px}
+
+/* rewrite */
+.rw{border:1px solid var(--border2);background:var(--surface);border-radius:12px;padding:12px 14px;margin-bottom:10px;transition:border-color .15s}
+.rw:hover{border-color:#4a4237}
+.rw.best{border-color:var(--accentLine);background:linear-gradient(180deg,#1d150d,var(--surface) 70%)}
+.rw.used{border-color:var(--add)}
+.rw .hd{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.rw .ti{font-weight:600}
+.badge{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;border:1px solid var(--border2);color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.badge.jev{color:#1b1006;background:var(--accent);border-color:var(--accent)}
+.rw .notes{font-size:12.5px;color:var(--muted);margin-bottom:8px}
+.diff{font-size:13px;line-height:1.6;background:#100f0e;border:1px solid var(--border);border-radius:8px;padding:9px 11px}
+.diff del{color:var(--del);background:var(--delBg);text-decoration:line-through;text-decoration-color:rgba(248,113,113,.6);border-radius:3px;padding:0 1px}
+.diff ins{color:#86efac;background:var(--addBg);text-decoration:none;border-radius:3px;padding:0 1px}
+.rw .act{display:flex;gap:8px;margin-top:10px;align-items:center}
+.vers{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+.ver{display:flex;gap:10px;align-items:center;padding:6px 8px;border-radius:8px;font-size:12.5px}
+.ver:hover{background:var(--surface2)}
+.ver .vn{font-family:var(--mono);font-size:11px;color:var(--accent);width:22px}
+.ver .vt{flex:1;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ver.cur .vt{color:var(--text)}
+
+/* inspiration */
+.ideas{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.idea{min-width:0;overflow:hidden;border:1px solid var(--border2);background:var(--surface);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px;transition:border-color .15s,transform .15s}
+.idea:hover{border-color:#4a4237}
+.idea.open{grid-column:1/-1}
+.idea .src{flex-wrap:wrap;font-size:11px;color:var(--accent);font-weight:600;letter-spacing:.04em;text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.idea .src .jb{flex-basis:auto;max-width:100%;overflow:hidden}
+.idea .big{overflow-wrap:anywhere;font-size:13.5px;font-weight:550}
+.idea .why{overflow-wrap:anywhere;font-size:12px;color:var(--muted)}
+.idea .row{display:flex;gap:6px;margin-top:auto;padding-top:4px;flex-wrap:wrap}
+.more{border-top:1px solid var(--border);margin-top:6px;padding-top:6px}
+.mi{display:flex;gap:10px;padding:8px 2px;border-bottom:1px solid #1f1d1a;font-size:12.5px;align-items:flex-start}
+.mi:last-child{border-bottom:0}
+.mi .b{flex:1}
+.mi .s{color:var(--dim);font-size:11.5px}
+.mi .unmet{color:var(--del);font-size:11.5px}
+.mi .k{font-family:var(--mono);font-size:10.5px;color:var(--dim);text-transform:uppercase;width:38px;flex:0 0 auto;padding-top:2px}
+.done-chip{font-size:11.5px;color:var(--add)}
+.rs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px}
+.rsb{text-align:left;border:1px solid var(--border2);background:#121110;border-radius:9px;padding:7px 9px;font-size:12px}
+.rsb:hover{border-color:#5a4c3c}
+.rsb b{display:block;font-size:12.5px}
+.rsb span{color:var(--dim);font-size:11px}
+.rsb.run{border-color:var(--accent)}
+.spin{width:12px;height:12px;border:2px solid #4a4237;border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:spin .8s linear infinite;vertical-align:-2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.result{border:1px solid var(--accentLine);background:#1a130c;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:12.5px}
+
+/* expectations */
+.sec{margin-bottom:16px}
+.sec h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 6px;font-weight:600}
+.xrow{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);margin-bottom:6px;cursor:default;transition:border-color .15s}
+.xrow:hover,.xrow:focus-within{border-color:#4a4237}
+.xrow .nm{font-weight:550;font-size:13px;width:104px;flex:0 0 auto}
+.xrow .rs2{flex:1;font-size:12px;color:var(--muted);min-width:0}
+.xrow .ovr{color:var(--warn);font-size:11px;display:block}
+.pbar{width:46px;height:5px;background:#2b2620;border-radius:3px;overflow:hidden;flex:0 0 auto}
+.pbar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.pv{font-family:var(--mono);font-size:11px;color:var(--dim);width:30px;text-align:right}
+.tog{width:38px;height:22px;border-radius:999px;border:1px solid var(--border2);background:#2b2620;position:relative;flex:0 0 auto;padding:0;transition:background .2s}
+.tog:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#9a8f80;transition:transform .2s var(--ease),background .2s}
+.tog.on{background:#6b4318;border-color:var(--accent)}
+.tog.on:after{transform:translateX(16px);background:var(--accent)}
+.tog:disabled{opacity:.7;cursor:not-allowed}
+.lock{font-size:11px;color:var(--dim)}
+.seg{display:inline-flex;border:1px solid var(--border2);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:#121110;padding:4px 10px;font-size:12px;color:var(--muted);border-right:1px solid var(--border2)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--accent);color:#1b1006;font-weight:600}
+.seg button:hover:not(.on){color:var(--text)}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:6px;background:#1f1c18;border:1px solid var(--border2);color:#d6cbbd}
+.num{width:64px;padding:4px 8px}
+
+/* readiness panel */
+.rd{border:1px solid var(--border);background:var(--surface);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+.rd .t{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px}
+.rd .t .mono{text-align:right}
+.rd .bar{height:8px;background:#2b2620;border-radius:4px;position:relative;overflow:visible}
+.rd .bar i{display:block;height:100%;border-radius:4px;transition:width .6s var(--ease)}
+.rd .bar .th{position:absolute;top:-4px;bottom:-4px;width:2px;background:#e5e5e5;opacity:.7;left:60%;border-radius:1px}
+.rd .note{font-size:12px;color:var(--muted);margin-top:6px}
+.warnbox{border:1px solid rgba(251,191,36,.4);background:var(--warnBg);border-radius:10px;padding:10px 12px;font-size:13px;margin:10px 0;color:#fde68a}
+.okbox{border:1px solid rgba(34,197,94,.35);background:var(--addBg);border-radius:10px;padding:10px 12px;font-size:13px;margin:10px 0;color:#bbf7d0}
+
+/* launch */
+.sum{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.sum>div{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:9px 11px}
+.sum .v{font-weight:650}
+.sum .l{font-size:11.5px;color:var(--muted)}
+.res{border:1px solid var(--border2);background:var(--surface);border-radius:12px;padding:4px 14px}
+.res .kv{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);align-items:center;font-size:13px}
+.res .kv:last-child{border-bottom:0}
+.res .k{width:80px;color:var(--muted);font-size:12px;flex:0 0 auto}
+.res .v{flex:1;font-family:var(--mono);font-size:12px;word-break:break-all}
+.runstate{margin-top:12px;border:1px solid rgba(34,197,94,.35);background:#0f1a12;border-radius:12px;padding:12px 14px}
+.runstate .h{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:8px}
+.live{width:8px;height:8px;border-radius:50%;background:var(--add);box-shadow:0 0 0 0 rgba(34,197,94,.6);animation:live 1.6s infinite}
+@keyframes live{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}100%{box-shadow:0 0 0 8px rgba(34,197,94,0)}}
+.rstep{display:flex;gap:8px;font-size:12.5px;padding:3px 0;color:var(--muted);align-items:center}
+.rstep.on{color:var(--text)}
+.inbox{display:inline-flex;align-items:center;gap:6px;margin-top:10px;color:var(--accent);font-weight:600;text-decoration:none;border-bottom:1px dashed var(--accentLine)}
+.inbox:hover{border-bottom-style:solid}
+
+/* GOAL CARD */
+.gcard{max-width:820px;margin:0 auto;border-radius:20px;position:relative;background:linear-gradient(180deg,#1a1714,#141210);border:1px solid #3a3229;box-shadow:0 30px 60px -30px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.02) inset;transition:box-shadow .5s,border-color .5s}
+.gcard.lv3{border-color:#5a4026}
+.gcard.lv4{border-color:var(--accent);box-shadow:0 30px 60px -30px rgba(0,0,0,.8),0 0 40px -10px rgba(245,158,66,.35)}
+.gcard.glow{animation:glow 1.1s var(--ease)}
+@keyframes glow{0%{box-shadow:0 0 0 0 rgba(245,158,66,.0)}30%{box-shadow:0 0 0 6px rgba(245,158,66,.25),0 0 60px rgba(245,158,66,.3)}100%{box-shadow:0 30px 60px -30px rgba(0,0,0,.8)}}
+.gcard.ship{animation:ship 1.3s cubic-bezier(.5,0,.2,1) forwards}
+@keyframes ship{0%{transform:none}18%{transform:translateY(8px) scale(.985)}55%{transform:translateY(-110vh) scale(.92) rotate(-2deg);opacity:1}56%{opacity:0;transform:translateY(60px) scale(.96)}100%{opacity:1;transform:none}}
+.ghead{display:flex;gap:22px;padding:20px 22px 16px;border-bottom:1px solid #2c2722;align-items:center}
+.ghead .meta{flex:1;min-width:0}
+.lvl{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.lvl .pipsL{display:flex;gap:3px}
+.lvl .pipsL i{width:14px;height:5px;border-radius:2px;background:#3a3229;transition:background .4s}
+.lvl .pipsL i.on{background:var(--accent)}
+.gtitle{font-size:22px;font-weight:700;letter-spacing:-.015em;margin:0 0 6px;outline:none;border-radius:6px}
+.gtitle:hover{background:rgba(255,255,255,.02)}
+.gmeta{display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--muted);font-size:12px}
+.gmeta .mono{color:var(--dim)}
+.pendchip{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;padding:3px 10px;border-radius:999px;background:var(--addBg);border:1px solid rgba(34,197,94,.35);color:#86efac}
+.gauge{flex:0 0 auto;display:flex;align-items:center;gap:12px;position:relative}
+.gauge svg{display:block}
+.gauge .arc{transition:stroke-dasharray .8s var(--ease)}
+.gauge .ctr{font-size:26px;font-weight:700;fill:var(--text)}
+.gauge .ctrl{font-size:9.5px;fill:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.legend{display:flex;flex-direction:column;gap:6px;font-size:12px;min-width:118px}
+.legend div{display:flex;align-items:center;gap:7px}
+.legend .sw{width:9px;height:9px;border-radius:3px}
+.legend .v{margin-left:auto;font-family:var(--mono);font-size:11.5px}
+.legend .v.low{color:var(--warn)}
+.legend .ok{color:var(--add);font-size:11px;width:10px}
+.burst{position:absolute;left:80px;top:80px;pointer-events:none}
+.burst i{position:absolute;width:6px;height:6px;border-radius:2px;animation:burst .9s var(--ease) forwards}
+@keyframes burst{from{transform:translate(0,0) scale(1);opacity:1}to{transform:translate(var(--x),var(--y)) scale(.4) rotate(160deg);opacity:0}}
+
+.gbody{padding:6px 22px 22px}
+.gsec{padding:14px 0 6px;border-bottom:1px dashed #2c2722}
+.gsec:last-child{border-bottom:0}
+.gsec .sh{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.gsec .sh h4{margin:0;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650}
+.gsec .sh .cnt{font-size:11px;color:var(--dim);font-family:var(--mono)}
+.gsec .sh .hint{margin-left:auto;font-size:11px;color:var(--dim)}
+.task{font-size:15px;line-height:1.55;outline:none;border-radius:6px;padding:2px 4px;margin:0 -4px}
+.vtag{font-family:var(--mono);font-size:10.5px;color:var(--accent);border:1px solid var(--accentLine);border-radius:5px;padding:0 5px}
+.line{display:flex;gap:9px;align-items:flex-start;padding:5px 6px;margin:0 -6px;border-radius:8px;transition:background .15s}
+.line:hover{background:rgba(255,255,255,.025)}
+.line .ac{font-family:var(--mono);font-size:11px;color:var(--accent);flex:0 0 auto;padding-top:2px;width:58px}
+.line .bul{color:var(--dim);flex:0 0 auto;width:14px;text-align:center}
+.line .tx{flex:1;outline:none;border-radius:4px;min-width:0}
+.line .tx:focus{background:#100f0e;box-shadow:0 0 0 1px var(--accentLine);padding:0 4px;margin:0 -4px}
+.line .x{opacity:0;border:0;background:none;color:var(--dim);font-size:14px;padding:0 4px;line-height:1}
+.line:hover .x,.line .x:focus{opacity:1}
+.line .x:hover{color:var(--del)}
+.line.flash{animation:flash 1.2s ease-out}
+@keyframes flash{from{background:rgba(34,197,94,.18)}to{background:transparent}}
+.mchips{display:flex;flex-wrap:wrap;gap:6px}
+.mchip{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11.5px;padding:3px 4px 3px 8px;border-radius:7px;background:#1f1c18;border:1px solid var(--border2)}
+.mchip .x{border:0;background:none;color:var(--dim);padding:0 3px;font-size:12px;opacity:.5}
+.mchip:hover .x{opacity:1}
+.mchip .x:hover{color:var(--del)}
+.addrow{margin-top:4px}
+.addin{background:transparent;border:1px dashed #332d25;border-radius:8px;padding:5px 9px;font-size:12.5px;width:100%;outline:none;color:var(--muted);transition:border-color .15s}
+.addin:focus{border-color:var(--accent);border-style:solid;color:var(--text);background:#100f0e}
+.addin.small{width:170px}
+.hunk{border:1px solid rgba(34,197,94,.3);border-radius:9px;margin:6px 0 8px;overflow:hidden}
+.hunk.nw{animation:enter .3s var(--ease)}
+.hunk .hh{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);padding:4px 8px;background:#0f1510;border-bottom:1px solid rgba(34,197,94,.18)}
+.hunk .hh .from{color:#86efac}
+.hunk .hh .sp{flex:1}
+.hunk .hl{font-size:13px;padding:5px 9px 5px 26px;position:relative}
+.hunk .hl:before{position:absolute;left:10px;font-family:var(--mono)}
+.hunk .hl.add{background:var(--addBg);color:#bbf7d0}
+.hunk .hl.add:before{content:"+";color:var(--add)}
+.hunk .hl.del{background:var(--delBg);color:#fecaca;text-decoration:line-through;text-decoration-color:rgba(248,113,113,.5)}
+.hunk .hl.del:before{content:"−";color:var(--del)}
+.hbtn{border:1px solid transparent;background:none;border-radius:6px;padding:1px 8px;font-size:11.5px;font-weight:600}
+.hbtn.ok{color:#86efac;border-color:rgba(34,197,94,.35)}
+.hbtn.ok:hover{background:rgba(34,197,94,.15)}
+.hbtn.no{color:#fca5a5}
+.hbtn.no:hover{background:rgba(239,68,68,.12)}
+.hbtn.rejp{background:#3a1d1a;border-color:rgba(248,113,113,.55);color:#fecaca}
+.empty{padding:40px 22px;text-align:center;color:var(--muted)}
+.empty .seedq{font-size:20px;color:var(--text);margin:10px 0 6px;font-weight:600}
+.stamp{position:absolute;right:26px;top:-14px;transform:rotate(6deg);font-weight:800;letter-spacing:.14em;font-size:12px;color:#1b1006;background:var(--accent);padding:4px 12px;border-radius:6px;box-shadow:0 6px 16px rgba(0,0,0,.4);animation:stamp .5s var(--ease)}
+@keyframes stamp{from{transform:rotate(-8deg) scale(1.8);opacity:0}to{transform:rotate(6deg) scale(1);opacity:1}}
+
+.toast{position:fixed;bottom:22px;left:50%;transform:translate(-50%,20px);background:#221b13;border:1px solid var(--accentLine);color:var(--text);padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:all .3s var(--ease);display:flex;gap:8px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* live wiring */
+.livebadge{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;padding:2px 8px;border-radius:999px;border:1px solid rgba(34,197,94,.4);color:#86efac;background:rgba(34,197,94,.08)}
+.livebadge:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--add);margin-right:6px;vertical-align:1px;animation:led 2.4s ease-in-out infinite}
+.livebadge.off{border-color:rgba(248,113,113,.45);color:#fecaca;background:var(--delBg)}
+.livebadge.off:before{background:var(--del)}
+.bubble.narr .narrtx{font-size:13px;color:#e9dccb;min-height:2.9em;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.bubble.narr .narrtx code{font-size:11.5px}
+.bubble .who .spin{width:10px;height:10px;border-width:1.5px}
+.skel{border-radius:7px;margin:6px 0;background:linear-gradient(90deg,#1c1a17 0,#2a2620 40%,#1c1a17 80%);background-size:300% 100%;animation:shim 1.4s linear infinite}
+.skel.inl{display:inline-block;width:60%;height:11px;margin:0;vertical-align:middle}
+@keyframes shim{from{background-position:100% 0}to{background-position:-200% 0}}
+.waitrow{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--muted);margin:4px 0 10px}
+.discbar{display:flex;gap:8px;align-items:center;font-size:13px;padding:9px 12px;border:1px solid var(--accentLine);background:var(--accentSoft);border-radius:10px}
+.discbar .sp{flex:1}
+.ticker{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:10px;padding:8px 10px;border-left:2px solid #2b2620;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ticker div{overflow:hidden;text-overflow:ellipsis}
+.fact.fresh,.enter .fact.fresh{animation:enter .35s var(--ease) both}
+#facts{display:flow-root}
+details.reads{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:6px}
+details.reads summary{cursor:pointer;color:var(--muted)}
+.errbox{display:flex;gap:10px;align-items:center;border:1px solid rgba(248,113,113,.45);background:var(--delBg);color:#fecaca;border-radius:10px;padding:9px 12px;font-size:13px;margin:8px 0}
+.errbox span{flex:1;word-break:break-word}
+.lerr{color:#fecaca;font-size:12.5px;flex:1 1 0;word-break:break-word}
+.stalechip{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--warn);border:1px dashed rgba(251,191,36,.4);border-radius:10px;padding:6px 10px;margin-bottom:10px}
+.stalechip .btn{margin-left:auto}
+.sgbox{border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-top:12px;background:var(--surface)}
+.thr{color:var(--dim)}
+.xrow .pv{width:auto;min-width:30px;white-space:nowrap}
+.hunk .hl.diff{border:0;border-radius:0;background:transparent;padding-left:26px}
+.hunk .hl.err{background:var(--delBg);color:#fecaca}
+
+/* section tag: a small label ABOVE its text, never beside it (no overlap at any width) */
+.sectag{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accentLine);border-radius:5px;padding:0 5px;margin-bottom:3px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.mi .k{width:auto;min-width:38px;max-width:40%;overflow-wrap:anywhere}
+.mi .b{min-width:0;overflow-wrap:anywhere}
+.mi>.btn{flex:0 0 auto}
+
+/* diff lines (left panel) */
+.dl{font-size:12.5px;padding:3px 8px 3px 22px;position:relative;border-radius:5px;margin-top:3px;overflow-wrap:anywhere}
+.dl:before{position:absolute;left:8px;font-family:var(--mono)}
+.dl.add{background:var(--addBg);color:#bbf7d0}.dl.add:before{content:"+";color:var(--add)}
+.dl.del{background:var(--delBg);color:#fecaca;text-decoration:line-through;text-decoration-color:rgba(248,113,113,.5)}.dl.del:before{content:"−";color:var(--del)}
+.dl.diff{background:#100f0e;border:1px solid var(--border);padding-left:8px}
+
+/* proposals: one list to work through */
+.nextbox{border:1px solid var(--accentLine);background:var(--accentSoft);border-radius:10px;padding:10px 12px;font-size:13px;margin:10px 0}
+.nextbox b{color:var(--accent2)}
+.plist{display:grid;gap:8px;margin:0 0 12px}
+.pl{border:1px solid var(--border2);background:var(--surface);border-radius:10px;padding:9px 11px;transition:border-color .15s,background .15s}
+.pl:hover,.pl:focus-within{border-color:rgba(34,197,94,.45);background:#121612}
+.pl .ph{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--dim)}
+.pl .ph .sectag{margin:0}
+.pl .pa{display:flex;gap:6px;margin-top:8px}
+.hunk.hot{box-shadow:0 0 0 2px var(--add),0 0 24px rgba(34,197,94,.25);border-color:var(--add)}
+.hunk.land{animation:land 1.8s ease-out}
+@keyframes land{0%{box-shadow:0 0 0 0 rgba(34,197,94,0)}20%{box-shadow:0 0 0 3px rgba(34,197,94,.7),0 0 30px rgba(34,197,94,.35)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+.gsec.spot,.line.spot,.mchip.spot{animation:spot 1.8s ease-out}
+@keyframes spot{0%{background:rgba(245,158,66,0)}20%{background:rgba(245,158,66,.16)}100%{background:rgba(245,158,66,0)}}
+
+/* talk it through (chat per question) */
+.qtools{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.chat{margin-top:10px;border:1px solid var(--border2);border-radius:12px;background:#121110;padding:10px}
+.chat .ch{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--accent);font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px}
+.chat .ch .sp{flex:1}
+.chatlog{max-height:300px;overflow:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+.chatlog:empty{display:none}
+.cm{font-size:12.5px;line-height:1.5;overflow-wrap:anywhere}
+.cm.u{align-self:flex-end;max-width:85%;background:var(--accentSoft);border:1px solid var(--accentLine);border-radius:10px 10px 2px 10px;padding:6px 10px}
+.cm.a{display:flex;gap:8px;align-items:flex-start}
+.cm.a .minijev{margin-top:2px}
+.cm.a .cmt{flex:1;min-width:0;background:#1a1714;border:1px solid var(--border2);border-radius:2px 10px 10px 10px;padding:7px 10px}
+.cmt p{margin:0 0 4px}.cmt p:last-child{margin:0}
+.cmt ul{margin:2px 0 6px;padding-left:16px}.cmt li{margin:2px 0}
+.cmt li:not([data-l1]){font-weight:600;margin-top:6px}.cmt li:first-child{margin-top:0}
+.cmt li[data-l1]{margin-left:14px;list-style:circle;font-weight:400;color:#d6cbbd}
+.cmt .rv{animation:rv .45s linear both}
+@keyframes rv{from{clip-path:inset(0 100% 0 0);opacity:.4}to{clip-path:inset(0 0 0 0);opacity:1}}
+.typing{display:inline-flex;gap:4px;align-items:center;padding:4px 2px}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:dot 1.2s ease-in-out infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+.starters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.starter{border:1px solid var(--border2);background:#1a1714;border-radius:999px;padding:3px 10px;font-size:12px;color:var(--muted)}
+.starter:hover:not(:disabled){border-color:var(--accent);color:var(--text)}
+.starter:disabled{opacity:.45;cursor:not-allowed}
+.chatrow{display:flex;gap:6px}
+.chatrow .input{padding:6px 10px;font-size:13px;min-width:0}
+
+/* ready: fix it */
+.fixes{margin-top:10px;border-top:1px dashed #3a342c;padding-top:8px}
+.fixes .fh{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--accent);font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px}
+.fix{border:1px solid var(--border2);background:#121110;border-radius:10px;padding:9px 11px;margin-bottom:6px}
+.fix .ft{font-weight:600;font-size:13px}
+.fix .fw{font-size:12px;color:var(--muted);margin:2px 0 4px}
+.fix .fa{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.fix .fa .jump{font-size:12px;margin-left:auto;background:none;border:0;color:var(--accent);padding:0;text-decoration:underline dotted}
+.fix.used{border-color:rgba(34,197,94,.45)}
+.mv{font-family:var(--mono);font-size:11.5px;color:var(--add);margin-left:6px}
+.mv.down{color:var(--del)}.mv.flat{color:var(--muted)}
+
+/* Jev what-if badges (impact) */
+.jb{max-width:100%;overflow:hidden;text-overflow:ellipsis;display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;font-weight:600;padding:1px 7px 1px 3px;border-radius:999px;border:1px solid var(--accentLine);background:var(--accentSoft);color:var(--accent2);white-space:nowrap;transition:opacity .2s;text-transform:none;letter-spacing:0;vertical-align:middle}
+.jb .minijev{width:13px;height:13px}
+.jb .minijev:before,.jb .minijev:after{top:4px;width:2.4px;height:3.2px}
+.jb .minijev:before{left:3.2px}.jb .minijev:after{right:3.2px}
+.jb .up{color:var(--add)}.jb .dn{color:var(--del)}.jb .fl{color:var(--muted)}
+.jb.skip{border-color:rgba(248,113,113,.5);background:var(--delBg);color:#fecaca}
+.jb.wait{color:var(--dim);border-color:var(--border2);background:transparent;padding-left:6px}
+.jb.wait .spin{width:9px;height:9px;border-width:1.5px}
+.jb.stale{opacity:.45}
+.minijev.worried{background:radial-gradient(circle at 35% 35%,#ffd9a8,#e9925a)}
+.minijev.worried:before{transform:rotate(-28deg) scaleY(.75)}.minijev.worried:after{transform:rotate(28deg) scaleY(.75)}
+.jbrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px}
+.pl.skip,.fix.skip,.mi.skip,.idea.skip,.rw.skip{border-color:rgba(248,113,113,.3)}
+.mi.skip{border-color:#1f1d1a}
+.pl.prev,.fix.prev,.mi.prev,.idea.prev,.rw.prev,.hunk.prev,.result.prev{box-shadow:0 0 0 1px var(--accentLine)}
+.btn.rejp{background:#3a1d1a;border-color:rgba(248,113,113,.55);color:#fecaca;font-weight:600}
+.btn.rejp:hover{background:#4a2420;border-color:#f87171}
+.legend .gv{font-family:var(--mono);font-size:10.5px;width:42px;text-align:right}
+.rd .bar .gh{position:absolute;top:-3px;bottom:-3px;width:3px;border-radius:2px;background:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.5);display:none}
+.rd .bar .ghz{position:absolute;top:0;bottom:0;border-radius:4px;opacity:.35;display:none}
+.rd .gv{font-family:var(--mono);font-size:11px;margin-left:6px}
+.whatif{position:fixed;bottom:22px;right:26px;z-index:20;pointer-events:none;background:#1d1813;border:1px solid var(--accentLine);border-radius:12px;padding:8px 12px;font-size:12px;display:none;flex-direction:column;gap:4px;min-width:230px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.whatif.show{display:flex}
+.whatif .wh{font-size:10.5px;color:var(--accent);font-weight:600;letter-spacing:.04em;text-transform:uppercase;display:flex;gap:6px;align-items:center}
+.whatif .wr{display:flex;gap:8px;align-items:center}
+.whatif .wn{width:62px;color:var(--muted)}
+.whatif .wb{flex:1;height:6px;background:#2b2620;border-radius:3px;position:relative}
+.whatif .wb i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.whatif .wb b{position:absolute;top:-3px;bottom:-3px;width:3px;background:#fff;border-radius:2px}
+.whatif .wb s{position:absolute;top:-2px;bottom:-2px;width:1.5px;background:#e5e5e5;opacity:.6}
+.whatif .wv{font-family:var(--mono);font-size:11px;width:84px;text-align:right}
+
+/* ===== Coach look on the Wizard's 3 panes ===== */
+/* centre: one stage, large type */
+.qcard{padding:22px;border-radius:16px}
+.qcard .q{font-size:24px;line-height:1.3;letter-spacing:-.01em;margin-bottom:6px;overflow-wrap:anywhere}
+.qcard .qwhy{color:var(--muted);font-size:15px;margin:0 0 18px}
+.opt{padding:14px 16px;font-size:16.5px;border-radius:12px;flex-wrap:wrap}
+.opt .t{min-width:0;overflow-wrap:anywhere}
+.opt .n{width:24px;height:24px;border-radius:7px;border:1px solid #3a342c;display:grid;place-items:center;font-size:12px;flex:0 0 auto}
+.opt.jev .n{border-color:var(--accentLine);color:var(--accent)}
+.opt .adds{display:block;font-size:12.5px;color:var(--dim);margin-top:3px;line-height:1.4}
+.opt .tag{flex-wrap:wrap}
+.fact{padding:12px 14px;font-size:15px}
+.fact>div{min-width:0;overflow-wrap:anywhere}
+.rw .ti{font-size:16px}.rw .hd{flex-wrap:wrap}
+.diff{font-size:15px}
+.idea .big{font-size:15px}
+.rd .t b{font-size:18px}
+.rd{padding:14px 16px}
+.xrow{flex-wrap:wrap}
+.xrow .rs2{flex:1 1 220px}
+.ticker{white-space:normal}.ticker div{overflow-wrap:anywhere}
+.ver{flex-wrap:wrap}.ver .vt{white-space:normal;overflow-wrap:anywhere;flex:1 1 200px;min-width:0}
+.res .kv{flex-wrap:wrap}.res .v{min-width:0}
+.sum{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.ans{overflow-wrap:anywhere}
+.whatif{right:calc(var(--cardW) + 18px);left:auto;bottom:86px;max-width:calc(100vw - var(--railW) - var(--cardW) - 36px)}
+.panel .foot.nav{flex-wrap:nowrap}
+.panel .foot.nav .lock{min-width:0;flex:0 1 auto}
+.panel .foot.nav .btn{flex:0 0 auto}
+
+/* right: slim live card; stacks its head when narrow, never clips */
+.gcard{max-width:none;border-radius:16px}
+.ghead{flex-wrap:wrap;gap:14px;padding:16px 16px 14px}
+.ghead .meta{flex:1 1 220px}
+.gauge{flex-wrap:wrap;gap:10px;margin:0 auto}
+.gtitle{font-size:19px;overflow-wrap:anywhere}
+.gmeta{overflow-wrap:anywhere}
+.gbody{padding:4px 16px 18px}
+.gsec{border-radius:8px;margin:0 -8px;padding:12px 8px 6px}
+.gsec.secflash{animation:secflash 1.6s ease-out}
+@keyframes secflash{0%{background:rgba(245,158,66,.22);box-shadow:inset 3px 0 0 var(--accent)}100%{background:transparent;box-shadow:inset 3px 0 0 transparent}}
+.gsec .sh{flex-wrap:wrap}
+.gsec .sh .hint{margin-left:0;flex-basis:100%}
+.task{overflow-wrap:anywhere}
+.line .tx{overflow-wrap:anywhere}
+.mchip{max-width:100%}
+.mchip .mt{min-width:0;overflow-wrap:anywhere}
+.hunk .hh{flex-wrap:wrap}
+.hunk .hl{overflow-wrap:anywhere}
+.pendchip{max-width:100%}
+@container (min-width:560px){.gsec .sh .hint{margin-left:auto;flex-basis:auto}}
+.pvhead{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin:0 2px 10px}
+.pvhead .lv{display:flex;align-items:center;gap:6px}
+.pvhead .lv i{width:6px;height:6px;border-radius:50%;background:var(--add)}
+
+/* deep research (Jev decides if, when and how deep) */
+.dstrip{position:sticky;top:-16px;box-shadow:0 -16px 0 #0c0b0a;z-index:5;padding:10px 14px;border-radius:16px 16px 0 0;background:#15120f;border-bottom:1px solid #2c2722;display:flex;flex-direction:column;gap:7px}
+.dsrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.dlab{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.dchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid var(--border2);background:#1f1c18;color:var(--text);max-width:100%;min-width:0;overflow-wrap:anywhere;line-height:1.5}
+.dchip.t-no{color:#d6cbbd}
+.dchip.t-wait{color:var(--warn);border-color:rgba(251,191,36,.4);background:var(--warnBg)}
+.dchip.t-run{color:var(--accent2);border-color:var(--accentLine);background:var(--accentSoft)}
+.dchip.t-done{color:#86efac;border-color:rgba(34,197,94,.4);background:var(--addBg)}
+.dchip.t-off{color:#fecaca;border-color:rgba(248,113,113,.45);background:var(--delBg)}
+.dchip.t-skip{color:var(--muted);border-style:dashed}
+.dchip .pulse{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:0 0 auto;animation:live 1.6s infinite}
+.dchip .spin{width:10px;height:10px;border-width:1.5px}
+.dby{font-size:10.5px;font-weight:650;padding:1px 7px 1px 4px;border-radius:999px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;border:1px solid transparent}
+.dby .minijev{width:12px;height:12px}
+.dby .minijev:before,.dby .minijev:after{top:3.5px;width:2.2px;height:3px}
+.dby .minijev:before{left:3px}.dby .minijev:after{right:3px}
+.dby.jev{color:var(--accent);background:var(--accentSoft);border-color:var(--accentLine)}
+.dby.you{color:#93c5fd;background:rgba(59,130,246,.12);border-color:rgba(96,165,250,.4)}
+.dby.you svg{display:block}
+.dwhy{font-size:11.5px;color:var(--accent);background:none;border:1px dashed var(--accentLine);border-radius:999px;padding:0 8px;line-height:1.6}
+.dwhy:hover,.dwhy[aria-expanded="true"]{background:var(--accentSoft);border-style:solid}
+.dbtns{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.dbtns .seg button{padding:2px 8px;font-size:11.5px}
+.dbtns .seg button .minijev{width:10px;height:10px;vertical-align:-1px;margin-right:3px}
+.dbtns .seg button .minijev:before,.dbtns .seg button .minijev:after{top:3px;width:2px;height:2.6px}
+.dbtns .seg button .minijev:before{left:2.5px}.dbtns .seg button .minijev:after{right:2.5px}
+.dprog{font-size:11.5px;color:var(--muted);display:flex;gap:4px 10px;flex-wrap:wrap;align-items:center}
+.dprog a{color:var(--accent);font-weight:600;text-decoration:none;border-bottom:1px dashed var(--accentLine)}
+.dpop{border:1px solid var(--accentLine);background:#1d1813;border-radius:10px;padding:10px 12px;font-size:12px;max-height:50vh;overflow:auto}
+.dpop h5{margin:0 0 6px;font-size:11px;color:var(--accent);letter-spacing:.05em;text-transform:uppercase}
+.dpop .dqn{padding:7px 0;border-top:1px solid #2c2722}
+.dpop .dqn:first-of-type{border-top:0}
+.dpop .dqh{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:600}
+.dpop .dqh .mono{margin-left:auto}
+.dpop .dqt{color:var(--muted);font-style:italic;margin-top:3px}
+.dpop .dbar{height:6px;background:#2b2620;border-radius:3px;position:relative;margin-top:5px}
+.dpop .dbar i{display:block;height:100%;border-radius:3px;background:var(--accent)}
+.dpop .dbar s{position:absolute;top:-3px;bottom:-3px;width:2px;background:#e5e5e5;opacity:.8}
+.dpop .drule{margin-top:6px;color:#d6cbbd}
+.yes{color:var(--add)}.no{color:var(--warn)}
+.drail{all:unset;display:flex;flex-direction:column;gap:5px;cursor:pointer;margin-top:4px;padding:10px;border:1px solid var(--border2);border-radius:10px;background:#141210}
+.drail:hover{border-color:#4a4237}
+.drail:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.drail .dlab{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dsec{border:1px solid var(--border2);background:var(--surface);border-radius:12px;padding:14px 16px;margin:14px 0}
+.dsec>h3{margin:0 0 8px;font-size:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dsec .dsay{font-size:13.5px;color:#e9dccb;margin:8px 0}
+.dsub{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin:14px 0 6px}
+.cev{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#fecaca;background:var(--delBg);border:1px solid rgba(248,113,113,.45);border-radius:5px;padding:0 6px;margin-right:4px;vertical-align:1px}
+.dq{margin-bottom:10px;padding:16px}
+.dq .q{font-size:17px}
+.dq .opt{font-size:14px;padding:10px 12px}
+.rd.rpi .t b{display:flex;gap:6px;align-items:center}
+.legend .rpi{border-top:1px dashed #3a342c;padding-top:5px}
+.legend .rpi .rv{margin-left:auto;font-family:var(--mono);font-size:11px;white-space:nowrap}
+.rpiok{color:var(--add)}.rpino{color:var(--warn)}.rpina{color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="back" href="/">← Factory</a>
+  <span class="label"><b>New goal</b></span>
+  <span class="livebadge" id="livebadge">LIVE · …</span>
+  <span class="sp"></span>
+  <span class="label" id="topstat"></span>
+  <button class="btn sm ghost" data-act="reset" title="Start over">↺ Reset</button>
+</div>
+
+<div class="app" id="app">
+  <nav class="rail" aria-label="Stages">
+    <div class="goalname" id="goalname"></div>
+    <ol class="steps" id="rail"></ol>
+    <div id="deeprail"></div>
+    <div class="railfoot"><div><span class="kbd">↵</span> accept Jev · <span class="kbd">1</span>–<span class="kbd">n</span> pick · <span class="kbd">0</span> other</div><div><span class="kbd">←</span> <span class="kbd">→</span> back / next</div></div>
+  </nav>
+  <main class="center">
+    <div class="jevstage">
+      <div class="jevwrap">
+        <svg id="jev" class="pose-neutral" viewBox="0 0 140 130" aria-label="Jev, your coach" role="img">
+          <defs>
+            <radialGradient id="jb" cx="38%" cy="32%" r="75%">
+              <stop offset="0" stop-color="#ffc58f"/><stop offset=".55" stop-color="#f79a55"/><stop offset="1" stop-color="#e2733f"/>
+            </radialGradient>
+          </defs>
+          <ellipse cx="70" cy="122" rx="34" ry="4.5" fill="#000" opacity=".45"/>
+          <g class="bodyg">
+            <ellipse cx="54" cy="114" rx="9" ry="5" fill="#d9683a"/>
+            <ellipse cx="86" cy="114" rx="9" ry="5" fill="#d9683a"/>
+            <path d="M70 30 C100 30 114 52 114 76 C114 100 96 116 70 116 C44 116 26 100 26 76 C26 52 40 30 70 30Z" fill="url(#jb)"/>
+            <ellipse cx="70" cy="94" rx="24" ry="16" fill="#ffe0bf" opacity=".35"/>
+            <!-- headset band -->
+            <path d="M30 66 C28 36 50 22 70 22 C90 22 112 36 110 66" fill="none" stroke="#2a2730" stroke-width="5.5" stroke-linecap="round"/>
+            <rect x="20" y="57" width="13" height="22" rx="6" fill="#2a2730"/>
+            <rect x="107" y="57" width="13" height="22" rx="6" fill="#2a2730"/>
+            <circle class="led" cx="113.5" cy="62" r="1.8" fill="#fbbf24"/>
+            <path d="M26 76 C26 92 40 98 52 96" fill="none" stroke="#2a2730" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="54" cy="95.5" r="3.6" fill="#2a2730"/>
+            <!-- cheeks -->
+            <ellipse cx="45" cy="84" rx="6" ry="3.5" fill="#ff7f7f" opacity=".35"/>
+            <ellipse cx="95" cy="84" rx="6" ry="3.5" fill="#ff7f7f" opacity=".35"/>
+            <!-- eyes -->
+            <g class="eye"><ellipse cx="56" cy="68" rx="9.5" ry="10.5" fill="#fff"/><g class="pupil"><circle cx="56" cy="69" r="5" fill="#1a1410"/><circle cx="57.8" cy="67" r="1.6" fill="#fff"/></g></g>
+            <g class="eye"><ellipse cx="84" cy="68" rx="9.5" ry="10.5" fill="#fff"/><g class="pupil"><circle cx="84" cy="69" r="5" fill="#1a1410"/><circle cx="85.8" cy="67" r="1.6" fill="#fff"/></g></g>
+            <!-- brows -->
+            <path class="brow w" d="M47 55 L62 52" stroke="#7a3a1c" stroke-width="2.6" stroke-linecap="round"/>
+            <path class="brow w" d="M78 52 L93 55" stroke="#7a3a1c" stroke-width="2.6" stroke-linecap="round"/>
+            <path class="brow t" d="M77 52 Q85 47 93 51" fill="none" stroke="#7a3a1c" stroke-width="2.6" stroke-linecap="round"/>
+            <!-- mouths -->
+            <path class="mouth m-neutral" d="M63 86 Q70 91 77 86" fill="none" stroke="#5a2410" stroke-width="2.6" stroke-linecap="round"/>
+            <path class="mouth m-happy" d="M60 84 Q70 98 80 84 Q70 89 60 84Z" fill="#5a2410"/>
+            <path class="mouth m-worried" d="M62 90 Q66 86 70 89 Q74 92 78 88" fill="none" stroke="#5a2410" stroke-width="2.4" stroke-linecap="round"/>
+            <ellipse class="mouth m-thinking" cx="73" cy="88" rx="3" ry="2.6" fill="#5a2410"/>
+            <path class="sweat" d="M101 44 C104 49 105 52 102 54 C99 54 98 51 101 44Z" fill="#9fd8ff"/>
+            <!-- arms -->
+            <rect class="arm l" x="31" y="78" width="10" height="24" rx="5" fill="#f08a52" stroke="#b9542a" stroke-width="1.5"/>
+            <rect class="arm r" x="99" y="78" width="10" height="24" rx="5" fill="#f08a52" stroke="#b9542a" stroke-width="1.5"/>
+          </g>
+          <g class="dots" fill="#e5e5e5"><circle cx="118" cy="30" r="2.6"/><circle cx="127" cy="24" r="2.6"/><circle cx="136" cy="18" r="2.6"/></g>
+          <g class="spark" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"><path d="M18 30 l4 4"/><path d="M14 42 h5"/><path d="M26 22 l1 5"/></g>
+        </svg>
+      </div>
+      <div class="bubble" id="bubble" aria-live="polite"></div>
+    </div>
+    <div class="panel" id="panel"></div>
+  </main>
+
+  <aside class="cardcol" id="cardcol" aria-label="Live goal card"></aside>
+  <div class="split" data-split="rail" role="separator" aria-orientation="vertical" aria-label="Resize the stage rail" tabindex="0" title="Drag to resize (double-click resets)"></div>
+  <div class="split" data-split="card" role="separator" aria-orientation="vertical" aria-label="Resize the goal card" tabindex="0" title="Drag to resize (double-click resets)"></div>
+  <div class="whatif" id="whatif" aria-live="polite"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="live.js"></script>
+<script>
+(function(){
+// Every flow step is a real GoalLive call (coordinator /api/goal-page/*).
+const D = {seed: "make the proxy retry upstream calls when they fail"};
+const L = window.GoalLive;
+let T = 0.6;
+const STAGES = ["Seed","Discover","Interview","Review","Rewrite","Inspire","Expect","Ready","Launch"];
+const NAMES = {implement:"Implement",verify:"Verify",security:"Security",finish:"Finish",testFirst:"Test first",codeReview:"Code review",design:"Design",supplyChain:"Supply chain",docs:"Docs",postMerge:"Post-merge"};
+const LEVELS = ["","Rough idea","Draft","Clear","Launch-ready","Shipped"];
+const lvName = n => n===5 && S.launched && !S.launched.live ? "Saved (dry run)" : LEVELS[n];
+const DIMS = ["Clear","Testable","In scope"];
+const DIMC = ["var(--c1)","var(--c2)","var(--c3)"];
+const DIMHEX = ["#fb923c","#facc15","#2dd4bf"];
+const clone = o => JSON.parse(JSON.stringify(o));
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+const pct = p => p == null ? "n/a" : Math.round(p*100) + "%";
+const p2 = p => p == null ? "n/a" : p.toFixed(2);
+const nm = id => NAMES[id] || id;
+const secs = ms => (ms/1000).toFixed(1) + " s";
+const isLow = c => c == null || c < 0.65;   // worried pose follows the REAL Jev confidence
+
+let S, pid = 0, gen = 0, info = null, infoErr = null;
+let repos = null, reposErr = null;
+const J = {};          // background jobs: name -> {state:"loading"|"ok"|"err", data, err, doc, t0, ms, seq}
+window.__coachLat = []; // measured latencies, for the test script
+
+function init(){
+  if(S?.deep?.run?.threadId && deepActive()) deepCancelNow(S.deep.run.threadId);
+  clearTimeout(deepTimer); clearTimeout(deepPoll);
+  gen++;
+  for(const k of Object.keys(J)) delete J[k];
+  clearTimeout(rdyTimer);
+  impReset();
+  S = {
+    stage:0, maxStage:0, started:false, repo: S?.repo ?? null, seed: "", title:"", docId:"",
+    doc:{task:"", inputs:[], constraints:[], criteria:[], checks:[]},
+    versions:[], verIdx:0,
+    facts:[], tools:[], status:"", discStart:0, discErr:null, discRunning:false,
+    questions:[], qi:0, answers:{}, otherOpen:false, chats:{},
+    proposals:[], dismissed:{}, earlyRw:false,
+    ideaOpen:null, research:{running:null, done:null, err:null, events:[]},
+    exp:null, expJev:null,
+    rdy:null, notesFor:null, moved:null, rescoring:null,
+    override:"", launched:null, launchErr:null, launching:false,
+    lastLevel:1, passed:[false,false,false], ideaN:0,
+    deep: freshDeep(),
+  };
+  render();
+  say("Hi, I'm Jev. Give me a repo and a rough idea. I'll read the repo, then coach you to a goal a worker can't misread.", "happy", 1600);
+}
+
+/* ---------- background jobs ---------- */
+function job(name, fn, opts = {}){
+  const g = gen, seq = (J[name]?.seq || 0) + 1, t0 = performance.now();
+  const prev = J[name];
+  J[name] = {state:"loading", data: prev?.data, err:null, doc: opts.doc ? clone(opts.doc) : null, t0, seq};
+  if(!opts.quiet) render();
+  return fn().then(d => {
+    if(g!==gen || J[name]?.seq!==seq) return;
+    const ms = performance.now()-t0;
+    J[name] = {...J[name], state:"ok", data:d, ms};
+    window.__coachLat.push({name, ms:Math.round(ms)});
+    opts.ok && opts.ok(d);
+    render();
+  }, e => {
+    if(g!==gen || J[name]?.seq!==seq) return;
+    if(isAbort(e)){ if(J[name].data) J[name] = {...J[name], state:"ok"}; else delete J[name]; render(); return; }
+    J[name] = {...J[name], state:"err", err:e.message || String(e)};
+    opts.err && opts.err(e);
+    render();
+  });
+}
+const isAbort = e => e?.name==="AbortError";
+const withDoc = d => ({...d, title:S.title, id:S.docId});
+const docNow = () => withDoc(S.doc);
+function drift(a, b = S.doc){
+  if(!a) return 0;
+  let n = a.task.trim()===b.task.trim() ? 0 : 2;
+  for(const k of ["inputs","constraints","criteria","checks"]){ n += a[k].filter(x => !b[k].includes(x)).length + b[k].filter(x => !a[k].includes(x)).length; }
+  return n;
+}
+const stale = name => J[name]?.state==="ok" && drift(J[name].doc) >= 2;
+
+function runSuggest(){ job("suggest", () => L.suggest(docNow(), S.facts), {doc:S.doc}); }
+function runInspire(){ job("inspiration", () => L.inspiration(repoObj().path, docNow()), {doc:S.doc}); }
+function runEnhance(doc = S.doc){
+  job("enhance", () => L.enhance(withDoc(doc)), {doc, ok: d => {
+    if(S.stage===4){ const r = [...d.rewrites].sort((a,b)=>a.jevRank-b.jevRank)[0]; if(r) say(`I wrote 3 versions of the task. I'd pick "${r.title}": ${lc(r.notes)}`, isLow(r.jevScore)?"worried":"neutral", null, r.jevScore, true); }
+  }});
+}
+function runExpect(){
+  job("expectations", () => L.expectations(docNow()), {doc:S.doc, ok: d => {
+    const old = S.exp, oldJ = S.expJev;
+    S.expJev = clone(d); S.exp = clone(d);
+    if(old && oldJ){ // keep the human's flips across a refresh
+      S.exp.steps.forEach(s => { const o = old.steps.find(x=>x.id===s.id), j = oldJ.steps.find(x=>x.id===s.id); if(o && j && o.on!==j.on && !s.floor) s.on = o.on; });
+      S.exp.gates.forEach(g => { const o = old.gates.find(x=>x.id===g.id), j = oldJ.gates.find(x=>x.id===g.id); if(o && j && o.run!==j.run) g.run = o.run; });
+      if(old.tier.value!==oldJ.tier.value) S.exp.tier.value = old.tier.value;
+      for(const k in old.approvals) if(old.approvals[k]!==oldJ.approvals[k]) S.exp.approvals[k] = old.approvals[k];
+      S.exp.limits = old.limits;
+      for(const u of old.pr.bodyIncludes) if(!S.exp.pr.bodyIncludes.includes(u) && !oldJ.pr.bodyIncludes.includes(u)) S.exp.pr.bodyIncludes.push(u);
+    }
+    if(S.stage===6) say("I picked what this run must do. Hover or focus any row to hear why. Verify and security always run.", "neutral", null, null, true);
+  }});
+}
+let rdyTimer = null;
+function runReadiness(notes, after){
+  const doc = clone(S.doc);
+  return job(notes ? "notes" : "readiness", () => L.readiness(docNow(), notes), {doc, quiet:true, err: () => { if(!notes && S.rescoring){ S.rescoring = null; say("Re-scoring failed. The fix is applied; Retry the score below.", "worried"); } }, ok: d => {
+    T = d.threshold ?? T;
+    const notesKeep = S.rdy && !notes && S.notesFor && drift(S.notesFor)===0 ? S.rdy.scores.map(s=>s.note) : null;
+    S.rdy = {scores: d.scores.map((s,i) => ({...s, note: notes ? s.note : (notesKeep?.[i] || "")}))};
+    if(notes) S.notesFor = doc;
+    after && after(d);
+    if(notes) prefetchFixes();
+    setTimeout(checkMilestones, 0);
+  }});
+}
+/* ---------- fix a weak readiness dimension (refine, ~15 s) ---------- */
+const fixNote = x => x.note || (x.p == null ? "Jev could not score this dimension." : "");
+function prefetchFixes(){
+  for(const x of scores()){
+    if(passes(x)) continue;
+    const note = fixNote(x), k = "refine:"+x.dim, j = J[k];
+    if(!note) continue;
+    if(j && j.note===note && (j.state==="loading" || (j.state==="ok" && drift(j.doc)===0))) continue;
+    runRefine(x.dim, note);
+  }
+}
+function runRefine(dim, note){
+  const k = "refine:"+dim;
+  job(k, () => L.refine(docNow(), dim, note), {doc:S.doc, quiet:S.stage!==7, ok: d => {
+    if(S.stage===7 && !S.rescoring) say(d.fixes.length ? `I found ${d.fixes.length} fix${d.fixes.length>1?"es":""} for ${dim}. Apply one and I re-score the card.` : `I found no single-line fix for ${dim}. Try a sharper task.`, d.fixes.length ? "happy" : "worried", 1200);
+  }, err: e => { if(S.stage===7) say(`I could not find fixes for ${dim}: ${e.message}`, "worried"); }});
+  J[k].note = note; J[k].applied = {};
+  if(S.stage===7) narrate(`Looking for fixes that raise ${dim}…`, "fixing");
+}
+// Apply one refine fix to a doc (mutates it). Returns an error line, or null when it applied.
+function fixTo(doc, f){
+  if(f.section==="task"){ if(f.op==="remove" || !f.text.trim()) return "The task cannot be removed."; doc.task = f.text; return null; }
+  const arr = doc[f.section], ok = f.index != null && f.index >= 0 && f.index < arr.length;
+  if(f.op==="remove"){ if(!ok) return "That line is not in the card any more."; arr.splice(f.index, 1); }
+  else if(f.op==="replace" && ok) arr[f.index] = f.text;
+  else arr.push(f.text);
+  return null;
+}
+const oldLine = (doc, f) => f.section==="task" ? doc.task : f.index != null ? doc[f.section]?.[f.index] : undefined;
+function applyFix(dim, i){
+  const k = "refine:"+dim, j = J[k], f = j?.data?.fixes[+i]; if(!f || j.applied[i]) return;
+  if(drift(j.doc) > 0){ toast("The card changed. Wait for new fixes."); return; }
+  const before = scores().find(x => x.dim===dim)?.p ?? null;
+  const bad = fixTo(clone(S.doc), f); if(bad){ toast(bad); return; }
+  fixTo(S.doc, f);
+  if(f.section==="task"){ S.versions = S.versions.slice(0, S.verIdx+1); S.versions.push({label:"Fix: "+f.title, text:f.text}); S.verIdx = S.versions.length-1; }
+  else if(f.op!=="remove") S.flash = f.section+":"+(f.op==="replace" && f.index != null && S.doc[f.section][f.index]===f.text ? f.index : S.doc[f.section].length-1);
+  j.applied = {...j.applied, [i]:true};
+  S.rescoring = {dim, from:before};
+  clearTimeout(rdyTimer);
+  render();
+  narrate(`Applied “${f.title}” to ${SECN[f.section]}. Re-scoring ${dim}…`, "scoring");
+  runReadiness(false, d => {
+    const x = d.scores.find(s => s.dim===dim), to = x?.p ?? null;
+    S.moved = {dim, from:before, to, fresh:true};
+    S.rescoring = null;
+    if(to != null && to >= T) say(`${dim} is ${p2(to)} now, over the ${T} bar${before!=null?` (it was ${p2(before)})`:""}. That fix worked.`, "happy", 2200);
+    else say(`${dim} moved ${p2(before)} → ${p2(to)}. Still under ${T}. I'm reading the card again for the next fix.`, "worried");
+  });
+  runReadiness(true);
+}
+function showInCard(sec, idx){
+  const col = $("#cardcol");
+  const el = (idx != null && idx !== "" && col.querySelector(`[data-sec="${sec}"][data-i="${idx}"]`)) || col.querySelector(`[data-gsec="${sec}"]`);
+  if(!el) return;
+  el.scrollIntoView({block:"center", behavior:"smooth"});
+  el.classList.remove("spot"); void el.offsetWidth; el.classList.add("spot");
+}
+function docChanged(){
+  deepKick();
+  clearTimeout(rdyTimer);
+  rdyTimer = setTimeout(() => { runReadiness(false); if(S.stage===7) runReadiness(true); }, 400);
+}
+
+/* ---------- Jev ---------- */
+let poseTimer = null, basePose = "neutral";
+function pose(p, ms){
+  const el = $("#jev");
+  clearTimeout(poseTimer);
+  const set = x => { el.classList.remove("pose-neutral","pose-happy","pose-worried","pose-thinking","pose-salute"); void el.getBoundingClientRect(); el.classList.add("pose-"+x); };
+  set(p);
+  if(ms){ poseTimer = setTimeout(() => set(basePose), ms); } else basePose = p;
+}
+// conf: undefined = no chip; null = "Jev unavailable"; number = "82% sure"
+let lastSay = 0;
+function say(text, p="neutral", ms, conf, hasConf){
+  lastSay = Date.now();
+  const b = $("#bubble");
+  const show = hasConf || conf !== undefined && conf !== null;
+  const low = show && isLow(conf);
+  b.className = "bubble" + (low ? " worried" : "");
+  const chip = !show ? "" : conf == null ? `<span class="conf low">Jev unavailable</span>` : `<span class="conf${low?" low":""}">${pct(conf)} sure</span>`;
+  b.innerHTML = `<div class="who">Jev${chip}</div><div>${fmt(text)}</div>`;
+  void b.offsetWidth; b.classList.add("pop");
+  if(ms){ pose(p, ms); } else { pose(p); }
+}
+// Narration during long calls: thinking pose, quiet bubble update (no pop), streamed text.
+function narrate(text, label="reading"){
+  const b = $("#bubble");
+  b.className = "bubble narr";
+  b.innerHTML = `<div class="who">Jev <span class="conf">${esc(label)}</span><span class="spin"></span></div><div class="narrtx">${fmt(text)}</div>`;
+  if(!$("#jev").classList.contains("pose-thinking")) pose("thinking");
+}
+function toolLine(t){
+  const m = /^(\S+)\s*(.*)$/.exec(t || ""); if(!m) return t;
+  const [, k, a] = m;
+  if(k==="read_file") return `Reading \`${a}\`…`;
+  if(k==="list_dir") return a ? `Looking in \`${a.replace(/\/?$/,"/")}\`…` : "Looking at the repo root…";
+  if(k==="search") return `Searching for “${a}”…`;
+  if(k==="git_log") return a ? `Reading git history of \`${a}\`…` : "Reading git history…";
+  if(k==="github") return a==="prs" ? "Checking recent PRs…" : "Checking open issues…";
+  return t + "…";
+}
+const lc = s => s ? s.charAt(0).toLowerCase()+s.slice(1) : "";
+document.addEventListener("mousemove", e => {
+  const el = $("#jev"); if(!el) return;
+  if(el.classList.contains("pose-thinking")){ el.querySelectorAll(".pupil").forEach(p => p.style.transform = "translate(2.6px,-3.2px)"); return; }
+  el.querySelectorAll(".eye").forEach(eye => {
+    const r = eye.getBoundingClientRect();
+    const cx = r.left + r.width/2, cy = r.top + r.height/2;
+    const dx = e.clientX - cx, dy = e.clientY - cy, d = Math.hypot(dx,dy) || 1;
+    const k = Math.min(1, d/160) * 3.4;
+    eye.querySelector(".pupil").style.transform = `translate(${(dx/d*k).toFixed(2)}px,${(dy/d*k).toFixed(2)}px)`;
+  });
+});
+(function blink(){ const el=$("#jev"); el.classList.add("blink"); setTimeout(()=>el.classList.remove("blink"),130); setTimeout(blink, 2600+Math.random()*2600); })();
+
+function toast(html){ const t=$("#toast"); t.innerHTML=html; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"),2400); }
+const errBox = (msg, act, v="") => `<div class="errbox" role="alert"><span>⚠ ${esc(msg)}</span><button class="btn sm" data-act="${act}" data-v="${esc(v)}">Retry</button></div>`;
+const skel = (n, h=14) => Array.from({length:n}, (_,i) => `<div class="skel" style="height:${h}px;width:${92-i*13%40}%"></div>`).join("");
+const waitRow = text => `<div class="waitrow"><span class="spin"></span>${esc(text)}</div>`;
+const staleChip = (name, act) => stale(name) ? `<div class="stalechip">The card changed since Jev looked. <button class="btn sm" data-act="${act}">↻ Refresh</button></div>` : (J[name]?.state==="loading" && J[name]?.data ? waitRow("Refreshing…") : "");
+
+/* ---------- readiness & level ---------- */
+function scores(){ return S.rdy ? S.rdy.scores : DIMS.map(dim => ({dim, p:null, note:""})); }
+// Fail safe: a dimension Jev could not score (p == null) never passes the bar.
+const passes = x => x.p != null && x.p >= T;
+const weakTxt = (w, num) => w.map(x => x.p==null ? `${x.dim} (unscored)` : num ? `${x.dim} ${p2(x.p)}` : x.dim).join(", ");
+function level(){
+  if(S.launched) return 5;
+  if(!S.started) return 1;
+  const r = scores();
+  if(r.every(passes)) return 4;
+  if(passes(r[0])) return 3;
+  return 2;
+}
+function checkMilestones(){
+  if(!S.started || !S.rdy) return false;
+  const r = scores(), crossed = [];
+  r.forEach((x,i) => { const pass = passes(x); if(pass && !S.passed[i]) crossed.push(i); S.passed[i] = pass; });
+  const lv = level();
+  if(lv > S.lastLevel && lv < 5){
+    const card = $(".gcard"); if(card){ card.classList.remove("glow"); void card.offsetWidth; card.classList.add("glow"); }
+    toast(`<span class="minijev"></span> Level ${lv}: <b>${LEVELS[lv]}</b>`);
+  }
+  S.lastLevel = Math.max(S.lastLevel, lv);
+  if(crossed.length){
+    burst(crossed);
+    // async score: don't talk over a fresh line (errors, questions); the gauge burst + toast still show it
+    if(!S.discRunning && !S.research.running && Date.now()-lastSay > 2500){
+      const names = crossed.map(i => r[i].dim).join(" and ");
+      say(lv===4 ? `All three bars are over ${T}. This goal is launch-ready.` : `${names} just passed the bar. Nice.`, "happy", 1800);
+    }
+    return true;
+  }
+  return false;
+}
+function burst(idx){
+  const g = $(".gauge"); if(!g) return;
+  const b = document.createElement("div"); b.className = "burst";
+  for(let k=0;k<14;k++){
+    const i = document.createElement("i");
+    const a = Math.random()*Math.PI*2, d = 50+Math.random()*40;
+    i.style.setProperty("--x", Math.cos(a)*d+"px"); i.style.setProperty("--y", Math.sin(a)*d+"px");
+    i.style.background = DIMHEX[idx[k%idx.length]];
+    b.appendChild(i);
+  }
+  g.appendChild(b); setTimeout(() => b.remove(), 1000);
+}
+
+/* ---------- proposals ---------- */
+const SECS = ["task","inputs","constraints","criteria","checks"];
+const SECN = {task:"Task", inputs:"Inputs", constraints:"Constraints", criteria:"Acceptance criteria", checks:"Required checks"};
+const openP = () => S.proposals.filter(p => !p.pending);
+function hasLine(sec, text){ return sec!=="task" && (S.doc[sec].some(l => l.trim() === text.trim()) || S.proposals.some(p => p.section===sec && p.add===text)); }
+// Patch {section, add} -> proposal. For "task": a long add replaces the sentence, a short one extends it. Shown as a diff.
+function taskNext(add){ const cur = S.doc.task.trim(); return add.length >= cur.length*0.6 ? add.trim() : `${cur} ${add.trim()}`; }
+function propose(section, add, from, remove){
+  if(!SECS.includes(section) || !add) return false;
+  if(section==="task"){ const nx = taskNext(add); if(nx===S.doc.task.trim()){ say("The task already says that.", "neutral"); return false; } S.proposals.push({id:"p"+(++pid), section, add:nx, from, remove:S.doc.task}); return true; }
+  if(!remove && hasLine(section, add)){ say("That line is already in the card.", "neutral"); return false; }
+  S.proposals.push({id:"p"+(++pid), section, add, from, remove});
+  return true;
+}
+// Apply a proposal-shaped change {section, add, remove} to a doc (mutates it, returns it).
+function applyTo(doc, p){
+  if(p.section==="task"){ doc.task = p.add; return doc; }
+  const arr = doc[p.section];
+  if(p.remove != null){ const j = arr.indexOf(p.remove); if(j>=0) arr[j] = p.add; else arr.push(p.add); }
+  else arr.push(p.add);
+  return doc;
+}
+function applyP(p){
+  applyTo(S.doc, p);
+  if(p.deep && S.deep.run?.startDoc) applyTo(S.deep.run.startDoc, p);   // research's own edits never make the research "older"
+
+  if(p.section==="task"){ S.versions = S.versions.slice(0, S.verIdx+1); S.versions.push({label:p.from, text:p.add}); S.verIdx = S.versions.length-1; }
+}
+function acceptP(id){
+  const i = S.proposals.findIndex(p => p.id===id); if(i<0 || S.proposals[i].pending) return;
+  const p = S.proposals.splice(i,1)[0];
+  applyP(p);
+  if(p.section!=="task") S.flash = p.section + ":" + S.doc[p.section].indexOf(p.add);
+  render(); docChanged();
+  const left = openP().length;
+  if(!left && S.stage===3) say("All proposals reviewed. Next: sharpen the task.", "happy", 1600);
+  else say((p.section==="criteria" ? "Accepted. It's locked as an AC line now: the worker can add criteria, never change this one." : "Accepted. One less thing the worker has to guess.") + (left && S.stage===3 ? ` ${left} left.` : ""), "happy", 1300);
+}
+function rejectP(id){
+  S.proposals = S.proposals.filter(p => p.id!==id);
+  render();
+  const left = openP().length;
+  if(!left && S.stage===3) say("All proposals reviewed. Next: sharpen the task.", "happy", 1600);
+  else say("Rejected. Fine by me, you know this repo best." + (left && S.stage===3 ? ` ${left} left.` : ""), "neutral");
+}
+
+function propDiff(p){
+  if(p.section==="task") return `<div class="dl diff">${wdiff(p.remove||"", p.add)}</div>`;
+  return `${p.remove!=null?`<div class="dl del">${fmt(p.remove)}</div>`:""}<div class="dl add">${fmt(p.add)}</div>`;
+}
+function hotP(id){
+  S.hotP = id;
+  document.querySelectorAll(".hunk.hot").forEach(h => h.classList.remove("hot"));
+  const h = id && $("#cardcol").querySelector(`[data-pid="${id}"]`);
+  if(h){ h.classList.add("hot"); h.scrollIntoView({block:"nearest", behavior:"smooth"}); }
+}
+/* ---------- Jev what-if on every candidate change (impact, ~0.2 s per batch) ---------- */
+// Every open proposal, suggestion, idea, research result, readiness fix and rewrite is a candidate:
+// the doc with that one change applied goes to GoalLive.impact. Values are relative to the CURRENT doc,
+// so a doc change makes them stale (dimmed) and re-runs them after 300 ms.
+const IMP = {};                 // key id -> {sig, data:{worth, scores, delta}, err}
+const KID = new Map();          // content key -> short id (safe in attributes and in the request)
+const kid = k => { if(!KID.has(k)) KID.set(k, "i"+KID.size); return KID.get(k); };
+const pk = (sec, add, remove) => kid(`p\u0001${sec}\u0001${add}\u0001${remove ?? ""}`);
+const docSig = d => JSON.stringify([d.task, d.inputs, d.constraints, d.criteria, d.checks]);
+const impInflight = new Set();
+let impTimer = null, impTimerSig = null, impBusy = 0, ghostKey = null;
+const SKIP_WORTH = 0.3, PICK_WORTH = 0.6, HARM = -0.1;
+const harms = d => d.delta.some(x => x != null && x <= HARM);
+const isSkip = d => !!d && ((d.worth != null && d.worth < SKIP_WORTH) || harms(d));
+const isPick = d => !!d && d.worth != null && d.worth >= PICK_WORTH && !harms(d);
+const impData = id => IMP[id]?.data || null;
+const impFresh = id => IMP[id]?.data && IMP[id].sig===docSig(S.doc) ? IMP[id].data : null;
+const byWorth = (list, idOf) => list.map((x,i) => ({x, i, w: impData(idOf(x))?.worth ?? -1})).sort((a,b) => b.w-a.w || a.i-b.i);
+function impReset(){ for(const k in IMP) delete IMP[k]; KID.clear(); impInflight.clear(); clearTimeout(impTimer); impTimer = null; impBusy = 0; ghostKey = null; }
+const clabel = (sec, add, remove) => sec==="task" ? `Replace the task with: ${add}` : remove != null ? `In ${SECN[sec]}, replace "${remove}" with "${add}"` : `Add to ${SECN[sec]}: ${add}`;
+// A Patch-like suggestion as the proposal it would become (same key as that proposal, so data is shared).
+function patchCand(sec, text){
+  if(!SECS.includes(sec) || !text) return null;
+  if(sec==="task"){ const add = taskNext(text); if(add===S.doc.task.trim()) return null; return {id:pk(sec, add, S.doc.task), label:clabel(sec, add), ch:{section:sec, add, remove:S.doc.task}}; }
+  if(hasLine(sec, text)) return null;
+  return {id:pk(sec, text), label:clabel(sec, text), ch:{section:sec, add:text}};
+}
+const fixId = (dim, f) => kid(`f\u0001${dim}\u0001${f.section}\u0001${f.op}\u0001${f.index}\u0001${f.text}`);
+const tplId = t => kid(`t\u0001${t.title}`);
+const rwId = r => pk("task", r.prompt, S.doc.task);
+function candidates(){
+  if(!S.started) return [];
+  const out = new Map(), base = S.doc;
+  const put = (id, label, mk) => { if(out.has(id) || dismissed(id)) return; const d = clone(base); if(mk(d)===false) return; out.set(id, {id, label, doc:d}); };
+  const putP = c => c && put(c.id, c.label, d => { applyTo(d, c.ch); });
+  for(const p of openP()) put(pk(p.section, p.add, p.remove), clabel(p.section, p.add, p.remove), d => { applyTo(d, p); });
+  const sg = J.suggest?.data; if(sg) sg.suggestions.forEach(s => putP(patchCand(s.section, s.text)));
+  const ins = J.inspiration?.data;
+  if(ins){
+    ins.pastGoals.forEach(g => putP(patchCand(g.proposal.section, g.proposal.add)));
+    ins.repoScan.forEach(r => putP(patchCand(r.proposal.section, r.proposal.add)));
+    ins.templates.forEach(t => { const add = t.criteria.filter(c => !hasLine("criteria", c)); if(add.length) put(tplId(t), `Add criteria patterns: ${add.join(" | ")}`, d => { d.criteria.push(...add); }); });
+  }
+  const rs = S.research.done?.suggestion; if(rs) putP(patchCand(rs.section, rs.add));
+  S.deep.result?.findings.forEach(f => { if(f.jev?.change) putP(patchCand(f.proposal.section, f.proposal.add)); });
+  for(const dim of DIMS){
+    const j = J["refine:"+dim]; if(j?.state!=="ok" || drift(j.doc) > 0) continue;
+    j.data.fixes.forEach((f,i) => { if(!j.applied?.[i]) put(fixId(dim, f), `${f.title}: ${f.op} in ${SECN[f.section]||f.section}: ${f.text}`, d => fixTo(d, f)===null); });
+  }
+  const rw = J.enhance?.data; if(rw) rw.rewrites.forEach(r => { if(r.prompt.trim() && r.prompt!==S.doc.task) put(rwId(r), clabel("task", r.prompt), d => { d.task = r.prompt; }); });
+  return [...out.values()];
+}
+function impNeeded(){
+  const sig = docSig(S.doc);
+  return candidates().filter(c => IMP[c.id]?.sig!==sig && !impInflight.has(c.id+"|"+sig));
+}
+// Called after every render: (re)start the 300 ms debounce when something has no fresh value.
+function impKick(){
+  if(!S.started) return;
+  const sig = docSig(S.doc);
+  if(impTimer && impTimerSig===sig) return;
+  if(!impNeeded().length) return;
+  clearTimeout(impTimer); impTimerSig = sig;
+  impTimer = setTimeout(() => { impTimer = null; impRun(); }, 300);
+}
+function impRun(){
+  if(!S.started) return;
+  const sig = docSig(S.doc), need = impNeeded(); if(!need.length) return;
+  const g = gen, base = docNow();
+  for(let i = 0; i < need.length; i += 40){
+    const batch = need.slice(i, i+40), t0 = performance.now();
+    batch.forEach(c => impInflight.add(c.id+"|"+sig));
+    impBusy++;
+    L.impact(base, batch.map(c => ({id:c.id, label:c.label, doc:withDoc(c.doc)}))).then(res => {
+      if(g!==gen) return;
+      window.__coachLat.push({name:"impact", ms:Math.round(performance.now()-t0), n:batch.length});
+      res.items.forEach(it => IMP[it.id] = {sig, data:it});
+    }, e => {
+      if(g!==gen || isAbort(e)) return;
+      batch.forEach(c => IMP[c.id] = {sig, data:IMP[c.id]?.data || null, err:e.message || String(e)});
+    }).finally(() => {
+      if(g!==gen) return;
+      impBusy--; batch.forEach(c => impInflight.delete(c.id+"|"+sig));
+      render();
+    });
+  }
+  render();
+}
+// Compact badge: "Jev 82% · Testable +0.05" (worth + the biggest |delta| dimension).
+function jbadge(id){
+  const r = IMP[id];
+  if(!r?.data){
+    if(r?.err && !impInflight.has(id+"|"+docSig(S.doc))) return `<span class="jb wait" title="Jev could not weigh this change: ${esc(r.err)}">Jev n/a</span>`;
+    return `<span class="jb wait" title="Jev is weighing this change"><span class="spin"></span>Jev</span>`;
+  }
+  const d = r.data, stl = r.sig!==docSig(S.doc), skip = isSkip(d);
+  let bi = -1; d.delta.forEach((x,i) => { if(x != null && (bi < 0 || Math.abs(x) > Math.abs(d.delta[bi]))) bi = i; });
+  const sgn = x => x > 0.004 ? ["up","+"] : x < -0.004 ? ["dn","−"] : ["fl","±"];
+  const big = bi < 0 ? "" : (([c,s]) => ` · ${DIMS[bi]} <span class="${c}">${s}${Math.abs(d.delta[bi]).toFixed(2)}</span>`)(sgn(d.delta[bi]));
+  const all = d.delta.map((x,i) => `${DIMS[i]} ${x==null?"n/a":(sgn(x)[1]+Math.abs(x).toFixed(2))}`).join(" · ");
+  const why = skip ? (harms(d) ? ` It lowers a readiness score by ${Math.abs(HARM)} or more.` : ` Worth is under ${Math.round(SKIP_WORTH*100)}%.`) : "";
+  const title = `Jev's yes on "this makes the goal better": ${pct(d.worth)}. Score change if applied: ${all}.${why}${stl ? " Refreshing for the current card…" : " Hover to preview it on the gauge."}`;
+  return `<span class="jb${skip?" skip":""}${stl?" stale":""}" title="${esc(title)}"><span class="minijev${skip?" worried":""}"></span>${skip?"Jev: skip? · ":"Jev "}${pct(d.worth)}${big}</span>`;
+}
+// Buttons for a candidate that is not a proposal yet: a "skip?" one gets Skip as the primary button.
+const dismissed = id => S.dismissed?.[id];
+function addBtns(id, act, v, label="Add this?", primary=false){
+  if(dismissed(id)) return `<span class="lock">Skipped</span><button class="btn sm ghost" data-act="undismiss" data-v="${id}">Undo</button>`;
+  return isSkip(impData(id)) ? `<button class="btn sm rejp" data-act="dismiss" data-v="${id}">✕ Skip</button><button class="btn sm ghost" data-act="${act}" data-v="${esc(v)}">${label.replace("?","")} anyway</button>`
+    : `<button class="btn sm${primary?" primary":""}" data-act="${act}" data-v="${esc(v)}">${label}</button>`;
+}
+
+/* ---------- what-if preview: ghost markers for the score a change would reach ---------- */
+function ghost(id){
+  ghostKey = id;
+  document.querySelectorAll(".ghosted").forEach(e => e.remove());
+  document.querySelectorAll("[data-imp].prev").forEach(e => e.classList.remove("prev"));
+  const pop = $("#whatif"), d = id ? impData(id) : null;
+  if(!d){ pop.classList.remove("show"); return; }
+  document.querySelectorAll(`[data-imp="${id}"]`).forEach(e => e.classList.add("prev"));
+  const cur = scores(), sc = d.scores, stl = IMP[id].sig!==docSig(S.doc);
+  const tone = (to, from) => to == null ? "var(--muted)" : from == null || Math.abs(to-from) < 0.005 ? "var(--muted)" : to > from ? "var(--add)" : "var(--del)";
+  // gauge: a thin white arc to the what-if score, with an end mark
+  const svg = $(".gauge svg");
+  if(svg){
+    const radii = [64,52,40]; let g = "";
+    sc.forEach((x,i) => { if(x.p == null) return; const rr = radii[i], c = 2*Math.PI*rr, a = (135+270*x.p)*Math.PI/180;
+      g += `<circle cx="82" cy="82" r="${rr}" fill="none" stroke="#fff" stroke-width="2.5" stroke-dasharray="${(.75*c*x.p).toFixed(1)} ${c.toFixed(1)}" transform="rotate(135 82 82)" opacity=".55" stroke-linecap="round"/>`;
+      g += `<line x1="${82+Math.cos(a)*(rr-7)}" y1="${82+Math.sin(a)*(rr-7)}" x2="${82+Math.cos(a)*(rr+7)}" y2="${82+Math.sin(a)*(rr+7)}" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>`; });
+    svg.insertAdjacentHTML("beforeend", `<g class="ghosted" pointer-events="none">${g}</g>`);
+    $(".gauge .legend")?.querySelectorAll(":scope > div:not(.lock)").forEach((row,i) => { const to = sc[i]?.p;
+      row.querySelector(".v")?.insertAdjacentHTML("afterend", `<span class="gv ghosted" style="color:${tone(to, cur[i].p)}">→${p2(to)}</span>`); });
+  }
+  // readiness bars (Ready step)
+  sc.forEach((x,i) => { const rd = document.querySelector(`.rd[data-rd="${DIMS[i]}"]`); if(!rd || x.p == null) return;
+    rd.querySelector(".bar").insertAdjacentHTML("beforeend", `<span class="gh ghosted" style="display:block;left:calc(${x.p*100}% - 1.5px)" title="what-if ${p2(x.p)}"></span>`);
+    rd.querySelector(".t .mono")?.insertAdjacentHTML("beforeend", `<span class="gv ghosted" title="Score if you apply this change" style="color:${tone(x.p, cur[i].p)}">→ ${p2(x.p)}</span>`); });
+  // floating summary, so the effect shows even when the gauge is scrolled away
+  const gr = svg?.getBoundingClientRect(), cr = $("#cardcol").getBoundingClientRect();
+  const gaugeSeen = !!gr;
+  if(gaugeSeen && gr.top >= cr.top && gr.bottom <= cr.bottom){ pop.classList.remove("show"); return; }
+  pop.innerHTML = `<div class="wh"><span class="minijev${isSkip(d)?" worried":""}"></span>What if you apply this${stl?" · refreshing":""}</div>` + sc.map((x,i) => { const from = cur[i].p;
+    return `<div class="wr"><span class="wn">${DIMS[i]}</span><span class="wb"><i style="width:${(from??0)*100}%;background:${DIMHEX[i]};opacity:.7"></i><s style="left:${T*100}%"></s>${x.p!=null?`<b style="left:calc(${x.p*100}% - 1.5px)"></b>`:""}</span><span class="wv" style="color:${tone(x.p, from)}">${p2(from)} → ${p2(x.p)}</span></div>`; }).join("");
+  pop.classList.add("show");
+}
+function ghostFrom(el){ const r = el?.closest?.("[data-imp]"), id = r?.dataset.imp || null; if(id!==ghostKey) ghost(id); }
+document.addEventListener("mouseover", e => ghostFrom(e.target));
+document.addEventListener("focusin", e => ghostFrom(e.target));
+document.addEventListener("focusout", e => { if(!e.relatedTarget?.closest?.("[data-imp]")) ghost(null); });
+document.documentElement.addEventListener("mouseleave", () => ghost(null));
+
+/* ---------- word diff ---------- */
+function wdiff(a, b){
+  const A = a.split(/\s+/).filter(Boolean), B = b.split(/\s+/).filter(Boolean);
+  const m=A.length, n=B.length, Lm = Array.from({length:m+1},()=>new Array(n+1).fill(0));
+  for(let i=m-1;i>=0;i--) for(let j=n-1;j>=0;j--) Lm[i][j] = A[i]===B[j] ? Lm[i+1][j+1]+1 : Math.max(Lm[i+1][j], Lm[i][j+1]);
+  const out=[]; let i=0,j=0;
+  while(i<m && j<n){ if(A[i]===B[j]){ out.push(esc(A[i])); i++; j++; } else if(Lm[i+1][j]>=Lm[i][j+1]){ out.push(`<del>${esc(A[i++])}</del>`);} else out.push(`<ins>${esc(B[j++])}</ins>`); }
+  while(i<m) out.push(`<del>${esc(A[i++])}</del>`); while(j<n) out.push(`<ins>${esc(B[j++])}</ins>`);
+  return out.join(" ").replace(/<\/del> <del>/g," ").replace(/<\/ins> <ins>/g," ");
+}
+
+/* ---------- discover (30-90 s, streamed) ---------- */
+const repoObj = () => (repos || []).find(r => r.id===S.repo);
+function discover(){
+  const g = gen, repo = repoObj();
+  Object.assign(S, {facts:[], tools:[], status:"Starting…", discErr:null, discRunning:true, discStart:Date.now()});
+  S.stage = 1; S.maxStage = Math.max(S.maxStage, 1);
+  render(true);
+  narrate(`Reading ${repo.name} first, so I don't ask what the code already says…`);
+  const t0 = performance.now();
+  L.discover(repo.path, S.seed, (type, d) => {
+    if(g!==gen) return;
+    if(type==="status"){ S.status = d.text; narrate(d.text); updDisc(); }
+    if(type==="tool"){ S.tools.push(d.text); narrate(toolLine(d.text)); updDisc(); }
+    if(type==="fact"){ S.facts.push(d); narrate(`Noted: ${d.fact}`, "found a fact"); addFact(d); }
+  }).then(res => {
+    if(g!==gen) return;
+    window.__coachLat.push({name:"discover", ms:Math.round(performance.now()-t0)});
+    S.discRunning = false; S.started = true;
+    S.facts = res.discovered?.length ? res.discovered : S.facts;
+    const d = res.doc;
+    S.title = d.title; S.docId = d.id;
+    S.doc = {task:d.task, inputs:[...d.inputs], constraints:[...d.constraints], criteria:[...d.criteria], checks:[...d.checks]};
+    S.versions = [{label:"Seed", text:S.seed}, {label:"First draft", text:d.task}]; S.verIdx = 1;
+    S.questions = res.questions || [];
+    // prefetch in parallel, so later steps are ready when the human gets there
+    runReadiness(false); runSuggest(); runInspire(); runExpect(); deepKick(true);
+    render();
+    if(!S.questions.length) interviewDone();
+    if(S.stage===1) say(`I found ${S.facts.length} fact${S.facts.length===1?"":"s"} and drafted a first card. ${S.questions.length} quick questions next.`, "happy", 1400);
+  }, e => {
+    if(g!==gen || isAbort(e)) return;
+    S.discRunning = false; S.discErr = e.message;
+    render();
+    say(`Reading the repo failed: ${e.message}`, "worried");
+  });
+}
+function updDisc(){
+  if(S.stage!==1) return;
+  const st = $("#discstatus"); if(st) st.textContent = S.status;
+  const tk = $("#ticker"); if(tk) tk.innerHTML = tickerHTML();
+}
+const tickerHTML = () => S.tools.slice(-6).map((t,i,a) => `<div style="opacity:${(0.35+0.65*(i+1)/a.length).toFixed(2)}">› ${esc(t)}</div>`).join("") || `<div style="opacity:.5">› waiting for the first read…</div>`;
+const factHTML = (f, cls="") => `<div class="fact ${cls}"><span class="ic">◆</span><div>${fmt(f.fact)}<br><span class="src">${esc(f.source)}</span></div></div>`;
+function addFact(f){
+  if(S.stage!==1) return;
+  const box = $("#facts"); if(!box) return;
+  $("#nofacts")?.remove();
+  box.insertAdjacentHTML("beforeend", factHTML(f, "fresh"));
+  const c = $("#factcount"); if(c) c.textContent = S.facts.length;
+}
+setInterval(() => { const e = $("#discel"); if(e && S.discRunning) e.textContent = Math.floor((Date.now()-S.discStart)/1000) + " s"; }, 1000);
+
+/* ---------- navigation ---------- */
+// Wizard moves: ← / → and Back walk the stages; inside the interview they walk the questions.
+function canGo(n){ return n>=0 && n<STAGES.length && (n===0 || S.started || (n===1 && (S.discRunning || S.discErr))); }
+function back(){
+  if(S.stage===2 && S.qi>0 && S.questions.length){ ACT.qgo(Math.min(S.qi, S.questions.length)-1); return; }
+  if(canGo(S.stage-1)) go(S.stage-1);
+}
+function forward(){
+  if(S.stage===2 && S.qi < S.questions.length){ ACT.qgo(S.qi+1); return; }
+  const b = $("#panel [data-next]"); if(b){ if(!b.disabled) b.click(); return; }
+  if(canGo(S.stage+1)) go(S.stage+1);
+}
+function go(n){
+  if(n>0 && !S.started && !(n===1 && (S.discRunning || S.discErr))) return;
+  S.stage = n; S.maxStage = Math.max(S.maxStage, n);
+  if(n>=3 && !J.enhance && (S.proposals.length===0 || n>=4)) runEnhance();
+  if(n>=4 && stale("expectations")) runExpect();
+  if(n===7 && (J.notes?.state!=="loading") && (!S.notesFor || drift(S.notesFor)>0)) runReadiness(true);
+  else if(n===7) prefetchFixes();
+  if(n!==3) S.hotP = null;
+  render(true);
+  enterLine(n);
+  deepMaybeStart();
+  $("#panel").scrollTop = 0;
+}
+function enterLine(n){
+  const pend = S.proposals.length;
+  if(n===0) say("Pick the repo and write the idea in one line. Rough is fine, that's my job.", "neutral");
+  if(n===1){ if(S.discRunning) narrate(S.tools.length ? toolLine(S.tools.at(-1)) : S.status); else if(S.discErr) say(`Reading the repo failed: ${S.discErr}`, "worried"); else say(`These ${S.facts.length} facts came straight from the repo. Each has its source.`, "neutral"); }
+  if(n===2) askLine();
+  if(n===3){ const o = openP().length; say(o ? `${o} proposal${o>1?"s":""} to review. Work down the list here, or use the green blocks in the card. Same proposals, both places.` : "No open proposals. You can still edit any line in the card directly.", "neutral"); }
+  if(n===4){
+    const e = J.enhance;
+    if(e?.state==="ok"){ const r = [...e.data.rewrites].sort((a,b)=>a.jevRank-b.jevRank)[0]; say(`I wrote 3 versions of the task. I'd pick "${r.title}": ${lc(r.notes)}`, isLow(r.jevScore)?"worried":"neutral", null, r.jevScore, true); }
+    else if(e?.state==="err") say("I could not write the rewrites. Try again?", "worried");
+    else narrate("Writing 3 rewrites of the task, then ranking them…", "writing");
+  }
+  if(n===5){ const e = J.inspiration; if(e?.state==="ok") say("I looked in 4 places. Each card can add a line to your goal, as a proposal.", "happy", 1200); else if(e?.state==="loading") narrate("Looking through past goals, issues, TODOs and CI…", "looking"); else say("I could not gather ideas. Try again?", "worried"); }
+  if(n===6){ const e = J.expectations; if(e?.state==="ok") say("I picked what this run must do. Hover or focus any row to hear why. Verify and security always run.", "neutral"); else if(e?.state==="loading") narrate("Deciding which gates this run needs…", "deciding"); else say("I could not pick the expectations. Try again?", "worried"); }
+  if(n===7) readyLine();
+  if(n===8) say(S.launched ? (S.launched.live ? "Saved, and the scored run started." : "Dry run: the spec is valid and saved. No run started.") : "Last stop. Launch saves the goal and starts a scored run.", "neutral");
+}
+function readyLine(){
+  if(!S.rdy){ narrate("Scoring the card…", "scoring"); return; }
+  const w = scores().filter(x => !passes(x));
+  const unk = scores().some(x => x.p == null);
+  say(w.length ? `${w.map(x=>x.dim).join(" and ")} ${w.length>1?"are":"is"} ${unk?"unscored or ":""}under ${T}. You can still launch; I'll ask you for one line on why.` : "All three bars clear the threshold. I'd launch this.", w.length ? "worried" : "happy");
+}
+function askLine(){
+  if(S.qi >= S.questions.length){ const n = openP().length; say(!S.questions.length ? "No questions this time. Let's review the card." : n ? `That's all ${S.questions.length}. Next: review the ${n} proposal${n>1?"s":""} (accept or reject each). You can also do it in the card now.` : `That's all ${S.questions.length}. No proposals left to review. Next: sharpen the task.`, "happy", 1400); return; }
+  const q = S.questions[S.qi];
+  const low = isLow(q.confidence);
+  const pick = q.options[q.jev];
+  if(q.confidence == null) say(`I couldn't score this one. ${q.why} Your call.`, "worried", null, null, true);
+  else say(low ? `I lean "${pick}", but I'm not sure here. ${q.why} Your call.` : `I'd pick "${pick}". ${q.why}`, low ? "worried" : "neutral", null, q.confidence, true);
+}
+
+/* ---------- rendering ---------- */
+function render(anim){
+  // keep focus and caret in a panel/card input when background results re-render
+  const a = document.activeElement;
+  const key = a && (a.id ? "#"+a.id : a.dataset?.add ? `[data-add="${a.dataset.add}"]` : a.dataset?.lim ? `[data-lim="${a.dataset.lim}"]` : null);
+  const sel = key && a.selectionStart != null ? [a.selectionStart, a.selectionEnd] : null;
+  const editingCard = a && a.isContentEditable && $("#cardcol").contains(a);
+  renderTop(); renderRail(); renderPanel(anim);
+  if(!editingCard) renderCard();
+  if(key){ const n = document.querySelector(key); if(n && n!==a){ n.focus(); if(sel) try{ n.setSelectionRange(...sel); }catch{} } }
+  impKick();
+  if(ghostKey) ghost(document.querySelector(`[data-imp="${ghostKey}"]`) ? ghostKey : null);
+}
+function renderTop(){
+  const r = scores(), have = r.filter(x=>x.p!=null), avg = have.length ? have.reduce((s,x)=>s+x.p,0)/have.length : null;
+  const unk = S.rdy ? r.length - have.length : 0;
+  $("#topstat").textContent = S.started ? `Lv ${level()} · ${lvName(level())} · readiness ${pct(avg)}${unk?` · ${unk} unscored`:""}` : "";
+  const b = $("#livebadge");
+  b.className = "livebadge" + (infoErr ? " off" : "");
+  b.textContent = infoErr ? "OFFLINE · server not reachable" : info ? `LIVE · ${info.model} · Jev` : "LIVE · …";
+  b.title = info ? `effort ${info.effort} · proxy ${info.proxy} · launch ${info.liveLaunch ? "live" : "dry run"}` : (infoErr || "");
+}
+// Short "what happened here" line under each finished stage (Wizard rail).
+function stageSum(i){
+  const x = S.exp;
+  switch(i){
+    case 0: { const r = repoObj(); return `${esc(r?.name || "no repo")} · “${esc(S.seed.slice(0,40))}${S.seed.length>40?"…":""}”`; }
+    case 1: return S.discErr ? "Failed: retry" : `${S.facts.length} fact${S.facts.length===1?"":"s"} · ${S.tools.length} reads`;
+    case 2: { const a = Object.entries(S.answers); return `${a.length}/${S.questions.length} answered · ${a.filter(([id,v]) => S.questions.find(q=>q.id===id)?.jev===v.opt).length} Jev picks`; }
+    case 3: { const n = openP().length; return `${n ? `${n} open` : "all reviewed"} · ${S.doc.criteria.length} AC · ${S.doc.constraints.length} constraints`; }
+    case 4: return `task v${S.verIdx+1} · ${esc(S.versions[S.verIdx]?.label || "")}`;
+    case 5: return `${S.ideaN||0} idea${S.ideaN===1?"":"s"} proposed${S.research.done?` · ${esc(S.research.done.label)} done`:""}`;
+    case 6: return x ? `${x.gates.filter(g=>g.run).length}/${x.gates.length} gates run · ${esc(x.tier.value)}` : "waiting for Jev";
+    case 7: { if(!S.rdy) return "not scored yet"; const w = scores().filter(v => !passes(v)); return w.length ? `${w.length} weak: ${weakTxt(w)}` : `all ≥ ${T}`; }
+    case 8: return S.launched ? (S.launched.live ? "saved to the factory" : "dry run saved") : "";
+  }
+  return "";
+}
+function renderRail(){
+  $("#deeprail").innerHTML = deepRail();
+  $("#goalname").innerHTML = S.started ? `${esc(S.title)}<small>${esc(S.docId)}</small>` : `New goal<small>${S.discRunning ? "Jev is reading the repo…" : "draft"}</small>`;
+  const nOpen = openP().length;
+  $("#rail").innerHTML = STAGES.map((s,i) => {
+    const done = (i < S.maxStage && i!==S.stage) || (i===8 && S.launched);
+    const cls = [i===S.stage?"cur":"", done?"done":"", i<=S.maxStage?"reached":""].join(" ");
+    const dis = i>0 && !S.started && !(i===1 && (S.discRunning || S.discErr));
+    const busy = (i===1 && S.discRunning) || (i===4 && J.enhance?.state==="loading") || (i===5 && (J.inspiration?.state==="loading" || S.research.running)) || (i===6 && J.expectations?.state==="loading") || (i===7 && (J.notes?.state==="loading" || !!S.rescoring));
+    const badge = (i===3 && nOpen ? `<span class="pill">${nOpen} to review</span>` : "")
+      + (i===2 && S.started && S.qi < S.questions.length && S.stage!==2 ? `<span class="pill ok">${S.questions.length - Object.keys(S.answers).length} left</span>` : "")
+      + (i===7 && S.rdy && S.stage!==7 && scores().some(x => !passes(x)) ? `<span class="pill">weak</span>` : "")
+      + (busy ? `<span class="spin" title="Working in the background"></span>` : "");
+    const sum = done || (i < S.stage) ? stageSum(i) : "";
+    return `<li class="node ${cls}"><span class="dot">${done?"✓":i+1}</span><button class="sbtn" data-act="go" data-v="${i}" ${dis?"disabled":""} aria-current="${i===S.stage?"step":"false"}"><span class="nl">${s}${badge}</span>${sum?`<div class="ssum">${sum}</div>`:""}</button></li>`;
+  }).join("");
+}
+
+function renderPanel(anim){
+  const p = $("#panel");
+  p.innerHTML = `<div class="stagewrap"><div class="${anim?"enter":""}"><div class="eyebrow">Step ${S.stage+1} of ${STAGES.length} · ${STAGES[S.stage]}</div>${[pSeed,pDiscover,pInterview,pReview,pRewrite,pInspire,pExpect,pReady,pLaunch][S.stage]()}</div></div>`;
+  const grow = p.querySelectorAll("[data-grow]");
+  if(grow.length){ S.moved.fresh = false; requestAnimationFrame(() => requestAnimationFrame(() => grow.forEach(el => el.style.width = el.dataset.grow + "%"))); }
+}
+const backBtn = () => S.stage > 0 ? `<button class="btn ghost" data-act="back">← Back</button>` : "";
+const next = (label, n, extra="", hint=`<span class="kbd">↵</span> or <span class="kbd">→</span> next`) => `<div class="foot nav">${backBtn()}<span class="lock">${hint}</span>${extra}<span class="sp"></span><button class="btn primary" data-act="go" data-v="${n}" data-next>${label} →</button></div>`;
+
+function pSeed(){
+  const list = reposErr ? errBox(`Could not load repos: ${reposErr}`, "loadrepos")
+    : !repos ? skel(2, 46)
+    : `<div class="repos">${repos.map(r => `<button class="repo ${S.repo===r.id?"on":""}" data-act="repo" data-v="${esc(r.id)}" ${S.discRunning?"disabled":""}><span class="r"></span><span><div>${esc(r.name)} <span class="lock">· ${esc(r.base)}</span></div><div class="p">${esc(r.path)}</div></span></button>`).join("")}</div>`;
+  return `<h2>Start with a rough idea</h2><p class="sub">One line. Jev reads the repo before it asks anything (30–90 s).</p>
+  <div class="field"><label>Repo</label>${list}</div>
+  <div class="field"><label for="seedin">Idea</label><textarea id="seedin" class="input" rows="2" placeholder="${esc(D.seed)}">${esc(S.seed)}</textarea></div>
+  <div class="foot nav"><span class="lock"><span class="kbd">↵</span> to start · <span class="kbd">⇧</span> <span class="kbd">↵</span> new line</span><span class="sp"></span><button class="btn primary" data-act="start" data-next ${!repoObj()||S.discRunning?"disabled":""}>${S.discRunning?`<span class="spin"></span> Reading…`:S.started?"Start over with this idea":"Coach me"} →</button></div>`;
+}
+function pDiscover(){
+  if(S.discRunning){
+    return `<h2>Jev is reading ${esc(repoObj()?.name)}</h2><p class="sub">Facts appear as Jev confirms them. Usually 30–90 s. You can go back and change the idea; that restarts the read.</p>
+    <div class="discbar"><span class="spin"></span><span id="discstatus">${esc(S.status)}</span><span class="sp"></span><span class="mono" id="discel">${Math.floor((Date.now()-S.discStart)/1000)} s</span></div>
+    <div class="lock" style="margin:10px 0 6px">Facts · <span id="factcount">${S.facts.length}</span></div>
+    <div id="facts">${S.facts.map(f => factHTML(f)).join("") || `<div id="nofacts">${skel(2, 40)}</div>`}</div>
+    <div class="ticker" id="ticker" aria-hidden="true">${tickerHTML()}</div>`;
+  }
+  if(S.discErr) return `<h2>Reading the repo failed</h2><p class="sub">Nothing was faked. Retry, or go back and change the idea.</p>${errBox(S.discErr, "rediscover")}
+    ${S.facts.length ? `<div class="lock" style="margin:10px 0 6px">Facts found before the error</div>${S.facts.map(f=>factHTML(f)).join("")}` : ""}
+    <div class="foot nav"><button class="btn ghost" data-act="go" data-v="0">← Change the idea</button></div>`;
+  return `<h2>What Jev found in the repo</h2><p class="sub">Facts first, so the questions stay short.</p>
+  ${S.facts.map(f => factHTML(f)).join("") || `<div class="tip"><span>•</span><span>Jev reported no separate facts; the draft card uses what it read.</span></div>`}
+  ${S.tools.length ? `<details class="reads"><summary>${S.tools.length} reads</summary>${S.tools.map(t=>`<div>› ${esc(t)}</div>`).join("")}</details>` : ""}
+  ${next(S.questions.length ? "Start the interview" : "Review the card", S.questions.length ? 2 : 3)}`;
+}
+function pInterview(){
+  const qs = S.questions;
+  const pips = `<div class="pips">${qs.map((q,i) => `<button title="Question ${i+1}" aria-label="Question ${i+1}" data-act="qgo" data-v="${i}" class="${i===S.qi?"c":S.answers[q.id]?"a":""}"></button>`).join("")}</div>`;
+  if(S.qi >= qs.length){
+    const n = openP().length, pend = S.proposals.length - n;
+    const what = n ? `<b>Next: review the ${n} proposal${n>1?"s":""}</b> (accept or reject each). You can also do it in the card now: the green blocks.`
+      : pend ? `<b>Next:</b> Jev is still writing ${pend} of your answers as a line. Then you review it.` : `<b>No proposals left to review.</b> Next: sharpen the task.`;
+    return `<h2>Interview done</h2><p class="sub">${Object.keys(S.answers).length} of ${qs.length} answered.</p>
+    <div class="nextbox">${what}</div>
+    <div class="qmeta">${pips}</div>${answered()}${n || pend ? next(`Review ${n || pend} proposal${(n||pend)>1?"s":""}`, 3) : next("Next: sharpen the task", 4)}`;
+  }
+  const q = qs[S.qi], a = S.answers[q.id], low = isLow(q.confidence);
+  const tag = q.confidence == null ? `<span class="conf low">Jev unavailable</span>` : `<span class="conf${low?" low":""}">${pct(q.confidence)}</span>`;
+  return `<div class="qmeta">${pips}<span>Question ${S.qi+1} of ${qs.length}</span></div>
+  <div class="qcard"><div class="q">${esc(q.text)}</div>
+    ${q.options.map((o,i) => `<button class="opt ${i===q.jev?"jev":""} ${a && a.opt===i?"chosen":""}" data-act="ans" data-v="${i}"><span class="n">${i+1}</span><span class="t">${esc(o)}${q.patches?.[i]?.add?`<span class="adds">adds to ${esc(SECN[q.patches[i].section] || q.patches[i].section)}: ${fmt(q.patches[i].add)}</span>`:""}</span>${q.probabilities?.[i]!=null && i!==q.jev?`<span class="lock mono">${pct(q.probabilities[i])}</span>`:""}${i===q.jev?`<span class="tag"><span class="minijev"></span>Jev · ${tag}</span>`:""}</button>`).join("")}
+    ${S.otherOpen ? `<div class="otherrow"><input id="otherin" class="input" placeholder="Your answer, one line" value="${esc(a&&a.other||"")}"><button class="btn" data-act="other-save">Save</button></div>`
+      : `<div class="qtools"><button class="btn ghost sm" data-act="other">✎ Other… <span class="kbd">0</span></button><button class="btn ghost sm" data-act="chat" aria-expanded="${!!S.chats[q.id]?.open}">💬 ${S.chats[q.id]?.open ? "Hide the talk" : S.chats[q.id]?.msgs.length ? `Talk it through (${S.chats[q.id].msgs.filter(m=>m.role==="assistant").length})` : "Talk it through"}</button></div>`}
+    ${S.otherOpen ? `<div class="qtools"><button class="btn ghost sm" data-act="chat" aria-expanded="${!!S.chats[q.id]?.open}">💬 ${S.chats[q.id]?.open ? "Hide the talk" : "Talk it through"}</button></div>` : ""}
+    ${chatHTML(q)}
+  </div>${answered()}
+  <div class="foot nav">${backBtn()}<span class="lock"><span class="kbd">↵</span> accept Jev · <span class="kbd">1</span>–<span class="kbd">${q.options.length}</span> pick · <span class="kbd">0</span> other · <span class="kbd">←</span><span class="kbd">→</span> questions</span><span class="sp"></span><button class="btn primary" data-act="ans" data-v="${q.jev}">Accept Jev's pick <span class="kbd">↵</span></button></div>`;
+}
+/* ---------- talk it through: chat per question ---------- */
+const STARTERS = ["Pros and cons of each", "What would you pick?", "What does this change in the goal?"];
+let chatQ = null;   // id of the question whose chat is open
+const isDeepQ = q => String(q?.id).startsWith("deep:");
+const findQ = id => (id && (S.questions.find(q => q.id===id) || S.deep.result?.decisions.find(q => q.id===id))) || S.questions[S.qi];
+const chatOf = q => S.chats[q.id] || (S.chats[q.id] = {open:false, msgs:[], loading:false, err:null, draft:""});
+function inl(t){ return fmt(t).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>"); }
+// plain text with "- " bullets -> paragraphs and lists
+function richText(t, fresh){
+  const out = []; let ul = null, k = 0;
+  const rv = () => fresh ? ` class="rv" style="animation-delay:${(k++)*0.18}s"` : "";
+  for(const raw of String(t).split(/\n/)){
+    const line = raw.trim(), sub = /^\s{2,}/.test(raw);
+    const m = /^(?:[-*•]|\d+[.)])\s+(.*)$/.exec(line);
+    if(m){ if(!ul){ ul = []; out.push(ul); } ul.push(`<li${rv()}${sub?` data-l1`:""}>${inl(m[1])}</li>`); continue; }
+    if(!line) continue;   // a blank line keeps the list going
+    ul = null;
+    if(line) out.push(`<p${rv()}>${inl(line)}</p>`);
+  }
+  return out.map(x => Array.isArray(x) ? `<ul>${x.join("")}</ul>` : x).join("");
+}
+function chatHTML(q){
+  const c = S.chats[q.id]; if(!c || !c.open) return "";
+  chatQ = q.id;
+  const log = c.msgs.map(m => m.role==="user" ? `<div class="cm u">${esc(m.content)}</div>`
+    : `<div class="cm a"><span class="minijev"></span><div class="cmt">${richText(m.content, m.fresh)}</div></div>`).join("")
+    + (c.loading ? `<div class="cm a"><span class="minijev"></span><div class="cmt"><span class="typing" aria-label="Jev's helper is typing"><i></i><i></i><i></i></span></div></div>` : "");
+  c.msgs.forEach(m => m.fresh = false);
+  return `<div class="chat" role="region" aria-label="Talk it through with Jev's helper">
+    <div class="ch"><span class="minijev"></span>Jev's helper · this question<span class="sp"></span><button class="btn sm ghost" data-act="chat" data-v="${esc(q.id)}" title="Hide">✕</button></div>
+    <div class="chatlog" id="chatlog" aria-live="polite">${log}</div>
+    ${c.err ? `<div class="errbox" role="alert"><span>⚠ ${esc(c.err)}</span><button class="btn sm" data-act="chatretry">Retry</button></div>` : ""}
+    <div class="starters">${STARTERS.map((t,i) => `<button class="starter" data-act="chatstart" data-v="${i}" ${c.loading?"disabled":""}>${esc(t)}</button>`).join("")}</div>
+    <div class="chatrow"><input id="chatin" class="input" placeholder="${c.loading ? "Jev's helper is thinking (~8 s)…" : "Ask about this question…"}" value="${esc(c.draft)}" autocomplete="off"><button class="btn sm" data-act="chatsend" ${c.loading?"disabled":""}>Send</button></div>
+    <div class="lock" style="margin-top:6px">The talk does not answer for you. Pick any option or Other when you are ready.</div>
+  </div>`;
+}
+function chatAsk(text){
+  const q = findQ(chatQ); if(!q) return;
+  const c = chatOf(q), t = String(text || "").trim(); if(!t || c.loading) return;
+  c.msgs.push({role:"user", content:t}); c.draft = ""; c.err = null;
+  chatCall(q, c);
+}
+function chatCall(q, c){
+  const g = gen, t0 = performance.now();
+  c.loading = true; c.err = null;
+  render(); scrollChat();
+  narrate("Thinking about your question…", "thinking");
+  L.ask(docNow(), q.text, q.options, c.msgs.map(m => ({role:m.role, content:m.content}))).then(r => {
+    if(g!==gen) return;
+    window.__coachLat.push({name:"ask", ms:Math.round(performance.now()-t0)});
+    c.loading = false; c.msgs.push({role:"assistant", content:r.reply || "(no reply)", fresh:true});
+    render(); scrollChat();
+    if(isDeepQ(q)){ if(S.stage===7) say("There's my take on this research decision. Pick any option, or Other. It's your call.", "neutral", 900); }
+    else if(S.stage===2 && S.questions[S.qi]===q) say("There's my take. Pick any option, or Other. It's your call.", "neutral", 900);
+    else if(S.stage===2) askLine();
+  }, e => {
+    if(g!==gen) return;
+    c.loading = false; c.err = e.message; render();
+    if(S.stage===2) say(`My helper failed: ${e.message}`, "worried");
+  });
+}
+function scrollChat(){ const l = $("#chatlog"); if(l) l.scrollTop = l.scrollHeight; }
+function answered(){
+  const list = S.questions.map((q,i) => { const a = S.answers[q.id]; if(!a) return ""; const txt = a.opt===-1 ? a.other : q.options[a.opt];
+    return `<button class="ans" data-act="qgo" data-v="${i}"><span class="lock">Q${i+1}</span><span>${esc(q.text)} <b>${esc(txt)}</b> ${a.opt!==q.jev?`<span class="ov">· you overrode Jev</span>`:""}</span></button>`; }).join("");
+  return list ? `<div class="answered"><div class="h">Your answers (click to change)</div>${list}</div>` : "";
+}
+function pReview(){
+  const P = openP(), n = P.length, sg = J.suggest;
+  const sugg = !sg ? "" : sg.state==="err" ? errBox(`Suggestions failed: ${sg.err}`, "resuggest")
+    : sg.state==="loading" && !sg.data ? `<div class="sgbox"><div class="lock">Jev's suggestions</div>${waitRow("Jev is thinking of more lines…")}${skel(3)}</div>`
+    : `<div class="sgbox"><div class="lock">Jev's suggestions ${stale("suggest")?`<button class="btn sm ghost" data-act="resuggest">↻ Refresh</button>`:""}</div>${byWorth(sg.data.suggestions, s => patchCand(s.section, s.text)?.id).map(({x:s, i}) => { const c = patchCand(s.section, s.text), id = c?.id;
+        return `<div class="mi${id && isSkip(impData(id)) && !dismissed(id)?" skip":""}" ${id?`data-imp="${id}"`:""}><div class="b"><span class="sectag">${esc(s.section)}</span><div>${fmt(s.text)}</div><div class="s">from ${esc(s.from)}</div>${id && !dismissed(id)?`<div class="jbrow">${jbadge(id)}</div>`:""}</div>${!c?`<span class="done-chip">✓</span>`:addBtns(id, "sug", i)}</div>`; }).join("") || `<div class="lock">No suggestions.</div>`}</div>`;
+  const pend = S.proposals.length - n;
+  const list = n ? `<div class="lock" style="margin-bottom:6px">Open proposals · work top to bottom (same list as the green blocks in the card)</div><div class="plist">${P.map(p => { const id = pk(p.section, p.add, p.remove), skip = isSkip(impData(id));
+      const acc = `<button class="btn sm${skip?" ghost":""}" data-act="pacc" data-v="${p.id}" ${skip?"":`style="color:#86efac;border-color:rgba(34,197,94,.35)"`}>✓ Accept${skip?" anyway":""}</button>`, rej = `<button class="btn sm ${skip?"rejp":"ghost"}" data-act="prej" data-v="${p.id}">✕ Reject</button>`;
+      return `<div class="pl${skip?" skip":""}" data-phover="${p.id}" data-imp="${id}" tabindex="-1">
+      <div class="ph"><span class="sectag">${esc(SECN[p.section])}</span><span>from ${esc(p.from)}</span>${jbadge(id)}</div>
+      ${propDiff(p)}
+      <div class="pa">${skip ? rej+acc : acc+rej}<button class="btn sm ghost" data-act="pshow" data-v="${p.id}">Show in card</button></div></div>`; }).join("")}</div>`
+    : `<div class="okbox">✓ No open proposals${pend ? ` (${pend} still being written)` : ""}. You can still edit any line in the card.</div>`;
+  return `<h2>Review the proposals</h2><p class="sub">Every AI change is a proposal. Nothing lands until you accept it. Accept or reject each one here, or in the card.</p>
+  ${list}
+  ${n > 1 ? `<div class="foot" style="margin:0 0 12px;flex-wrap:wrap"><span class="lock"><span class="kbd">A</span> accept first · <span class="kbd">R</span> reject first</span><span class="sp"></span>${picksBtn()}<button class="btn" data-act="accall">Accept all ${n}</button></div>` : ""}
+  <div class="stat"><div><div class="v">${n}</div><div class="l">open proposals</div></div><div><div class="v">${S.doc.criteria.length}</div><div class="l">locked AC lines</div></div><div><div class="v">${S.doc.constraints.length}</div><div class="l">constraints</div></div></div>
+  <div class="tip"><span>🔒</span><span>Accepted criteria become AC-1…n. They bind as locked SDLC criteria: the worker may add, never change.</span></div>
+  <div class="tip"><span>✎</span><span>Click any line in the card to edit it. Use the dashed field to add your own.</span></div>
+  ${sugg}
+  ${next(n ? `Sharpen the task (${n} still open)` : "Sharpen the task", 4)}`;
+}
+function pRewrite(){
+  const cur = S.doc.task, e = J.enhance;
+  let body;
+  if(!e || (e.state==="loading" && !e.data)) body = `${waitRow("Writing 3 rewrites, then Jev ranks them (~12 s). You can edit the card meanwhile.")}${[0,1,2].map(()=>`<div class="rw">${skel(1,16)}${skel(3)}</div>`).join("")}`;
+  else if(e.state==="err") body = errBox(`Rewrites failed: ${e.err}`, "reenhance");
+  else body = staleChip("enhance","reenhance") + [...e.data.rewrites].sort((a,b) => a.jevRank-b.jevRank).map(r => { const i = e.data.rewrites.indexOf(r), used = cur===r.prompt, id = used ? null : rwId(r), skip = id && isSkip(impData(id));
+    return `<div class="rw ${r.jevRank===1?"best":""} ${used?"used":""}${skip?" skip":""}" ${id?`data-imp="${id}"`:""}><div class="hd"><span class="ti">${esc(r.title)}</span><span class="badge ${r.jevRank===1?"jev":""}" title="Server rank: Jev scored the three rewrites against each other">Jev #${r.jevRank} · ${r.jevScore==null?"score n/a":pct(r.jevScore)}</span>${id?jbadge(id):""}</div>
+    <div class="notes">${esc(r.notes)}</div>
+    <div class="diff">${used ? esc(r.prompt) : wdiff(cur, r.prompt)}</div>
+    <div class="act">${used ? `<span class="done-chip">✓ In use</span>` : skip ? `<button class="btn sm ghost" data-act="rw" data-v="${i}">Use anyway</button><span class="lock">Jev: this rewrite may lower a score. Keep the current task?</span>` : `<button class="btn sm ${r.jevRank===1?"primary":""}" data-act="rw" data-v="${i}">Use this</button>`}</div></div>`; }).join("");
+  return `<h2>Sharpen the task</h2><p class="sub">Three rewrites. Diff is against the current task.</p>
+  ${body}
+  <div class="vers"><div class="lock" style="margin-bottom:4px">Versions of the task</div>
+  ${S.versions.map((v,i) => `<div class="ver ${i===S.verIdx?"cur":""}"><span class="vn">v${i+1}</span><span class="vt" title="${esc(v.text)}">${esc(v.label)}: ${esc(v.text)}</span>${i===S.verIdx?`<span class="lock">current</span>`:`<button class="btn sm ghost" data-act="ver" data-v="${i}">Restore</button>`}</div>`).join("")}</div>
+  ${next("Get ideas", 5, `<button class="btn ghost" data-act="go" data-v="5">Keep current</button>`)}`;
+}
+function ideas(){
+  const ins = J.inspiration.data;
+  // the card shows the item Jev rates highest (worth) for its source
+  const top = (list, idOf) => { const o = byWorth(list, idOf).find(o => idOf(o.x) && !dismissed(idOf(o.x))); return o ? {x:o.x, i:o.i, id:idOf(o.x)} : null; };
+  const pgT = top(ins.pastGoals, g => patchCand(g.proposal.section, g.proposal.add)?.id), rsT = top(ins.repoScan, r => patchCand(r.proposal.section, r.proposal.add)?.id);
+  const pg = pgT?.x || ins.pastGoals[0], rs = rsT?.x || ins.repoScan[0], tp = byWorth(ins.templates, tplId)[0]?.x;
+  return [
+    {key:"past", src:"Past goals + runs", big: pg ? pg.tip : "No past goals for this repo yet.", why: pg ? `${pg.id}: ${pg.pass}/${pg.runs} runs passed.` : "Nothing to learn from yet.", id:pgT?.id, act:pgT?"past":null, v:pgT?.i},
+    {key:"scan", src:"Repo scan", big: rs ? rs.title : "Nothing relevant found.", why: rs ? `${rs.kind} ${rs.ref}: ${rs.hint}` : "Issues, TODOs, PRs and CI were checked.", id:rsT?.id, act:rsT?"scan":null, v:rsT?.i},
+    {key:"tpl", src:"Templates", big: tp ? `${tp.title}: ${tp.criteria[0]}` : "", why: "Best-fit criteria pattern for this goal.", id: tp && IMP[tplId(tp)] ? tplId(tp) : null},
+    {key:"res", src:"Research", big:"Ask the Council, a Debate or Research.", why:"Real runs (15–90 s); the result can become a line in the card.", add:null},
+  ];
+}
+function pInspire(){
+  const e = J.inspiration;
+  if(!e || (e.state==="loading" && !e.data)) return `<h2>Ideas from 4 sources</h2><p class="sub">Past goals, repo scan, templates, research.</p>
+    ${waitRow("Jev is looking through past goals, issues, TODOs and CI (~15 s). The card stays editable.")}
+    <div class="ideas">${[0,1,2,3].map(()=>`<div class="idea">${skel(1,12)}${skel(2,16)}${skel(1)}</div>`).join("")}</div>${next("Set expectations", 6)}`;
+  if(e.state==="err") return `<h2>Ideas from 4 sources</h2>${errBox(`Inspiration failed: ${e.err}`, "reinspire")}${next("Set expectations", 6)}`;
+  const ID = ideas(), R = S.research;
+  return `<h2>Jev found ${ID.length} ideas</h2><p class="sub">One per source. Open a card to see everything it found.</p>
+  ${staleChip("inspiration","reinspire")}
+  <div class="ideas">${ID.map((d,k) => { const open = S.ideaOpen===d.key;
+    return `<div class="idea ${open?"open":""}${d.id && d.act && isSkip(impData(d.id))?" skip":""}" style="animation-delay:${k*90}ms" ${d.id && !open?`data-imp="${d.id}"`:""}><div class="src"><span class="minijev"></span>${d.src}${d.id?jbadge(d.id):""}</div><div class="big">${fmt(d.big)}</div><div class="why">${fmt(d.why)}</div>
+    <div class="row">${d.act?addBtns(d.id, d.act, d.v, "Add this?", true):""}<button class="btn sm" data-act="ideaopen" data-v="${d.key}" aria-expanded="${open}">${open?"Less":"See all"}</button></div>
+    ${open ? `<div class="more">${ideaMore(d.key)}</div>` : ""}</div>`; }).join("")}</div>
+  ${R.running ? `<div class="result"><div class="discbar"><span class="spin"></span><span>${esc(R.label)} is running…</span><span class="sp"></span><span class="mono" id="resel"></span></div><div class="ticker">${R.events.slice(-5).map(x=>`<div>› ${esc(x)}</div>`).join("")}</div></div>` : ""}
+  ${R.err ? errBox(`${R.errLabel} failed: ${R.err}`, "research", R.errId) : ""}
+  ${R.done ? (rc => `<div class="result" ${rc?`data-imp="${rc.id}"`:""}><b>${esc(R.done.label)} result:</b> ${fmt(R.done.summary)}<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 200px"><span class="lock">${esc(R.done.suggestion.section)}:</span> ${fmt(R.done.suggestion.add)}${rc && !dismissed(rc.id)?`<div class="jbrow">${jbadge(rc.id)}</div>`:""}</span>${rc?addBtns(rc.id, "resadd", "", "Add this?", true):`<span class="done-chip">✓ proposed</span>`}</div></div>`)(patchCand(R.done.suggestion.section, R.done.suggestion.add)) : ""}
+  ${next("Set expectations", 6)}`;
+}
+function ideaMore(k){
+  const ins = J.inspiration.data;
+  const mi = (id, inner, btn) => `<div class="mi${id && isSkip(impData(id)) && !dismissed(id)?" skip":""}" ${id?`data-imp="${id}"`:""}>${inner(id && !dismissed(id) ? `<div class="jbrow">${jbadge(id)}</div>` : "")}${btn}</div>`;
+  const pid_ = g => patchCand(g.proposal.section, g.proposal.add)?.id;
+  if(k==="past") return byWorth(ins.pastGoals, pid_).map(({x:g, i}) => { const id = pid_(g);
+    return mi(id, b => `<span class="k">${g.pass}/${g.runs}</span><div class="b"><b>${esc(g.title)}</b> <span class="s mono">${esc(g.id)}</span>${g.lastUnmet.length?g.lastUnmet.map(u=>`<div class="unmet">✕ ${esc(u)}</div>`).join(""):`<div class="done-chip">✓ all lines met</div>`}<div class="s">Tip: ${fmt(g.tip)}</div><div class="s">→ ${esc(g.proposal.section)}: ${fmt(g.proposal.add)}</div>${b}</div>`, id ? addBtns(id, "past", i) : `<span class="done-chip">✓</span>`); }).join("") || `<div class="lock">No past goals for this repo.</div>`;
+  if(k==="scan") return byWorth(ins.repoScan, pid_).map(({x:s, i}) => { const id = pid_(s);
+    return mi(id, b => `<span class="k">${esc(s.kind)}</span><div class="b"><b>${esc(s.title)}</b> <span class="s mono">${esc(s.ref)}</span><div class="s">${esc(s.hint)}</div><div class="s">→ ${esc(s.proposal.section)}: ${fmt(s.proposal.add)}</div>${b}</div>`, id ? addBtns(id, "scan", i) : `<span class="done-chip">✓</span>`); }).join("") || `<div class="lock">Nothing relevant found.</div>`;
+  if(k==="tpl") return byWorth(ins.templates, tplId).map(({x:t, i}) => { const id = t.criteria.some(c => !hasLine("criteria", c)) ? tplId(t) : null;
+    return mi(id, b => `<span class="k">tpl</span><div class="b"><b>${esc(t.title)}</b><div class="s">${t.criteria.map(esc).join(" · ")}</div>${b}</div>`, id ? addBtns(id, "tpl", i, "Add patterns") : `<span class="done-chip">✓</span>`); }).join("");
+  if(k==="res") return `<div class="rs">${ins.research.map(r => `<button class="rsb ${S.research.running===r.id?"run":""}" data-act="research" data-v="${r.id}" ${S.research.running?"disabled":""}><b>${S.research.running===r.id?`<span class="spin"></span> `:""}${esc(r.label)}</b><span>${esc(r.desc)}</span></button>`).join("")}</div>`;
+  return "";
+}
+function pExpect(){
+  const e = J.expectations;
+  if(!e || (e.state==="loading" && !S.exp)) return `<h2>What the run must do</h2><p class="sub">Jev's picks with reasons. Flip any of them.</p>
+    ${waitRow("Jev is deciding gates and tier, then writing reasons (~10 s).")}${[0,1,2].map(()=>`<div class="sec">${skel(1,12)}${skel(3,30)}</div>`).join("")}${next("Check readiness", 7)}`;
+  if(e.state==="err" && !S.exp) return `<h2>What the run must do</h2>${errBox(`Expectations failed: ${e.err}`, "reexpect")}${next("Check readiness", 7)}`;
+  const x = S.exp, Jv = S.expJev;
+  const bar = p => `<span class="pbar" title="Jev: ${pct(p)}"><i style="width:${(p??0)*100}%"></i></span>`;
+  const row = (kind, id, on, p, pv, reason, locked, jevOn) => `<div class="xrow" tabindex="-1" data-why="${kind}:${id}"><span class="nm">${esc(nm(id))}</span><span class="rs2">${esc(reason)}${on!==jevOn?`<span class="ovr">You flipped Jev's pick</span>`:""}</span>${bar(p)}<span class="pv">${pv}</span>${locked?`<span class="lock" title="Floor: cannot be turned off">🔒</span>`:""}<button class="tog ${on?"on":""}" role="switch" aria-checked="${on}" aria-label="${esc(nm(id))}" data-act="${kind}" data-v="${id}" ${locked?"disabled":""}></button></div>`;
+  return `<h2>What the run must do</h2><p class="sub">Jev's picks with reasons. Flip any of them.</p>
+  ${e.state==="err" ? errBox(`Refresh failed: ${e.err}`, "reexpect") : staleChip("expectations","reexpect")}
+  <div class="sec"><h3>Steps</h3>${x.steps.map((s,i) => row("step", s.id, s.on, s.p, s.p==null?"—":pct(s.p), s.reason, s.floor, Jv.steps[i].on)).join("")}</div>
+  <div class="sec"><h3>Gates · run or skip <span class="lock">(Jev p vs threshold)</span></h3>${x.gates.map((g,i) => row("gate", g.id, g.run, g.p, g.p==null?"n/a":`${p2(g.p)}<span class="thr"> / ${p2(g.threshold)}</span>`, g.reason, false, Jv.gates[i].run)).join("")}</div>
+  <div class="sec"><h3>Risk tier</h3><div class="xrow" data-why="tier:x"><span class="nm">Tier</span><span class="rs2">${esc(Jv.tier.reason)}${x.tier.value!==Jv.tier.value?`<span class="ovr">You flipped Jev's pick (${esc(Jv.tier.value)})</span>`:""}</span><span class="seg">${["T0","T1","T2"].map(t=>`<button class="${x.tier.value===t?"on":""}" data-act="tier" data-v="${t}">${t}</button>`).join("")}</span><span class="pv">${pct(Jv.tier.p)}</span></div></div>
+  <div class="sec"><h3>PR expectations</h3><div class="xrow" style="flex-wrap:wrap;gap:8px"><span class="nm">PR</span><span class="chips"><span class="chip">state ${esc(x.pr.state)}</span><span class="chip">checks ${esc(x.pr.checks)}</span>${x.pr.bodyIncludes.map(b=>`<span class="chip">body ∋ ${esc(b)}</span>`).join("")}${x.pr.untouched.map(u=>`<span class="chip">untouched ${esc(u)}</span>`).join("")}</span></div></div>
+  <div class="sec"><h3>Approvals</h3>${Object.keys(x.approvals).map(k => `<div class="xrow"><span class="nm">${k[0].toUpperCase()+k.slice(1)}</span><span class="rs2">${x.approvals[k]!==Jv.approvals[k]?`<span class="ovr">You flipped Jev's pick</span>`:"Jev's pick"}</span><span class="seg">${["auto","human"].map(v=>`<button class="${x.approvals[k]===v?"on":""}" data-act="appr" data-v="${k}:${v}">${v}</button>`).join("")}</span></div>`).join("")}</div>
+  <div class="sec"><h3>Limits</h3><div class="xrow"><span class="nm">Runs</span><span class="rs2">Max scored runs for this goal</span><input class="input num" type="number" min="1" data-lim="runs" value="${x.limits.runs}"></div><div class="xrow"><span class="nm">Minutes / run</span><span class="rs2">Hard stop per run</span><input class="input num" type="number" min="5" data-lim="minutesPerRun" value="${x.limits.minutesPerRun}"></div></div>
+  ${next("Check readiness", 7)}`;
+}
+function pReady(){
+  const r = scores(), weak = r.filter(x => !passes(x)), nj = J.notes;
+  const noteOf = x => nj?.state==="loading" ? `<span class="skel inl"></span>` : x.note ? esc(x.note) : nj?.state==="err" ? "" : "";
+  return `<h2>Is it ready?</h2><p class="sub">Jev scores three yes/no questions. The bar is ${T}.</p>
+  ${J.readiness?.state==="err" ? errBox(`Readiness failed: ${J.readiness.err}`, "rerdy") : ""}
+  ${r.map((x,i) => { const mv = S.moved?.dim===x.dim ? S.moved : null, grow = mv?.fresh && mv.from != null;
+    const d = mv && mv.from != null && mv.to != null ? mv.to - mv.from : null;
+    return `<div class="rd" data-rd="${esc(x.dim)}"><div class="t"><b>${x.dim}</b><span class="mono" style="color:${passes(x)?"var(--add)":"var(--warn)"}">${S.rescoring?.dim===x.dim?`<span class="spin"></span> re-scoring… `:""}${x.p==null?(S.rdy?"Jev unavailable":"scoring…"):p2(x.p)} ${x.p==null?(S.rdy?"· counts as below bar":""):passes(x)?"✓":"· below bar"}${d!=null?`<span class="mv ${d>0.004?"":d<-0.004?"down":"flat"}">${d>0.004?"▲":d<-0.004?"▼":"="} from ${p2(mv.from)}</span>`:""}</span></div><div class="bar"><i style="width:${((grow?mv.from:x.p)??0)*100}%;background:${DIMC[i]}" ${grow?`data-grow="${(x.p??0)*100}"`:""}></i><span class="th" title="threshold ${T}" style="left:${T*100}%"></span></div><div class="note">${noteOf(x)}</div>${passes(x) ? "" : fixArea(x)}</div>`; }).join("")}
+  ${S.deep.result ? `<div class="rd rpi"><div class="t"><b>Plan-ready (RPI)</b><span class="mono ${READINESS_CLS[S.deep.result.readiness]||""}">${esc(S.deep.result.readiness)}</span></div><div class="note">Planning Readiness from the deep research artifact. A 4th signal: it is not part of the ${T} gauge.${deepStale()?" Researched an older version.":""}</div></div>` : ""}
+  ${nj?.state==="err" ? errBox(`Notes failed: ${nj.err}`, "renotes") : ""}
+  ${weak.length ? `<div class="warnbox">⚠ ${weakTxt(weak)} ${weak.every(x=>x.p==null)?`${weak.length>1?"have":"has"} no Jev score, so ${weak.length>1?"they count":"it counts"} as below`:"below"} ${T}. This is a warning, not a block. Launch asks for one line on why.</div>
+    <div class="lock">Raise it: accept more criteria or constraints, or sharpen the task. Jev re-scores after every change.</div>` : `<div class="okbox">✓ All three clear the bar.</div>`}
+  ${deepPanel()}
+  ${next("Go to launch", 8, weak.length?`<button class="btn ghost" data-act="go" data-v="5">Get more ideas</button>`:"")}`;
+}
+function fixArea(x){
+  const k = "refine:"+x.dim, j = J[k], note = fixNote(x);
+  const head = `<div class="fh"><span class="minijev"></span>Fix it</div>`;
+  if(!note) return `<div class="fixes">${head}${waitRow("Waiting for Jev's note, then fixes (~15 s).")}</div>`;
+  if(!j) return `<div class="fixes">${head}<button class="btn sm" data-act="refix" data-v="${esc(x.dim)}">Find fixes for ${esc(x.dim)}</button></div>`;
+  if(j.state==="err") return `<div class="fixes">${head}<div class="errbox" role="alert"><span>⚠ Fixes failed: ${esc(j.err)}</span><button class="btn sm" data-act="refix" data-v="${esc(x.dim)}">Retry</button></div></div>`;
+  if(j.state==="loading") return `<div class="fixes">${head}${waitRow(`Jev is looking for fixes that raise ${x.dim} (~15 s)…`)}${[0,1].map(()=>`<div class="fix">${skel(1,14)}${skel(1,11)}${skel(1,22)}</div>`).join("")}</div>`;
+  const changed = drift(j.doc) > 0, busy = !!S.rescoring || J.notes?.state==="loading";
+  const fixes = j.data.fixes;
+  const shown = fixes.map((f,i) => ({f, i, id: fixId(x.dim, f)})).filter(o => !dismissed(o.id) || j.applied?.[o.i]), hidden = fixes.length - shown.length;
+  if(!fixes.length) return `<div class="fixes">${head}<div class="lock">No single-line fix found. Sharpen the task or add a criterion by hand.</div></div>`;
+  return `<div class="fixes">${head}${changed && !busy ? `<div class="stalechip">The card changed since these fixes. <button class="btn sm" data-act="refix" data-v="${esc(x.dim)}">↻ New fixes</button></div>` : ""}${shown.map(({f, i, id}) => {
+    const used = j.applied?.[i], old = oldLine(j.doc, f), skip = !used && isSkip(impData(id));
+    const diff = f.op==="add" ? `<div class="dl add">${fmt(f.text)}</div>`
+      : f.op==="remove" ? `<div class="dl del">${fmt(old ?? "(line not found)")}</div>`
+      : `${old!=null?`<div class="dl del">${fmt(old)}</div>`:""}<div class="dl add">${fmt(f.text)}</div>`;
+    const idx = f.op==="add" || f.section==="task" ? "" : (f.index ?? "");
+    const apply = `<button class="btn sm ${skip?"ghost":"primary"}" data-act="fixapply" data-v="${esc(x.dim)}|${i}" ${changed||busy?"disabled":""}>Apply${skip?" anyway":""}</button>`;
+    return `<div class="fix ${used?"used":""}${skip?" skip":""}" ${used?"":`data-imp="${id}"`}><div class="ft">${esc(f.title)}</div><div class="fw">${fmt(f.why)}</div>
+      <span class="sectag">${esc(SECN[f.section] || f.section)} · ${f.op}</span>${used?"":`<span class="jbrow" style="display:inline-flex;margin:0 0 0 6px">${jbadge(id)}</span>`}${diff}
+      <div class="fa">${used ? `<span class="done-chip">✓ Applied${S.rescoring?.dim===x.dim?" · re-scoring…":""}</span>` : skip ? `<button class="btn sm rejp" data-act="dismiss" data-v="${id}">✕ Skip</button>${apply}` : apply}
+      <button class="btn sm" data-act="fixshow" data-v="${f.section}|${idx}">Show in card</button>
+      <button class="jump" data-act="fixshow" data-v="${f.section}|">Jump to ${esc(SECN[f.section] || f.section)}</button></div></div>`; }).join("")}${hidden ? `<div class="lock">${hidden} fix${hidden>1?"es":""} skipped. <button class="btn sm ghost" data-act="undismissfix" data-v="${esc(x.dim)}">Show</button></div>` : ""}</div>`;
+}
+function deepLaunchInfo(){
+  const D = S.deep;
+  if(deepActive()) return `<div class="warnbox">🔬 Deep research is still running (${D.run.state==="mapping"?"mapping the result":`<span data-deepel>${mmss(deepEl())}</span>`}). The run can only read it if you wait: the server cannot hand it over later. Pick one.</div>`;
+  if(D.result?.artifactPath) return `<div class="okbox">🔬 The run reads the deep research before planning: <span class="mono">${esc(D.result.artifactPath)}</span>${deepStale()?` <span class="no">(researched an older version)</span>`:""}</div>`;
+  return `<div class="lock" style="margin:6px 0">🔬 No deep research for this run · ${esc(deepState().text)}</div>`;
+}
+function pLaunch(){
+  const r = scores(), weak = r.filter(x => !passes(x)), x = S.exp, ex = J.expectations;
+  if(S.launched){
+    const R = S.launched;
+    return `<h2>${R.live ? "Saved 🚀" : "Dry run ✓"}</h2>
+    <div class="${R.live?"okbox":"warnbox"}">${R.live ? `Spec validated and saved to <span class="mono">${esc(R.savedPath)}</span>. The scored run started.` : `Dry run — spec validated and saved to <span class="mono">${esc(R.savedPath)}</span>, no run started.`}</div>
+    <div class="res"><div class="kv"><span class="k">Saved</span><span class="v">${esc(R.savedPath)}</span><button class="btn sm ghost" data-act="copy" data-v="${esc(R.savedPath)}">Copy</button></div>
+    <div class="kv"><span class="k">Command</span><span class="v">${esc(R.command)}</span><button class="btn sm ghost" data-act="copy" data-v="${esc(R.command)}">Copy</button></div>
+    ${R.threadId ? `<div class="kv"><span class="k">Thread</span><span class="v">${esc(R.threadId)}</span><a class="btn sm ghost" href="/?thread=${encodeURIComponent(R.threadId)}">Open in Inbox</a></div>` : `<div class="kv"><span class="k">Thread</span><span class="v" style="font-family:inherit;color:var(--dim)">none (no run started)</span></div>`}
+    <div class="kv"><span class="k">Research</span><span class="v"${S.launchedRes?"":` style="font-family:inherit;color:var(--dim)"`}>${S.launchedRes ? esc(S.launchedRes) : "none (launched without deep research)"}</span></div>
+    ${S.override ? `<div class="kv"><span class="k">Override</span><span class="v" style="font-family:inherit">“${esc(S.override)}”</span></div>`:""}</div>
+    <div class="lock" style="margin-top:8px">Spec id <span class="mono">${esc(R.spec?.id)}</span> · ${S.doc.criteria.length} locked AC · ${x.gates.filter(g=>g.run).length} gates run · tier ${esc(x.tier.value)}</div>
+    <div class="foot nav">${backBtn()}<span class="lock">Use Reset to start a new goal.</span></div>`;
+  }
+  const gatesOn = x ? x.gates.filter(g=>g.run).length : 0;
+  const expWait = !x;
+  return `<h2>Launch</h2><p class="sub">Saves the goal to the factory and starts a scored run (<span class="mono">sf goal run</span>).</p>
+  <div class="sum"><div><div class="v">${S.doc.criteria.length} AC</div><div class="l">locked criteria</div></div><div><div class="v">${S.doc.constraints.length}</div><div class="l">constraints</div></div><div><div class="v">${x?`${gatesOn} of ${x.gates.length}`:"…"}</div><div class="l">gates run</div></div><div><div class="v">${x?`${esc(x.tier.value)} · ${x.limits.runs} runs`:"…"}</div><div class="l">tier · limit</div></div></div>
+  ${S.proposals.length ? `<div class="tip"><span>•</span><span>${S.proposals.length} proposal${S.proposals.length>1?"s are":" is"} still open. Open proposals are not saved.</span></div>`:""}
+  ${expWait ? (ex?.state==="err" ? errBox(`Expectations failed: ${ex.err}`, "reexpect") : waitRow("Waiting for Jev's expectations…")) : ""}
+  ${weak.length ? `<div class="warnbox">⚠ ${weakTxt(weak, true)} &lt; ${T}${weak.some(x=>x.p==null)?" (no Jev score counts as below the bar)":""}. The reason you give is saved with the goal.</div>
+  <div class="field"><label for="ovin">Why launch anyway? (one line)</label><input id="ovin" class="input" placeholder="e.g. tests will be added in a follow-up goal" value="${esc(S.override)}"></div>` : ""}
+  ${deepLaunchInfo()}
+  <div class="foot nav">${backBtn()}${S.launchErr ? `<span class="lerr" role="alert">⚠ ${esc(S.launchErr)}</span>` : ""}<span class="sp"></span>${deepActive()
+    ? `${S.deep.launchWait ? `<button class="btn" disabled><span class="spin"></span> Waiting for research…</button>` : `<button class="btn primary" data-act="deepwait" data-next>⏳ Wait for research</button>`}<button class="btn" id="launchbtn" data-act="launch" data-v="nores" title="Stops the research worker and launches without it" ${expWait || S.launching || (weak.length && !S.override.trim())?"disabled":""}>${S.launching?`<span class="spin"></span> Saving…`:"Launch without research"} 🚀</button>`
+    : `<button class="btn primary" id="launchbtn" data-act="launch" data-next ${expWait || S.launching || (weak.length && !S.override.trim())?"disabled":""}>${S.launching?`<span class="spin"></span> Saving…`:S.launchErr?"Retry launch":weak.length?"Launch anyway":S.deep.result?.artifactPath?"Launch with research":"Launch"} 🚀</button>`}</div>`;
+}
+
+/* ---------- card ---------- */
+function gaugeSVG(r){
+  const radii=[64,52,40], C = rr => 2*Math.PI*rr;
+  const have = r.filter(x=>x.p!=null), avg = have.length ? have.reduce((s,x)=>s+x.p,0)/have.length : null;
+  const th = (135 + 270*T) * Math.PI/180;
+  let s = `<svg width="164" height="164" viewBox="0 0 164 164" aria-label="Readiness gauge">`;
+  r.forEach((x,i) => { const rr = radii[i], c = C(rr), p = x.p ?? 0;
+    s += `<circle cx="82" cy="82" r="${rr}" fill="none" stroke="#2b2620" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(.75*c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(135 82 82)"/>`;
+    s += `<circle class="arc" cx="82" cy="82" r="${rr}" fill="none" stroke="${DIMHEX[i]}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(.75*c*p).toFixed(1)} ${c.toFixed(1)}" transform="rotate(135 82 82)" opacity="${passes(x)?1:.75}"/>`;
+    s += `<line x1="${82+Math.cos(th)*(rr-6)}" y1="${82+Math.sin(th)*(rr-6)}" x2="${82+Math.cos(th)*(rr+6)}" y2="${82+Math.sin(th)*(rr+6)}" stroke="#e5e5e5" stroke-width="1.6" opacity=".8"/>`;
+  });
+  s += `<text class="ctr" x="82" y="88" text-anchor="middle">${avg==null?"–":Math.round(avg*100)}</text><text class="ctrl" x="82" y="104" text-anchor="middle">${J.readiness?.state==="loading"?"scoring…":S.rdy && have.length<r.length?`${r.length-have.length} unscored`:"readiness"}</text></svg>`;
+  return s;
+}
+function renderCard(){
+  const col = $("#cardcol");
+  const r = scores(), lv = level();
+  const repo = repoObj();
+  const shipping = col.querySelector(".gcard.ship");
+  const x = S.exp;
+  const head = `<div class="ghead"><div class="meta">
+      <div class="lvl">Lv ${lv} · ${lvName(lv)} <span class="pipsL">${[1,2,3,4,5].map(i=>`<i class="${i<=lv?"on":""}"></i>`).join("")}</span></div>
+      <h1 class="gtitle" ${S.started?`contenteditable="plaintext-only" spellcheck="false" data-edit="title"`:""}>${esc(S.started?S.title:"Untitled goal")}</h1>
+      <div class="gmeta"><span>${repo?`${esc(repo.name)} · ${esc(repo.base)}`:"no repo yet"}</span>${S.started?`<span class="mono">${esc(S.docId)}</span>`:""}${x?`<span>${esc(x.tier.value)} · ${x.limits.runs} runs × ${x.limits.minutesPerRun} min</span>`:""}</div>
+      ${S.proposals.length?`<button class="pendchip" data-act="go" data-v="3">● ${S.proposals.length} proposal${S.proposals.length>1?"s":""} waiting</button>`:""}
+    </div>
+    <div class="gauge">${gaugeSVG(r)}<div class="legend">${r.map((x,i)=>`<div><span class="sw" style="background:${DIMHEX[i]}"></span>${x.dim}<span class="v ${passes(x)?"":"low"}">${p2(x.p)}</span><span class="ok">${passes(x)?"✓":""}</span></div>`).join("")}${S.deep.result ? `<div class="rpi" title="Planning Readiness from the deep research artifact. Not part of the readiness gauge."><span class="sw" style="background:transparent;border:1px solid var(--muted)"></span>Plan-ready (RPI)<span class="rv ${READINESS_CLS[S.deep.result.readiness]||""}">${esc(S.deep.result.readiness)}</span></div>` : ""}<div class="lock" style="margin-top:2px">bar ${T} ┃ · Jev</div></div></div></div>`;
+  let body;
+  if(!S.started){
+    body = S.discRunning
+      ? `<div class="empty"><span class="minijev" style="width:28px;height:28px"></span><div class="seedq">“${esc(S.seed)}”</div><div>Jev is reading the repo. The first draft lands here.</div><div style="width:100%;max-width:520px;margin-top:10px">${skel(4,16)}</div></div>`
+      : `<div class="empty"><span class="minijev" style="width:28px;height:28px"></span><div class="seedq">“${esc(S.seed || D.seed)}”</div><div>This is a level 1 card. Jev builds it up with you, one answer at a time.</div></div>`;
+  } else {
+    const ver = `<span class="vtag">v${S.verIdx+1}</span>`;
+    const pend = S.proposals.filter(p=>p.pending);
+    body = `<div class="gbody">
+      ${pend.map(p => `<div class="hunk"><div class="hh"><span>proposal from</span><span class="from">${esc(p.from)}</span><span class="sp"></span>${p.err?`<button class="hbtn ok" data-act="repatch" data-v="${p.id}">Retry</button><button class="hbtn no" data-act="prej" data-v="${p.id}">✕ Drop</button>`:""}</div><div class="hl ${p.err?"err":""}">${p.err?`⚠ ${esc(p.err)}`:`<span class="spin"></span> Jev is turning “${esc(p.other)}” into a line…`}</div></div>`).join("")}
+      <div class="gsec" data-gsec="task"><div class="sh"><h4>Task</h4>${ver}<span class="hint">click to edit</span></div><div class="task" contenteditable="plaintext-only" spellcheck="false" data-edit="task">${esc(S.doc.task)}</div>${hunks("task")}</div>
+      ${secChips("inputs","Inputs")}
+      ${secLines("constraints","Constraints")}
+      ${secLines("criteria","Acceptance criteria")}
+      ${secChips("checks","Required checks")}
+    </div>`;
+  }
+  if(shipping) return;
+  const stamp = S.launched ? `<div class="stamp">${S.launched.live?"SAVED":"DRY RUN"}</div>` : "";
+  const pv = `<div class="pvhead"><span>Goal card</span><span class="lv"><i></i>live${S.started?` · v${S.verIdx+1}`:""}</span></div>`;
+  col.innerHTML = `${pv}<div class="gcard lv${lv}">${stamp}${deepStrip()}${head}${body}</div>`;
+  flashSections(col);
+  if(S.landP){ const el = col.querySelector(`[data-pid="${S.landP}"]`); if(el){ el.classList.add("land"); el.scrollIntoView({block:"nearest",behavior:"smooth"}); } S.landP = null; }
+  if(S.flash){ const [sec,i] = S.flash.split(":"); const el = col.querySelector(`[data-sec="${sec}"][data-i="${i}"]`); if(el){ el.classList.add("flash"); el.scrollIntoView({block:"nearest",behavior:"smooth"}); } S.flash=null; }
+}
+// Wizard preview: the section whose lines or open proposals changed flashes once.
+const secSig = {};
+function flashSections(col){
+  if(!S.started){ for(const k in secSig) delete secSig[k]; return; }
+  let first = null;
+  for(const sec of SECS){
+    const sig = JSON.stringify([sec==="task" ? S.doc.task : S.doc[sec], S.proposals.filter(p => p.section===sec).map(p => p.add + "|" + (p.pending?1:0))]);
+    const had = sec in secSig, changed = had && secSig[sec]!==sig;
+    secSig[sec] = sig;
+    if(!changed) continue;
+    const el = col.querySelector(`[data-gsec="${sec}"]`); if(!el) continue;
+    el.classList.remove("secflash"); void el.offsetWidth; el.classList.add("secflash");
+    first = first || el;
+  }
+  if(first && !S.flash && !S.landP) first.scrollIntoView({block:"nearest", behavior:"smooth"});
+}
+const seenHunk = new Set();
+function hunks(sec){
+  return S.proposals.filter(p => p.section===sec && !p.pending).map(p => { const id = pk(p.section, p.add, p.remove); const nw = !seenHunk.has(p.id); seenHunk.add(p.id); return `<div class="hunk${nw?" nw":""}${p.id===S.hotP?" hot":""}" data-pid="${p.id}" data-imp="${id}"><div class="hh"><span>proposal from</span><span class="from">${esc(p.from)}</span>${jbadge(id)}<span class="sp"></span>${isSkip(impData(id)) ? `<button class="hbtn no rejp" data-act="prej" data-v="${p.id}">✕ Reject</button><button class="hbtn" data-act="pacc" data-v="${p.id}" style="color:var(--muted)">Accept anyway</button>` : `<button class="hbtn ok" data-act="pacc" data-v="${p.id}">✓ Accept</button><button class="hbtn no" data-act="prej" data-v="${p.id}">✕ Reject</button>`}</div>${sec==="task"?`<div class="hl diff">${wdiff(p.remove||"", p.add)}</div>`:`${p.remove!=null?`<div class="hl del">${fmt(p.remove)}</div>`:""}<div class="hl add">${fmt(p.add)}</div>`}</div>`; }).join("");
+}
+function secLines(sec, title){
+  const arr = S.doc[sec], ac = sec==="criteria";
+  return `<div class="gsec" data-gsec="${sec}"><div class="sh"><h4>${title}</h4><span class="cnt">${arr.length}</span>${ac?`<span class="hint">🔒 locked for the worker: it may add, not change</span>`:""}</div>
+  ${arr.map((l,i) => `<div class="line" data-sec="${sec}" data-i="${i}">${ac?`<span class="ac">🔒 AC-${i+1}</span>`:`<span class="bul">•</span>`}<span class="tx" contenteditable="plaintext-only" spellcheck="false" data-edit="${sec}:${i}">${esc(l)}</span><button class="x" title="Remove" aria-label="Remove line" data-act="del" data-v="${sec}:${i}">×</button></div>`).join("")}
+  ${hunks(sec)}
+  <div class="addrow"><input class="addin" data-add="${sec}" placeholder="+ add ${ac?"a criterion":"a constraint"} (Enter)"></div></div>`;
+}
+function secChips(sec, title){
+  const arr = S.doc[sec];
+  return `<div class="gsec" data-gsec="${sec}"><div class="sh"><h4>${title}</h4><span class="cnt">${arr.length}</span></div><div class="mchips">${arr.map((l,i)=>`<span class="mchip" data-sec="${sec}" data-i="${i}"><span class="mt">${esc(l)}</span><button class="x" aria-label="Remove ${esc(l)}" data-act="del" data-v="${sec}:${i}">×</button></span>`).join("")}<input class="addin small" data-add="${sec}" placeholder="+ add (Enter)"></div>${hunks(sec)}</div>`;
+}
+
+/* ---------- actions ---------- */
+// Put an answer's patch into the card as a proposal (replacing an older one from the same question).
+function placeAnswer(qi, patch, a){
+  const from = `Answer Q${qi+1}`;
+  S.proposals = S.proposals.filter(p => p.from!==from);
+  const prevLine = a.prevLine;
+  if(patch.section!=="task" && prevLine && S.doc[patch.section]?.includes(prevLine)){ if(prevLine!==patch.add) S.proposals.push({id:"p"+(++pid), section:patch.section, add:patch.add, from, remove:prevLine}); }
+  else propose(patch.section, patch.add, from);
+  a.line = patch.section==="task" ? null : patch.add;
+  const landed = S.proposals.find(p => p.from===from && !p.pending);
+  S.landP = landed ? landed.id : null;
+  return landed;
+}
+function patchOther(qi, prop){
+  const q = S.questions[qi], g = gen;
+  prop.err = null;
+  const t0 = performance.now();
+  L.patch(docNow(), q.text, prop.other).then(patch => {
+    if(g!==gen) return;
+    window.__coachLat.push({name:"patch", ms:Math.round(performance.now()-t0)});
+    S.proposals = S.proposals.filter(p => p!==prop);
+    const a = S.answers[q.id]; if(a && a.opt===-1 && a.other===prop.other) placeAnswer(qi, patch, a);
+    render();
+    if(S.stage<=3) say("Your answer is a proposal in the card now.", "happy", 900);
+  }, e => { if(g!==gen) return; prop.err = e.message; render(); });
+}
+function answer(opt, other){
+  const qi = S.qi, q = S.questions[qi]; if(!q) return;
+  const prev = S.answers[q.id];
+  const a = S.answers[q.id] = {opt, other, prevLine: prev?.line ?? prev?.prevLine, line:null};
+  S.otherOpen = false;
+  const from = `Answer Q${qi+1}`;
+  let landed = null;
+  if(opt===-1 || !q.patches?.[opt]){
+    // typed "Other" (or a missing patch): ask the model for the line, in the background
+    S.proposals = S.proposals.filter(p => p.from!==from);
+    const prop = {id:"p"+(++pid), pending:true, from, other: opt===-1 ? other : q.options[opt]};
+    S.proposals.push(prop);
+    patchOther(qi, prop);
+  } else landed = placeAnswer(qi, q.patches[opt], a);
+  const agreed = opt===q.jev;
+  const where = landed ? `It landed in ${SECN[landed.section]} as a proposal (green in the card).` : "";
+  S.qi++;
+  while(S.qi < S.questions.length && S.answers[S.questions[S.qi].id]) S.qi++;
+  render();
+  if(S.qi < S.questions.length){
+    say(opt===-1 || !landed ? "Got it. I'm writing your answer as a line; next question meanwhile." : agreed ? `Agreed. ${where}` : `You overrode me. Good. ${where}`, agreed?"happy":"neutral", 1500);
+    setTimeout(() => { if(S.stage===2) askLine(); }, 1600);
+  } else { askLine(); interviewDone(); }
+}
+// Proposals Jev would accept: worth >= 0.6 and no readiness score drops by 0.1 or more.
+const jevPicks = () => openP().filter(p => isPick(impData(pk(p.section, p.add, p.remove))));
+function picksBtn(){
+  const P = openP(), known = P.filter(p => impData(pk(p.section, p.add, p.remove))).length, n = jevPicks().length;
+  if(!known) return `<button class="btn" disabled><span class="spin"></span> Jev's picks…</button>`;
+  return `<button class="btn${n?" primary":""}" data-act="accpicks" ${n?"":"disabled"} title="Open proposals with Jev worth ≥ ${PICK_WORTH*100}% and no score drop of ${Math.abs(HARM)} or more${known<P.length?` (${P.length-known} still being weighed)`:""}"><span class="minijev"></span>Accept Jev's picks (${n})</button>`;
+}
+// Interview over: start the rewrites now, on the card as Jev's picks would leave it (waits ≤ 1.5 s for impact).
+function interviewDone(){
+  if(S.earlyRw || J.enhance) return;
+  S.earlyRw = true;
+  const g = gen, t0 = Date.now();
+  (function wait(){
+    if(g!==gen || J.enhance) return;
+    const P = openP(), ready = P.every(p => impFresh(pk(p.section, p.add, p.remove)));
+    if(!ready && Date.now()-t0 < 1500){ setTimeout(wait, 100); return; }
+    const d = clone(S.doc);
+    P.forEach(p => { const x = impData(pk(p.section, p.add, p.remove)); if(!x || isPick(x)) applyTo(d, p); });
+    runEnhance(d);
+  })();
+}
+function runResearch(id){
+  const ins = J.inspiration.data, r = ins.research.find(x=>x.id===id), g = gen, t0 = performance.now();
+  Object.assign(S.research, {running:id, label:r.label, done:null, err:null, events:[]});
+  render(); narrate(`Running ${r.label}… ${r.desc}`, r.label.toLowerCase());
+  const tick = setInterval(() => { const e = $("#resel"); if(e) e.textContent = Math.floor((performance.now()-t0)/1000)+" s"; }, 1000);
+  const push = t => { S.research.events.push(t); if(S.stage===5) render(); };
+  L.research(id, repoObj().path, docNow(), (type, d) => {
+    if(g!==gen) return;
+    if(type==="status"){ narrate(d.text, r.label.toLowerCase()); push(d.text); }
+    if(type==="tool"){ narrate(toolLine(d.text), r.label.toLowerCase()); push(d.text); }
+    if(type==="fact"){ narrate(`Noted: ${d.fact}`, "found a fact"); push("fact: " + d.fact); }
+    if(type==="view"){ narrate(`${d.role}: ${String(d.view).slice(0,180)}${String(d.view).length>180?"…":""}`, d.role); push(`${d.role} has spoken`); }
+  }).then(res => {
+    clearInterval(tick); if(g!==gen) return;
+    window.__coachLat.push({name:"research:"+id, ms:Math.round(performance.now()-t0)});
+    Object.assign(S.research, {running:null, done:{label:r.label, summary:res.summary, suggestion:res.suggestion}});
+    render(); say(res.summary, "happy", 1500);
+  }, e => {
+    clearInterval(tick); if(g!==gen) return;
+    Object.assign(S.research, {running:null, err:e.message, errId:id, errLabel:r.label});
+    render(); say(`${r.label} failed: ${e.message}`, "worried");
+  });
+}
+function proposed(ok, line, idea){ if(ok){ if(idea) S.ideaN++; render(); say(line, "happy", 1000); } }
+
+/* ---------- deep research: a REAL hve-core rpi-research worker; Jev decides if, when and how deep ---------- */
+// Jev's questions, copied from server.ts DEEP (shown in the "Why?" popover).
+const DEEPQ = {
+  need: "Would deep research (web sources, alternatives, counter-evidence) likely change this goal or how it should be planned? Small, well-known changes do not need it.",
+  stable: "Is the scope of this goal stable enough to research now: task, criteria and constraints are settled and unlikely to change much?",
+  depth: "How deep should research go for this goal?",
+  depthOpts: {focused:"a bounded change with known files; research deeply but narrowly", balanced:"a normal change with some open alternatives", expansive:"a broad or novel change; the decision space is largely unknown"},
+};
+const DEPTHS = ["focused","balanced","expansive"];
+const DEEP_POLL_MS = 5000, DEEP_DEBOUNCE_MS = 600, DEEP_STALE_LINES = 3, DEEP_AFTER_STAGE = 4; // auto-start only once Review (stage 4) is done
+const READINESS_CLS = {"Ready":"rpiok", "Not ready":"rpino", "Blocked":"rpino", "Not applicable":"rpina"};
+let deepTimer = null, deepPoll = null;
+function freshDeep(){ return {dec:null, deciding:false, mode:"auto", depthYou:null, run:null, result:null, whyOpen:false, said:null, answers:{}, otherOpen:null, launchWait:false}; }
+const mmss = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+const deepEl = () => S.deep.run ? Math.max(0, Math.floor((Date.now()-S.deep.run.t0)/1000)) : 0;
+const deepDepth = () => S.deep.depthYou || S.deep.dec?.depth?.value || "balanced";
+const deepActive = () => ["starting","running","mapping"].includes(S.deep.run?.state);
+const deepStaleN = () => S.deep.result && S.deep.run?.startDoc ? drift(S.deep.run.startDoc) : 0;
+const deepStale = () => deepStaleN() >= DEEP_STALE_LINES;
+const sureOf = p => p == null ? null : Math.max(p, 1-p);   // how sure Jev is of its yes/no
+function deepCancelNow(threadId){
+  // own fetch (not GoalLive): must survive abortAll() on Reset / start over
+  fetch("/api/goal-page/deep/cancel", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({threadId}), keepalive:true}).catch(() => {});
+}
+window.addEventListener("pagehide", () => { if(S?.deep?.run?.threadId && deepActive()) deepCancelNow(S.deep.run.threadId); });
+
+// The one status the chip, the rail and the critter all use.
+function deepState(){
+  const D = S.deep, d = D.dec, r = D.run;
+  if(!S.started) return {key:"pre", tone:"no", text:"Jev decides after Discover"};
+  if(r?.state==="starting") return {key:"run", tone:"run", by:r.by, text:`${r.by==="you"?"You":"Jev"}: starting · ${r.depth}`};
+  if(r?.state==="running") return {key:"run", tone:"run", by:r.by, text:`${r.by==="you"?"You":"Jev"}: researching · ${r.depth} · `, clock:true};
+  if(r?.state==="mapping") return {key:"map", tone:"run", by:r.by, text:"Mapping… turning the research into edits"};
+  if(r?.state==="failed") return {key:"fail", tone:"off", by:r.by, text:"Research failed"};
+  if(D.result) return {key:"done", tone:"done", by:r?.by, text:`Done · Plan-ready: ${D.result.readiness}${deepStale()?" · older version":""}`};
+  if(D.mode==="skipped") return {key:"skip", tone:"skip", by:"you", text:"You skipped"};
+  if(!d) return {key:"dec", tone:"no", text:"Jev is deciding…"};
+  if(!d.available) return {key:"off", tone:"off", text:"Jev unavailable — start it yourself"};
+  if(!d.need.yes) return {key:"no", tone:"no", by:"jev", text:`Jev: not needed (${pct(d.need.p)})`};
+  if(!d.stable.yes) return {key:"wait", tone:"wait", by:"jev", text:`Jev: needed — waiting for stable scope (stable ${pct(d.stable.p)} / ${pct(d.stable.threshold)})`};
+  if(S.maxStage < DEEP_AFTER_STAGE) return {key:"later", tone:"wait", by:"jev", text:"Jev: needed — starts after Review"};
+  return {key:"go", tone:"run", by:"jev", text:"Jev: starting…"};
+}
+const byBadge = by => by==="you" ? `<span class="dby you" title="You made this choice (override)"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="3" r="2.2" fill="currentColor"/><path d="M1 10c0-2.6 1.8-4 4-4s4 1.4 4 4z" fill="currentColor"/></svg>You decided</span>`
+  : by==="jev" ? `<span class="dby jev" title="Jev made this choice"><span class="minijev"></span>Jev decided</span>` : "";
+function deepChip(){
+  const st = deepState();
+  const ic = st.tone==="run" ? (st.key==="map" ? `<span class="spin"></span>` : `<span class="pulse"></span>`) : "";
+  return `<span class="dchip t-${st.tone}" data-deepchip>${ic}<span>${esc(st.text)}${st.clock?`<span data-deepel>${mmss(deepEl())}</span>`:""}</span></span>${byBadge(st.by)}`;
+}
+// Critter line for each decision: number vs threshold + reason. Spoken once per state change.
+function deepSpeak(force){
+  const st = deepState(), d = S.deep.dec, D = S.deep;
+  const sig = st.key + "|" + (st.key==="run" ? D.run?.depth : "");
+  if(!force && D.said===sig) return;
+  D.said = sig;
+  let text = null, conf = null;
+  const dep = d ? `Depth: ${deepDepth()}${D.depthYou ? " (your choice)" : ` (${pct(d.depth.p)})`}.` : "";
+  if(st.key==="no"){ conf = sureOf(d.need.p); text = `Deep research: not needed. Only ${pct(d.need.p)} < ${pct(d.need.threshold)} that it would change the plan. Click “Research anyway” if you disagree.`; }
+  else if(st.key==="wait"){ conf = sureOf(d.stable.p); text = `Deep research is needed (${pct(d.need.p)} ≥ ${pct(d.need.threshold)}), but the scope is not stable yet (${pct(d.stable.p)} < ${pct(d.stable.threshold)}). I'll start it by myself when it is.`; }
+  else if(st.key==="later"){ conf = sureOf(d.need.p); text = `Deep research is needed (${pct(d.need.p)} ≥ ${pct(d.need.threshold)}) and the scope looks stable (${pct(d.stable.p)}). I'll start it when you finish Review, so the interview can still change the scope.`; }
+  else if(st.key==="off") text = "I could not decide on deep research: Jev is not reachable. Start it yourself if you want it.";
+  else if(st.key==="run" && D.run.by==="jev"){ conf = Math.min(sureOf(d.need.p), sureOf(d.stable.p)); text = `I'm starting deep research: ${pct(d.need.p)} ≥ ${pct(d.need.threshold)} that it changes the plan; scope looks stable (${pct(d.stable.p)}). ${dep} It takes minutes; keep working.`; }
+  else if(st.key==="run") text = d?.available ? `You chose to research. I had ${pct(d.need.p)} ${d.need.yes?"≥":"<"} ${pct(d.need.threshold)} for “needed”. Starting at ${D.run.depth} depth; it takes minutes.` : `You started deep research at ${D.run.depth} depth. It takes minutes; keep working.`;
+  else if(st.key==="skip") text = "You skipped deep research. I won't start it unless you click “Research anyway” or “Let Jev decide”.";
+  else if(st.key==="map") text = "The research worker is done. Turning the research into edits…";
+  else if(st.key==="done"){ const R = D.result, e = R.findings.filter(f=>f.jev.change).length, c = R.findings.length - e;
+    text = `Deep research is done: ${e} edit${e===1?"":"s"} to review, ${c} saved as context, ${R.decisions.length} decision${R.decisions.length===1?"":"s"}. Plan-ready: ${R.readiness}.${S.stage!==7?" See them in Ready.":""}`; }
+  else if(st.key==="fail") text = `Deep research failed: ${D.run.err}`;
+  if(!text) return;
+  const low = st.key==="fail" || st.key==="off" || (conf != null && isLow(conf));
+  const p = low ? "worried" : st.key==="done" ? "happy" : "neutral";
+  // don't talk over a fresh line (e.g. "I found N facts"); speak right after it
+  const wait = Math.max(0, 2600 - (Date.now()-lastSay)), g = gen;
+  setTimeout(() => { if(g!==gen) return; say(text, p, p==="happy" ? 1600 : null);
+    if(S.stage===2 && S.qi < S.questions.length) setTimeout(() => { if(g===gen && S.stage===2) askLine(); }, 4200); }, wait);
+}
+function deepKick(now){
+  if(!S.started) return;
+  clearTimeout(deepTimer);
+  deepTimer = setTimeout(deepDecideNow, now ? 0 : DEEP_DEBOUNCE_MS);
+}
+function deepDecideNow(){
+  const g = gen; S.deep.deciding = true;
+  L.deepDecide(docNow()).then(d => {
+    if(g!==gen) return;
+    S.deep.dec = d; S.deep.deciding = false;
+    deepMaybeStart(); render(); deepSpeak();
+  }, e => {
+    if(g!==gen || isAbort(e)) return;
+    S.deep.dec = {available:false, err:e.message}; S.deep.deciding = false;
+    render(); deepSpeak();
+  });
+}
+// Jev's rule: needed AND stable AND nothing started AND Review done AND not skipped by the human.
+function deepMaybeStart(){
+  const D = S.deep, d = D.dec;
+  if(!S.started || D.mode==="skipped" || D.run || D.result) return;
+  if(!d?.available || !d.need.yes || !d.stable.yes || S.maxStage < DEEP_AFTER_STAGE) return;
+  deepStartNow("jev");
+}
+function deepStartNow(by){
+  const repo = repoObj(), g = gen;
+  if(!repo || !S.started) return;
+  const run = S.deep.run = {by, depth:deepDepth(), state:"starting", t0:Date.now(), startDoc:clone(S.doc), events:0, artifact:false, pollErr:0};
+  S.deep.result = null; S.deep.answers = {}; S.deep.launchWait = false;
+  if(by==="you") S.deep.mode = "forced";
+  render(); deepSpeak();
+  L.deepStart(repo.path, docNow(), run.depth).then(r => {
+    if(g!==gen || S.deep.run!==run){ deepCancelNow(r.threadId); return; }   // skipped while starting
+    Object.assign(run, {threadId:r.threadId, workerId:r.workerId, reportPath:r.reportPath, state:"running"});
+    render(); deepSchedule();
+  }, e => {
+    if(g!==gen || S.deep.run!==run || isAbort(e)) return;
+    run.state = "failed"; run.err = e.message; render(); deepSpeak();
+  });
+}
+function deepSchedule(){ clearTimeout(deepPoll); deepPoll = setTimeout(deepPollOnce, DEEP_POLL_MS); }
+function deepPollOnce(){
+  const run = S.deep.run, g = gen; if(!run || !run.threadId || !deepActive()) return;
+  L.deepStatus(run.threadId, docNow()).then(st => {
+    if(g!==gen || S.deep.run!==run) return;
+    run.pollErr = 0;
+    if(st.state==="running"){ run.state = "running"; run.events = st.events ?? run.events; run.artifact = !!st.artifact; }
+    else if(st.state==="mapping"){ run.state = "mapping"; run.artifact = true; }
+    else if(st.state==="done"){
+      run.state = "done";
+      const R = st.result;
+      S.deep.result = {...R, decisions:(R.decisions||[]).map(q => ({...q, id:"deep:"+q.id}))};
+      if(S.deep.launchWait) toast(`<span class="minijev"></span> Research is in. <b>Launch</b> now reads it.`);
+    }
+    else if(st.state==="failed"){ run.state = "failed"; run.err = st.error || "worker failed"; }
+    render(); deepSpeak();
+    if(deepActive()) deepSchedule();
+  }, e => {
+    if(g!==gen || S.deep.run!==run) return;
+    if(!isAbort(e) && ++run.pollErr >= 3){ run.state = "failed"; run.err = e.message; render(); deepSpeak(); return; }
+    deepSchedule();
+  });
+}
+function deepCancelRun(){
+  const r = S.deep.run; clearTimeout(deepPoll);
+  if(r?.threadId && deepActive()) deepCancelNow(r.threadId);
+  S.deep.run = null;
+}
+setInterval(() => { if(S?.deep?.run?.state==="running") document.querySelectorAll("[data-deepel]").forEach(e => e.textContent = mmss(deepEl())); }, 1000);
+
+// Strip on the goal card header: chip + who decided + Why? + progress + the always-visible overrides.
+function deepStrip(){
+  if(!S.started) return "";
+  const D = S.deep, d = D.dec, r = D.run, st = deepState(), act = deepActive();
+  const btn = (a, label, cls="", title="") => `<button class="btn sm ${cls}" data-act="${a}" ${title?`title="${esc(title)}"`:""}>${label}</button>`;
+  let bt = "";
+  if(act) bt += btn("deepskip", "✕ Skip research", "rejp", "Cancel the worker and delete its draft");
+  else if(r?.state==="failed") bt += btn("deepany", "↻ Retry", "", "Start the research again") + btn("deepskip", "✕ Skip research", "ghost");
+  else if(D.result){ if(deepStale()) bt += btn("deeprerun", "↻ Re-run", "", "Jev re-decides on the current card"); if(S.stage!==7) bt += btn("deepgo", "See results"); }
+  else if(D.mode==="skipped") bt += btn("deepany", "Research anyway") + btn("deepauto", "Let Jev decide", "ghost");
+  else if(d && !d.available) bt += btn("deepany", "▶ Start deep research", "primary") + btn("deepskip", "✕ Skip research", "ghost");
+  else if(d && !d.need.yes) bt += btn("deepany", "Research anyway", "", "Start a real research worker now") + btn("deepskip", "✕ Skip research", "ghost", "Never auto-start for this goal");
+  else if(d) bt += btn("deepany", "Start now", "", "Don't wait for Jev's conditions") + btn("deepskip", "✕ Skip research", "ghost", "Never auto-start for this goal");
+  const jd = d?.available ? d.depth.value : null;
+  const seg = `<span class="lock">Depth</span><span class="seg" role="group" aria-label="Change depth">${DEPTHS.map(x => `<button class="${deepDepth()===x?"on":""}" data-act="deepdepth" data-v="${x}" title="${esc(DEEPQ.depthOpts[x])}${x===jd?" · Jev's pick":""}">${x===jd?`<span class="minijev"></span>`:""}${x}</button>`).join("")}</span>${D.depthYou?`<span class="dby you" title="You chose the depth">You chose ${esc(D.depthYou)}</span>`:jd?`<span class="lock">Jev's pick</span>`:""}`;
+  const prog = act || r?.state==="done" && r.threadId ? `<div class="dprog">${r.state==="running"?`<span><span class="mono" data-deepel>${mmss(deepEl())}</span> elapsed</span><span>${r.events} events</span>${r.artifact?`<span class="yes">✓ artifact written</span>`:""}`:r.state==="mapping"?`<span>Turning the research into edits…</span>`:r.state==="starting"?`<span>Starting the worker…</span>`:""}${r.threadId?`<a href="/?thread=${encodeURIComponent(r.threadId)}" target="_blank" rel="noopener">Open in Inbox ↗</a>`:""}</div>` : "";
+  const err = r?.state==="failed" ? `<div class="lerr">⚠ ${esc(r.err)}</div>` : "";
+  return `<div class="dstrip" aria-label="Deep research status"><div class="dsrow"><span class="dlab">Deep research</span>${deepChip()}<button class="dwhy" data-act="deepwhy" aria-expanded="${D.whyOpen}">Why?</button></div>${prog}${err}${D.whyOpen ? deepWhy() : ""}<div class="dbtns">${bt}${seg}</div></div>`;
+}
+function deepWhy(){
+  const d = S.deep.dec;
+  if(!d) return `<div class="dpop">Jev has not decided yet.</div>`;
+  if(!d.available) return `<div class="dpop"><h5>Jev's decision</h5>Jev did not answer${d.err?`: ${esc(d.err)}`:""}. Nothing starts by itself; use “Start deep research”.</div>`;
+  const yn = (x, thr) => `<div class="dqh"><span>${x.yes?`<span class="yes">yes</span>`:`<span class="no">no</span>`}</span><span class="mono">${pct(x.p)} ${x.yes?"≥":"<"} ${pct(thr)}</span></div><div class="dbar"><i style="width:${(x.p??0)*100}%"></i><s style="left:${thr*100}%"></s></div>`;
+  const pr = d.depth.probabilities || {};
+  return `<div class="dpop" role="region" aria-label="Why Jev decided this"><h5>Jev's 3 questions (live, ~0.1 s)</h5>
+    <div class="dqn"><b>1 · Needed?</b>${yn(d.need, d.need.threshold)}<div class="dqt">“${esc(DEEPQ.need)}”</div></div>
+    <div class="dqn"><b>2 · Scope stable?</b>${yn(d.stable, d.stable.threshold)}<div class="dqt">“${esc(DEEPQ.stable)}”</div></div>
+    <div class="dqn"><b>3 · How deep?</b> <span class="mono">${esc(d.depth.value)} ${pct(d.depth.p)}</span>${DEPTHS.map(x => `<div class="dqh" style="font-weight:400"><span>${esc(x)}</span><span class="mono">${pct(pr[x] ?? null)}</span></div><div class="dbar"><i style="width:${(pr[x]??0)*100}%"></i></div>`).join("")}<div class="dqt">“${esc(DEEPQ.depth)}” ${DEPTHS.map(x => `${x}: ${esc(DEEPQ.depthOpts[x])}`).join(" · ")}</div></div>
+    <div class="drule">Rule: start by itself when 1 and 2 are yes and Review is done. Never during the interview. Your overrides always win.</div></div>`;
+}
+function deepRail(){
+  if(!S.started) return "";
+  const R = S.deep.result;   // still to handle: edits not proposed/skipped yet + unanswered decisions
+  const n = R ? R.findings.filter(f => { if(!f.jev.change) return false; const c = patchCand(f.proposal.section, f.proposal.add); return c && !dismissed(c.id); }).length + R.decisions.filter(q => !S.deep.answers[q.id]).length : 0;
+  return `<button class="drail" data-act="deepgo" title="Open the research results (Ready stage)"><span class="dlab">🔬 Deep research${n?`<span class="pill">${n} to review</span>`:""}</span><span class="dsrow">${deepChip()}</span></button>`;
+}
+// Ready stage: everything the research produced.
+function deepPanel(){
+  if(!S.started) return "";
+  const D = S.deep, R = D.result, st = deepState();
+  const head = `<h3>🔬 Deep research ${deepChip()}</h3>`;
+  if(!R){
+    const body = deepActive() ? `<div class="dsay">A real <span class="mono">rpi-research</span> worker is running (minutes). Results land here: edits to review, context, decisions.</div>`
+      : `<div class="dsay">No research result yet. Controls are on the card header (Research anyway / Skip / Depth).</div>`;
+    return `<div class="dsec">${head}${body}</div>`;
+  }
+  const edits = R.findings.map((f,i) => ({f, i})).filter(o => o.f.jev.change), ctx = R.findings.filter(f => !f.jev.change);
+  const staleBox = deepStale() ? `<div class="stalechip">Researched an older version (${deepStaleN()} lines changed since it started). <button class="btn sm" data-act="deeprerun">↻ Re-run</button></div>` : "";
+  const eh = edits.map(({f, i}) => { const c = patchCand(f.proposal.section, f.proposal.add), id = c?.id, skip = id && isSkip(impData(id));
+    const diff = f.proposal.section==="task" ? `<div class="dl diff">${wdiff(S.doc.task, c ? c.ch.add : f.proposal.add)}</div>` : `<div class="dl add">${fmt(f.proposal.add)}</div>`;
+    return `<div class="fix${skip && !dismissed(id)?" skip":""}" ${id?`data-imp="${id}"`:""}><div class="ft">${f.contrarian?`<span class="cev" title="Evidence against the current goal">Counter-evidence</span>`:""}${esc(f.title)}</div><div class="fw">${fmt(f.why)}</div>
+      <div class="lock">Evidence: <span class="mono">${esc(f.evidence)}</span> · Jev “should the goal change?” ${pct(f.jev.p)} ≥ ${pct(f.jev.threshold)}</div>
+      <span class="sectag">${esc(SECN[f.proposal.section] || f.proposal.section)}</span>${id && !dismissed(id)?`<span class="jbrow" style="display:inline-flex;margin:0 0 0 6px">${jbadge(id)}</span>`:""}${diff}
+      <div class="fa">${id ? addBtns(id, "deepprop", i, "Propose this?", true) : `<span class="done-chip">✓ in the card or proposed</span>`}</div></div>`; }).join("");
+  const ch = ctx.map(f => `<div class="mi"><span class="k">ctx</span><div class="b">${f.contrarian?`<span class="cev">Counter-evidence</span>`:""}<b>${esc(f.title)}</b><div class="s">${fmt(f.why)}</div><div class="s">Evidence <span class="mono">${esc(f.evidence)}</span> · Jev ${pct(f.jev.p)} &lt; ${pct(f.jev.threshold)}: not an edit</div></div></div>`).join("");
+  return `<div class="dsec">${head}${staleBox}<div class="dsay">${fmt(R.summary)}</div>
+    <div class="lock">Artifact <span class="mono">${esc(R.artifactPath || "none")}</span>${R.artifactPath?` <button class="btn sm ghost" data-act="copy" data-v="${esc(R.artifactPath)}">Copy</button>`:""} · Launch passes it to the run.</div>
+    <div class="dsub">Edits from research (${edits.length}) · Jev ≥ ${pct(0.6)} that the goal should change</div>${eh || `<div class="lock">None. The research did not change the goal.</div>`}
+    <div class="dsub">Saved as context (${ctx.length}) · not edits; the run reads them in the artifact</div>${ch || `<div class="lock">None.</div>`}
+    ${R.decisions.length ? `<div class="dsub">Research raised ${R.decisions.length} decision${R.decisions.length>1?"s":""}</div>${R.decisions.map((q,k) => deepQ(q, k)).join("")}` : ""}</div>`;
+}
+function deepQ(q, k){
+  const a = S.deep.answers[q.id], low = isLow(q.confidence);
+  const tag = q.confidence == null ? `<span class="conf low">Jev unavailable</span>` : `<span class="conf${low?" low":""}">${pct(q.confidence)}</span>`;
+  const other = S.deep.otherOpen===q.id;
+  return `<div class="qcard dq"><div class="q">${esc(q.text)}</div><p class="qwhy">${fmt(q.why)}</p>
+    ${q.options.map((o,i) => `<button class="opt ${i===q.jev?"jev":""} ${a && a.opt===i?"chosen":""}" data-act="deepans" data-v="${esc(q.id)}|${i}"><span class="n">${i+1}</span><span class="t">${esc(o)}${q.patches?.[i]?.add?`<span class="adds">adds to ${esc(SECN[q.patches[i].section] || q.patches[i].section)}: ${fmt(q.patches[i].add)}</span>`:""}</span>${q.probabilities?.[i]!=null && i!==q.jev?`<span class="lock mono">${pct(q.probabilities[i])}</span>`:""}${i===q.jev?`<span class="tag"><span class="minijev"></span>Jev · ${tag}</span>`:""}</button>`).join("")}
+    ${a?.opt===-1 ? `<div class="lock">Your answer: “${esc(a.other)}” ${a.pending?`<span class="spin"></span> writing it as a line…`:a.err?`<span class="lerr">⚠ ${esc(a.err)}</span> <button class="btn sm" data-act="deepothersave" data-v="${esc(q.id)}">Retry</button>`:"· proposed"}</div>` : ""}
+    ${a && a.opt!==q.jev ? `<div class="ans"><span class="ov">· you overrode Jev</span></div>` : ""}
+    ${other ? `<div class="otherrow"><input id="deepotherin" class="input" placeholder="Your answer, one line" data-q="${esc(q.id)}"><button class="btn" data-act="deepothersave" data-v="${esc(q.id)}">Save</button></div>` : ""}
+    <div class="qtools">${other?"":`<button class="btn ghost sm" data-act="deepother" data-v="${esc(q.id)}">✎ Other…</button>`}<button class="btn ghost sm" data-act="chat" data-v="${esc(q.id)}" aria-expanded="${!!S.chats[q.id]?.open}">💬 ${S.chats[q.id]?.open ? "Hide the talk" : "Talk it through"}</button></div>
+    ${chatHTML(q)}</div>`;
+}
+// A research decision answer becomes a proposal (replacing an earlier answer to the same decision).
+function deepPropose(from, patch){
+  S.proposals = S.proposals.filter(p => p.from!==from);
+  const ok = propose(patch.section, patch.add, from);
+  const p = S.proposals.at(-1); if(ok && p) p.deep = true;
+  return ok;
+}
+function deepAnswer(qid, opt, other){
+  const R = S.deep.result, k = R.decisions.findIndex(q => q.id===qid), q = R.decisions[k]; if(!q) return;
+  const from = `Research D${k+1}`, a = S.deep.answers[qid] = {opt, other};
+  S.deep.otherOpen = null;
+  if(opt===-1){
+    a.pending = true; render();
+    const g = gen;
+    L.patch(docNow(), q.text, other).then(patch => { if(g!==gen) return; a.pending = false; deepPropose(from, patch); render(); say("Your answer is a proposal in the card now.", "happy", 900); },
+      e => { if(g!==gen) return; a.pending = false; a.err = e.message; render(); });
+    return;
+  }
+  deepPropose(from, q.patches[opt]); render();
+  say(opt===q.jev ? "Agreed. It's a proposal in the card now (green)." : `You overrode me (I had “${q.options[q.jev]}”, ${pct(q.confidence)}). It's a proposal in the card now.`, opt===q.jev ? "happy" : "neutral", 1300);
+}
+
+const ACT = {
+  reset(){ L.abortAll(); init(); toast("Flow reset"); },
+  go(v){ go(+v); },
+  back(){ back(); },
+  loadrepos(){ loadRepos(); },
+  repo(v){ S.repo = v; S.seed = $("#seedin")?.value ?? S.seed; render(); },
+  start(){
+    const v = ($("#seedin").value || "").trim(); if(!v){ say("I need at least a few words to start.", "worried"); $("#seedin").focus(); return; }
+    if(!repoObj()) return;
+    L.abortAll();
+    if(S.started || S.discErr){ const repo = S.repo; init(); S.repo = repo; }
+    S.seed = v;
+    discover();
+  },
+  rediscover(){ L.abortAll(); const repo = S.repo, seed = S.seed; init(); S.repo = repo; S.seed = seed; discover(); },
+  qgo(v){ S.qi = +v; S.otherOpen=false; render(); askLine(); },
+  ans(v){ answer(+v); },
+  chat(v){ const q = findQ(v); if(!q) return; const c = chatOf(q); c.open = !c.open;
+    if(c.open){ for(const k in S.chats) if(k!==q.id) S.chats[k].open = false; chatQ = q.id; }   // one chat open at a time (ids #chatin/#chatlog)
+    render(); if(c.open){ scrollChat(); $("#chatin")?.focus(); } },
+  chatstart(v){ chatAsk(STARTERS[+v]); },
+  chatsend(){ chatAsk($("#chatin")?.value); },
+  chatretry(){ const q = findQ(chatQ); if(!q) return; const c = chatOf(q); if(c.loading || c.msgs.at(-1)?.role!=="user") return; chatCall(q, c); },
+  pshow(v){ hotP(v); },
+  fixapply(v){ const [dim,i] = v.split("|"); applyFix(dim, i); },
+  fixshow(v){ const [sec,i] = v.split("|"); showInCard(sec, i); },
+  refix(v){ const x = scores().find(s => s.dim===v); if(x) runRefine(v, fixNote(x)); },
+  other(){ S.otherOpen = true; render(); $("#otherin")?.focus(); },
+  "other-save"(){ const t = ($("#otherin").value||"").trim(); if(!t){ $("#otherin").focus(); return; } answer(-1, t); },
+  repatch(v){ const p = S.proposals.find(x=>x.id===v); if(!p) return; const qi = +p.from.replace(/\D/g,"")-1; patchOther(qi, p); render(); },
+  pacc(v){ acceptP(v); },
+  prej(v){ rejectP(v); },
+  accall(){ ghost(null); const ready = S.proposals.filter(p=>!p.pending); ready.forEach(applyP); S.proposals = S.proposals.filter(p=>p.pending); render(); docChanged(); say(`Accepted all ${ready.length}. The card grew. Jev is re-scoring it.`, "happy", 1300); },
+  del(v){ const [sec,i] = v.split(":"); S.doc[sec].splice(+i,1); render(); docChanged(); },
+  sug(v){ const s = J.suggest.data.suggestions[+v]; proposed(propose(s.section, s.text, s.from), "Added as a proposal. Accept it in the card."); },
+  resuggest(){ runSuggest(); },
+  reenhance(){ runEnhance(); },
+  reinspire(){ runInspire(); },
+  reexpect(){ runExpect(); },
+  rerdy(){ runReadiness(false); },
+  renotes(){ runReadiness(true); },
+  rw(v){ const r = J.enhance.data.rewrites[+v]; S.doc.task = r.prompt; S.versions = S.versions.slice(0, S.verIdx+1); S.versions.push({label:r.title, text:r.prompt}); S.verIdx = S.versions.length-1; render(); docChanged(); say(r.jevRank===1 ? "Good pick. That's the one I'd ship." : `Okay, "${r.title}" it is. I ranked it #${r.jevRank}, but it's your goal.`, r.jevRank===1?"happy":"neutral", 1300); },
+  ver(v){ const i=+v; S.doc.task = S.versions[i].text; S.versions.push({label:`Restored v${i+1}`, text:S.versions[i].text}); S.verIdx = S.versions.length-1; render(); docChanged(); say(`Restored v${i+1} as a new version. Nothing is lost.`, "neutral"); },
+  ideaopen(v){ S.ideaOpen = S.ideaOpen===v ? null : v; render(); },
+  dismiss(v){ S.dismissed[v] = true; ghost(null); render(); say("Skipped. I agree: that change would not help this card.", "happy", 1000); },
+  undismiss(v){ delete S.dismissed[v]; render(); },
+  undismissfix(v){ const j = J["refine:"+v]; j?.data?.fixes.forEach(f => delete S.dismissed[fixId(v, f)]); render(); },
+  accpicks(){
+    const picks = jevPicks(); if(!picks.length) return;
+    const ids = new Set(picks.map(p => p.id));
+    picks.forEach(applyP); S.proposals = S.proposals.filter(p => !ids.has(p.id));
+    render(); docChanged();
+    const left = openP().length;
+    const sk = openP().filter(p => isSkip(impData(pk(p.section, p.add, p.remove)))).length;
+    say(`Accepted my ${picks.length} pick${picks.length>1?"s":""}.${left ? ` ${left} left${sk ? `; I'd reject the ${sk} marked "skip?"` : ": your call on those"}.` : ""} Re-scoring the card.`, "happy", 1300);
+  },
+  past(v){ const g = J.inspiration.data.pastGoals[+v]; proposed(propose(g.proposal.section, g.proposal.add, "Past goal "+g.id), `Proposed. Learned from ${g.id} (${g.pass}/${g.runs} passed).`, true); },
+  scan(v){ const s = J.inspiration.data.repoScan[+v]; proposed(propose(s.proposal.section, s.proposal.add, `Repo scan ${s.ref}`), `Proposed, from ${s.kind} ${s.ref}.`, true); },
+  tpl(v){ const t = J.inspiration.data.templates[+v];
+    let n=0; t.criteria.forEach(c => { if(!hasLine("criteria", c)){ S.proposals.push({id:"p"+(++pid), section:"criteria", add:c, from:"Template: "+t.title}); n++; } });
+    S.ideaN += n; render(); say(n ? `Added ${n} pattern${n>1?"s":""} as proposals. They're generic; edit them before you accept.` : "Those patterns are already proposed.", "worried", 1400);
+  },
+  research(v){ if(S.research.running) return; runResearch(v); },
+  resadd(){ const s = S.research.done.suggestion; proposed(propose(s.section, s.add, S.research.done.label), "Proposed. Accept it in the card.", true); },
+  step(v){ const s=S.exp.steps.find(x=>x.id===v); if(s.floor){ say("Verify and security are floors. They always run.", "worried", 1200); return; } s.on=!s.on; render(); flipLine("step", v, s.on); },
+  gate(v){ const g=S.exp.gates.find(x=>x.id===v); g.run=!g.run; render(); flipLine("gate", v, g.run); },
+  tier(v){ const Jt = S.expJev.tier; S.exp.tier.value=v; render(); say(v===Jt.value ? "Back to my pick." : `${v} it is. I picked ${Jt.value}: ${Jt.reason}`, isLow(Jt.p)?"worried":"neutral", null, Jt.p, true); },
+  appr(v){ const [k,val]=v.split(":"); S.exp.approvals[k]=val; render(); },
+  launch(v){
+    const weak = scores().filter(x=>!passes(x));
+    if(deepActive() && v!=="nores") return;   // must pick: wait, or launch without research
+    if(weak.length && !S.override.trim()){ $("#ovin")?.focus(); return; }
+    if(!S.exp || S.launching) return;
+    const repo = repoObj(), g = gen, t0 = performance.now();
+    S.launching = true; S.launchErr = null; render();
+    L.launch({repo:repo.path, base:repo.base, doc:docNow(), expectations:S.exp, override: weak.length ? S.override.trim() : null, research: v!=="nores" && S.deep.result?.artifactPath || null}).then(res => {
+      if(g!==gen) return;
+      window.__coachLat.push({name:"launch", ms:Math.round(performance.now()-t0)});
+      S.launching = false; S.launched = res; S.launchedRes = v!=="nores" && S.deep.result?.artifactPath || null;
+      if(v==="nores" && deepActive()){ deepCancelRun(); S.deep.mode = "skipped"; }
+      say(res.live ? "Spec saved and the run started. Go get 'em." : "Dry run: the spec is valid and saved. No run started.", "salute");
+      const card = $(".gcard"); if(card){ card.classList.add("ship"); }
+      setTimeout(() => { const c=$(".gcard"); c && c.classList.remove("ship"); render(); toast(`<span class="minijev"></span> ${res.live?"Level 5: <b>Shipped</b>":"<b>Dry run saved</b>"}`); }, 1350);
+      render();
+      setTimeout(() => { if(S.launched) pose("salute"); }, 1400);
+    }, e => {
+      if(g!==gen) return;
+      S.launching = false; S.launchErr = e.message; render();
+      say(`The server refused it: ${e.message}`, "worried");
+    });
+  },
+  deepany(){ if(deepActive()) return; S.deep.result = null; deepCancelRun(); S.deep.said = null; deepStartNow("you"); },
+  deepskip(){
+    const was = deepActive(); deepCancelRun();
+    S.deep.mode = "skipped"; S.deep.launchWait = false; S.deep.said = null;
+    render(); deepSpeak();
+    if(was) toast("Research cancelled. The worker and its draft were removed.");
+  },
+  deepauto(){ S.deep.mode = "auto"; S.deep.said = null; render(); deepKick(true); },
+  deeprerun(){ deepCancelRun(); S.deep.result = null; S.deep.answers = {}; S.deep.mode = "auto"; S.deep.said = null; render(); deepKick(true); },
+  deepdepth(v){
+    const jd = S.deep.dec?.available ? S.deep.dec.depth.value : null;
+    S.deep.depthYou = v===jd ? null : v;
+    const restart = deepActive() && S.deep.run.depth!==v;
+    if(restart){ const by = S.deep.run.by; deepCancelRun(); S.deep.said = null; deepStartNow(S.deep.depthYou ? "you" : by); }
+    else render();
+    say(S.deep.depthYou ? `You chose ${v} depth.${jd ? ` I had ${jd} (${pct(S.deep.dec.depth.p)}).` : ""}${restart ? " I restarted the research at that depth." : ""}` : `Back to my depth: ${v}.${restart ? " Restarted at that depth." : ""}`, "neutral");
+  },
+  deepwhy(){ S.deep.whyOpen = !S.deep.whyOpen; render(); },
+  deepgo(){ if(S.started) go(7); setTimeout(() => document.querySelector(".dsec")?.scrollIntoView({block:"start", behavior:"smooth"}), 50); },
+  deepprop(v){ const f = S.deep.result?.findings[+v]; if(!f) return; if(propose(f.proposal.section, f.proposal.add, `Deep research${f.contrarian?" (counter-evidence)":""}`)){ S.proposals.at(-1).deep = true; render(); say("Proposed. Accept it in the card.", "happy", 1000); } },
+  deepans(v){ const i = v.lastIndexOf("|"); deepAnswer(v.slice(0,i), +v.slice(i+1)); },
+  deepother(v){ S.deep.otherOpen = v; render(); $("#deepotherin")?.focus(); },
+  deepothersave(v){ const t = ($("#deepotherin")?.value || S.deep.answers[v]?.other || "").trim(); if(!t){ $("#deepotherin")?.focus(); return; } deepAnswer(v, -1, t); },
+  deepwait(){ S.deep.launchWait = true; render(); say("Okay, we wait. Launch unlocks with the research when the worker is done.", "neutral"); },
+  copy(v){ navigator.clipboard?.writeText(v).catch(()=>{}); toast("Copied"); },
+};
+function flipLine(kind, id, val){
+  const Jv = S.expJev, src = kind==="step" ? Jv.steps.find(x=>x.id===id) : Jv.gates.find(x=>x.id===id);
+  const jevVal = kind==="step" ? src.on : src.run;
+  if(val===jevVal) say(`Back to my pick for ${nm(id)}.`, "happy", 900);
+  else say(`You flipped ${nm(id)} to ${val?"run":"skip"}. ${src.p!=null && src.threshold!=null ? `I had ${p2(src.p)} vs ${p2(src.threshold)}: ` : ""}${src.reason}`, kind==="gate" && isLow(src.p) ? "worried" : "neutral", null, kind==="gate" ? src.p : undefined, kind==="gate");
+}
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if(!b || b.disabled) return;
+  if(b.tagName==="A") e.preventDefault();
+  const f = ACT[b.dataset.act]; if(f) f(b.dataset.v);
+});
+let lastWhy = null;
+function why(row){
+  if(!row || row.dataset.why===lastWhy || !S.expJev) return; lastWhy = row.dataset.why;
+  const [kind,id] = row.dataset.why.split(":"), Jv = S.expJev;
+  if(kind==="tier"){ say(`${Jv.tier.value}: ${Jv.tier.reason}`, isLow(Jv.tier.p)?"worried":"neutral", null, Jv.tier.p, true); return; }
+  const src = kind==="step" ? Jv.steps.find(x=>x.id===id) : Jv.gates.find(x=>x.id===id);
+  const on = kind==="step" ? src.on : src.run;
+  if(kind==="step") say(`${nm(id)}: ${on?"run":"skip"}. ${src.reason}`, "neutral");
+  else say(`${nm(id)}: ${on?"run":"skip"} (${p2(src.p)} vs ${p2(src.threshold)}). ${src.reason}`, isLow(src.p)?"worried":"neutral", null, src.p, true);
+}
+document.addEventListener("mouseover", e => { if(S.stage===6) why(e.target.closest("[data-why]")); if(S.stage===3){ const r = e.target.closest("[data-phover]"); if(r && r.dataset.phover!==S.hotP) hotP(r.dataset.phover); } });
+document.addEventListener("focusin", e => { if(S.stage===6) why(e.target.closest("[data-why]")); if(S.stage===3){ const r = e.target.closest("[data-phover]"); if(r && r.dataset.phover!==S.hotP) hotP(r.dataset.phover); } });
+
+document.addEventListener("blur", e => {
+  const el = e.target; if(!el.dataset || !el.dataset.edit) return;
+  const v = el.textContent.trim(), k = el.dataset.edit;
+  let changed = false;
+  if(k==="title"){ if(v) S.title = v; }
+  else if(k==="task"){ if(v && v!==S.doc.task){ S.doc.task = v; S.versions = S.versions.slice(0,S.verIdx+1); S.versions.push({label:"Your edit", text:v}); S.verIdx = S.versions.length-1; changed = true; say("Saved your edit as a new task version.", "happy", 900); } }
+  else { const [sec,i] = k.split(":"); if(v && v!==S.doc[sec][+i]){ S.doc[sec][+i] = v; changed = true; } else if(!v){ S.doc[sec].splice(+i,1); changed = true; } }
+  if(changed) docChanged();
+  setTimeout(() => { if(!document.activeElement?.dataset?.edit) render(); }, 0);
+}, true);
+
+document.addEventListener("input", e => {
+  if(e.target.id==="ovin"){ S.override = e.target.value; const b=$("#launchbtn"); if(b && S.exp && !S.launching) b.disabled = !S.override.trim(); }
+  if(e.target.id==="seedin"){ S.seed = e.target.value; }
+  if(e.target.id==="chatin"){ const q = findQ(chatQ); if(q) chatOf(q).draft = e.target.value; }
+  if(e.target.dataset.lim && S.exp){ const n = parseInt(e.target.value,10); if(n>0){ S.exp.limits[e.target.dataset.lim] = n; renderCard(); } }
+});
+
+document.addEventListener("keydown", e => {
+  const t = e.target, typing = t.tagName==="INPUT" || t.tagName==="TEXTAREA" || t.isContentEditable;
+  if(t.dataset && t.dataset.edit && e.key==="Enter"){ e.preventDefault(); t.blur(); return; }
+  if(t.dataset && t.dataset.edit && e.key==="Escape"){ t.blur(); return; }
+  if(t.dataset && t.dataset.add && e.key==="Enter"){
+    const v = t.value.trim(), sec = t.dataset.add; if(!v) return;
+    S.doc[sec].push(v); S.flash = sec+":"+(S.doc[sec].length-1);
+    render(); const ni = document.querySelector(`[data-add="${sec}"]`); ni && ni.focus();
+    docChanged();
+    say(sec==="criteria" ? `Your line is AC-${S.doc.criteria.length} now, and locked.` : "Added. Direct edits don't need my approval.", "happy", 900);
+    return;
+  }
+  if(t.id==="seedin" && e.key==="Enter" && !e.shiftKey){ e.preventDefault(); ACT.start(); return; }
+  if(t.id==="chatin" && e.key==="Enter"){ e.preventDefault(); ACT.chatsend(); return; }
+  if(t.id==="deepotherin" && e.key==="Enter"){ e.preventDefault(); ACT.deepothersave(t.dataset.q); return; }
+  if(t.id==="otherin" && e.key==="Enter"){ e.preventDefault(); ACT["other-save"](); return; }
+  if(t.id==="ovin" && e.key==="Enter" && S.override.trim()){ ACT.launch(); return; }
+  if(typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  if(t.classList?.contains("split")) return;
+  if(e.key==="ArrowLeft"){ e.preventDefault(); back(); return; }
+  if(e.key==="ArrowRight"){ e.preventDefault(); forward(); return; }
+  if(S.stage===2 && S.qi < S.questions.length){
+    const q = S.questions[S.qi];
+    if(e.key==="Enter" && !(t.tagName==="BUTTON")){ e.preventDefault(); answer(q.jev); return; }
+    if(e.key==="0"){ e.preventDefault(); ACT.other(); return; }
+    const n = parseInt(e.key,10); if(n>=1 && n<=q.options.length){ answer(n-1); return; }
+  } else if(e.key==="Enter" && !t.closest?.("button,a,summary")){ e.preventDefault(); forward(); return; }
+  const ready = S.proposals.filter(p=>!p.pending);
+  if(S.stage===3 && ready.length){
+    if(e.key==="a"||e.key==="A") acceptP(ready[0].id);
+    if(e.key==="r"||e.key==="R") rejectP(ready[0].id);
+  }
+});
+
+function loadRepos(){
+  repos = null; reposErr = null; render();
+  L.repos().then(list => {
+    repos = list;
+    if(!S.repo || !list.some(r=>r.id===S.repo)) S.repo = (list.find(r => r.name==="copilot-proxy-rs") || list[0])?.id ?? null;
+    render();
+  }, e => { reposErr = e.message; render(); });
+}
+L.info().then(d => { info = d; renderTop(); }, e => { infoErr = e.message; renderTop(); });
+
+init();
+loadRepos();
+})();
+</script>
+<script>
+// Drag the borders of the rail and of the card to resize; double-click resets; arrow keys nudge. Widths are remembered.
+(() => {
+  const app = document.getElementById("app"); if (!app) return
+  const KEY = { rail: "blend8.railW", card: "blend8.cardW" }
+  const MIN = { rail: 200, card: 340 }, CENTRE_MIN = 440
+  const width = (k) => document.querySelector(k === "rail" ? ".rail" : ".cardcol").getBoundingClientRect().width
+  const set = (k, px, save = true) => {
+    const other = k === "rail" ? width("card") : width("rail")
+    const max = Math.max(MIN[k], window.innerWidth - other - CENTRE_MIN)
+    const w = Math.round(Math.max(MIN[k], Math.min(max, px)))
+    app.style.setProperty(k === "rail" ? "--railW" : "--cardW", w + "px")
+    if (save) localStorage.setItem(KEY[k], String(w))
+  }
+  for (const k of ["rail", "card"]) { const v = +localStorage.getItem(KEY[k]); if (v) set(k, v, false) }
+  const fit = () => { for (const k of ["card", "rail"]) { const v = +localStorage.getItem(KEY[k]); if (v) set(k, v, false) } }
+  window.addEventListener("resize", fit); fit()
+  document.querySelectorAll(".split").forEach((h) => {
+    const k = h.dataset.split
+    h.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); h.setPointerCapture(e.pointerId); h.classList.add("drag"); document.body.classList.add("dragging")
+      const r = app.getBoundingClientRect()
+      const move = (ev) => set(k, k === "rail" ? ev.clientX - r.left : r.right - ev.clientX)
+      const up = () => { h.classList.remove("drag"); document.body.classList.remove("dragging"); h.removeEventListener("pointermove", move); h.removeEventListener("pointerup", up) }
+      h.addEventListener("pointermove", move); h.addEventListener("pointerup", up)
+    })
+    h.addEventListener("dblclick", () => { app.style.removeProperty(k === "rail" ? "--railW" : "--cardW"); localStorage.removeItem(KEY[k]) })
+    h.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+      e.preventDefault(); const d = (e.key === "ArrowRight" ? 1 : -1) * (k === "rail" ? 1 : -1) * 24
+      set(k, width(k) + d)
+    })
+  })
+})()
+</script>
+</body>
+</html>

@@ -178,6 +178,10 @@ const gradeHistory = (goals: GoalList["goals"], h: HtmlBuilder<Message>): Html =
         h,
       ),
   })
+/** New goals start on the guided page: Jev reads the repo, interviews, scores readiness, then saves and runs. */
+export const GOAL_PAGE = "/goal-page/index.html"
+const newGoalLink = (h: HtmlBuilder<Message>): Html =>
+  h.a([h.Href(GOAL_PAGE), h.Class("fk-goal-new")], ["＋ New goal (guided)"])
 
 const savedGoals = (model: Model, h: HtmlBuilder<Message>): Html =>
   AsyncData.matchDataSplitEmpty(model.goals, {
@@ -205,7 +209,7 @@ const savedGoals = (model: Model, h: HtmlBuilder<Message>): Html =>
                 ),
               ),
           }),
-          chip("+ new goal", false, Message.ClickedNewGoal(), h),
+          newGoalLink(h),
           gradeHistory(goals, h),
         ],
         h,
@@ -481,7 +485,7 @@ const approvalsSection = (model: Model, h: HtmlBuilder<Message>): Html =>
         "goal-minutes",
         "Minutes per run",
         model.draft.minutesPerRun,
-        "90",
+        "720",
         (value) => Message.UpdatedMinutes({ value }),
         h,
       ),
@@ -557,7 +561,10 @@ const content = (model: Model, render: Dialog.RenderInfo, h: HtmlBuilder<Message
     onIdle: () => h.empty,
     onLoading: () => h.p([h.Class("fk-muted")], ["Loading steps and folders…"]),
     onFailure: (error) => h.p([h.Class("fk-error"), h.Role("alert")], [`Could not load steps: ${error}`]),
-    onData: () => form(model, h),
+    onData: () =>
+      model.isEditing
+        ? form(model, h)
+        : h.p([h.Class("fk-muted")], ["Pick a saved goal to edit it, or start a new one."]),
   }),
   result(model, h),
 ]

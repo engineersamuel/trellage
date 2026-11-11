@@ -1,12 +1,13 @@
-import { Option } from "effect";
-import { AsyncData } from "foldkit";
-import { Command, given, message, model, story } from "foldkit/story";
-import { modifyFields } from "foldkit/struct";
-import { describe, expect, test } from "vitest";
-import { CopyText, FetchGoals, SaveGoal } from "./command";
-import type { GoalCatalog } from "./domain";
-import { Message } from "./message";
-import { init, update } from "./update";
+import { Exit, Option } from "effect"
+import { AsyncData } from "foldkit"
+import { Command, given, message, model, story } from "foldkit/story"
+import { modifyFields } from "foldkit/struct"
+import { describe, expect, test } from "vitest"
+import { CopyText, FetchGoals, SaveGoal } from "./command"
+import { decodeGoal } from "../../../shared/goal"
+import type { GoalCatalog } from "./domain"
+import { Message } from "./message"
+import { init, update } from "./update"
 
 const catalog: GoalCatalog = {
   steps: [
@@ -17,19 +18,46 @@ const catalog: GoalCatalog = {
     { id: "review", description: "", skills: [] },
   ],
   folders: [{ id: "cpr", name: "cpr", path: "/r/cpr" }],
-};
-const ready = modifyFields(init().model, { catalog: () => AsyncData.succeed(catalog) });
-const saved = { skill: "/factory-loop demo", prompt: "# Factory loop" };
+}
+const ready = modifyFields(init().model, { catalog: () => AsyncData.succeed(catalog), isEditing: () => true })
+const saved = { skill: "/factory-loop demo", prompt: "# Factory loop" }
 
 describe("goal form", () => {
+  test("the form shows only after a saved goal is picked", () => {
+    const exit = decodeGoal({ id: "demo", repo: "/r/cpr", prompt: "p" })
+    if (!Exit.isSuccess(exit)) throw new Error("bad spec")
+    const spec = exit.value
+    story(
+      update,
+      given(modifyFields(init().model, { catalog: () => AsyncData.succeed(catalog) })),
+      model((m) => expect(m.isEditing).toBe(false)),
+      message(
+        Message.SucceededFetchGoals({
+          goals: { dir: "/d", factoryCommit: "c", goals: [{ spec, runs: 0, last: null, grades: [] }] },
+        }),
+      ),
+      message(Message.ClickedEditGoal({ id: "demo" })),
+      model((m) => {
+        expect(m.isEditing).toBe(true)
+        expect(m.draft.id).toBe("demo")
+      }),
+    )
+  })
+
   test("an empty form lists its problems and saves nothing", () => {
     story(
       update,
       given(ready),
       message(Message.SubmittedGoal()),
-      model((m) => expect(m.problems).toEqual(["id: lowercase letters, digits and dashes, 2-64 chars", "prompt is empty", "repo must be an absolute path"])),
-    );
-  });
+      model((m) =>
+        expect(m.problems).toEqual([
+          "id: lowercase letters, digits and dashes, 2-64 chars",
+          "prompt is empty",
+          "repo must be an absolute path",
+        ]),
+      ),
+    )
+  })
 
   test("a filled form saves the spec the server expects, then shows the paste line", () => {
     story(
@@ -48,16 +76,16 @@ describe("goal form", () => {
       Command.resolve(SaveGoal, Message.SucceededSaveGoal({ saved })),
       Command.resolve(FetchGoals, Message.FailedFetchGoals({ error: "offline" })),
       model((m) => {
-        expect(m.maybeSaved).toEqual(Option.some(saved));
-        expect(m.draft.steps.review).toEqual({ on: true, min: "1", max: "" });
-        expect(m.draft.approvals.ship).toBe("human");
-        expect([m.draft.gatesRun, m.draft.gatesSkipped]).toEqual([["codeReview"], ["design"]]);
+        expect(m.maybeSaved).toEqual(Option.some(saved))
+        expect(m.draft.steps.review).toEqual({ on: true, min: "1", max: "" })
+        expect(m.draft.approvals.ship).toBe("human")
+        expect([m.draft.gatesRun, m.draft.gatesSkipped]).toEqual([["codeReview"], ["design"]])
       }),
       message(Message.ClickedCopy({ text: saved.skill })),
       Command.resolve(CopyText, Message.CompletedCopy()),
       model((m) => expect(m.isCopied).toBe(true)),
-    );
-  });
+    )
+  })
 
   test("a server refusal is shown; an edit clears the saved result", () => {
     story(
@@ -67,9 +95,9 @@ describe("goal form", () => {
       model((m) => expect(m.problems).toEqual(["Could not save: invalid goal: unknown step x"])),
       message(Message.UpdatedTitle({ value: "t" })),
       model((m) => {
-        expect(m.problems).toEqual([]);
-        expect(m.maybeSaved).toEqual(Option.none());
+        expect(m.problems).toEqual([])
+        expect(m.maybeSaved).toEqual(Option.none())
       }),
-    );
-  });
-});
+    )
+  })
+})

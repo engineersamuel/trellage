@@ -31,8 +31,12 @@ const catalog = {
   ],
   folders: [{ id: "cpr", name: "cpr", path: "/r/cpr" }],
 }
-const goals = { dir: "/d", factoryCommit: "abc123", goals: [] }
 
+const goals: GoalList = {
+  dir: "/d",
+  factoryCommit: "abc123",
+  goals: [{ spec: specOf("demo"), runs: 0, last: null, grades: [] }],
+}
 const openDialog = [
   Subscription.emit(Message.ClickedOpenGoals()),
   Command.resolveAll(
@@ -57,17 +61,28 @@ describe("goal dialog", () => {
     const draft = Schema.decodeUnknownSync(GoalDraft)(specToDraft(saved))
     assert.deepEqual(draftToSpec({ ...draft, title: "Edited" }), { ok: true, spec: { ...saved, title: "Edited" } })
   })
+  test("a new goal opens the guided page; the form is only for a saved goal", () => {
+    scene(
+      { update, view },
+      given(init().model),
+      ...openDialog,
+      expect(role("link", { name: "＋ New goal (guided)" })).toHaveAttr("href", "/goal-page/index.html"),
+      expect(role("form")).toBeAbsent(),
+    )
+  })
+
   test("shows catalog steps and skills, explains problems, then shows the paste line", () => {
     scene(
       { update, view },
       given(init().model),
       ...openDialog,
+      click(role("button", { name: "demo" })),
       expect(role("heading", { name: "Factory goals" })).toExist(),
       expect(label("implement at least")).toHaveValue("1"),
       expect(role("checkbox", { name: "ub-mode" })).toExist(),
+      change(label("Repo"), ""),
       submit(role("form")),
-      expect(role("alert")).toContainText("prompt is empty"),
-      type(label("Goal id"), "demo"),
+      expect(role("alert")).toContainText("repo must be an absolute path"),
       type(label("Prompt"), "Add a thing"),
       click(role("checkbox", { name: "ub-mode" })),
       change(label("Repo"), "/r/cpr"),
@@ -84,7 +99,7 @@ describe("goal dialog", () => {
   })
 })
 
-const specOf = (id: string): GoalSpec => {
+function specOf(id: string): GoalSpec {
   const exit = decodeGoal({ id, repo: "/r/cpr", prompt: "p" })
   if (!Exit.isSuccess(exit)) throw new Error("bad spec")
   return exit.value

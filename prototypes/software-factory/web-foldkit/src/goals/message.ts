@@ -1,10 +1,10 @@
-import { Schema } from "effect";
-import { defineMessageUnion } from "foldkit/message";
-import { Dialog } from "@foldkit/ui";
-import { GoalCatalog, GoalList, LoopPrompt } from "./domain";
+import { Schema } from "effect"
+import { defineMessageUnion } from "foldkit/message"
+import { Dialog } from "@foldkit/ui"
+import { GoalCatalog, GoalList, LoopPrompt } from "./domain"
 
-const Topic = Schema.Literals(["plan", "findings", "ship", "other"]);
-const Policy = Schema.Literals(["auto", "human"]);
+const Topic = Schema.Literals(["plan", "findings", "ship", "other"])
+const Policy = Schema.Literals(["auto", "human"])
 
 export const Message = defineMessageUnion({
   // Loading
@@ -35,11 +35,10 @@ export const Message = defineMessageUnion({
   UpdatedRuns: { value: Schema.String },
   UpdatedMinutes: { value: Schema.String },
   ClickedEditGoal: { id: Schema.String },
-  ClickedNewGoal: {},
   SubmittedGoal: {},
   SucceededSaveGoal: { saved: LoopPrompt },
   FailedSaveGoal: { error: Schema.String },
   ClickedCopy: { text: Schema.String },
   CompletedCopy: {},
-});
-export type Message = typeof Message.Type;
+})
+export type Message = typeof Message.Type

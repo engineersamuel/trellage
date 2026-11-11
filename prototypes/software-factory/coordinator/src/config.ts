@@ -22,6 +22,7 @@ const FactoryConfigSchema = Schema.Struct({
     worker: Model,
     review: Schema.Struct({ claude: Model, gpt: Model, gemini: Model }),
     claude_worker: Model,
+    goal_page: Model,
   }),
   review: Schema.Struct({
     lens_threshold: Probability,
@@ -43,6 +44,14 @@ const FactoryConfigSchema = Schema.Struct({
     supplyChain: Probability,
     docs: Probability,
     postMerge: Probability,
+  }),
+  /** Guided goal page (src/goalPage.ts): its model's effort and Jev's bars. */
+  goal_page: Schema.Struct({
+    effort: Schema.Literals(["low", "medium", "high", "xhigh"]),
+    ready_threshold: Probability,
+    deep_need: Probability,
+    deep_stable: Probability,
+    finding_change: Probability,
   }),
 })
 export type FactoryConfig = typeof FactoryConfigSchema.Type
