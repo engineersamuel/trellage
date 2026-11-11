@@ -117,7 +117,31 @@ jobs:
         with:
           tools: static
       - name: Install system test prerequisites
-        run: sudo apt-get update -qq && sudo apt-get install --yes --no-install-recommends fish ripgrep libseccomp2
+        # The runner's Ubuntu mirrors can be unreachable for hours (2026-11-11: azure.archive.ubuntu.com and
+        # archive.ubuntu.com both failed DNS) while GitHub downloads still work. Try apt once with a time limit;
+        # on failure install fish and ripgrep from pinned, checksum-verified GitHub release binaries
+        # (libseccomp2 is part of the runner image).
+        run: |
+          if sudo timeout 180 apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 update -qq &&
+            sudo timeout 180 apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 \
+              install --yes --no-install-recommends fish ripgrep libseccomp2; then
+            exit 0
+          fi
+          echo "::warning::apt failed; installing fish and ripgrep from pinned GitHub releases"
+          tmp="$(mktemp -d)"
+          fetch() {
+            curl -fsSL --retry 3 -o "$tmp/$2" "$1" &&
+              echo "$3  $tmp/$2" | sha256sum --check --strict -
+          }
+          fetch https://github.com/fish-shell/fish-shell/releases/download/4.8.1/fish-4.8.1-linux-x86_64.tar.xz \
+            fish.tar.xz 39cab35242ab77bfdbce73b473000c3b045aaf2fe0951b042199bb7fdba3df78
+          fetch https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz \
+            rg.tar.gz 4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e
+          tar -xJf "$tmp/fish.tar.xz" -C "$tmp" fish
+          tar -xzf "$tmp/rg.tar.gz" -C "$tmp" --strip-components=1 ripgrep-14.1.1-x86_64-unknown-linux-musl/rg
+          sudo install -m 0755 "$tmp/fish" "$tmp/rg" /usr/local/bin/
+          fish --version
+          rg --version
       - name: Verify system test prerequisites
         run: bash scripts/check-quality-prerequisites.sh
       - name: Load the exact check plan
