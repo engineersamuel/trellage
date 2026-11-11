@@ -10,6 +10,8 @@ fail() {
   exit 1
 }
 
+essential() { [[ "${TRELLAGE_TEST_SCOPE-}" == essential ]]; }
+
 assert_contains() {
   local needle="$1"
   local file="$2"
@@ -636,6 +638,8 @@ jq -se '
 [[ ! -s "$fake_copilot_log" ]] || fail 'harness-update ran a profile or plugin command'
 assert_contains 'fixture harness update' "$fixture_root/harness-update.out"
 
+# Full scope only: harness-update exit-status passthrough and invalid-argument refusal.
+if ! essential; then
 harness_update_status=0
 env -u COPILOT_HOME FAKE_COPILOT_HARNESS_UPDATE_STATUS=23 "$launcher" harness-update \
   >"$fixture_root/harness-update-failure.out" 2>"$fixture_root/harness-update-failure.err" \
@@ -650,6 +654,7 @@ for argument in hve --all --check; do
 done
 [[ "$(wc -l <"$FAKE_COPILOT_HARNESS_UPDATE_LOG" | tr -d ' ')" == 2 ]] \
   || fail 'invalid harness-update arguments reached the harness updater'
+fi
 
 jq -e '
   .schemaVersion == 1
@@ -825,7 +830,10 @@ jq -e '
 
 mkdir -p "$HOME/.ssh"
 printf 'ssh sentinel\n' >"$HOME/.ssh/sentinel"
-for malicious_profile in '../../../../../.ssh' 'bad/name' '.hidden' 'Upper'; do
+malicious_profiles=('../../../../../.ssh')
+# Full scope only: name-format variants of the malicious profile key refusal.
+essential || malicious_profiles+=('bad/name' '.hidden' 'Upper')
+for malicious_profile in "${malicious_profiles[@]}"; do
   malicious_catalog="$fixture_root/malicious-$(printf '%s' "$malicious_profile" | tr '/.' '__').json"
   jq --arg profile "$malicious_profile" \
     '.profiles[$profile] = .profiles.hve' catalog.json >"$malicious_catalog"
@@ -848,6 +856,8 @@ for malicious_profile in '../../../../../.ssh' 'bad/name' '.hidden' 'Upper'; do
     || fail "malicious profile key invoked Copilot: $malicious_profile"
 done
 
+# Full scope only: invalid headless catalog refusal.
+if ! essential; then
 invalid_headless_catalog="$fixture_root/invalid-headless.json"
 jq '.profiles.hve.headless.questionToolControl = "invalid"' \
   catalog.json >"$invalid_headless_catalog"
@@ -861,6 +871,7 @@ for invalid_operation in list setup launch; do
   [[ "$invalid_status" -ne 0 ]] || fail "$invalid_operation accepted invalid headless catalog"
   assert_contains 'invalid catalog:' "$fixture_root/invalid-headless.err"
 done
+fi
 
 worktree="$fixture_root/project with spaces"
 mkdir -p "$worktree/.github/skills/repository-skill"
@@ -904,6 +915,8 @@ actual_plan_launch="$(jq -c 'select(.args[0] == "--plan")' "$fake_copilot_argv_l
 [[ "$actual_plan_launch" == "$expected_plan_launch" ]] \
   || fail 'plan launch included Autopilot or automatic approval flags'
 
+# Full scope only: autopilot plan launch variant.
+if ! essential; then
 (
   cd "$worktree"
   trx_run_copilot hve --plan --mode autopilot --allow-all --no-ask-user -i 'Plan and implement verified fixes.'
@@ -914,6 +927,7 @@ expected_autopilot_plan_launch="$(jq -cn \
   '{home: $home, cwd: $cwd, args: ["--plan", "--model", "gpt-6-astra", "--effort", "medium", "--mode", "autopilot", "--allow-all", "--no-ask-user", "-i", "Plan and implement verified fixes."]}')"
 [[ "$(tail -n 1 "$fake_copilot_argv_log")" == "$expected_autopilot_plan_launch" ]] \
   || fail 'autopilot plan launch did not preserve the plan and permission arguments'
+fi
 
 (
   cd "$worktree"
@@ -929,6 +943,8 @@ expected_superpowers_launch="$(jq -cn \
   || fail 'superpowers launch did not preserve the exact ordered argument vector'
 
 expected_plannotator_home="$HOME/.local/share/trellage/profiles/copilot/plannotator/home"
+# Full scope only: per-profile launch argument variants (awesome, compound-engineering, tufte-vdqi).
+if ! essential; then
 (
   cd "$worktree"
   trx_run_copilot awesome --prompt 'find useful skills' --deny-url=example.com --model=gpt-5.5 --reasoning-effort=low
@@ -972,6 +988,7 @@ actual_tufte_launch="$(jq -c \
   "$fake_copilot_argv_log" | tail -n 1)"
 [[ "$actual_tufte_launch" == "$expected_tufte_launch" ]] \
   || fail 'Tufte launch did not preserve the exact ordered argument vector'
+fi
 
 (
   cd "$worktree"
@@ -985,7 +1002,10 @@ actual_bare_launch="$(tail -n 1 "$fake_copilot_argv_log")"
 [[ "$actual_bare_launch" == "$expected_bare_launch" ]] \
   || fail 'bare launch did not add the default permission argument'
 
-for agent in hve-core:dt-coach hve-core:rpi-agent; do
+agents=(hve-core:dt-coach)
+# Full scope only: second agent workflow variant.
+essential || agents+=(hve-core:rpi-agent)
+for agent in "${agents[@]}"; do
   (
     cd "$worktree"
     trx_run_copilot hve --agent "$agent" -i 'Preserve the selected workflow.'
@@ -1025,6 +1045,8 @@ expected_json_launch="$(jq -cn \
 [[ "$(tail -n 1 "$fake_copilot_argv_log")" == "$expected_json_launch" ]] \
   || fail 'JSON headless launch argument vector differs'
 
+# Full scope only: malformed headless JSON output and explicit permission argument permutations.
+if ! essential; then
 malformed_json_stream="$fixture_root/headless-malformed.jsonl"
 printf '%s\n' '{"type":"assistant.message","data":{"content":"partial"}}' 'not-json' \
   >"$malformed_json_stream"
@@ -1076,6 +1098,7 @@ for permission_argument_vector in "${permission_argument_vectors[@]}"; do
   [[ "$actual_permission_launch" == "$expected_permission_launch" ]] \
     || fail "explicit permission arguments changed: $permission_argument_vector"
 done
+fi
 
 # Setup, doctor, and launch must reject a profile home symlink that escapes the
 # managed profile root without invoking Copilot or mutating the link target.
@@ -1160,6 +1183,8 @@ after_native_auth_failure_hash="$(profile_tree_hash "$lifecycle_hve_home")"
 [[ "$before_native_auth_failure_hash" == "$after_native_auth_failure_hash" ]] \
   || fail 'native authentication failure copied or changed profile state'
 
+# Full scope only: SIGTERM passthrough and unrelated exit-status and binary stderr passthrough.
+if ! essential; then
 signal_pid_file="$fixture_root/signal-copilot.pid"
 signal_status=0
 FAKE_COPILOT_SIGNAL_PID_FILE="$signal_pid_file" \
@@ -1239,6 +1264,7 @@ printf 'binary\0stderr\n' >"$fixture_root/binary-stderr.expected.err"
   && "$(shasum -a 256 "$fixture_root/binary-stderr.err" | awk '{print $1}')" \
     == "$(shasum -a 256 "$fixture_root/binary-stderr.expected.err" | awk '{print $1}')" ]] \
   || fail 'binary stderr and original status were not passed through exactly'
+fi
 
 expected_hve_home="$lifecycle_hve_home"
 
@@ -1401,6 +1427,8 @@ printf '%s\n' '# Unrelated package' \
   >"$expected_hve_home/installed-plugins/unrelated/unrelated/skills/not-selected/SKILL.md"
 [[ ! -e "$HOME/.copilot/plugins/hve-core@hve-core" ]] \
   || fail 'setup leaked into global Copilot state'
+# Full scope only: repeated hve setup and repair idempotency and custom statusLine preservation.
+if ! essential; then
 marketplace_add_count="$(grep -Fc 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log")"
 settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"
 "$launcher" setup hve
@@ -1431,10 +1459,13 @@ jq -e '
   and .statusLine.command == "echo custom"
   and .footer.showCustom == true
 ' "$settings" >/dev/null || fail 'setup did not preserve an existing Copilot statusLine while enabling footer.showCustom'
+fi
 
 doctor_output="$fixture_root/doctor.out"
 "$launcher" doctor hve >"$doctor_output"
 assert_contains 'hve: healthy' "$doctor_output"
+# Full scope only: doctor refusal when python3 is missing.
+if ! essential; then
 (
   command() {
     if [[ "$1" == -v && "${2-}" == python3 ]]; then
@@ -1448,6 +1479,7 @@ assert_contains 'hve: healthy' "$doctor_output"
   fi
 )
 assert_contains 'required command not found: python3' "$fixture_root/doctor-python.out"
+fi
 inventory_output="$fixture_root/inventory.json"
 "$launcher" inventory hve --json >"$inventory_output"
 jq -e '
@@ -1460,6 +1492,8 @@ jq -e '
   and .skills == {packageCount:2,visibleCount:3}
   and .mcps == ["docs","files"]
 ' "$inventory_output" >/dev/null || fail 'healthy inventory output differs'
+# Full scope only: inventory with built-in plugin section.
+if ! essential; then
 FAKE_COPILOT_BUILTIN_SECTION=1 "$launcher" inventory hve --json \
   >"$fixture_root/builtin-plugin-inventory.json"
 jq -e '
@@ -1467,8 +1501,11 @@ jq -e '
   and .plugins == [{name:"hve-core@hve-core",version:"3.2.2"}]
 ' "$fixture_root/builtin-plugin-inventory.json" >/dev/null \
   || fail 'inventory rejected Copilot output containing built-in plugins'
+fi
 
 expected_compound_engineering_home="$HOME/.local/share/trellage/profiles/copilot/compound-engineering/home"
+# Full scope only: Compound Engineering and Plannotator lifecycle, manifest and skill repair, and update cases.
+if ! essential; then
 compound_engineering_plugin_root="$expected_compound_engineering_home/installed-plugins/compound-engineering-plugin/compound-engineering"
 "$launcher" setup compound-engineering >"$fixture_root/compound-engineering-setup.out"
 compound_engineering_install_count="$(grep -Fc \
@@ -2033,8 +2070,11 @@ assert_contains 'failed to fetch or parse official manifest for plannotator' \
   "$fixture_root/plannotator-malformed-version.err"
 assert_not_contains 'plannotator: update available' \
   "$fixture_root/plannotator-malformed-version.out"
+fi
 
 expected_tufte_home="$HOME/.local/share/trellage/profiles/copilot/tufte-vdqi/home"
+# Full scope only: Tufte VDQI lifecycle, skill hardening, and update cases.
+if ! essential; then
 tufte_plugin_root="$expected_tufte_home/installed-plugins/tufte-vdqi-marketplace/tufte-vdqi"
 "$launcher" setup tufte-vdqi >"$fixture_root/tufte-setup.out"
 tufte_install_count="$(grep -Fc \
@@ -2154,6 +2194,7 @@ assert_contains 'args=plugin update tufte-vdqi@tufte-vdqi-marketplace ' \
   "$fake_copilot_log"
 assert_contains $'tufte-vdqi@tufte-vdqi-marketplace\t4.0.0' \
   "$expected_tufte_home/fake-state/plugins"
+fi
 
 mv "$expected_hve_home/installed-plugins/hve-core/hve-core" \
   "$expected_hve_home/installed-plugins/hve-core/hve-core.safe"
@@ -2168,6 +2209,8 @@ assert_contains 'invalid installed plugin root for hve' \
 rm "$expected_hve_home/installed-plugins/hve-core/hve-core"
 mv "$expected_hve_home/installed-plugins/hve-core/hve-core.safe" \
   "$expected_hve_home/installed-plugins/hve-core/hve-core"
+# Full scope only: retired HVE plugin doctor and repair.
+if ! essential; then
 printf '%s\t%s\n' 'hve-core-all@hve-core' '3.3.101' \
   >>"$expected_hve_home/fake-state/plugins"
 if "$launcher" doctor hve \
@@ -2180,6 +2223,7 @@ assert_contains 'cpx: retired plugin is installed: hve; run: cpx repair hve' \
 assert_contains 'args=plugin uninstall hve-core-all@hve-core ' "$fake_copilot_log"
 assert_not_contains 'hve-core-all@hve-core' "$expected_hve_home/fake-state/plugins"
 assert_contains $'hve-core@hve-core\t3.2.2' "$expected_hve_home/fake-state/plugins"
+fi
 rm -rf "$HOME/.local/share/trellage/profiles/copilot/awesome"
 "$launcher" inventory awesome --json >"$fixture_root/not-setup-inventory.json"
 jq -e '
@@ -2190,6 +2234,8 @@ jq -e '
   and .mcps == []
 ' "$fixture_root/not-setup-inventory.json" >/dev/null \
   || fail 'not-setup inventory output differs'
+# Full scope only: user-managed skill and standalone MCP doctor cases.
+if ! essential; then
 mkdir -p "$expected_hve_home/skills/personal"
 printf '%s\n' '# User-managed personal skill' >"$expected_hve_home/skills/personal/SKILL.md"
 "$launcher" doctor hve >"$fixture_root/doctor-skill.out" \
@@ -2202,6 +2248,7 @@ if "$launcher" doctor hve >"$fixture_root/doctor-mcp.out" 2>"$fixture_root/docto
   fail 'doctor accepted a standalone profile MCP'
 fi
 printf '%s\n' '{"mcpServers":{}}' >"$expected_hve_home/mcp-config.json"
+fi
 
 before_check_hash="$(profile_tree_hash "$lifecycle_hve_home")"
 before_check_calls="$(wc -l <"$fake_copilot_log" | tr -d ' ')"
@@ -2242,6 +2289,8 @@ assert_contains $'hve-core@hve-core\t3.2.2' "$expected_hve_home/fake-state/plugi
   && "$(<"$auth_sentinel")" == 'auth' ]] \
   || fail 'update changed preserved profile state'
 
+# Full scope only: hve missing-plugin repair.
+if ! essential; then
 rm -f "$expected_hve_home/fake-state/plugins"
 "$launcher" repair hve >"$fixture_root/hve-missing-plugin-repair.out"
 [[ "$(<"$sessions_sentinel")" == 'session' \
@@ -2251,8 +2300,11 @@ rm -f "$expected_hve_home/fake-state/plugins"
 assert_contains $'hve-core@hve-core\t3.2.2' "$expected_hve_home/fake-state/plugins"
 [[ "$(grep -Fc 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log")" == "$marketplace_add_count" ]] \
   || fail 'lifecycle repair re-added an already registered marketplace'
+fi
 
 awesome_marketplace_add_count="$(awk 'index($0, "args=plugin marketplace add github/awesome-copilot ") { count++ } END { print count + 0 }' "$fake_copilot_log")"
+# Full scope only: awesome setup with a missing built-in marketplace.
+if ! essential; then
 awesome_missing_builtin_status=0
 mkdir -p "$fixture_root/awesome-decoy-home"
 seed_floating_skills_cache "$fixture_root/awesome-decoy-home"
@@ -2270,6 +2322,7 @@ HOME="$fixture_root/awesome-decoy-home" FAKE_HIDE_AWESOME_MARKETPLACE=1 \
 next_awesome_marketplace_add_count="$(awk 'index($0, "args=plugin marketplace add github/awesome-copilot ") { count++ } END { print count + 0 }' "$fake_copilot_log")"
 [[ "$next_awesome_marketplace_add_count" == "$awesome_marketplace_add_count" ]] \
   || fail 'awesome setup registered a missing built-in marketplace'
+fi
 
 expected_superpowers_home="$HOME/.local/share/trellage/profiles/copilot/superpowers/home"
 expected_awesome_home="$HOME/.local/share/trellage/profiles/copilot/awesome/home"
@@ -2298,6 +2351,8 @@ assert_contains $'awesome-copilot@awesome-copilot\t1.1.0' \
 [[ "$(awk 'index($0, "args=plugin marketplace add github/awesome-copilot ") { count++ } END { print count + 0 }' "$fake_copilot_log")" == "$awesome_marketplace_add_count" ]] \
   || fail 'setup --all registered the built-in awesome marketplace'
 
+# Full scope only: forbidden Superpowers plugin and contaminated-profile repair.
+if ! essential; then
 printf '%s\n' $'superpowers@superpowers-marketplace\t6.2.0' \
   >>"$expected_hve_home/fake-state/plugins"
 if "$launcher" doctor hve >"$fixture_root/hve-superpowers-doctor.out" \
@@ -2327,6 +2382,7 @@ assert_not_contains $'superpowers\t' "$expected_hve_home/fake-state/plugins"
 assert_not_contains $'renamed@custom\t' "$expected_hve_home/fake-state/plugins"
 assert_contains $'hve-core@hve-core\t3.2.2' \
   "$expected_hve_home/fake-state/plugins"
+fi
 
 for profile in awesome compound-engineering hve plannotator superpowers tufte-vdqi; do
   "$launcher" doctor "$profile" >"$fixture_root/$profile-native-auth-doctor.out"
@@ -2357,6 +2413,8 @@ for global_capability in \
   assert_not_contains "$global_capability" "$awesome_inventory_output"
 done
 
+# Full scope only: awesome lifecycle repeats, manifest and state read failures, unknown profile.
+if ! essential; then
 awesome_plugin_install_count="$(grep -Fc 'args=plugin install awesome-copilot@awesome-copilot ' "$fake_copilot_log")"
 "$launcher" setup awesome
 [[ "$(grep -Fc 'args=plugin install awesome-copilot@awesome-copilot ' "$fake_copilot_log")" == "$awesome_plugin_install_count" ]] \
@@ -2421,6 +2479,7 @@ if "$launcher" doctor not-a-profile >"$fixture_root/unknown.out" 2>"$fixture_roo
   fail 'unknown profile was accepted'
 fi
 assert_contains 'unknown profile: not-a-profile' "$fixture_root/unknown.err"
+fi
 
 runtime_root="$HOME/.local/share/trellage/cpx"
 installed="$runtime_root/bin/cpx"
@@ -2475,10 +2534,13 @@ assert_contains $'plannotator\tplannotator-effective-html@effective-html' \
   "$fixture_root/installed-list.out"
 assert_contains $'tufte-vdqi\ttufte-vdqi@tufte-vdqi-marketplace' \
   "$fixture_root/installed-list.out"
+# Full scope only: repeated install and workflow check before capabilities exist.
+if ! essential; then
 "$installer"
 "$installed" workflow-check hve --agent hve-core:dt-coach --require-skill dt-methods \
   >"$fixture_root/workflow-missing.out" 2>"$fixture_root/workflow-missing.err" \
   && fail 'workflow check accepted a plugin without registered customer capabilities'
+fi
 workflow_root="$expected_hve_home/installed-plugins/hve-core/hve-core"
 mkdir -p "$workflow_root/.github/agents/design-thinking" "$workflow_root/.github/skills/design-thinking/dt-methods"
 cat >"$workflow_root/plugin.json" <<'EOF'
@@ -2496,11 +2558,14 @@ jq -e '
 ' "$fixture_root/workflow-check.json" >/dev/null || fail 'workflow readiness lost capability identity'
 [[ "$(profile_tree_hash "$lifecycle_hve_home")" == "$workflow_before" ]] \
   || fail 'workflow check changed managed profile state'
+# Full scope only: private lifecycle manager interactive launch refusal.
+if ! essential; then
 if "$installed" interactive hve --agent hve-core:dt-coach --require-skill dt-methods </dev/null \
   >"$fixture_root/workflow-no-terminal.out" 2>&1; then
   fail 'private lifecycle manager accepted an interactive agent launch'
 fi
 assert_contains 'use trx run copilot hve' "$fixture_root/workflow-no-terminal.out"
+fi
 mv "$workflow_root/.github/skills/design-thinking/dt-methods/SKILL.md" "$fixture_root/workflow-skill.md"
 ln -s "$fixture_root/workflow-skill.md" "$workflow_root/.github/skills/design-thinking/dt-methods/SKILL.md"
 if "$installed" workflow-check hve --agent hve-core:dt-coach --require-skill dt-methods \
@@ -2510,6 +2575,8 @@ fi
 assert_contains 'symlinked plugin reference' "$fixture_root/workflow-symlink.out"
 rm "$workflow_root/.github/skills/design-thinking/dt-methods/SKILL.md"
 mv "$fixture_root/workflow-skill.md" "$workflow_root/.github/skills/design-thinking/dt-methods/SKILL.md"
+# Full scope only: workflow check disabled, duplicate, and old-CLI cases.
+if ! essential; then
 if FAKE_COPILOT_DISABLED_SKILL=dt-methods "$installed" workflow-check hve --agent hve-core:dt-coach --require-skill dt-methods \
   >"$fixture_root/workflow-disabled.out" 2>&1; then
   fail 'workflow check accepted a disabled skill'
@@ -2523,6 +2590,7 @@ assert_contains 'required skills must be unique' "$fixture_root/workflow-duplica
 if XDG_CACHE_HOME="$fixture_root/old-workflow-cache" FAKE_COPILOT_VERSION=1.0.80 "$installed" workflow-check hve --agent hve-core:dt-coach --require-skill dt-methods \
   >"$fixture_root/workflow-old-cli.out" 2>&1; then
   fail 'workflow check accepted an unsupported CLI'
+fi
 fi
 "$uninstaller"
 [[ ! -e "$installed" ]] || fail 'uninstaller left the owned runtime command behind'

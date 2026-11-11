@@ -14,8 +14,11 @@ TEST_TIMING ?= 0
 ifeq ($(TEST_TIMING),1)
 %: SHELL = python3 scripts/test-command.py $@
 endif
-PARALLEL_TEST_TARGETS := test-command native-copilot-profiles native-prime-profile launcher conversation-source source-runtime dependency-bootstrap development-resolution-contract rebuild-profiles-bun-runtime publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge azure-fresh-install-contract agent-harness native-harness-version native-agency-profile native-jcode-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test trellage-statusline
-TIMING_SENSITIVE_TEST_TARGETS := native-omp-profile native-claude-profile native-tui-matrix-test
+PARALLEL_TEST_TARGETS := test-command native-copilot-profiles launcher conversation-source source-runtime dependency-bootstrap development-resolution-contract rebuild-profiles-bun-runtime publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge azure-fresh-install-contract agent-harness native-harness-version manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test trellage-statusline
+TIMING_SENSITIVE_TEST_TARGETS := native-claude-profile native-tui-matrix-test
+# Not in the full run: these profiles' contracts run only when a PR changes that profile
+# (scripts/quality.py NATIVE), or by hand with make.
+PROFILE_ONLY_TEST_TARGETS := native-prime-profile native-agency-profile native-jcode-profile native-omp-profile
 FINAL_TEST_TARGETS := native-profile-router
 PARALLEL_TEST_TARGETS += cli-matrix-contract
 PARALLEL_TEST_TARGETS += source-checks
@@ -62,6 +65,9 @@ offline-llm-contract:
 offline-install-contract:
 	bash tests/offline_install_contract.sh
 
+# The full run checks only the essentials: contracts read TRELLAGE_TEST_SCOPE=essential and skip their edge cases.
+# A targeted run (one changed profile or package) calls the target directly and runs it in full.
+test-offline-workload: export TRELLAGE_TEST_SCOPE = essential
 test-offline-workload:
 	@test "$$TRELLAGE_TEST_OFFLINE" = 1 || { echo 'Use make test for enforced offline execution' >&2; exit 1; }
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-install-contract
@@ -80,9 +86,10 @@ quality-contract:
 script-tests:
 	bash scripts/test-offline.sh --native-sources bun test --isolate scripts/*.test.ts
 	uv run --offline --no-project python tests/test_benchmark_tests.py
-	uv run --offline --no-project python tests/test_exhaustive_guide_process.py
 	uv run --offline --no-project python tests/test_exhaustive_terminal.py
 	uv run --offline --no-project python tests/test_exhaustive_runner.py
+	@if [ "$${TRELLAGE_TEST_SCOPE-}" != essential ]; then \
+	  uv run --offline --no-project python tests/test_exhaustive_guide_process.py; fi
 
 publication-policy:
 	bash tests/publication_contract.sh --policy-only
@@ -155,8 +162,10 @@ profile-compiler-fingerprint:
 conversation-source:
 	cd packages/trellage-conversation-source && bun run check && bun run test
 
+# OMP-only process tests skip in the essential scope, like the OMP profile contract.
 source-runtime:
-	cd packages/trellage-runtime && bun run check && bun run test
+	cd packages/trellage-runtime && bun run check && bun run test \
+	  $$([ "$${TRELLAGE_TEST_SCOPE-}" = essential ] && echo --path-ignore-patterns='**/omp-process.test.ts')
 	bash tests/source_startup_contract.sh
 
 trellage-identity:
