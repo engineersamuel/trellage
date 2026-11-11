@@ -113,7 +113,7 @@ describe("goal spec", () => {
   test("defaults fill approvals, limits, base and PR state", () => {
     expect(spec.base).toBe("main")
     expect(spec.approvals).toEqual({ plan: "auto", findings: "auto", ship: "auto", other: "human" })
-    expect(spec.limits).toEqual({ runs: 5, minutesPerRun: 90 })
+    expect(spec.limits).toEqual({ runs: 5, minutesPerRun: 720 })
     expect(spec.expect.steps.implement).toEqual({ min: 1 })
     expect(spec.expect.pr?.state).toBe("OPEN")
   })

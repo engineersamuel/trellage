@@ -40,6 +40,7 @@ export const Message = defineMessageUnion({
   SelectedSubModel: { model: Schema.String },
   SelectedSubEffort: { effort: Schema.String },
   ClickedWorkerHarness: { harness: Schema.String },
+  ToggledForceWithLease: { isChecked: Schema.Boolean },
   ClickedDecisionEngine: { engine: Schema.String },
   ToggledDisabledTool: { tool: Schema.String },
   UpdatedInstructions: { value: Schema.String },

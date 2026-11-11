@@ -103,6 +103,9 @@ describe("controls", () => {
     expect(update(loaded, Message.ToggledInboxCritters({ isChecked: true })).commands?.[0]?.args).toEqual({
       patch: { inboxCritters: true },
     })
+    expect(update(loaded, Message.ToggledForceWithLease({ isChecked: false })).commands?.[0]?.args).toEqual({
+      patch: { workers: { forceWithLease: false } },
+    })
     expect(update(loaded, Message.ClickedTreeStyle({ style: "vine" })).commands?.[0]?.args).toEqual({
       patch: { treeStyle: "vine" },
     })

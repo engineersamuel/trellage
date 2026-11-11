@@ -455,6 +455,20 @@ kbd {
 .fk-drawer.fk-goals {
   width: 560px;
 }
+.fk-goal-new {
+  display: inline-block;
+  align-self: flex-start;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--sf-accent);
+  border-radius: 6px;
+  color: var(--sf-accent);
+  text-decoration: none;
+}
+.fk-goal-new:hover {
+  background: var(--sf-surface);
+}
 .fk-goal-form section {
   margin-bottom: 10px;
 }

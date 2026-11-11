@@ -70,6 +70,12 @@ To upgrade agent-interface:
 3. Delete the old patch file, run `npx patch-package @plana-solutions/agent-interface` (new file has the new version).
 4. Run the four checks, then delete `node_modules/.vite` and restart the dev server.
 
+## Guided goal page
+
+`public/goal-page/` (served at `/goal-page/index.html`) is a plain HTML + JS page, not Foldkit: the Goals dialog's
+"＋ New goal (guided)" link opens it. Its API is the coordinator's `/api/goal-page/*` (`../coordinator/src/goalPage.ts`,
+prompts in `../coordinator/defaults/prompts/goal-page/`). Launch saves the GoalSpec and starts `sf goal run`.
+
 ## Live chat cards
 
 The coordinator's `show_*` tools answer Foldkit turns with an OpenUI card whose data is an OpenUI

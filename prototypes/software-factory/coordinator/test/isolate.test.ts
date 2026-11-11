@@ -1,15 +1,31 @@
 import { expect, test } from "bun:test"
-import { spawnSync } from "node:child_process"
-import { mkdtempSync } from "node:fs"
+import { mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { isolatedLauncher } from "../src/isolate.ts"
+import { reapRuntimes, recordRuntime } from "../src/isolate.ts"
 
-test("the launcher runs the binary in its own process group with its arguments and exit code", () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "sf-iso-"))
-  const launcher = isolatedLauncher(dir, "/bin/sh")
-  // A new session leader leads its own process group: pgid == pid, unlike the caller's group.
-  const r = spawnSync(launcher, ["-c", 'test "$(ps -o pgid= -p $$ | tr -d " ")" = "$$" && echo own-group; exit 7'], { encoding: "utf8" })
-  expect(r.stdout.trim()).toBe("own-group")
-  expect(r.status).toBe(7)
+test("startup cleanup stops only the recorded runtimes of its own state folder that still run the runtime", () => {
+  const mine = mkdtempSync(path.join(tmpdir(), "sf-i-"))
+  const other = mkdtempSync(path.join(tmpdir(), "sf-i-"))
+  recordRuntime(mine, 999_991) // still a runtime, but its kill fails (no such pid)
+  recordRuntime(mine, 999_992) // pid reused by another program
+  recordRuntime(mine, 999_993) // gone
+  recordRuntime(other, 999_994)
+  const seen: number[] = []
+  const command = (pid: number) => {
+    seen.push(pid)
+    return pid === 999_991 ? "/x/copilot-runtime --port 0" : pid === 999_992 ? "vim" : null
+  }
+  expect(reapRuntimes(mine, command)).toEqual([])
+  expect(seen).toEqual([999_991, 999_992, 999_993])
+  expect(readFileSync(path.join(mine, "runtime.pids"), "utf8")).toBe("")
+  expect(readFileSync(path.join(other, "runtime.pids"), "utf8")).toBe("999994\n")
+})
+
+test("startup cleanup kills a live recorded runtime", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "sf-i-"))
+  const child = Bun.spawn(["sleep", "30"])
+  recordRuntime(root, child.pid)
+  expect(reapRuntimes(root, () => "copilot-runtime")).toEqual([child.pid])
+  expect(await child.exited).not.toBe(0)
 })

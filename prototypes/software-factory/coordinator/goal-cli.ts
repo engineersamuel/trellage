@@ -145,7 +145,7 @@ const guided = (json: Json) =>
             ),
           )
           const runs = Number(await question(rl, "max runs", "5"))
-          const minutesPerRun = Number(await question(rl, "minutes per run", "90"))
+          const minutesPerRun = Number(await question(rl, "minutes per run", "720"))
           return {
             id,
             repo,

@@ -9,15 +9,24 @@ const gitArgs = (words: string[]): string[] => {
   return words.slice(i)
 }
 
-/** `git push [-u] origin <branch>`: the only push a finish worker may run, to its own branch. No force, delete, or other ref. */
-const pushesOnly = (args: string[], branch: string): boolean => {
-  const pos = args.filter((a) => a !== "-u" && a !== "--set-upstream")
-  return pos.length === 2 && pos[0] === "origin" && [branch, `HEAD:${branch}`, `HEAD:refs/heads/${branch}`].includes(pos[1]!)
+/** What a finish worker may push: its own branch, and `--force-with-lease` on it when the human allows that. */
+export type PushRule = { branch: string; forceWithLease: boolean }
+
+/** `--force-with-lease`, bare or for the branch itself (`=<branch>` or `=<branch>:<sha>`). Never plain `--force`. */
+const leaseFor = (a: string, branch: string) =>
+  a === "--force-with-lease" || a === `--force-with-lease=${branch}` || a.startsWith(`--force-with-lease=${branch}:`)
+
+/** `git push [-u] [--force-with-lease] origin <branch>`: the only push a finish worker may run, to its own branch. */
+const pushesOnly = (args: string[], { branch, forceWithLease }: PushRule): boolean => {
+  const pos = args.filter((a) => a !== "-u" && a !== "--set-upstream" && !(forceWithLease && leaseFor(a, branch)))
+  return (
+    pos.length === 2 && pos[0] === "origin" && [branch, `HEAD:${branch}`, `HEAD:refs/heads/${branch}`].includes(pos[1]!)
+  )
 }
 
-const forbiddenGit = ([sub, ...rest]: string[], pushBranch?: string): boolean =>
+const forbiddenGit = ([sub, ...rest]: string[], push?: PushRule): boolean =>
   sub === "merge" ||
-  (sub === "push" && !(pushBranch && pushesOnly(rest, pushBranch))) ||
+  (sub === "push" && !(push && pushesOnly(rest, push))) ||
   (sub === "branch" && rest.some((x) => x === "--delete" || /^-[a-zA-Z]*[dD]/.test(x))) ||
   (sub === "worktree" && rest[0] === "remove") ||
   (sub === "reset" && rest.includes("--hard"))
@@ -51,14 +60,14 @@ const endWord = (l: Lexer) => {
 /** One step inside quotes; returns the characters consumed. Single quotes take everything literally. */
 const inQuote = (l: Lexer, ch: string, next: string): number => {
   if (ch === l.quote) l.quote = null
-  else if (l.quote === '"' && ch === "\\" && ESCAPABLE_IN_DOUBLE.has(next)) return add(l, next), 2
+  else if (l.quote === '"' && ch === "\\" && ESCAPABLE_IN_DOUBLE.has(next)) return (add(l, next), 2)
   else add(l, ch)
   return 1
 }
 
 /** One step outside quotes; returns the characters consumed. */
 const outside = (l: Lexer, ch: string, next: string): number => {
-  if (ch === "\\") return add(l, next), 2
+  if (ch === "\\") return (add(l, next), 2)
   if (ch === "'" || ch === '"') {
     l.quote = ch
     add(l, "")
@@ -73,7 +82,7 @@ const outside = (l: Lexer, ch: string, next: string): number => {
 /** Shell words of each simple command (some may be empty): quotes group a word and are dropped, a backslash escapes. */
 const parse = (line: string): string[][] => {
   const l: Lexer = { cmds: [[]], word: null, quote: null }
-  for (let i = 0; i < line.length; ) i += (l.quote ? inQuote : outside)(l, line[i]!, line.charAt(i + 1))
+  for (let i = 0; i < line.length;) i += (l.quote ? inQuote : outside)(l, line[i]!, line.charAt(i + 1))
   endWord(l)
   return l.cmds
 }
@@ -82,25 +91,26 @@ const parse = (line: string): string[][] => {
 const isLine = (w: string) => /[\s;&|()`$]/.test(w)
 
 /** Credential files agents may read in place (e.g. COPILOT_PROXY_RS_CONFIG_DIR) but never copy or move. */
-const CREDENTIAL = /(^|\/)(github_token|\.git-credentials|hosts\.yml|auth\.json|\.netrc|credentials(\.json)?|id_(rsa|ed25519|ecdsa))$/
+const CREDENTIAL =
+  /(^|\/)(github_token|\.git-credentials|hosts\.yml|auth\.json|\.netrc|credentials(\.json)?|id_(rsa|ed25519|ecdsa))$/
 
 const copiesCredential = (command: string, rest: string[]): boolean =>
-  ["cp", "mv", "rsync", "scp", "install", "ditto", "ln"].includes(command) && rest.some((w) => !w.startsWith("-") && CREDENTIAL.test(w))
+  ["cp", "mv", "rsync", "scp", "install", "ditto", "ln"].includes(command) &&
+  rest.some((w) => !w.startsWith("-") && CREDENTIAL.test(w))
 
-const forbiddenAfter = (command: string, rest: string[], pushBranch?: string): boolean =>
+const forbiddenAfter = (command: string, rest: string[], push?: PushRule): boolean =>
   copiesCredential(command, rest) ||
-  (command === "git" && forbiddenGit(gitArgs(rest), pushBranch)) ||
+  (command === "git" && forbiddenGit(gitArgs(rest), push)) ||
   (command === "gh" && forbiddenGh(rest)) ||
   (command === "rm" && recursiveForce(rest))
 
-const forbiddenWords = (words: string[], pushBranch?: string): boolean =>
-  words.some((w, i) => forbiddenAfter(basename(w), words.slice(i + 1), pushBranch))
+const forbiddenWords = (words: string[], push?: PushRule): boolean =>
+  words.some((w, i) => forbiddenAfter(basename(w), words.slice(i + 1), push))
 
 /**
  * True when the shell line merges, pushes, deletes a branch or worktree, hard-resets, force-removes recursively,
- * or merges or deletes through gh. With `pushBranch`, a plain `git push [-u] origin <pushBranch>` is allowed.
+ * or merges or deletes through gh. With `push`, `git push [-u] origin <branch>` is allowed, with
+ * `--force-with-lease` when `push.forceWithLease`.
  */
-export const forbiddenCommand = (cmd: string, pushBranch?: string): boolean =>
-  parse(cmd).some(
-    (words) => forbiddenWords(words, pushBranch) || words.some((w) => isLine(w) && forbiddenCommand(w, pushBranch)),
-  )
+export const forbiddenCommand = (cmd: string, push?: PushRule): boolean =>
+  parse(cmd).some((words) => forbiddenWords(words, push) || words.some((w) => isLine(w) && forbiddenCommand(w, push)))

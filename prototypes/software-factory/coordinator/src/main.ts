@@ -50,15 +50,13 @@ import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thre
 import { cardData, coordinatorTools, factoryConfigView, globalTools, spawnHealing, type Scope } from "./tools.ts"
 import { DRAFT_NOTE, DraftError, draftNodeId, isUnstartedDraft, makeDrafts } from "./drafts.ts"
 import { enhanceWith, stopEnhance } from "./enhance.ts"
+import { makeGoalPage, startGoalRun } from "./goalPage.ts"
 import { Option, Schema } from "effect"
 import { worktreeDiff } from "./worktreeDiff.ts"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
 const landing = asset("landing.html")
 const openuiPrompt = asset("openui-prompt.txt")
-
-if (process.env.SF_DISABLE_STARTUP_CHILD_CLEANUP !== "1")
-  Bun.spawnSync(["pkill", "-f", new URL("../node_modules/@github/copilot-sdk-", import.meta.url).pathname])
 
 const factory = (() => {
   try {
@@ -444,9 +442,9 @@ const deliverToThread = async (threadId: string | null, text: string): Promise<D
 /** A sub-coordinator's report goes to the General chat that started its conversation, else to the Factory desk. */
 const reportToGeneral = async (folder: string, t: Thread, r: Report): Promise<void> => {
   const target = reportTarget(t, threads.list(), deskThread().id)
-  await (
-    await deliverToThread(target, reportPrompt(folder, t.title, t.id, r))
-  ).sent
+  // Queued, not awaited: the target may be busy waiting for this sub (read_conversation wait=true), and the sub's
+  // report_up would wait for it in turn. A failed delivery is logged.
+  logFailure(await deliverToThread(target, reportPrompt(folder, t.title, t.id, r)))
 }
 
 /** Deliver without waiting; failures are logged. */
@@ -1159,6 +1157,25 @@ const goals = makeGoals(
 /** prototypes/software-factory: its commit (and dirty flag) is the factory version a goal run ran on. */
 const FACTORY_DIR = path.resolve(new URL(".", import.meta.url).pathname, "../..")
 
+const [hostname, port] = (process.env.SF_ADDR ?? "127.0.0.1:7700").split(":")
+
+/** Guided goal page (web-foldkit/public/goal-page/): routes /api/goal-page/<name>. */
+const goalPage = makeGoalPage({
+  proxyUrl: () => factory.proxyUrl,
+  folders: () => threads.folders().filter((f) => f.path),
+  knownSteps: () => steps().map((step) => step.id),
+  goals,
+  startResearch: async (folderId, brief) => {
+    const t = drafts.create(folderId, brief)
+    const d = await drafts.act(t.id, "research")
+    const r = d.reports.find((x) => x.action === "research")!
+    return { threadId: t.id, workerId: r.workerId, worktree: t.worktree!, report: r.path }
+  },
+  workerState: (id) => factory.workers.get(id)?.summary(),
+  removeDraft: (id) => drafts.remove(id),
+  startRun: startGoalRun(`http://${hostname}:${port}`, path.join(factory.root, "logs", "goal-runs")),
+})
+
 /** JSON reply for a goal route: GoalError is 400, anything else 500. */
 const goalReply = async (run: () => unknown): Promise<Response> => {
   try {
@@ -1769,6 +1786,8 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => draftReply(() => drafts.run(id!))],
   ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => draftReply(() => drafts.remove(id!))],
   ["GET", /^\/api\/artifacts$/, () => json({ artifacts: [] })],
+  ["GET", /^\/api\/goal-page\/(info|repos)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
+  ["POST", /^\/api\/goal-page\/([a-z]+(?:\/[a-z]+)?)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
 ]
 
 const cors = {
@@ -1777,7 +1796,6 @@ const cors = {
   "access-control-allow-headers": "*",
 }
 
-const [hostname, port] = (process.env.SF_ADDR ?? "127.0.0.1:7700").split(":")
 const server = Bun.serve({
   hostname,
   port: Number(port),
@@ -1803,6 +1821,12 @@ const shutdown = async (signal: string) => {
   await stopLoops()
   await factory.stopAll()
   process.exit(0)
+}
+// The desk is a fixed session the whole service uses: when its runtime dies, restart the service (process-compose
+// restarts it). Other workers are unregistered by the factory and start again on their next message.
+factory.onRuntimeExit = (ids) => {
+  console.error(`runtime of ${ids.join(", ")} exited without a stop`)
+  if (ids.includes(DESK_ID)) void shutdown("desk runtime exit")
 }
 process.on("SIGINT", () => void shutdown("SIGINT"))
 process.on("SIGTERM", () => void shutdown("SIGTERM"))

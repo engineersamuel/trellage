@@ -84,7 +84,7 @@ export const DEFAULT_IMPROVE: ImprovePolicy = Schema.decodeUnknownSync(ImprovePo
 
 export const Limits = Schema.Struct({
   runs: Schema.Number.pipe(withDefault(5)),
-  minutesPerRun: Schema.Number.pipe(withDefault(90)),
+  minutesPerRun: Schema.Number.pipe(withDefault(720)),
 })
 
 /** Optional gates a goal can require to run or to be skipped (coordinator/src/sdlc.ts GATES). */
@@ -103,6 +103,8 @@ export const GoalSpec = Schema.Struct({
   approvals: Approvals.pipe(withDefault({})),
   limits: Limits.pipe(withDefault({})),
   improve: ImprovePolicy.pipe(withDefault({})),
+  /** Why the goal was launched while Jev scored it below the readiness bar (guided goal page). */
+  readinessOverride: Schema.optionalKey(Schema.String),
 })
 export type GoalSpec = typeof GoalSpec.Type
 
@@ -589,7 +591,7 @@ export const emptyDraft = (): GoalDraft => ({
   gatesSkipped: [],
   approvals: { plan: "auto", findings: "auto", ship: "auto", other: "human" },
   runs: "5",
-  minutesPerRun: "90",
+  minutesPerRun: "720",
   benchmarks: [],
   improve: DEFAULT_IMPROVE,
 })
@@ -643,7 +645,7 @@ export const draftToSpec = (
     },
     approvals: d.approvals,
     improve: d.improve,
-    limits: { runs: runs ?? 5, minutesPerRun: minutesPerRun ?? 90 },
+    limits: { runs: runs ?? 5, minutesPerRun: minutesPerRun ?? 720 },
   }
   const exit = decodeGoal(raw)
   if (!Exit.isSuccess(exit)) return { ok: false, problems: [...problems, "the form does not make a valid goal"] }

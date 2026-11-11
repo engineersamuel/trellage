@@ -8,6 +8,7 @@ import path from "node:path"
 import { Factory, type SpawnSpec } from "../src/factory.ts"
 import { Approvals } from "../src/approvals.ts"
 import { freshTurn } from "../src/report.ts"
+import { defaultSettings } from "../src/settings.ts"
 import { coordinatorTools, fanout, globalTools, synthesisBlocked, type Scope } from "../src/tools.ts"
 import type { FanoutSelection } from "../src/workflows.ts"
 
@@ -22,6 +23,7 @@ const fakeFactory = () => {
     turns: new Map(),
     lastReports: new Map(),
     run: null,
+    stored: defaultSettings(),
     published: [] as unknown[],
     spawned: [] as unknown[],
   })
@@ -347,6 +349,9 @@ test("step=finish needs an accepted ship approval for this conversation's factor
   const gate = f.spawned[0].permissions
   expect(gate({ kind: "shell", fullCommandText: "git push -u origin factory/x" }, {})).toEqual({ kind: "approve-once" })
   expect(gate({ kind: "shell", fullCommandText: "git push origin main" }, {}).kind).toBe("reject")
+  expect(gate({ kind: "shell", fullCommandText: "git push --force-with-lease origin factory/x" }, {}).kind).toBe(
+    "approve-once",
+  )
   // The push count is saved; after a restart a new finish worker continues it, and once spent step=finish is refused.
   for (let i = 0; i < 5; i++) gate({ kind: "shell", fullCommandText: "git push origin factory/x" }, {})
   f.approvals = new Approvals(root)

@@ -72,9 +72,11 @@ const SettingsSchema = Schema.Struct({
     ),
   ),
   /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
-  workers: Schema.Struct({ harness: Schema.String }).pipe(
-    Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto" })),
-  ),
+  /** forceWithLease: finish workers may `git push --force-with-lease` their own branch (after a rebase). */
+  workers: Schema.Struct({
+    harness: Schema.String,
+    forceWithLease: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
+  }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({ harness: "auto", forceWithLease: true }))),
   /** Engine behind every factory decision (gates, lenses, findings, triage, next step). Hot-swappable: the next decision uses it. */
   decisions: Schema.Struct({ engine: Schema.String }).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed({ engine: "jev" })),
@@ -136,7 +138,7 @@ export const defaultSettings = (): Settings => ({
   banner: null,
   agent: { model: factoryConfig().models.coordinator, reasoningEffort: "high", disabledTools: [], instructions: "" },
   subAgent: { model: factoryConfig().models.sub_coordinator, reasoningEffort: "high" },
-  workers: { harness: "auto" },
+  workers: { harness: "auto", forceWithLease: true },
   decisions: { engine: "jev" },
   crons: {},
   extensions: {},

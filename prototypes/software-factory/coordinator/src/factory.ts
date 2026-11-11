@@ -1,11 +1,11 @@
 // Worker lifecycle: each worker is a separate agent process with its own home. Copilot SDK is the
 // default harness (a runtime over TCP); a step may name the Claude Agent SDK harness instead.
 import { readOnlyViolation, subShellFeedback } from "./readonly.ts"
-import { isolatedLauncher, spawnIsolated } from "./isolate.ts"
+import { isolatedLauncher, reapRuntimes, recordRuntime, spawnIsolated } from "./isolate.ts"
 import { factoryMcpServer, gateFromPermissions, MCP_SERVER, mcpToolNames } from "./claudetools.ts"
 import type { CodeReview } from "./review.ts"
 import type { Sdlc } from "./sdlc.ts"
-import { execFileSync } from "node:child_process"
+import { type ChildProcess, execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync } from "node:fs"
 import path from "node:path"
 import { homedir } from "node:os"
@@ -319,7 +319,8 @@ export class Worker {
         resolve(false)
       }, timeoutMs)
       const off = this.events.subscribe((ev) => {
-        if (ev.type === "session.idle") {
+        // A session.error ends the turn too (a dead runtime sends no idle).
+        if (ev.type === "session.idle" || (ev.type === "session.error" && this.status !== "running")) {
           clearTimeout(timer)
           off()
           resolve(true)
@@ -450,6 +451,9 @@ export class Factory {
     if (!env.SF_STATE_DIR) migrateLegacyState(this.root)
     // Before any file is opened: one coordinator per state folder.
     acquireStateLock(this.root)
+    // Runtimes a previous coordinator on this folder left behind. Only this folder's: a test coordinator on a
+    // scratch folder must not stop the live factory's runtimes.
+    if (env.SF_DISABLE_STARTUP_CHILD_CLEANUP !== "1") reapRuntimes(this.root)
     this.healRoot = path.join(this.root, "skills-healed")
     mkdirSync(this.root, { recursive: true })
     this.store = new EventStore(path.join(this.root, "events.db"))
@@ -712,7 +716,30 @@ export class Factory {
         : {}),
     })
     await client.start()
+    const proc = (client as unknown as { cliProcess?: ChildProcess }).cliProcess
+    if (proc?.pid) recordRuntime(this.root, proc.pid)
+    proc?.once("exit", (code, signal) => this.runtimeExited(client, `runtime exited (${signal ?? `code ${code}`})`))
     return client
+  }
+
+  /** Called with the ids of the workers whose runtime exited without a stop. */
+  onRuntimeExit: ((ids: string[]) => void) | null = null
+
+  /**
+   * A runtime exited that no stop asked for (killed or crashed): every worker on it ends its turn with a
+   * session.error, so waiters and the UI stop showing it as running, and it is unregistered so the next message
+   * starts it again. A stopped worker is already unregistered, so a normal stop does not come here.
+   */
+  runtimeExited(client: unknown, message: string): void {
+    const dead = [...this.workers.values()].filter((w) => w.client === client)
+    for (const w of dead) {
+      const ev = { type: "session.error", timestamp: new Date().toISOString(), data: { message } } as SessionEvent
+      w.observe(this, ev)
+      w.events.send(ev)
+      this.workers.delete(w.id)
+      this.publish(w.id, "factory.worker_stopped", null, now(), { id: w.id, reason: message })
+    }
+    if (dead.length) this.onRuntimeExit?.(dead.map((w) => w.id))
   }
 
   private configureWorker(worker: Worker, spec: SpawnSpec): void {
@@ -1018,19 +1045,27 @@ export const touchesFactoryConfig = (request: {
 export const maxFixRounds = (c: FactoryConfig = factoryConfig()) => c.sdlc.max_fix_rounds
 
 /**
- * Gate for a finish worker: it fixes, commits, and pushes only its approved branch (no force); it never merges or deletes.
+ * Gate for a finish worker: it fixes, commits, and pushes only its approved branch; it never merges or deletes.
+ * `--force-with-lease` on that branch is allowed while `forceWithLease()` is true (setting workers.forceWithLease,
+ * read at each push so unchecking it applies at once). Plain `--force` never is.
  * Pushes count against the grant, so a new finish worker for the same approval does not reset the limit.
  * `saved` stores the new count after each allowed push.
  */
 export const finishPermissions =
-  (grant: ShipGrant, saved: (g: ShipGrant) => void = () => {}, limit = maxFixRounds()): PermissionHandler =>
+  (
+    grant: ShipGrant,
+    saved: (g: ShipGrant) => void = () => {},
+    limit = maxFixRounds(),
+    forceWithLease: () => boolean = () => false,
+  ): PermissionHandler =>
   (request, invocation) => {
     if (request.kind !== "shell") return approveAll(request, invocation)
     const cmd = request.fullCommandText
-    if (forbiddenCommand(cmd, grant.branch))
+    const lease = forceWithLease()
+    if (forbiddenCommand(cmd, { branch: grant.branch, forceWithLease: lease }))
       return {
         kind: "reject",
-        feedback: `Finish workers push only with \`git push -u origin ${grant.branch}\` (no force) and never merge or delete. Report it to the coordinator.`,
+        feedback: `Finish workers push only with \`git push -u origin ${grant.branch}\`${lease ? ` (or \`git push --force-with-lease -u origin ${grant.branch}\` after a rebase; never --force)` : " (no force: the human turned off --force-with-lease)"} and never merge or delete. Report it to the coordinator.`,
       }
     if (!forbiddenCommand(cmd)) return approveAll(request, invocation)
     // An allowed push of the granted branch.

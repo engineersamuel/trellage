@@ -101,31 +101,52 @@ test("forbiddenCommand blocks gh merge, branch delete and repo delete; allows ot
 })
 
 test("with a push branch, only a plain push of that branch to origin is allowed", () => {
-  const b = "factory/x-1"
+  const b = { branch: "factory/x-1", forceWithLease: false }
   for (const cmd of [
-    `git push -u origin ${b}`,
-    `git push origin ${b}`,
-    `git push --set-upstream origin HEAD:${b}`,
-    `git push origin HEAD:refs/heads/${b}`,
+    `git push -u origin ${b.branch}`,
+    `git push origin ${b.branch}`,
+    `git push --set-upstream origin HEAD:${b.branch}`,
+    `git push origin HEAD:refs/heads/${b.branch}`,
   ])
     expect([cmd, forbiddenCommand(cmd, b)]).toEqual([cmd, false])
   for (const cmd of [
-    `git push --force origin ${b}`,
-    `git push -f origin ${b}`,
-    `git push origin +${b}`,
-    `git push --force-with-lease origin ${b}`,
+    `git push --force origin ${b.branch}`,
+    `git push -f origin ${b.branch}`,
+    `git push origin +${b.branch}`,
+    `git push --force-with-lease origin ${b.branch}`,
     "git push origin main",
-    `git push origin ${b}:main`,
-    `git push origin :${b}`,
-    `git push --delete origin ${b}`,
-    `git push upstream ${b}`,
+    `git push origin ${b.branch}:main`,
+    `git push origin :${b.branch}`,
+    `git push --delete origin ${b.branch}`,
+    `git push upstream ${b.branch}`,
     "git push",
-    `git push origin ${b} main`,
-    `git push -u origin ${b} && git merge main`,
+    `git push origin ${b.branch} main`,
+    `git push -u origin ${b.branch} && git merge main`,
     `gh pr merge --auto`,
   ])
     expect([cmd, forbiddenCommand(cmd, b)]).toEqual([cmd, true])
-  expect(forbiddenCommand(`git push -u origin ${b}`)).toBe(true)
+  expect(forbiddenCommand(`git push -u origin ${b.branch}`)).toBe(true)
+})
+
+test("with forceWithLease, --force-with-lease of the own branch is allowed; --force and other refs never", () => {
+  const b = { branch: "factory/x-1", forceWithLease: true }
+  for (const cmd of [
+    "git push --force-with-lease -u origin factory/x-1",
+    "git push --force-with-lease=factory/x-1 origin factory/x-1",
+    "git push --force-with-lease=factory/x-1:abc123 origin HEAD:factory/x-1",
+    "git push -u origin factory/x-1",
+  ])
+    expect([cmd, forbiddenCommand(cmd, b)]).toEqual([cmd, false])
+  for (const cmd of [
+    "git push --force origin factory/x-1",
+    "git push -f origin factory/x-1",
+    "git push --force-with-lease --force origin factory/x-1",
+    "git push origin +factory/x-1",
+    "git push --force-with-lease=main origin factory/x-1",
+    "git push --force-with-lease origin main",
+    "git push --force-with-lease origin factory/x-1 main",
+  ])
+    expect([cmd, forbiddenCommand(cmd, b)]).toEqual([cmd, true])
 })
 
 test("agents never copy or move credential files; reading them in place is fine", () => {
