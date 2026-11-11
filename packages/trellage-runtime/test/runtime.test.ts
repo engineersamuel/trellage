@@ -382,24 +382,27 @@ test("replaceable owned validation accepts a previous Bun pin but rejects change
   expect(run("validate-replaceable-owned", destination).status).toBe(1)
 })
 
-test.each(["metadata", "dependencies"])("replacement validation accepts %s inventory drift without blessing it for execution", (drift) => {
-  const { root, destination, home } = sourceFixture(true)
-  expect(run("install", root, destination, { HOME: home }).status).toBe(0)
-  const readiness = path.join(destination, ".trellage-source-ready.json")
-  const published = readFileSync(readiness, "utf8")
-  if (drift === "metadata") {
-    const source = path.join(destination, "packages/library/src/index.ts")
-    utimesSync(source, new Date(0), new Date(0))
-  } else {
-    write(destination, "node_modules/inventory-drift", "managed drift")
-  }
+test.each(["metadata", "dependencies"])(
+  "replacement validation accepts %s inventory drift without blessing it for execution",
+  (drift) => {
+    const { root, destination, home } = sourceFixture(true)
+    expect(run("install", root, destination, { HOME: home }).status).toBe(0)
+    const readiness = path.join(destination, ".trellage-source-ready.json")
+    const published = readFileSync(readiness, "utf8")
+    if (drift === "metadata") {
+      const source = path.join(destination, "packages/library/src/index.ts")
+      utimesSync(source, new Date(0), new Date(0))
+    } else {
+      write(destination, "node_modules/inventory-drift", "managed drift")
+    }
 
-  expect(run("validate-owned", destination).status).toBe(1)
-  const replaceable = run("validate-replaceable-owned", destination)
-  expect(replaceable.status, replaceable.stderr).toBe(0)
-  expect(readFileSync(readiness, "utf8")).toBe(published)
-  expect(run("validate-owned", destination).status).toBe(1)
-})
+    expect(run("validate-owned", destination).status).toBe(1)
+    const replaceable = run("validate-replaceable-owned", destination)
+    expect(replaceable.status, replaceable.stderr).toBe(0)
+    expect(readFileSync(readiness, "utf8")).toBe(published)
+    expect(run("validate-owned", destination).status).toBe(1)
+  },
+)
 
 test.each(["packages/library/src/index.ts", "packages/library/package.json", "bun.lock", "config.example.toml"])(
   "replacement validation refuses changed published %s without rewriting readiness",
@@ -564,14 +567,18 @@ test.each([undefined, "after-staging"])("contains default installer caches witho
   const before = readdirSync(home)
   const probe = path.join(parent, "cache-paths")
   const fakeBin = path.join(parent, "fake-bin")
-  write(parent, "fake-bin/npm", [
-    "#!/bin/sh",
-    "set -eu",
-    'test "$*" = "config get registry --workspaces=false"',
-    'printf "%s\\n" "$BUN_INSTALL_CACHE_DIR" "$npm_config_cache" "$XDG_CACHE_HOME" > "$CACHE_PROBE"',
-    'mkdir -p "$BUN_INSTALL_CACHE_DIR" "$npm_config_cache" "$XDG_CACHE_HOME"',
-    'printf "%s\\n" "https://registry.npmjs.org/"',
-  ].join("\n"))
+  write(
+    parent,
+    "fake-bin/npm",
+    [
+      "#!/bin/sh",
+      "set -eu",
+      'test "$*" = "config get registry --workspaces=false"',
+      'printf "%s\\n" "$BUN_INSTALL_CACHE_DIR" "$npm_config_cache" "$XDG_CACHE_HOME" > "$CACHE_PROBE"',
+      'mkdir -p "$BUN_INSTALL_CACHE_DIR" "$npm_config_cache" "$XDG_CACHE_HOME"',
+      'printf "%s\\n" "https://registry.npmjs.org/"',
+    ].join("\n"),
+  )
   chmodSync(path.join(fakeBin, "npm"), 0o755)
   const result = run("install", root, destination, {
     HOME: home,
@@ -605,12 +612,16 @@ test("shares the Bun download cache through the Git common directory", () => {
   const before = readdirSync(home)
   const probe = path.join(parent, "cache-paths")
   const fakeBin = path.join(parent, "fake-bin")
-  write(parent, "fake-bin/npm", [
-    "#!/bin/sh",
-    "set -eu",
-    'printf "%s\\n" "$BUN_INSTALL_CACHE_DIR" > "$CACHE_PROBE"',
-    'printf "%s\\n" "https://registry.npmjs.org/"',
-  ].join("\n"))
+  write(
+    parent,
+    "fake-bin/npm",
+    [
+      "#!/bin/sh",
+      "set -eu",
+      'printf "%s\\n" "$BUN_INSTALL_CACHE_DIR" > "$CACHE_PROBE"',
+      'printf "%s\\n" "https://registry.npmjs.org/"',
+    ].join("\n"),
+  )
   chmodSync(path.join(fakeBin, "npm"), 0o755)
   const result = run("install", root, destination, {
     HOME: home,
@@ -633,7 +644,11 @@ test.each([
 ])("treats an empty registry as no override (%s)", (_label, override) => {
   const { root, home, parent } = sourceFixture()
   const fakeBin = path.join(parent, "fake-bin")
-  write(parent, "fake-bin/npm", ["#!/bin/sh", "set -eu", 'test "$*" = "config get registry --workspaces=false"'].join("\n"))
+  write(
+    parent,
+    "fake-bin/npm",
+    ["#!/bin/sh", "set -eu", 'test "$*" = "config get registry --workspaces=false"'].join("\n"),
+  )
   chmodSync(path.join(fakeBin, "npm"), 0o755)
   const canonical = readFileSync(path.join(root, "bun.lock"), "utf8")
   const result = run("prepare", root, undefined, {
@@ -739,7 +754,7 @@ describe("Bun invocation", () => {
       env: { ...process.env, TRELLAGE_BUN_EXECUTABLE: node },
     })
     expect(wrong.status).toBe(1)
-    expect(wrong.stderr).toContain("is not Bun 1.4.2")
+    expect(wrong.stderr).toContain("is not Bun 1.4.4")
   })
 
   test.each(["trx"])("preserves every public %s argument from a symlink and foreign cwd", (name) => {

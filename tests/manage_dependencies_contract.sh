@@ -32,7 +32,7 @@ for agent in 'bun/1.3.4' 'npm/11.0.0' ''; do
     printf 'unsupported package manager was accepted: %s\n' "$agent" >&2
     exit 1
   fi
-  grep -Fq 'Bun 1.4.2 is required' "$fixture/output"
+  grep -Fq 'Bun 1.4.4 is required' "$fixture/output"
 done
 cd "$fixture/project"
 for action in install add update remove; do

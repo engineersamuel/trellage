@@ -65,7 +65,7 @@ jq -e '
 ' package.json >/dev/null || fail "root package scripts or dependencies do not use Oxc"
 
 jq -e '
-  .packageManager == "bun@1.4.2"
+  .packageManager == "bun@1.4.4"
   and .workspaces == ["packages/*"]
   and (.scripts.build | not)
   and (.scripts.prepare | not)

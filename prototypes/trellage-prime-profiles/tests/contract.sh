@@ -3,14 +3,13 @@
 set -u
 set -o pipefail
 
-root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
-repository_root="$(CDPATH= cd -- "$root/../.." && pwd)"
+root="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)"
+repository_root="$(CDPATH='' cd -- "$root/../.." && pwd)"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
 real_bun="$(command -v bun)" || {
-  printf 'prx contract failed: Bun 1.4.2 is required\n' >&2
+  printf 'prx contract failed: Bun 1.4.4 is required\n' >&2
   exit 1
 }
-launcher="$root/bin/prx"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
 

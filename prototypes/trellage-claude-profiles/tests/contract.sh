@@ -2,9 +2,8 @@
 
 set -euo pipefail
 
-root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+root="$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
-launcher="$root/bin/cldx"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
 
@@ -23,7 +22,7 @@ profile_tree_hash() {
 
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-cldx-contract.XXXXXX")" \
   || fail 'could not create fixture root'
-fixture_root="$(CDPATH= cd -P -- "$fixture_root" && pwd -P)"
+fixture_root="$(CDPATH='' cd -P -- "$fixture_root" && pwd -P)"
 signal_pid=''
 cleanup() {
   if [[ "$signal_pid" =~ ^[1-9][0-9]*$ ]]; then
@@ -376,7 +375,9 @@ mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
 harness_update_log="$fixture_root/harness-update.log"
 run_harness_update() {
-  FAKE_CLAUDE_LOG="$harness_update_log" "$command_path" harness-update "$@"
+  # A caller inside a Claude profile session has CLAUDE_CONFIG_DIR set; the host updater must not inherit it.
+  CLAUDE_CONFIG_DIR="$fixture_root/caller-profile" FAKE_CLAUDE_LOG="$harness_update_log" \
+    "$command_path" harness-update "$@"
 }
 
 printf 'Claude updated\n' >"$fixture_root/updater-stdout.txt"
@@ -573,7 +574,7 @@ scrubbed_var_names=(
 env_dump="$fixture_root/launch-env-dump.txt"
 (
   for assignment in "${poison_env_assignments[@]}"; do
-    export "$assignment"
+    export "${assignment?}"
   done
   export GH_CONFIG_DIR=/fixture/gh-config-marker
   export FAKE_CLAUDE_ENV_DUMP="$env_dump"
@@ -829,7 +830,8 @@ cmp -s "$output_style" "$root/assets/rundown/rundown.md" \
 # and confirm cldx's own output changes accordingly.
 native_claude="$runtime_root/lib/native-claude"
 export TRELLAGE_CLAUDE_LAUNCHER_NAME=cldx
-export TRELLAGE_CLAUDE_RUNTIME_ROOT="$(CDPATH= cd -P -- "$runtime_root" && pwd)"
+TRELLAGE_CLAUDE_RUNTIME_ROOT="$(CDPATH='' cd -P -- "$runtime_root" && pwd)"
+export TRELLAGE_CLAUDE_RUNTIME_ROOT
 cp "$native_claude" "$fixture_root/native-claude.real"
 cat >"$native_claude" <<'STUB'
 #!/usr/bin/env bash

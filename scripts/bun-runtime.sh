@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-TRELLAGE_BUN_VERSION=1.4.2
+TRELLAGE_BUN_VERSION=1.4.4
 
 trellage_ensure_bun_runtime() {
   local root="$1"

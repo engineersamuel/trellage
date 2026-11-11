@@ -12,7 +12,7 @@ and installs worktree-aware Lefthook hooks. It does not install or update agent
 harnesses. Lefthook remains the only hook runner; hk is not installed.
 Rust is installed separately, only for the Rust prototype lane.
 
-To prepare only the source workspace, use Bun 1.4.2 and run:
+To prepare only the source workspace, use Bun 1.4.4 and run:
 
 ```bash
 scripts/install-source-runtime.sh --prepare

@@ -16,6 +16,8 @@ export type Step = {
   skills: string[]
   /** Skill directories relative to the skills directory, for skills nested inside their repo. Replaces the whole skills directory, so no other skill loads. */
   skillDirs?: string[]
+  /** Extra rules added after the skill sentence, for example where to stop in the skill. */
+  instructions?: string
   /** The quality-gate tools go on PATH. Default true when the step loads skills. */
   gateTools?: boolean
   /** Started by the factory itself; Jev and spawn_worker never pick it. */
@@ -26,6 +28,10 @@ export type Step = {
 
 /** A non-Copilot harness: trx profiles composed for it, and an optional command that starts the profile's workflow. */
 export type HarnessSpec = { kind: "claude" | "pi"; profiles: string[]; entry?: string }
+
+/** The debug worker finds the cause; the coordinator decides what happens next (research, implement, or nothing). */
+export const DEBUG_ONLY =
+  "Stop after Phase 3, when the root cause is confirmed or you cannot confirm one. Do not fix the bug: skip Phase 4, write no fix and no new test. Revert every temporary change (logging, experiments) so the code is as you found it. Report: root cause with evidence, hypotheses ruled out, a suggested fix (not applied), and how sure you are."
 
 export const STEPS: Step[] = [
   {
@@ -63,6 +69,20 @@ export const STEPS: Step[] = [
     bestFor: ["After every implement step"],
     avoidFor: ["Before any code exists"],
     skills: [],
+  },
+  {
+    id: "debug",
+    description:
+      "Find the root cause of an error with the systematic-debugging skill (aitmpl.com): investigate, compare, test hypotheses, then report the cause with evidence and a suggested fix. It does not fix the code.",
+    bestFor: [
+      "A failing test, build, CI check, crash, or unexpected behavior",
+      "An earlier step that ended in an error",
+    ],
+    avoidFor: ["New features with no error", "Work that has no failure to explain"],
+    skills: ["systematic-debugging"],
+    skillDirs: ["claude-code-templates/cli-tool/components/skills/development"],
+    instructions: DEBUG_ONLY,
+    gateTools: false,
   },
   {
     id: "review",
@@ -167,13 +187,20 @@ for (const skill of guideOptimizeSkills) {
 /** Steps the coordinator and Jev may choose. */
 export const SELECTABLE_STEPS = STEPS.filter((s) => !s.factoryOnly)
 
+/** A repo URL, or a URL with the only folders to check out (a sparse clone, for large repos). */
+export type Repo = string | { url: string; sparse: string[] }
+
 /** Skills and quality-gate tools the factory fetches once into its state directory. */
-export const SKILL_REPOS: Record<string, string> = {
+export const SKILL_REPOS: Record<string, Repo> = {
   "ub-mode": "https://github.com/unclebob/ub-mode.git",
   "security-audit-skill": "https://github.com/cloudflare/security-audit-skill.git",
   "mattpocock-skills": "https://github.com/mattpocock/skills.git",
   "prompt-master": "https://github.com/nidhinjs/prompt-master.git",
   "hve-core": "https://github.com/microsoft/hve-core.git",
+  "claude-code-templates": {
+    url: "https://github.com/davila7/claude-code-templates.git",
+    sparse: ["cli-tool/components/skills/development/systematic-debugging"],
+  },
 }
 export const TOOL_REPOS: Record<string, string> = {
   crapper: "https://github.com/unclebob/crapper.git",
@@ -182,15 +209,21 @@ export const TOOL_REPOS: Record<string, string> = {
 }
 
 /** Clone missing repos into `dir/<name>`. Idempotent: existing clones stay as they are. */
-export const ensureClones = (dir: string, repos: Record<string, string>): void => {
+export const ensureClones = (dir: string, repos: Record<string, Repo>): void => {
   mkdirSync(dir, { recursive: true })
-  for (const [name, url] of Object.entries(repos)) {
-    if (existsSync(path.join(dir, name, ".git"))) continue
+  for (const [name, repo] of Object.entries(repos)) {
+    const dest = path.join(dir, name)
+    if (existsSync(path.join(dest, ".git"))) continue
+    const { url, sparse } = typeof repo === "string" ? { url: repo, sparse: null } : repo
+    const git = (args: string[]) => execFileSync("git", args, { stdio: ["ignore", "ignore", "pipe"] })
     try {
-      execFileSync("git", ["clone", "-q", "--depth", "1", url, path.join(dir, name)], { stdio: ["ignore", "ignore", "pipe"] })
+      git(["clone", "-q", "--depth", "1", ...(sparse ? ["--filter=blob:none", "--sparse"] : []), url, dest])
+      if (sparse) git(["-C", dest, "sparse-checkout", "set", ...sparse])
     } catch (e) {
+      // A half-made clone would be skipped next time as if it were complete.
+      rmSync(dest, { recursive: true, force: true })
       const why = String((e as { stderr?: Buffer }).stderr ?? "").trim() || (e as Error).message
-      throw new Error(`clone ${name} failed: ${why}`)
+      throw new Error(`clone ${name} failed: ${why}`, { cause: e })
     }
   }
 }
@@ -207,6 +240,7 @@ export const stepSetup = (step: Step | null, skillRoot: string, toolRoot: string
     extraPath: gate ? tools.map((t) => path.join(toolRoot, t)) : [],
     prefix: [
       ...step.skills.map((k) => `Use the ${k} skill.`),
+      ...(step.instructions ? [step.instructions] : []),
       ...(gate ? [`The quality-gate tools ${tools.join(", ")} are on PATH.`] : []),
     ].join(" "),
   }
@@ -231,7 +265,8 @@ export const skillProblem = (dir: string | null): string | null => {
 export const checkStepSkills = (sourceDirs: string[], healRoot: string, step: Step): SkillCheck[] =>
   step.skills.map((name) => {
     const healed = path.join(healRoot, name)
-    if (existsSync(path.join(healed, "SKILL.md"))) return { name, dir: healed, healed: true, problem: skillProblem(healed) }
+    if (existsSync(path.join(healed, "SKILL.md")))
+      return { name, dir: healed, healed: true, problem: skillProblem(healed) }
     const dir = sourceDirs.map((d) => path.join(d, name)).find((d) => existsSync(path.join(d, "SKILL.md"))) ?? null
     return { name, dir, healed: false, problem: skillProblem(dir) }
   })
@@ -242,12 +277,19 @@ export class SkillPreflightError extends Error {
     readonly step: string,
     readonly failures: SkillCheck[],
   ) {
-    super(`step ${step}: ${failures.map((f) => `skill ${f.name}: ${f.problem}${f.dir ? ` (${f.dir})` : ""}`).join("; ")}`)
+    super(
+      `step ${step}: ${failures.map((f) => `skill ${f.name}: ${f.problem}${f.dir ? ` (${f.dir})` : ""}`).join("; ")}`,
+    )
   }
 }
 
 /** Fail fast on an unusable skill; else link exactly the step's skills into `stepDir` and return it. */
-export const prepareStepSkills = (sourceDirs: string[], healRoot: string, stepDir: string, step: Step): SkillCheck[] => {
+export const prepareStepSkills = (
+  sourceDirs: string[],
+  healRoot: string,
+  stepDir: string,
+  step: Step,
+): SkillCheck[] => {
   const checks = checkStepSkills(sourceDirs, healRoot, step)
   const bad = checks.filter((c) => c.problem)
   if (bad.length) throw new SkillPreflightError(step.id, bad)
@@ -293,7 +335,7 @@ export const onTrack = async (
   items: { id: string; task: string; latest: string }[],
 ): Promise<Record<string, number>> => {
   if (!decisionsAvailable() || items.length === 0) return {}
-  const res: any = await systemOne({
+  const res = await systemOne({
     state: JSON.stringify(
       items.map(({ id, task, latest }) => ({ id, task: task.slice(0, 2000), latest: latest.slice(0, 2000) })),
     ),
@@ -321,7 +363,7 @@ export const decideNext = async (state: {
       `${s.description} Best for: ${s.bestFor.join("; ")}. Avoid for: ${s.avoidFor.join("; ")}.`,
     ]),
   )
-  const res: any = await systemOne({
+  const res = await systemOne({
     state: JSON.stringify(state),
     questions: {
       more: noul(
@@ -334,7 +376,8 @@ export const decideNext = async (state: {
     },
   })
   const a = res.answers
-  if (typeof a.more?.noul !== "number" || typeof a.next?.choice !== "string") throw new Error("next step not decided: the decision engine gave no answer")
+  if (typeof a.more?.noul !== "number" || typeof a.next?.choice !== "string")
+    throw new Error("next step not decided: the decision engine gave no answer")
   return {
     moreWork: a.more.noul,
     step: a.next.choice,
