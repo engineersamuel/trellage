@@ -253,6 +253,20 @@ describe("report grading orchestration", () => {
     expect(g!.criteria.results).toEqual({ "AC-1": "missing" })
   })
 
+  test("unreadable optional quality is only a note and never changes grade status", async () => {
+    const f = fixture()
+    mkdirSync(path.join(f.worktree, ".factory/quality.json"))
+    await f.grading.gradeThread(f.t.id, report)
+    const [g] = f.grading.gradesOf(f.t)
+    expect(g!.status).toBe("pass")
+    expect(g!.errors).toEqual([])
+    expect(g!.quality).toEqual([])
+    expect(g!.evidence).toContainEqual({
+      kind: "note",
+      ref: expect.stringContaining("quality.json unreadable:"),
+    })
+  })
+
   test.each(["invalid", "missing"] as const)(
     "a %s saved goal retains its identity and visible error grade",
     async (failure) => {

@@ -117,7 +117,7 @@ Metrics, each reported separately on every grade:
   than the tolerance has regressed. Editing a goal in Foldkit preserves its benchmarks and improvement policy,
   even though those settings are not editable in the form.
 - **Quality** (optional `.factory/quality.json`): model-judged scores, each with its judge model and harness. They are
-  stored but **never change the status**.
+  stored but **never change the status**. An unreadable or malformed quality file records only an evidence note.
 
 Rubric (`gradingVersion` `g1`), applied in order:
 

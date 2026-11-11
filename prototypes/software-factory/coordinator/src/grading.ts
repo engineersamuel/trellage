@@ -62,7 +62,9 @@ const readArtifact = (t: Thread, name: string, input: GradeInputs): string | nul
     return text
   } catch (e) {
     if (e instanceof Error && "code" in e && e.code === "ENOENT") return null
-    input.errors.push(`${name} unreadable: ${errorMessage(e)}`)
+    const message = `${name} unreadable: ${errorMessage(e)}`
+    if (name === "quality.json") input.evidence = [...input.evidence, { kind: "note", ref: message }]
+    else input.errors.push(message)
     return null
   }
 }
