@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import { Exit } from "effect"
+import { describe, expect, spyOn, test } from "bun:test"
+import { Effect, Exit } from "effect"
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -29,7 +29,7 @@ import { checksState, parsePrList, pastWorkers, runWorkers } from "../src/run.ts
 import { decodeGoalOrThrow, goalsDir, loopPrompt, makeGoals } from "../src/goals.ts"
 import { criteriaResults, unprovenCriteria } from "../src/sdlc.ts"
 import { Threads } from "../src/threads.ts"
-import { parseSteps, runLine, scoreCard } from "../goal-cli.ts"
+import { goalCommand, parseSteps, runLine, scoreCard } from "../goal-cli.ts"
 
 describe("runWorkers", () => {
   const started = [
@@ -224,6 +224,40 @@ describe("goal store", () => {
 })
 
 describe("goal cli helpers", () => {
+  test("run numbering counts runner records, not appended grades", async () => {
+    const saved = decodeGoalOrThrow({ id: "demo", repo: "/r", prompt: "p" })
+    const calls: string[] = []
+    const json: Parameters<typeof goalCommand>[0] = <A>(url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${url}`)
+      const payload =
+        url === "/api/goals/demo"
+          ? saved
+          : url === "/api/runs/t"
+            ? run
+            : url === "/api/goals/demo/runs" && !init
+              ? [
+                  { threadId: "old", outcome: "pass" },
+                  { threadId: "old", grade: { key: "old-grade" } },
+                  { threadId: "old", grade: { key: "later-grade" } },
+                ]
+              : {}
+      return Effect.succeed(payload as A)
+    }
+    const log = spyOn(console, "log").mockImplementation(() => {})
+    const error = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect(
+        await Effect.runPromise(
+          goalCommand(json, () => Effect.die("unexpected launch"), ["run", "demo", "--thread", "t"]),
+        ),
+      ).toBe(0)
+      expect(error).toHaveBeenCalledWith("goal demo: run 2 (limit 5 per loop)")
+      expect(calls).toContain("POST /api/goals/demo/runs")
+    } finally {
+      log.mockRestore()
+      error.mockRestore()
+    }
+  })
   test("parseSteps", () => {
     expect(parseSteps("implement, finish=1,verify=1..2,review=2..")).toEqual({
       implement: { min: 1 },

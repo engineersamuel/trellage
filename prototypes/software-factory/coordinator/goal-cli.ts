@@ -211,7 +211,9 @@ const runGoal = (json: Json, ask: Ask, id: string, thread?: string) =>
   Effect.gen(function* () {
     const spec = yield* json<GoalSpec>(`/api/goals/${enc(id)}`)
     const before = yield* json<GoalRun[]>(`/api/goals/${enc(id)}/runs`)
-    yield* Console.error(`goal ${spec.id}: run ${before.length + 1} (limit ${spec.limits.runs} per loop)`)
+    yield* Console.error(
+      `goal ${spec.id}: run ${before.filter((r) => !r.grade).length + 1} (limit ${spec.limits.runs} per loop)`,
+    )
     let threadId = thread
     if (!threadId) {
       const folder = yield* json<{ id: string }>("/api/folders", {
