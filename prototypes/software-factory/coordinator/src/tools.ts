@@ -3,8 +3,19 @@ import { execFileSync } from "node:child_process"
 import { readFileSync, statSync, existsSync } from "node:fs"
 import path from "node:path"
 import { defineTool, type Tool } from "@github/copilot-sdk"
-import { finishPermissions, MAX_FIX_ROUNDS, now, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
+import { finishPermissions, maxFixRounds, now, type Factory, type SpawnSpec, type Worker } from "./factory.ts"
 import { SETTINGS_TOOL_DOC } from "./prompts.ts"
+import { configStore, factoryConfig, pinnedConfig, type Scalar } from "./config.ts"
+import {
+  APPLY,
+  REJECT,
+  checkProposal,
+  describe as describeProposal,
+  saveProposal,
+  type Proposal,
+} from "./configChanges.ts"
+import { promptErrors, promptFile, promptNames, stalePrompts } from "./prompt.ts"
+import { evaluatePrompt } from "./promptEval.ts"
 import type { ShipGrant } from "./approvals.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
 import { briefProblem } from "./reports.ts"
@@ -14,6 +25,7 @@ import { codeReviewIn, pendingCodeReview } from "./review.ts"
 import {
   afterImplement,
   afterVerify,
+  inRun,
   countWorker,
   planSdlc,
   sdlcBusy,
@@ -22,8 +34,8 @@ import {
   startFinalSecurity,
 } from "./gates.ts"
 import { addLessons, artifact, prBody, unprovenCriteria } from "./sdlc.ts"
-import { decideNext, SELECTABLE_STEPS, SkillPreflightError } from "./steps.ts"
-import { FANOUT_CATALOG, MAX_FANOUT, routeFanout, type FanoutSelection } from "./workflows.ts"
+import { decideNext, selectableSteps, SkillPreflightError } from "./steps.ts"
+import { fanoutCatalog, routeFanout, type FanoutSelection } from "./workflows.ts"
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object",
@@ -59,7 +71,11 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
   spawnWorker(f, scope),
   fanoutTool(
     "fanout",
-    `For a research, design-decision or find-optimizations request, ask Jev which workers fit, then start each selected worker (at most ${MAX_FANOUT}) in this conversation's worktree. Workers: ${FANOUT_CATALOG.map((e) => e.id).join(", ")}. Each saves reports/<step>.md. Takes the exact user request, not worker names. Read every returned worker with wait=true before spawning a synthesis worker.`,
+    `For a research, design-decision or find-optimizations request, ask Jev which workers fit, then start each selected worker (at most ${factoryConfig().fanout.max_workers}) in this conversation's worktree. Workers: ${fanoutCatalog()
+      .map((e) => e.id)
+      .join(
+        ", ",
+      )}. Each saves reports/<step>.md. Takes the exact user request, not worker names. Read every returned worker with wait=true before spawning a synthesis worker.`,
     (request) => fanout(f, scope, request),
   ),
   defineTool("next_step", {
@@ -89,7 +105,7 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       if (busy) return json({ step: "wait_gates", note: `${busy}. Call next_step again in a moment.` })
       const state = { request: str(a, "request"), progress: str(a, "progress"), lastOutput: str(a, "lastOutput") }
       try {
-        const d = await decideNext(state)
+        const d = await inRun(f, f.sdlc.get(scope.id), () => decideNext(state))
         if (scope.workdir) f.turn(scope.id).moreWork = d.moreWork
         // Tagged with the deciding coordinator, so each conversation's delivery card shows only its own steps.
         const entry = {
@@ -100,9 +116,9 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
           threadId: scope.threadId,
         }
         f.publish("coordinator", "factory.step_decided", null, String(Date.now()), entry)
-        return json({ ...d, steps: SELECTABLE_STEPS.map(({ id, description }) => ({ id, description })) })
+        return json({ ...d, steps: selectableSteps().map(({ id, description }) => ({ id, description })) })
       } catch (e) {
-        return json({ error: e instanceof Error ? e.message : String(e), steps: SELECTABLE_STEPS })
+        return json({ error: e instanceof Error ? e.message : String(e), steps: selectableSteps() })
       }
     },
   }),
@@ -205,6 +221,7 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
     handler: () => json({ rendered: true }),
   }),
   ...browserTools(f, scope),
+  ...configTools(f, scope),
   defineTool("get_settings", {
     description: "Read the factory settings (the same document the UI edits) and the allowed values for each field.",
     parameters: obj({}),
@@ -408,7 +425,7 @@ export const fanout = async (
   const decision = { ...selection, request, scopeId: scope.id, at: Date.now() }
   f.publish(scope.id, "factory.workflows_selected", null, now(), decision)
   const plans = selection.selected.map((id) => {
-    const e = FANOUT_CATALOG.find((x) => x.id === id)!
+    const e = fanoutCatalog().find((x) => x.id === id)!
     return { step: e.step, report: e.step, kind: e.kind, task: e.task(request) }
   })
   const results = await Promise.allSettled(
@@ -473,15 +490,19 @@ export const synthesisBlocked = (f: Factory, scope: Scope): string | null => {
   return batch.workers.map((worker) => researchWorkerBlocked(f, workdir, worker)).find(Boolean) ?? null
 }
 
+/** Fix-round limit of the conversation's delivery run (its pinned config). */
+const runFixRounds = (f: Factory, scope: Scope) => maxFixRounds(pinnedConfig(f.root, f.sdlc.get(scope.id)?.configId))
+
 /** The branch an accepted ship approval lets this conversation's finish worker push, or why there is none. */
 export const shipGrant = (f: Factory, scope: Scope): ShipGrant | string => {
   if (!scope.workdir) return "step=finish runs only in a repo conversation"
   const branch = gitOr(scope.workdir, "--abbrev-ref", "HEAD")
   const accepted = f.approvals.acceptedShips(scope.id, branch)
-  const open = accepted.find((g) => g.pushes <= MAX_FIX_ROUNDS)
+  const limit = runFixRounds(f, scope)
+  const open = accepted.find((g) => g.pushes <= limit)
   if (open) return open
   return accepted.length
-    ? `Fix round limit reached for ${branch} (${MAX_FIX_ROUNDS} after the first push). report_up blocked, or ask for a new ship approval.`
+    ? `Fix round limit reached for ${branch} (${limit} after the first push). report_up blocked, or ask for a new ship approval.`
     : `No accepted ship approval for branch ${branch}. Call request_approval with ship=true, end your turn, and spawn step=finish after the human picks the first option.`
 }
 
@@ -499,7 +520,7 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         },
         step: {
           type: "string",
-          enum: SELECTABLE_STEPS.map((x) => x.id),
+          enum: selectableSteps().map((x) => x.id),
           description:
             "SDLC step this worker performs. 'implement' loads ub-mode and the crapper/dryer/mutator tools; a security review runs automatically when it finishes.",
         },
@@ -531,7 +552,9 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         ...(typeof a.model === "string" ? { model: a.model } : {}),
         task: sdlcTask(f, scope, a.step as string | undefined, str(a, "task")),
         ...(typeof a.step === "string" ? { step: a.step } : {}),
-        ...(ship ? { permissions: finishPermissions(ship, (g) => f.approvals.setPushes(g)) } : {}),
+        ...(ship
+          ? { permissions: finishPermissions(ship, (g) => f.approvals.setPushes(g), runFixRounds(f, scope)) }
+          : {}),
         ...(!ship && (a.harness === "claude" || a.harness === "pi")
           ? { harness: { kind: a.harness, profiles: Array.isArray(a.profiles) ? a.profiles.map(String) : [] } }
           : {}),
@@ -643,6 +666,75 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
       return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
     },
   })
+}
+
+/** Read the factory config; propose a change to it or to a prompt. Only the human's answer applies a proposal. */
+const configTools = (f: Factory, scope: Scope): Tool<Args>[] => [
+  defineTool("get_factory_config", {
+    description:
+      "Read the factory config: every key with its value, source (default, file, override) and reload rule (live: next use; run: a delivery run keeps the value it started with), the prompt names, and load errors.",
+    parameters: obj({}),
+    handler: async () => json(factoryConfigView()),
+  }),
+  defineTool("propose_config_change", {
+    description:
+      "Propose a change to one factory config key (key + value) or to one prompt's full text (prompt + text). You cannot apply it: it opens a decision, and only the human's Apply writes it. Use it when the human asks to change factory behavior, thresholds, models or prompt wording. Keep every {{placeholder}} the prompt uses. End your turn after calling it.",
+    parameters: obj(
+      {
+        key: { type: "string", description: "Config key from get_factory_config, e.g. review.lens_threshold." },
+        value: {
+          description: "New value, same type as the current one (number, string, boolean, or list of strings).",
+        },
+        prompt: { type: "string", description: "Prompt name from get_factory_config, e.g. jev/lens." },
+        text: { type: "string", description: "The prompt's complete new text." },
+        reason: { type: "string", description: "Why, in one or two sentences, for the human." },
+      },
+      ["reason"],
+    ),
+    handler: async (a: Args) => {
+      try {
+        const reason = str(a, "reason")
+        const p: Proposal =
+          typeof a.prompt === "string"
+            ? { kind: "prompt", name: a.prompt, text: str(a, "text"), reason }
+            : { kind: "config", key: str(a, "key"), value: a.value as Scalar, reason }
+        checkProposal(p)
+        // Prompt proposals: replay recorded decisions with the current and the new text (bounded; never blocks).
+        const evaluation =
+          p.kind === "prompt"
+            ? await evaluatePrompt(f.root, f.approvals.list(), p.name, promptFile(p.name).body, p.text)
+            : undefined
+        const item = f.approvals.open({
+          kind: "approval",
+          threadId: scope.threadId ?? f.currentThread,
+          ...describeProposal(p, evaluation),
+          options: [APPLY, REJECT],
+          optionDetails: ["Write the change now", "Keep the current value"],
+          context: scope.label ?? "coordinator",
+          topic: "other",
+        })
+        saveProposal(f.root, item.id, p)
+        f.publish("coordinator", "factory.approval_requested", null, String(Date.now()), item)
+        return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) })
+      }
+    },
+  }),
+]
+
+/** Config values, prompt names and errors: what the UI and get_factory_config show. */
+export const factoryConfigView = () => {
+  const store = configStore()
+  return {
+    path: store.user,
+    error: store.error,
+    values: store.values(),
+    prompts: promptNames(),
+    promptErrors: Object.fromEntries(promptErrors),
+    /** Your prompt copies made from an older shipped version: compare them with the new default. */
+    stalePrompts: stalePrompts(),
+  }
 }
 
 /**

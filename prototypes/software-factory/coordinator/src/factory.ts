@@ -1,6 +1,6 @@
 // Worker lifecycle: each worker is a separate agent process with its own home. Copilot SDK is the
 // default harness (a runtime over TCP); a step may name the Claude Agent SDK harness instead.
-import { readOnlyViolation, SUB_SHELL_FEEDBACK } from "./readonly.ts"
+import { readOnlyViolation, subShellFeedback } from "./readonly.ts"
 import { isolatedLauncher, spawnIsolated } from "./isolate.ts"
 import { factoryMcpServer, gateFromPermissions, MCP_SERVER, mcpToolNames } from "./claudetools.ts"
 import type { CodeReview } from "./review.ts"
@@ -38,6 +38,7 @@ import {
 } from "./steps.ts"
 import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./claude.ts"
 import { composePi, withProxyModel, PiSession } from "./pi.ts"
+import { configStore, factoryConfig, missingProfiles, userConfigPath, type FactoryConfig } from "./config.ts"
 import { setDecisionEngine } from "./decide.ts"
 import { acquireStateLock, migrateLegacyState, stateDir } from "./statedir.ts"
 
@@ -405,8 +406,22 @@ export class Factory {
   readonly healRoot: string
   readonly defaultAuth: Auth
   readonly proxyUrl: string
-  readonly defaultModel: string
-  settings: S.Settings
+  /** Worker model when routing gives none: SF_MODEL, else [models] worker in the factory config (read live). */
+  get defaultModel(): string {
+    return this.env.SF_MODEL ?? factoryConfig().models.worker
+  }
+  /** Stored settings (settings.json). Coordinator models are not stored here: see `settings`. */
+  private stored: S.Settings
+  /** The settings document. The coordinator models come from the factory config (one home: models.coordinator,
+   *  models.sub_coordinator); a patch to them sets a config runtime override. */
+  get settings(): S.Settings {
+    const m = factoryConfig().models
+    return {
+      ...this.stored,
+      agent: { ...this.stored.agent, model: m.coordinator },
+      subAgent: { ...this.stored.subAgent, model: m.sub_coordinator },
+    }
+  }
   private readonly settingsFile: string
   /** Latest browser-side extension errors, keyed by "extension@ui". */
   readonly extensionErrors = new Map<string, unknown>()
@@ -430,7 +445,7 @@ export class Factory {
   /** Last report sent per sub-coordinator, as "turn start|commit|status", so a repeat in the same turn is dropped. */
   readonly lastReports = new Map<string, string>()
 
-  constructor(env = process.env) {
+  constructor(private readonly env: NodeJS.ProcessEnv = process.env) {
     this.root = stateDir(env)
     if (!env.SF_STATE_DIR) migrateLegacyState(this.root)
     // Before any file is opened: one coordinator per state folder.
@@ -441,15 +456,34 @@ export class Factory {
     this.store.importAll(this.root)
     this.seq = Math.max(Date.now() * 1000, this.store.maxSeq() + 1)
     this.defaultAuth = env.SF_AUTH === "proxy" ? "proxy" : "native"
-    this.defaultModel = env.SF_MODEL ?? "claude-sonnet-5.5"
     this.proxyUrl = env.SF_PROXY_URL ?? "http://localhost:8080/v1"
     this.settingsFile = S.settingsPath(this.root)
-    this.settings = S.loadSettings(this.settingsFile)
-    setDecisionEngine(this.settings.decisions.engine, this.proxyUrl)
+    this.stored = this.loadStored()
+    setDecisionEngine(this.stored.decisions.engine, this.proxyUrl)
     this.approvals = new Approvals(this.root)
-    // SF_MODEL is the worker default; coordinators use the settings (agent: global, subAgent: repo conversations).
-    if (this.settings.agent.model === "")
-      this.settings = { ...this.settings, agent: { ...this.settings.agent, model: "gpt-6-astra" } }
+  }
+
+  /** settings.json, once moved: coordinator models it still holds become config runtime overrides, so they keep
+   *  applying, and the file stops storing them. */
+  private loadStored(): S.Settings {
+    const s = S.loadSettings(this.settingsFile)
+    const raw = S.readStoredModels(this.settingsFile)
+    const store = configStore()
+    for (const [key, model] of [
+      ["models.coordinator", raw.agent],
+      ["models.sub_coordinator", raw.subAgent],
+    ] as const) {
+      if (!model || model === store.current.models[key === "models.coordinator" ? "coordinator" : "sub_coordinator"])
+        continue
+      try {
+        store.setOverride(key, model)
+        console.error(`factory config: moved ${key} = ${model} from settings.json to a runtime override`)
+      } catch (e) {
+        console.error(`factory config: could not move ${key} from settings.json: ${e}`)
+      }
+    }
+    if (raw.agent !== undefined || raw.subAgent !== undefined) S.saveSettings(this.settingsFile, s)
+    return s
   }
 
   get(id: string): Worker {
@@ -483,6 +517,8 @@ export class Factory {
     const auth = spec.auth ?? this.defaultAuth
     const home = path.join(this.root, id)
     const step = spec.step ? stepById(spec.step) : null
+    const missing = step ? missingProfiles(step.id, step.harness) : []
+    if (missing.length) throw new Error(`refused: ${missing.join("; ")}`)
     // Skill preflight runs first, so a worker with an unusable skill fails before any model call.
     const { workdir, setup, skills } = this.prepareSpawn(spec, id, home, step)
     const harness = workerHarness(
@@ -579,7 +615,9 @@ export class Factory {
     const skillRoot = stepSkills.length ? stepSkillDir(path.join(home, "step-skills"), stepSkills) : null
     // Claude SDK prefers Anthropic models; an explicit model (reviewers use another family on purpose) wins.
     const model =
-      spec.model ?? launch.model ?? (/^claude/.test(this.defaultModel) ? this.defaultModel : "claude-sonnet-5.5")
+      spec.model ??
+      launch.model ??
+      (/^claude/.test(this.defaultModel) ? this.defaultModel : factoryConfig().models.claude_worker)
     const session = new ClaudeSession(
       {
         cwd: workdir,
@@ -820,13 +858,23 @@ export class Factory {
     const next = S.patched(prev, patch)
     this.validateRepoChange(prev, next)
     await this.applyModelChange(prev, next)
+    // Coordinator models live in the factory config: a change is a runtime override there.
+    const store = configStore()
+    if (next.agent.model !== prev.agent.model) store.setOverride("models.coordinator", next.agent.model)
+    if (next.subAgent.model !== prev.subAgent.model) store.setOverride("models.sub_coordinator", next.subAgent.model)
     // Code changed: old error reports no longer apply.
     this.clearChangedExtensionErrors(prev, next)
-    this.settings = next
+    this.stored = next
     setDecisionEngine(next.decisions.engine)
     S.saveSettings(this.settingsFile, next)
-    this.publish("coordinator", "factory.settings_updated", null, now(), { settings: next, css: S.css(next) })
-    return next
+    this.publishSettings()
+    return this.settings
+  }
+
+  /** Tell every open UI the settings changed (also after a config change moved a coordinator model). */
+  publishSettings(): void {
+    const s = this.settings
+    this.publish("coordinator", "factory.settings_updated", null, now(), { settings: s, css: S.css(s) })
   }
 
   private validateRepoChange(prev: S.Settings, next: S.Settings): void {
@@ -837,6 +885,24 @@ export class Factory {
       throw new Error(`repo: '${next.repo}' is not a git repository`)
     }
     this.run = null
+  }
+
+  /** After any config change: switch live coordinators whose model changed, and tell the UIs. Never throws. */
+  async onConfigChanged(): Promise<void> {
+    const next = this.settings
+    const live = [...this.workers.values()].filter((w) => w.role === "coordinator")
+    await Promise.all(
+      live.map(async (w) => {
+        const c = w.id.startsWith("sub-") ? next.subAgent : next.agent
+        if (w.model === c.model) return
+        try {
+          await w.setModel(c.model, c.reasoningEffort)
+        } catch (e) {
+          console.error(`factory config: ${w.id} kept ${w.model}; ${e instanceof Error ? e.message : e}`)
+        }
+      }),
+    )
+    this.publishSettings()
   }
 
   private async applyModelChange(prev: S.Settings, next: S.Settings): Promise<void> {
@@ -891,6 +957,11 @@ export class Factory {
   /** Coordinator permission gate: denies tool kinds disabled in settings. */
   readonly settingsPermissions: PermissionHandler = (request) => {
     const kind = (request as { kind?: string }).kind ?? ""
+    if (touchesFactoryConfig(request))
+      return {
+        kind: "reject",
+        feedback: `${configDir()} is the human's. Use propose_config_change; the human applies it.`,
+      }
     if (this.settings.agent.disabledTools.includes(kind))
       return { kind: "reject", feedback: `'${kind}' tools are disabled in factory settings` }
     return { kind: "approve-once" }
@@ -905,9 +976,9 @@ export class Factory {
           "Sub-coordinators never merge, push, or delete branches or worktrees. To push and open a PR: request_approval with ship=true, then spawn_worker step=finish. Merging and deleting stay with the human.",
       }
     // Coordinate, do not do: no file writes, and only read-only shell commands.
-    if (request.kind === "write") return { kind: "reject", feedback: SUB_SHELL_FEEDBACK }
+    if (request.kind === "write") return { kind: "reject", feedback: subShellFeedback() }
     const why = request.kind === "shell" ? readOnlyViolation(request.fullCommandText) : null
-    if (why) return { kind: "reject", feedback: `Refused (${why}). ${SUB_SHELL_FEEDBACK}` }
+    if (why) return { kind: "reject", feedback: `Refused (${why}). ${subShellFeedback()}` }
     return this.settingsPermissions(request, invocation)
   }
 
@@ -922,8 +993,29 @@ export class Factory {
       : this.settingsPermissions(request, invocation)
 }
 
+/** The human's factory config folder (config.toml, prompts/, INSTRUCTIONS.md). */
+const configDir = () => path.dirname(userConfigPath())
+
+/** A coordinator file write, or a shell command, that names the human's factory config folder. Code, not prompt text,
+ *  keeps config and prompt changes behind propose_config_change. */
+export const touchesFactoryConfig = (request: {
+  kind?: string
+  fileName?: unknown
+  fullCommandText?: unknown
+}): boolean => {
+  const dir = configDir()
+  const named = (text: unknown) =>
+    typeof text === "string" &&
+    (text.includes(dir) ||
+      /~\/\.config\/trellage\/factory|trellage\/factory\/(prompts|config\.toml|INSTRUCTIONS)/.test(text))
+  return (
+    (request.kind === "write" && named(request.fileName)) ||
+    (request.kind === "shell" && named(request.fullCommandText))
+  )
+}
+
 /** The first push plus this many fix rounds per ship approval; then the human decides. */
-export const MAX_FIX_ROUNDS = 5
+export const maxFixRounds = (c: FactoryConfig = factoryConfig()) => c.sdlc.max_fix_rounds
 
 /**
  * Gate for a finish worker: it fixes, commits, and pushes only its approved branch (no force); it never merges or deletes.
@@ -931,7 +1023,7 @@ export const MAX_FIX_ROUNDS = 5
  * `saved` stores the new count after each allowed push.
  */
 export const finishPermissions =
-  (grant: ShipGrant, saved: (g: ShipGrant) => void = () => {}): PermissionHandler =>
+  (grant: ShipGrant, saved: (g: ShipGrant) => void = () => {}, limit = maxFixRounds()): PermissionHandler =>
   (request, invocation) => {
     if (request.kind !== "shell") return approveAll(request, invocation)
     const cmd = request.fullCommandText
@@ -942,10 +1034,10 @@ export const finishPermissions =
       }
     if (!forbiddenCommand(cmd)) return approveAll(request, invocation)
     // An allowed push of the granted branch.
-    if (grant.pushes > MAX_FIX_ROUNDS)
+    if (grant.pushes > limit)
       return {
         kind: "reject",
-        feedback: `Fix round limit reached (${MAX_FIX_ROUNDS} after the first push). Stop and return what still fails and why.`,
+        feedback: `Fix round limit reached (${limit} after the first push). Stop and return what still fails and why.`,
       }
     grant.pushes++
     saved(grant)

@@ -235,3 +235,22 @@ export const StartedConversation = Schema.Struct({
   threadId: Schema.String,
   branch: Schema.NullOr(Schema.String).pipe(withDefault(null)),
 })
+
+/** GET /api/config: every factory config key with its value, source and reload rule; prompt names; load errors. */
+export const ConfigValue = Schema.Struct({
+  key: Schema.String,
+  value: Schema.Union([Schema.String, Schema.Number, Schema.Boolean, Schema.Array(Schema.String)]),
+  source: Schema.Literals(["default", "file", "override"]),
+  reload: Schema.Literals(["live", "run"]),
+})
+export type ConfigValue = typeof ConfigValue.Type
+export const FactoryConfigView = Schema.Struct({
+  path: Schema.String,
+  error: Schema.NullOr(Schema.String),
+  values: Schema.Array(ConfigValue),
+  prompts: Schema.Array(Schema.String),
+  promptErrors: Schema.Record(Schema.String, Schema.String),
+  /** User prompt copies made from an older shipped version. */
+  stalePrompts: Schema.Array(Schema.Struct({ name: Schema.String, basedOn: Schema.String, shipped: Schema.String })),
+})
+export type FactoryConfigView = typeof FactoryConfigView.Type

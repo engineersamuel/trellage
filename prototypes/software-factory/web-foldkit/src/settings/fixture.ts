@@ -1,5 +1,5 @@
 // A loaded settings document for tests.
-import type { SettingsDocument } from "../domain"
+import type { FactoryConfigView, SettingsDocument } from "../domain"
 
 export const document: SettingsDocument = {
   settings: {
@@ -38,4 +38,16 @@ export const document: SettingsDocument = {
     toolKinds: ["shell"],
     models: ["gpt"],
   },
+}
+
+export const config: FactoryConfigView = {
+  path: "/home/me/.config/trellage/factory/config.toml",
+  error: null,
+  values: [
+    { key: "review.lens_threshold", value: 0.45, source: "override", reload: "run" },
+    { key: "sdlc.done_below", value: 0.3, source: "default", reload: "live" },
+  ],
+  prompts: ["coordinator", "jev/lens"],
+  promptErrors: {},
+  stalePrompts: [],
 }

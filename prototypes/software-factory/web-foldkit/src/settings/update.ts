@@ -3,14 +3,25 @@ import { AsyncData, Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import { Dialog } from "@foldkit/ui"
 import {
+  ConfigAsyncData,
+  type ConfigValue,
   type Delivery,
   DeliveryAsyncData,
   EMPTY_CRON_DRAFT,
+  type FactoryConfigView,
   type Settings,
   SettingsAsyncData,
   type SettingsDocument,
 } from "../domain"
-import { AddCron, FetchDelivery, FetchSettings, PatchSettings, SyncExtensions } from "./command"
+import {
+  AddCron,
+  ChangeConfig,
+  FetchConfig,
+  FetchDelivery,
+  FetchSettings,
+  PatchSettings,
+  SyncExtensions,
+} from "./command"
 import { Message, OutMessage } from "./message"
 import type { Model } from "./model"
 
@@ -23,12 +34,14 @@ export const init = (): Update.Return<Model, Message> => ({
   model: {
     document: SettingsAsyncData.Loading(),
     delivery: DeliveryAsyncData.Loading(),
+    config: ConfigAsyncData.Loading(),
+    maybeConfigError: Option.none(),
     dialog: Dialog.init({ id: DIALOG_ID }),
     maybePatchError: Option.none(),
     cronDraft: EMPTY_CRON_DRAFT,
     maybeCronDraftError: Option.none(),
   },
-  commands: [FetchSettings(), FetchDelivery()],
+  commands: [FetchSettings(), FetchDelivery(), FetchConfig()],
 })
 
 /** The loaded settings, when there are any. */
@@ -66,6 +79,13 @@ const refreshDelivery = Update.refresh<Model, Message, Delivery, string>({
   revalidate: AsyncData.revalidateOrLoad,
   write: (model, delivery) => modifyFields(model, { delivery: () => delivery }),
   load: FetchDelivery(),
+})
+
+const refreshConfig = Update.refresh<Model, Message, FactoryConfigView, string>({
+  read: (model) => Option.some(model.config),
+  revalidate: AsyncData.revalidateOrLoad,
+  write: (model, config) => modifyFields(model, { config: () => config }),
+  load: FetchConfig(),
 })
 
 const refreshSettings = Update.refresh<Model, Message, SettingsDocument, string>({
@@ -127,6 +147,43 @@ const submitCronDraft = (model: Model): UpdateReturn =>
     }),
   })
 
+/** The text a config field holds, parsed back to the key's type. Lists are comma separated. */
+export const parseConfigValue = (
+  current: ConfigValue["value"],
+  text: string,
+): Result.Result<ConfigValue["value"], string> =>
+  Match.value(current).pipe(
+    Match.withReturnType<Result.Result<ConfigValue["value"], string>>(),
+    Match.when(Match.number, () =>
+      Option.match(Number.parse(text.trim()), {
+        onNone: () => Result.fail(`"${text}" is not a number.`),
+        onSome: Result.succeed,
+      }),
+    ),
+    Match.when(Match.boolean, () =>
+      text === "true" || text === "false" ? Result.succeed(text === "true") : Result.fail("Use true or false."),
+    ),
+    Match.when(Match.string, () => Result.succeed(text)),
+    Match.orElse(() =>
+      Result.succeed(pipe(String.split(text, ","), Array.map(String.trim), Array.filter(String.isNonEmpty))),
+    ),
+  )
+
+const findConfigValue = (model: Model, key: string): Option.Option<ConfigValue> =>
+  Option.flatMap(AsyncData.getData(model.config), ({ values }) => Array.findFirst(values, (v) => v.key === key))
+
+const changeConfigValue = (model: Model, key: string, text: string): UpdateReturn =>
+  Option.match(findConfigValue(model, key), {
+    onNone: () => ({ model }),
+    onSome: ({ value }) =>
+      Result.match(parseConfigValue(value, text), {
+        onFailure: (error) => ({
+          model: modifyFields(model, { maybeConfigError: () => Option.some(`${key}: ${error}`) }),
+        }),
+        onSuccess: (parsed) => ({ model, commands: [ChangeConfig({ change: { key, value: parsed } })] }),
+      }),
+  })
+
 export const update = (model: Model, message: Message) =>
   Message.match<UpdateReturn>(message, {
     SucceededFetchSettings: ({ document }) => storeDocument(document)(model),
@@ -152,7 +209,19 @@ export const update = (model: Model, message: Message) =>
         },
       }),
     ReceivedDeliveryChange: () => refreshDelivery(model),
-    ReceivedFeedGap: () => Update.combine(model, [refreshSettings, refreshDelivery]),
+    ReceivedFeedGap: () => Update.combine(model, [refreshSettings, refreshDelivery, refreshConfig]),
+    SucceededFetchConfig: ({ config }) => ({ model: modifyFields(model, { config: () => AsyncData.succeed(config) }) }),
+    FailedFetchConfig: ({ error }) => ({
+      model: modifyFields(model, { config: (current) => AsyncData.settle(current, Result.fail(error)) }),
+    }),
+    ReceivedConfigUpdate: ({ config }) => ({ model: modifyFields(model, { config: () => AsyncData.succeed(config) }) }),
+    SucceededChangeConfig: ({ config }) => ({
+      model: modifyFields(model, { config: () => AsyncData.succeed(config), maybeConfigError: () => Option.none() }),
+    }),
+    FailedChangeConfig: ({ error }) => ({ model: modifyFields(model, { maybeConfigError: () => Option.some(error) }) }),
+    ChangedConfigValue: ({ key, value }) => changeConfigValue(model, key, value),
+    ClickedPromoteConfig: ({ key }) => ({ model, commands: [ChangeConfig({ change: { key, promote: true } })] }),
+    ClickedClearConfigOverride: ({ key }) => ({ model, commands: [ChangeConfig({ change: { key, value: null } })] }),
     SucceededPatchSettings: () => ({ model: modifyFields(model, { maybePatchError: () => Option.none() }) }),
     FailedPatchSettings: ({ error }) => ({ model: modifyFields(model, { maybePatchError: () => Option.some(error) }) }),
     ClickedOpenSettings: () => toggleDialog(model),

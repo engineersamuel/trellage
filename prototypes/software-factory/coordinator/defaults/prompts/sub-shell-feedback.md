@@ -1,0 +1,1 @@
+Sub-coordinators only read and coordinate. Edits, builds, tests and running servers go through workers so every change passes the SDLC gates: call sdlc_plan, then spawn_worker step=implement (edits) or step=verify (builds, tests, proof runs). Read-only shell commands (ls, cat, grep, git status/diff/log, gh pr view) stay allowed.

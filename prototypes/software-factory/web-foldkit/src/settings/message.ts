@@ -3,7 +3,7 @@ import { DIFF_STYLES } from "../../../shared/diff"
 import { TREE_STYLES } from "../../../shared/treeLines"
 import { defineMessageUnion } from "foldkit/message"
 import { Dialog } from "@foldkit/ui"
-import { Delivery, SettingsDocument } from "../domain"
+import { Delivery, FactoryConfigView, SettingsDocument } from "../domain"
 
 export const Message = defineMessageUnion({
   // Loading
@@ -16,6 +16,11 @@ export const Message = defineMessageUnion({
   },
   ReceivedDeliveryChange: {},
   ReceivedFeedGap: {},
+  SucceededFetchConfig: { config: FactoryConfigView },
+  FailedFetchConfig: { error: Schema.String },
+  ReceivedConfigUpdate: { config: FactoryConfigView },
+  SucceededChangeConfig: { config: FactoryConfigView },
+  FailedChangeConfig: { error: Schema.String },
   SucceededPatchSettings: {},
   FailedPatchSettings: { error: Schema.String },
   // Drawer
@@ -48,6 +53,10 @@ export const Message = defineMessageUnion({
   FailedAddCron: { error: Schema.String },
   ToggledExtension: { name: Schema.String, isChecked: Schema.Boolean },
   ClickedRemoveExtension: { name: Schema.String },
+  // Factory config: one Message per action on a key.
+  ChangedConfigValue: { key: Schema.String, value: Schema.String },
+  ClickedPromoteConfig: { key: Schema.String },
+  ClickedClearConfigOverride: { key: Schema.String },
   CompletedSyncExtensions: {},
   CompletedMountDiffPreview: {},
 })

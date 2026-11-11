@@ -138,6 +138,9 @@ host through `trx run HARNESS [PROFILE...] [-- AGENT_ARGS]`.
   `defaultModel` (default `copilot-proxy-rs/gpt-6.1-sol`), and `performance.effort` into the host
   `~/.empryo/config.json`, preserving other keys; Empryo state is not profile-scoped. Install with
   `curl -fsSL empryo.com/install.sh | bash`.
+- `prototypes/software-factory` is the software factory. Its prompts, models, thresholds and catalogs are files, not
+  code: `coordinator/defaults/` ships them, and `~/.config/trellage/factory/` overrides them. Read
+  `prototypes/software-factory/coordinator/AGENTS.md` before you change factory prompts or settings.
 - `scripts` contains repository orchestration and profile verification tools.
 - `tests` contains shell contracts for manifests, adapters, runners, sessions, workspaces, and evidence.
 - `harnesses` contains comparison manifests consumed by `scripts/harness`.

@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { DEBUG_ONLY, ensureClones, SELECTABLE_STEPS, SKILL_REPOS, stepById, stepSetup } from "../src/steps.ts"
+import { DEBUG_ONLY, ensureClones, selectableSteps, SKILL_REPOS, stepById, stepSetup } from "../src/steps.ts"
 
 test("implement loads the whole skills root, the gate tools on PATH, and says so", () => {
   const s = stepSetup(stepById("implement"), "/s", "/t")
@@ -26,7 +26,7 @@ test("rpi-research is factory-only and loads only hve-core's RPI skills folder",
     gateTools: false,
   })
   expect(stepById("rpi-research").harness).toBeUndefined()
-  expect(SELECTABLE_STEPS.some((s) => s.id === "rpi-research")).toBe(false)
+  expect(selectableSteps().some((s) => s.id === "rpi-research")).toBe(false)
   expect(SKILL_REPOS["hve-core"]).toBe("https://github.com/microsoft/hve-core.git")
   expect(stepSetup(stepById("rpi-research"), "/s", "/t")).toEqual({
     skillDirectories: ["/s/hve-core/.github/skills/rpi"],
@@ -49,7 +49,7 @@ test("a failed clone reports git's own error", () => {
 })
 
 test("debug is selectable and loads only aitmpl's systematic-debugging skill", () => {
-  expect(SELECTABLE_STEPS.some((s) => s.id === "debug")).toBe(true)
+  expect(selectableSteps().some((s) => s.id === "debug")).toBe(true)
   expect(SKILL_REPOS["claude-code-templates"]).toEqual({
     url: "https://github.com/davila7/claude-code-templates.git",
     sparse: ["cli-tool/components/skills/development/systematic-debugging"],
@@ -57,13 +57,13 @@ test("debug is selectable and loads only aitmpl's systematic-debugging skill", (
   expect(stepSetup(stepById("debug"), "/s", "/t")).toEqual({
     skillDirectories: ["/s/claude-code-templates/cli-tool/components/skills/development"],
     extraPath: [],
-    prefix: `Use the systematic-debugging skill. ${DEBUG_ONLY}`,
+    prefix: `Use the systematic-debugging skill. ${DEBUG_ONLY()}`,
   })
 })
 
 test("debug finds the cause only: no Phase 4, no lasting code change, a report for the coordinator", () => {
-  expect(DEBUG_ONLY).toMatch(/Stop after Phase 3/)
-  expect(DEBUG_ONLY).toMatch(/Do not fix/)
+  expect(DEBUG_ONLY()).toMatch(/Stop after Phase 3/)
+  expect(DEBUG_ONLY()).toMatch(/Do not fix/)
   expect(stepById("debug").description).toMatch(/does not fix/)
 })
 

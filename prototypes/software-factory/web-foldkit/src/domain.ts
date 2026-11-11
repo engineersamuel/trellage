@@ -1,7 +1,7 @@
 // Payload schemas of the coordinator API this app reads.
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { Settings, SettingsDocument, SettingsOptions } from "../../shared/schemas"
+import { ConfigValue, FactoryConfigView, Settings, SettingsDocument, SettingsOptions } from "../../shared/schemas"
 
 export const Worker = Schema.Struct({
   id: Schema.String,
@@ -28,7 +28,8 @@ export const COORDINATOR_ID = "coordinator"
 export const backendName = (auth: string): string => (auth === "proxy" ? "copilot-proxy-rs" : "native Copilot")
 
 // Factory settings (shared/schemas.ts).
-export { Settings, SettingsDocument, SettingsOptions }
+export { ConfigValue, FactoryConfigView, Settings, SettingsDocument, SettingsOptions }
+export const ConfigAsyncData = AsyncData.Schema(FactoryConfigView, Schema.String)
 
 export const SettingsAsyncData = AsyncData.Schema(SettingsDocument, Schema.String)
 

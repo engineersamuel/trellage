@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { cardOpenUi, plainLine, MAX_DIFF_FILES, parseNumstat, reportFindings } from "../src/cards.ts"
 import { Translator } from "../src/agui.ts"
 import { RunRecorder } from "../src/threads.ts"
-import { CARDS_PROMPT } from "../src/prompts.ts"
+import { cardsPrompt } from "../src/prompts.ts"
 import { coordinatorTools, ownDecisions } from "../src/tools.ts"
 
 describe("cards", () => {
@@ -34,7 +34,7 @@ describe("cards", () => {
         run: null,
       } as never).map((t) => t.name),
     )
-    for (const name of CARDS_PROMPT.match(
+    for (const name of cardsPrompt().match(
       /\b(show_[a-z_]+|render_ui|request_approval|ask_user|focus_agent|open_report|confirm_action)\b/g,
     )!)
       expect(backend.has(name)).toBe(true)
@@ -59,8 +59,8 @@ describe("cards", () => {
     expect([r.decisions.length, typeof r.note]).toEqual([0, "string"])
   })
   test("the prompt asks for a plain sentence next to every card", () => {
-    expect(CARDS_PROMPT).toContain("Foldkit")
-    expect(CARDS_PROMPT).toContain("never show_delivery_run there")
+    expect(cardsPrompt()).toContain("Foldkit")
+    expect(cardsPrompt()).toContain("never show_delivery_run there")
   })
 })
 

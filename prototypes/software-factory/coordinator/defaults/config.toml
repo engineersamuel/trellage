@@ -1,0 +1,58 @@
+# Software factory defaults: numbers, model names and switches. Text a model reads is in prompts/.
+# Do not edit here for local changes:
+# copy a key to ~/.config/trellage/factory/config.toml; that file wins key by key.
+# Arrays replace; tables merge.
+
+[models]
+# Global coordinators (General chats, the desk).
+coordinator = "gpt-6-astra"
+# Repo sub-coordinators (delivery loops).
+sub_coordinator = "claude-opus-5.5"
+# Workers, when the step names no model and routing gives none. SF_MODEL overrides it.
+worker = "claude-sonnet-5.5"
+# Workers in the Claude Agent SDK when the worker model is not a Claude model.
+claude_worker = "claude-sonnet-5.5"
+
+# Frontier reviewer model per family. Reviewers use a family other than the implementer's.
+[models.review]
+claude = "claude-opus-5.5"
+gpt = "gpt-6-astra"
+gemini = "gemini-4-argon"
+
+[review]
+# Jev probability at or above which a review lens runs.
+lens_threshold = 0.6
+max_lenses = 3
+# Tier T2 (large or sensitive) gets at least this many lenses.
+min_lenses_t2 = 2
+# A finding is fixed only if Jev scores it real and worth fixing at or above these.
+real_threshold = 0.7
+worth_threshold = 0.7
+min_severity = ["medium", "high", "critical"]
+# Changed lines since the last review at or above this re-run the review.
+rereview_lines = 100
+max_rounds = 2
+
+[sdlc]
+# The delivery loop stops when Jev's moreWork is below this.
+done_below = 0.3
+# Fix rounds after the first push, per ship approval.
+max_fix_rounds = 5
+
+[fanout]
+# Most research or optimize workers per fan-out.
+max_workers = 4
+# Jev probability at or above which a fan-out worker runs.
+select_threshold = 0.65
+
+# SDLC gates: Jev probability at or above which each gate runs.
+# The Jev question of each gate is prompts/gates/<id>.md; gate ids and phases are fixed in code.
+[gates]
+design = 0.6
+testFirst = 0.5
+codeReview = 0.6
+supplyChain = 0.5
+docs = 0.5
+postMerge = 0.5
+
+# Steps, research workflows and review lenses are prompt files: prompts/steps/, prompts/research/, prompts/lenses/.

@@ -4,8 +4,8 @@ import { Command, Mount } from "foldkit"
 import { setLayoutCritters } from "../../../shared/critter"
 import { setTreeStyle } from "../../../shared/treeLines"
 import { diffPreview, setDiffStyle } from "../../../shared/diffview"
-import { getJson, send } from "../api"
-import { Delivery, Settings, SettingsDocument } from "../domain"
+import { getJson, patchJson, send } from "../api"
+import { Delivery, FactoryConfigView, Settings, SettingsDocument } from "../domain"
 import { Message } from "./message"
 
 export const FetchSettings = Command.define("FetchSettings", {
@@ -69,4 +69,24 @@ export const MountDiffPreview = Mount.define("MountDiffPreview", {
       Effect.sync(() => element.replaceChildren(diffPreview())),
       () => Effect.sync(() => element.replaceChildren()),
     ).pipe(Effect.as(Message.CompletedMountDiffPreview())),
+})
+
+export const FetchConfig = Command.define("FetchConfig", {
+  messages: [Message.SucceededFetchConfig, Message.FailedFetchConfig],
+  execute: getJson("/api/config", FactoryConfigView).pipe(
+    Effect.map((config) => Message.SucceededFetchConfig({ config })),
+    Effect.catch((error) => Effect.succeed(Message.FailedFetchConfig({ error }))),
+  ),
+})
+
+/** One config change: set a runtime override (value), clear it (value null), or write it to the user file (promote).
+ *  The server answers with the new view; it also broadcasts factory.config_updated. */
+export const ChangeConfig = Command.define("ChangeConfig", {
+  args: { change: Schema.Unknown },
+  messages: [Message.SucceededChangeConfig, Message.FailedChangeConfig],
+  execute: ({ change }) =>
+    patchJson("/api/config", change, FactoryConfigView).pipe(
+      Effect.map((config) => Message.SucceededChangeConfig({ config })),
+      Effect.catch((error) => Effect.succeed(Message.FailedChangeConfig({ error }))),
+    ),
 })
