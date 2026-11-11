@@ -1,7 +1,7 @@
 .PHONY: native-harness-version test dependency-bootstrap development-resolution-contract publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation launcher conversation-source source-runtime trellage-identity trellage-session-bridge azure-fresh-install-contract agent-harness native-copilot-profiles native-agency-profile native-claude-profile native-jcode-profile native-omp-profile native-prime-profile native-profile-router manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test native-tui-matrix native-tui-matrix-live native-tui-matrix-test headless-matrix headless-matrix-live headless-matrix-test headless-matrix-static-test build compare compare-down clean trellage-statusline
 
 .PHONY: profile-compiler-fingerprint
-.PHONY: test-command factory-test test-suite
+.PHONY: test-command factory-test test-suite native-skills
 .PHONY: test-pr shell-syntax quality-static
 .PHONY: rebuild-profiles-bun-runtime
 
@@ -22,7 +22,7 @@ PROFILE_ONLY_TEST_TARGETS := native-prime-profile native-agency-profile native-j
 FINAL_TEST_TARGETS := native-profile-router
 PARALLEL_TEST_TARGETS += cli-matrix-contract
 PARALLEL_TEST_TARGETS += source-checks
-PARALLEL_TEST_TARGETS += quality-contract script-tests shell-syntax profile-matrix-test
+PARALLEL_TEST_TARGETS += quality-contract script-tests shell-syntax profile-matrix-test native-skills
 
 test: quality-static
 	+$(MAKE) --no-print-directory test-suite
@@ -191,6 +191,12 @@ native-copilot-profiles:
 
 native-agency-profile:
 	bash prototypes/trellage-agency-profiles/tests/contract.sh
+
+# Skills management for every harness (agx, cldx, cpx, jcx, omp, prx). In the full run it runs here, in parallel, so
+# the serial Claude contract can skip it in essential scope.
+native-skills:
+	bun --no-install --no-env-file --config=packages/trellage-runtime/bunfig.toml \
+	  test prototypes/trellage-claude-common/tests/native-skills.test.ts
 
 native-claude-profile:
 	bash prototypes/trellage-claude-profiles/tests/contract.sh

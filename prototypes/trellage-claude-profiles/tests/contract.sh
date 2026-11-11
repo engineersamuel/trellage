@@ -1380,15 +1380,11 @@ fi
 [[ ! -e "$command_path" && ! -L "$command_path" ]] || fail 'uninstaller left command'
 [[ -d "$profile_home" ]] || fail 'uninstaller removed profile state'
 
-native_skills_filter=()
-# Essential scope runs only the cldx update happy path and the skills security checks
-# (credential scrub, unsafe ownership, redirected caches); other harnesses and edge cases are skipped.
-if essential; then
-  native_skills_filter=(--test-name-pattern '^(cldx updates every catalog profile|cldx refuses missing profiles|Claude skills management scrubs provider credentials|cache-only updates reject redirected caches)')
+# Essential scope (the full offline run) skips these: its parallel `native-skills` make target runs the whole file.
+if ! essential; then
+  bun --no-install --no-env-file "--config=$root/../../packages/trellage-runtime/bunfig.toml" \
+    test "$root/../trellage-claude-common/tests/native-skills.test.ts" \
+    || fail 'Native skills-only contracts failed'
 fi
-bun --no-install --no-env-file "--config=$root/../../packages/trellage-runtime/bunfig.toml" \
-  test ${native_skills_filter[@]+"${native_skills_filter[@]}"} \
-  "$root/../trellage-claude-common/tests/native-skills.test.ts" \
-  || fail 'Native skills-only contracts failed'
 
 printf 'cldx contract: PASS\n'
