@@ -11,18 +11,32 @@
 import { Console, Duration, Effect } from "effect"
 import { createInterface } from "node:readline/promises"
 import { readFileSync } from "node:fs"
-import { APPROVAL_TOPICS, goalUnmet, splitPending, stopReason, type GoalRun, type GoalSpec, type Run } from "../shared/goal.ts"
+import {
+  APPROVAL_TOPICS,
+  goalUnmet,
+  splitPending,
+  stopReason,
+  type GoalRun,
+  type GoalSpec,
+  type Run,
+} from "../shared/goal.ts"
 
-type Json = (path: string, init?: RequestInit) => Effect.Effect<any, Error>
-type Ask = (prompt: string, folderId: string, base: string) => Effect.Effect<string, Error>
+/** A parsed JSON response; `A` is the shape the endpoint returns. */
+type Json = <A = unknown>(path: string, init?: RequestInit) => Effect.Effect<A, Error>
+/** `GET /api/goals`: every spec with its runner-line count and last runner line. */
+type GoalList = { dir: string; factoryCommit: string; goals: { spec: GoalSpec; runs: number; last: GoalRun | null }[] }
+type Ask = (prompt: string, folderId: string, base: string, goalId: string) => Effect.Effect<string, Error>
 
 const POLL = Duration.seconds(15)
 const STALE_GRACE = 3 * 60_000
 const enc = encodeURIComponent
 
-/** One line per run: when, factory commit, outcome, thread, PR, unmet count. */
-const runLine = (r: GoalRun) =>
-  `${new Date(r.at).toISOString().slice(0, 16)}  ${r.factoryCommit.padEnd(18)} ${r.outcome.padEnd(8)} ${r.threadId.slice(0, 8)}  ${r.prUrl ?? "-"}${r.unmet.length ? `  unmet ${r.unmet.length}` : ""}`
+const gradeNote = ({ criteria: c, gradingVersion }: NonNullable<GoalRun["grade"]>) =>
+  `  AC ${c.passed}/${c.evaluated} ${gradingVersion}`
+
+/** One line per run: when, factory commit, outcome, thread, PR, unmet count. Grade lines say `grade`, the criteria rate and grading version. */
+export const runLine = (r: GoalRun) =>
+  `${new Date(r.at).toISOString().slice(0, 16)}  ${r.factoryCommit.padEnd(18)} ${r.grade ? "grade " : ""}${r.outcome.padEnd(8)} ${r.threadId.slice(0, 8)}  ${r.prUrl ?? "-"}${r.grade ? gradeNote(r.grade) : ""}${r.unmet.length ? `  unmet ${r.unmet.length}` : ""}`
 
 /** A short score card of a run: each expected step with its count, skills, PR. */
 export const scoreCard = (run: Run, spec: GoalSpec, unmet: string[]): string => {
@@ -38,13 +52,24 @@ export const scoreCard = (run: Run, spec: GoalSpec, unmet: string[]): string => 
     const s = run.sdlc
     if (!s) lines.push("✗ no SDLC record")
     else {
-      lines.push(`${s.unproven.length ? "✗" : "✓"} criteria ${s.criteria.length - s.unproven.length}/${s.criteria.length} proven · tier ${s.tier ?? "?"}`)
-      for (const g of s.gates) lines.push(`  ${g.chosen ? "●" : "○"} ${g.id} ${g.chosen ? g.status : "skipped"} (${g.reason})`)
-      for (const r of s.codeReviews) lines.push(`  review ${r.id} ${r.status} lenses ${r.lenses.join(",")} kept ${r.kept} dropped ${r.dropped}`)
-      lines.push(`  metrics: ${s.metrics.minutes} min, ${s.metrics.workers} workers, findings kept ${s.metrics.findingsKept} dropped ${s.metrics.findingsDropped}`)
+      lines.push(
+        `${s.unproven.length ? "✗" : "✓"} criteria ${s.criteria.length - s.unproven.length}/${s.criteria.length} proven · tier ${s.tier ?? "?"}`,
+      )
+      for (const g of s.gates)
+        lines.push(`  ${g.chosen ? "●" : "○"} ${g.id} ${g.chosen ? g.status : "skipped"} (${g.reason})`)
+      for (const r of s.codeReviews)
+        lines.push(`  review ${r.id} ${r.status} lenses ${r.lenses.join(",")} kept ${r.kept} dropped ${r.dropped}`)
+      lines.push(
+        `  metrics: ${s.metrics.minutes} min, ${s.metrics.workers} workers, findings kept ${s.metrics.findingsKept} dropped ${s.metrics.findingsDropped}`,
+      )
     }
   }
-  if (spec.expect.pr) lines.push(run.pr ? `${unmet.some((u) => u.startsWith("PR") || u.startsWith("no PR")) ? "✗" : "✓"} PR ${run.pr.url} ${run.pr.state} checks ${run.pr.checks}` : "✗ no PR")
+  if (spec.expect.pr)
+    lines.push(
+      run.pr
+        ? `${unmet.some((u) => u.startsWith("PR") || u.startsWith("no PR")) ? "✗" : "✓"} PR ${run.pr.url} ${run.pr.state} checks ${run.pr.checks}`
+        : "✗ no PR",
+    )
   const other = run.workers.filter((w) => w.step && !(w.step in spec.expect.steps)).map((w) => w.step)
   if (other.length) lines.push(`  also ran: ${[...new Set(other)].join(", ")}`)
   if (unmet.length) lines.push("unmet:", ...unmet.map((u) => `  - ${u}`))
@@ -65,15 +90,26 @@ export const parseSteps = (s: string): Record<string, { min: number; max?: numbe
         const [id, n] = x.split("=")
         if (!n) return [id!, { min: 1 }]
         const [lo, hi] = n.split("..")
-        return [id!, hi === undefined ? { min: Number(lo), max: Number(lo) } : { min: Number(lo), ...(hi ? { max: Number(hi) } : {}) }]
+        return [
+          id!,
+          hi === undefined
+            ? { min: Number(lo), max: Number(lo) }
+            : { min: Number(lo), ...(hi ? { max: Number(hi) } : {}) },
+        ]
       }),
   )
 
-const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean)
+const list = (s: string) =>
+  s
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)
 
 const guided = (json: Json) =>
   Effect.gen(function* () {
-    const steps: { id: string; skills: string[] }[] = (yield* json("/api/steps")).steps
+    const steps: { id: string; skills: string[] }[] = (yield* json<{ steps: { id: string; skills: string[] }[] }>(
+      "/api/steps",
+    )).steps
     const answers = yield* Effect.tryPromise({
       try: async () => {
         const rl = createInterface({ input: process.stdin, output: process.stderr })
@@ -85,17 +121,26 @@ const guided = (json: Json) =>
           const base = await question(rl, "base branch", "main")
           const promptIn = await question(rl, "prompt (text, or @file)")
           const prompt = promptIn.startsWith("@") ? readFileSync(promptIn.slice(1), "utf8") : promptIn
-          const stepsIn = await question(rl, "steps (id, id=N, id=MIN..MAX)", "implement,verify,review,security,finish=1")
+          const stepsIn = await question(
+            rl,
+            "steps (id, id=N, id=MIN..MAX)",
+            "implement,verify,review,security,finish=1",
+          )
           const skills = list(await question(rl, "skills that must load (comma)", "security-audit"))
           const pr = (await question(rl, "expect a PR? y/n", "y")) === "y"
           const checks = pr && (await question(rl, "PR checks must be green? y/n", "y")) === "y"
           const bodyIncludes = pr ? list(await question(rl, "PR body must include (comma)")) : []
           const untouched = pr ? list(await question(rl, "files the PR must not change (comma)")) : []
-          const gatesRun = list(await question(rl, "SDLC gates that must run (design,testFirst,codeReview,supplyChain,docs,postMerge)"))
+          const gatesRun = list(
+            await question(rl, "SDLC gates that must run (design,testFirst,codeReview,supplyChain,docs,postMerge)"),
+          )
           const gatesSkipped = list(await question(rl, "SDLC gates that must be skipped (comma)"))
           const approvals = Object.fromEntries(
             await APPROVAL_TOPICS.reduce(
-              async (acc, t) => [...(await acc), [t, await question(rl, `${t} decisions: auto or human`, t === "other" ? "human" : "auto")]],
+              async (acc, t) => [
+                ...(await acc),
+                [t, await question(rl, `${t} decisions: auto or human`, t === "other" ? "human" : "auto")],
+              ],
               Promise.resolve([] as string[][]),
             ),
           )
@@ -109,7 +154,9 @@ const guided = (json: Json) =>
             expect: {
               steps: parseSteps(stepsIn),
               skills,
-              ...(pr ? { pr: { state: "OPEN", ...(checks ? { checks: "SUCCESS" } : {}), base, bodyIncludes, untouched } } : {}),
+              ...(pr
+                ? { pr: { state: "OPEN", ...(checks ? { checks: "SUCCESS" } : {}), base, bodyIncludes, untouched } }
+                : {}),
               sdlc: { criteriaProven: true, gatesRun, gatesSkipped },
             },
             approvals,
@@ -121,7 +168,7 @@ const guided = (json: Json) =>
       },
       catch: (e) => (e instanceof Error ? e : new Error(String(e))),
     })
-    const saved = yield* json("/api/goals", { method: "POST", body: JSON.stringify(answers) })
+    const saved = yield* json<{ id: string }>("/api/goals", { method: "POST", body: JSON.stringify(answers) })
     yield* Console.log(`saved ${saved.id}\nnext: /factory-loop ${saved.id}   (or: sf goal run ${saved.id})`)
   })
 
@@ -135,16 +182,20 @@ const watch = (json: Json, spec: GoalSpec, threadId: string) =>
     const started = Date.now()
     let staleBlock: string | null | undefined
     while (true) {
-      const run: Run = yield* json(`/api/runs/${enc(threadId)}`)
+      const run = yield* json<Run>(`/api/runs/${enc(threadId)}`)
       if (staleBlock === undefined) staleBlock = run.report?.status === "blocked" ? run.report.summary : null
       if (run.status === "running" || Date.now() - started > STALE_GRACE) staleBlock = null
       const unmet = goalUnmet(run, spec.expect, spec.base)
       if (!unmet.length) return { run, unmet, outcome: "pass" as const, code: 0 }
-      for (const a of splitPending(run, spec.approvals).auto.filter((a) => !answered.has(a.id))) {
+      for (const a of splitPending(run, spec.approvals).auto.filter((x) => !answered.has(x.id))) {
         answered.add(a.id)
         yield* json(`/api/approvals/${enc(a.id)}`, {
           method: "POST",
-          body: JSON.stringify({ answer: a.options[0], note: `Answered by goal ${spec.id} (policy ${a.topic}=auto).`, by: `goal ${spec.id} (policy ${a.topic}=auto)` }),
+          body: JSON.stringify({
+            answer: a.options[0],
+            note: `Answered by goal ${spec.id} (policy ${a.topic}=auto).`,
+            by: `goal ${spec.id} (policy ${a.topic}=auto)`,
+          }),
         })
         yield* Console.error(`auto-answered ${a.id} [${a.topic}] ${a.title}: ${a.options[0]}`)
       }
@@ -158,25 +209,38 @@ const watch = (json: Json, spec: GoalSpec, threadId: string) =>
 
 const runGoal = (json: Json, ask: Ask, id: string, thread?: string) =>
   Effect.gen(function* () {
-    const spec: GoalSpec = yield* json(`/api/goals/${enc(id)}`)
-    const before: GoalRun[] = yield* json(`/api/goals/${enc(id)}/runs`)
+    const spec = yield* json<GoalSpec>(`/api/goals/${enc(id)}`)
+    const before = yield* json<GoalRun[]>(`/api/goals/${enc(id)}/runs`)
     yield* Console.error(`goal ${spec.id}: run ${before.length + 1} (limit ${spec.limits.runs} per loop)`)
     let threadId = thread
     if (!threadId) {
-      const folder = yield* json("/api/folders", { method: "POST", body: JSON.stringify({ path: spec.repo }) })
-      threadId = yield* ask(spec.prompt, folder.id, spec.base)
+      const folder = yield* json<{ id: string }>("/api/folders", {
+        method: "POST",
+        body: JSON.stringify({ path: spec.repo }),
+      })
+      threadId = yield* ask(spec.prompt, folder.id, spec.base, spec.id)
     }
     const r = yield* watch(json, spec, threadId)
     yield* Console.log(scoreCard(r.run, spec, r.unmet))
     if (r.outcome === "waiting") {
-      yield* Console.log(`WAITING ${r.reason}\nanswer with: sf approve ID "Option", then: sf goal run ${spec.id} --thread ${threadId}`)
+      yield* Console.log(
+        `WAITING ${r.reason}\nanswer with: sf approve ID "Option", then: sf goal run ${spec.id} --thread ${threadId}`,
+      )
       return r.code
     }
     yield* json(`/api/goals/${enc(id)}/runs`, {
       method: "POST",
-      body: JSON.stringify({ at: Date.now(), threadId, outcome: r.outcome, unmet: r.unmet, prUrl: r.run.pr?.url ?? null }),
+      body: JSON.stringify({
+        at: Date.now(),
+        threadId,
+        outcome: r.outcome,
+        unmet: r.unmet,
+        prUrl: r.run.pr?.url ?? null,
+      }),
     })
-    yield* Console.log(r.outcome === "pass" ? "PASS" : `${r.outcome.toUpperCase()}${"reason" in r && r.reason ? ` ${r.reason}` : ""}`)
+    yield* Console.log(
+      r.outcome === "pass" ? "PASS" : `${r.outcome.toUpperCase()}${"reason" in r && r.reason ? ` ${r.reason}` : ""}`,
+    )
     return r.code
   })
 
@@ -186,10 +250,16 @@ export const goalCommand = (json: Json, ask: Ask, args: string[]): Effect.Effect
   switch (sub) {
     case "list":
     case undefined:
-      return json("/api/goals").pipe(
-        Effect.flatMap((v: any) =>
+      return json<GoalList>("/api/goals").pipe(
+        Effect.flatMap((v) =>
           Console.log(
-            [`goals in ${v.dir} (factory ${v.factoryCommit})`, ...v.goals.map((g: any) => `${g.spec.id.padEnd(28)} runs ${String(g.runs).padStart(3)}  last ${g.last?.outcome ?? "-"}  ${g.spec.repo}`)].join("\n"),
+            [
+              `goals in ${v.dir} (factory ${v.factoryCommit})`,
+              ...v.goals.map(
+                (g) =>
+                  `${g.spec.id.padEnd(28)} runs ${String(g.runs).padStart(3)}  last ${g.last?.outcome ?? "-"}  ${g.spec.repo}`,
+              ),
+            ].join("\n"),
           ),
         ),
       )
@@ -199,21 +269,23 @@ export const goalCommand = (json: Json, ask: Ask, args: string[]): Effect.Effect
       return guided(json)
     case "save":
       return Effect.try({ try: () => readFileSync(a ?? "", "utf8"), catch: (e) => e as Error }).pipe(
-        Effect.flatMap((body) => json("/api/goals", { method: "POST", body })),
-        Effect.flatMap((g: any) => Console.log(`saved ${g.id}`)),
+        Effect.flatMap((body) => json<{ id: string }>("/api/goals", { method: "POST", body })),
+        Effect.flatMap((g) => Console.log(`saved ${g.id}`)),
       )
     case "run":
       return runGoal(json, ask, a ?? "", more[0] === "--thread" ? more[1] : undefined)
     case "check":
       return Effect.gen(function* () {
-        const spec: GoalSpec = yield* json(`/api/goals/${enc(a ?? "")}`)
-        const run: Run = yield* json(`/api/runs/${enc(more[0] ?? "")}`)
+        const spec = yield* json<GoalSpec>(`/api/goals/${enc(a ?? "")}`)
+        const run = yield* json<Run>(`/api/runs/${enc(more[0] ?? "")}`)
         const unmet = goalUnmet(run, spec.expect, spec.base)
         yield* Console.log(`${scoreCard(run, spec, unmet)}\n${unmet.length ? "FAIL" : "PASS"}`)
         return unmet.length ? 1 : 0
       })
     case "history":
-      return json(`/api/goals/${enc(a ?? "")}/runs`).pipe(Effect.flatMap((rs: GoalRun[]) => Console.log(rs.length ? rs.map(runLine).join("\n") : "no runs")))
+      return json<GoalRun[]>(`/api/goals/${enc(a ?? "")}/runs`).pipe(
+        Effect.flatMap((rs) => Console.log(rs.length ? rs.map(runLine).join("\n") : "no runs")),
+      )
     default:
       return Effect.fail(new Error(`unknown: sf goal ${sub}; one of list, show, new, save, run, check, history`))
   }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { Exit } from "effect"
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -13,6 +14,8 @@ import {
   GRADING_VERSION,
   gradeStatus,
   nextImprovementAction,
+  parseBenchmarks,
+  parseQuality,
   proposeImprovement,
   specToDraft,
   splitPending,
@@ -22,11 +25,11 @@ import {
   type GradeInputs,
   type Run,
 } from "../../shared/goal.ts"
-import { checksState, pastWorkers, runWorkers } from "../src/run.ts"
+import { checksState, parsePrList, pastWorkers, runWorkers } from "../src/run.ts"
 import { decodeGoalOrThrow, goalsDir, loopPrompt, makeGoals } from "../src/goals.ts"
 import { criteriaResults, unprovenCriteria } from "../src/sdlc.ts"
 import { Threads } from "../src/threads.ts"
-import { parseSteps, scoreCard } from "../goal-cli.ts"
+import { parseSteps, runLine, scoreCard } from "../goal-cli.ts"
 
 describe("runWorkers", () => {
   const started = [
@@ -48,27 +51,63 @@ describe("runWorkers", () => {
 describe("checksState", () => {
   test("none, success, pending, failure", () => {
     expect(checksState([])).toBe("NONE")
-    expect(checksState([{ status: "COMPLETED", conclusion: "SUCCESS" }, { status: "COMPLETED", conclusion: "SKIPPED" }])).toBe("SUCCESS")
+    expect(
+      checksState([
+        { status: "COMPLETED", conclusion: "SUCCESS" },
+        { status: "COMPLETED", conclusion: "SKIPPED" },
+      ]),
+    ).toBe("SUCCESS")
     expect(checksState([{ status: "COMPLETED", conclusion: "SUCCESS" }, { status: "IN_PROGRESS" }])).toBe("PENDING")
     expect(checksState([{ status: "IN_PROGRESS" }, { status: "COMPLETED", conclusion: "FAILURE" }])).toBe("FAILURE")
   })
 })
 
-const worker = (step: string, skills: string[] = []) => ({ id: step, name: step, step, skills, harness: "copilot", owner: "sub", status: "idle" })
+const worker = (step: string, skills: string[] = []) => ({
+  id: step,
+  name: step,
+  step,
+  skills,
+  harness: "copilot",
+  owner: "sub",
+  status: "idle",
+})
 const run: Run = {
   threadId: "t",
   status: "idle",
   branch: "factory/x",
   base: null,
-  workers: [worker("implement", ["ub-mode"]), worker("verify"), worker("verify"), worker("security", ["security-audit"])],
+  workers: [
+    worker("implement", ["ub-mode"]),
+    worker("verify"),
+    worker("verify"),
+    worker("security", ["security-audit"]),
+  ],
   steps: ["implement", "verify", "security"],
   approvals: [],
   securityReviews: [],
   report: null,
   sdlc: null,
-  pr: { number: 7, url: "u", state: "OPEN", head: "h", base: "main", body: "proof 18080", files: ["a.ts", "compose.yaml"], checks: "PENDING" },
+  pr: {
+    number: 7,
+    url: "u",
+    state: "OPEN",
+    head: "h",
+    base: "main",
+    body: "proof 18080",
+    files: ["a.ts", "compose.yaml"],
+    checks: "PENDING",
+  },
 }
-const spec = decodeGoalOrThrow({ id: "demo", repo: "/r", prompt: "p", expect: { steps: { implement: {}, verify: { max: 1 }, finish: {} }, skills: ["security-audit", "council"], pr: { checks: "SUCCESS", bodyIncludes: ["18080", "OK"], untouched: ["compose.yaml"] } } })
+const spec = decodeGoalOrThrow({
+  id: "demo",
+  repo: "/r",
+  prompt: "p",
+  expect: {
+    steps: { implement: {}, verify: { max: 1 }, finish: {} },
+    skills: ["security-audit", "council"],
+    pr: { checks: "SUCCESS", bodyIncludes: ["18080", "OK"], untouched: ["compose.yaml"] },
+  },
+})
 
 describe("goal spec", () => {
   test("defaults fill approvals, limits, base and PR state", () => {
@@ -79,7 +118,13 @@ describe("goal spec", () => {
     expect(spec.expect.pr?.state).toBe("OPEN")
   })
   test("problems: id, prompt, repo, unknown step, bad counts", () => {
-    const bad = { ...spec, id: "Bad Id", prompt: " ", repo: "rel", expect: { ...spec.expect, steps: { nope: { min: 2, max: 1 } } } } as GoalSpec
+    const bad = {
+      ...spec,
+      id: "Bad Id",
+      prompt: " ",
+      repo: "rel",
+      expect: { ...spec.expect, steps: { nope: { min: 2, max: 1 } } },
+    } as GoalSpec
     expect(goalProblems(bad, ["implement"])).toEqual([
       "id: lowercase letters, digits and dashes, 2-64 chars",
       "prompt is empty",
@@ -104,17 +149,33 @@ describe("goalUnmet", () => {
   })
   test("untouched entries ending in / match a folder", () => {
     const pr = { ...run.pr!, files: ["src/a.rs", "reports/x/y.json"] }
-    const want = { ...spec.expect, pr: { ...spec.expect.pr!, untouched: ["reports/", "src/"+"b.rs"] } }
-    expect(goalUnmet({ ...run, pr }, want, spec.base).filter((u) => u.includes("untouched"))).toEqual(["PR #7 changes reports/, expected untouched"])
+    const want = { ...spec.expect, pr: { ...spec.expect.pr!, untouched: ["reports/", "src/b.rs"] } }
+    expect(goalUnmet({ ...run, pr }, want, spec.base).filter((u) => u.includes("untouched"))).toEqual([
+      "PR #7 changes reports/, expected untouched",
+    ])
   })
   test("PR base defaults to the goal base", () => {
-    expect(goalUnmet(run, { steps: {}, skills: [], pr: { state: "OPEN", bodyIncludes: [], untouched: [] } }, "dev")).toEqual(["PR #7 targets main, expected dev"])
-    expect(goalUnmet({ ...run, pr: null }, { steps: {}, skills: [], pr: { state: "OPEN", bodyIncludes: [], untouched: [] } })).toEqual(["no PR for the branch"])
+    expect(
+      goalUnmet(run, { steps: {}, skills: [], pr: { state: "OPEN", bodyIncludes: [], untouched: [] } }, "dev"),
+    ).toEqual(["PR #7 targets main, expected dev"])
+    expect(
+      goalUnmet(
+        { ...run, pr: null },
+        { steps: {}, skills: [], pr: { state: "OPEN", bodyIncludes: [], untouched: [] } },
+      ),
+    ).toEqual(["no PR for the branch"])
   })
 })
 
 describe("approval policy", () => {
-  const a = (id: string, topic: "plan" | "ship" | "other", options = ["Yes", "No"]) => ({ id, title: id, topic, status: "pending", answer: null, options })
+  const a = (id: string, topic: "plan" | "ship" | "other", options = ["Yes", "No"]) => ({
+    id,
+    title: id,
+    topic,
+    status: "pending",
+    answer: null,
+    options,
+  })
   const withPending = { ...run, approvals: [a("p", "plan"), a("s", "ship"), a("o", "other"), a("q", "plan", [])] }
   test("auto topics go to the runner; human topics and free-text questions stop", () => {
     const { auto, human } = splitPending(withPending, spec.approvals)
@@ -124,7 +185,10 @@ describe("approval policy", () => {
     expect(stopReason({ ...withPending, approvals: [a("p", "plan")] }, spec.approvals)).toBeNull()
   })
   test("blocked report stops with 3", () => {
-    expect(stopReason({ ...run, report: { status: "blocked", summary: "x", gaps: [] } }, spec.approvals)).toEqual({ code: 3, reason: "reported blocked: x" })
+    expect(stopReason({ ...run, report: { status: "blocked", summary: "x", gaps: [] } }, spec.approvals)).toEqual({
+      code: 3,
+      reason: "reported blocked: x",
+    })
     const blocked = { ...run, status: "idle", report: { status: "blocked", summary: "x", gaps: [] } }
     expect(stopReason({ ...blocked, status: "running" }, spec.approvals)).toBeNull()
     expect(stopReason(blocked, spec.approvals, "x")).toBeNull()
@@ -134,23 +198,39 @@ describe("approval policy", () => {
 
 describe("goal store", () => {
   test("save validates, list and runs round-trip, log appends", () => {
-    const g = makeGoals(path.join(mkdtempSync(path.join(tmpdir(), "sf-goals-")), "goals"), ["implement", "verify", "finish"])
-    expect(() => g.save({ id: "demo", repo: "/r", prompt: "p", expect: { steps: { bogus: {} } } })).toThrow("unknown step bogus")
+    const g = makeGoals(path.join(mkdtempSync(path.join(tmpdir(), "sf-goals-")), "goals"), [
+      "implement",
+      "verify",
+      "finish",
+    ])
+    expect(() => g.save({ id: "demo", repo: "/r", prompt: "p", expect: { steps: { bogus: {} } } })).toThrow(
+      "unknown step bogus",
+    )
     g.save({ id: "demo", repo: "/r", prompt: "p", expect: { steps: { implement: {} } } })
     expect(g.get("demo")?.prompt).toBe("p")
     expect(g.get("none")).toBeNull()
     g.appendRun("demo", { at: 1, factoryCommit: "abc", threadId: "t1", outcome: "fail", unmet: ["x"] })
     g.appendRun("demo", { at: 2, factoryCommit: "def", threadId: "t2", outcome: "pass", prUrl: "u" })
-    expect(g.runs("demo").map((r) => [r.factoryCommit, r.outcome])).toEqual([["abc", "fail"], ["def", "pass"]])
+    expect(g.runs("demo").map((r) => [r.factoryCommit, r.outcome])).toEqual([
+      ["abc", "fail"],
+      ["def", "pass"],
+    ])
     expect(g.list().map((x) => [x.spec.id, x.runs, x.last?.outcome])).toEqual([["demo", 2, "pass"]])
-    expect(() => g.appendRun("none", { at: 1, factoryCommit: "a", threadId: "t", outcome: "pass" })).toThrow("no goal none")
+    expect(() => g.appendRun("none", { at: 1, factoryCommit: "a", threadId: "t", outcome: "pass" })).toThrow(
+      "no goal none",
+    )
     expect(() => g.get("../x")).toThrow("bad goal id")
   })
 })
 
 describe("goal cli helpers", () => {
   test("parseSteps", () => {
-    expect(parseSteps("implement, finish=1,verify=1..2,review=2..")).toEqual({ implement: { min: 1 }, finish: { min: 1, max: 1 }, verify: { min: 1, max: 2 }, review: { min: 2 } })
+    expect(parseSteps("implement, finish=1,verify=1..2,review=2..")).toEqual({
+      implement: { min: 1 },
+      finish: { min: 1, max: 1 },
+      verify: { min: 1, max: 2 },
+      review: { min: 2 },
+    })
   })
   test("scoreCard marks each expectation", () => {
     const card = scoreCard(run, spec, goalUnmet(run, spec.expect, spec.base))
@@ -172,20 +252,47 @@ describe("goal form draft", () => {
   test("empty draft names its problems", () => {
     const r = draftToSpec(emptyDraft(), ["implement", "verify", "security", "finish"])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.problems).toEqual(["id: lowercase letters, digits and dashes, 2-64 chars", "prompt is empty", "repo must be an absolute path"])
+    if (!r.ok)
+      expect(r.problems).toEqual([
+        "id: lowercase letters, digits and dashes, 2-64 chars",
+        "prompt is empty",
+        "repo must be an absolute path",
+      ])
   })
   test("filled draft becomes a spec and round-trips", () => {
-    const d = { ...emptyDraft(), id: "x-1", repo: "/r", prompt: "do it", bodyIncludes: "18080, OK", steps: { ...emptyDraft().steps, review: { on: true, min: "2", max: "" }, verify: { on: false, min: "1", max: "" } } }
+    const d = {
+      ...emptyDraft(),
+      id: "x-1",
+      repo: "/r",
+      prompt: "do it",
+      bodyIncludes: "18080, OK",
+      steps: {
+        ...emptyDraft().steps,
+        review: { on: true, min: "2", max: "" },
+        verify: { on: false, min: "1", max: "" },
+      },
+    }
     const r = draftToSpec(d)
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.spec.expect.steps).toEqual({ implement: { min: 1 }, security: { min: 1 }, finish: { min: 1, max: 1 }, review: { min: 2 } })
+    expect(r.spec.expect.steps).toEqual({
+      implement: { min: 1 },
+      security: { min: 1 },
+      finish: { min: 1, max: 1 },
+      review: { min: 2 },
+    })
     expect(r.spec.expect.pr).toEqual({ state: "OPEN", checks: "SUCCESS", bodyIncludes: ["18080", "OK"], untouched: [] })
     const again = draftToSpec(specToDraft(r.spec))
     expect(again.ok && again.spec).toEqual(r.spec)
   })
   test("bad counts are reported", () => {
-    const d = { ...emptyDraft(), id: "x-1", repo: "/r", prompt: "p", steps: { implement: { on: true, min: "one", max: "" } } }
+    const d = {
+      ...emptyDraft(),
+      id: "x-1",
+      repo: "/r",
+      prompt: "p",
+      steps: { implement: { on: true, min: "one", max: "" } },
+    }
     const r = draftToSpec(d)
     expect(!r.ok && r.problems).toEqual(["step implement: counts must be whole numbers"])
   })
@@ -199,14 +306,39 @@ test("pastWorkers: stopped non-coordinators, newest summary, first start time", 
     { ts: 30, data: w("live", "worker") },
     { ts: 40, data: w("pc-impl", "worker", "pc-impl v2") },
   ]
-  expect(pastWorkers(rows, (id) => id === "live")).toEqual([{ id: "pc-impl", role: "worker", name: "pc-impl v2", status: "stopped", startedAt: 10 }])
+  expect(pastWorkers(rows, (id) => id === "live")).toEqual([
+    { id: "pc-impl", role: "worker", name: "pc-impl v2", status: "stopped", startedAt: 10 },
+  ])
 })
 
 describe("sdlc expectations", () => {
-  const gate = (id: string, chosen: boolean, status: string) => ({ id, chosen, probability: 0.5, threshold: 0.5, reason: "r", status })
-  const sdlc = { tier: "T2", criteria: ["a", "b"], unproven: ["AC-2"], gates: [gate("codeReview", true, "done"), gate("supplyChain", true, "failed"), gate("design", false, "skipped")], codeReviews: [], metrics: { minutes: 1, workers: 1, findingsKept: 0, findingsDropped: 0 } }
+  const gate = (id: string, chosen: boolean, status: string) => ({
+    id,
+    chosen,
+    probability: 0.5,
+    threshold: 0.5,
+    reason: "r",
+    status,
+  })
+  const sdlc = {
+    tier: "T2",
+    criteria: ["a", "b"],
+    unproven: ["AC-2"],
+    gates: [gate("codeReview", true, "done"), gate("supplyChain", true, "failed"), gate("design", false, "skipped")],
+    codeReviews: [],
+    metrics: { minutes: 1, workers: 1, findingsKept: 0, findingsDropped: 0 },
+  }
   test("criteria, gates run and skipped, tier", () => {
-    const e = { steps: {}, skills: [], sdlc: { criteriaProven: true, gatesRun: ["codeReview", "supplyChain", "design"], gatesSkipped: ["codeReview"], maxTier: "T1" as const } }
+    const e = {
+      steps: {},
+      skills: [],
+      sdlc: {
+        criteriaProven: true,
+        gatesRun: ["codeReview", "supplyChain", "design"],
+        gatesSkipped: ["codeReview"],
+        maxTier: "T1" as const,
+      },
+    }
     expect(goalUnmet({ ...run, sdlc }, e)).toEqual([
       "criteria without PASS evidence: AC-2",
       "gate supplyChain is failed, expected done",
@@ -233,7 +365,12 @@ const inputs = (over: Partial<GradeInputs> = {}): GradeInputs => ({
   ...over,
 })
 const greenRun: Run = { ...run, pr: { ...run.pr!, checks: "SUCCESS" } }
-const goalSpec = decodeGoalOrThrow({ id: "demo", repo: "/r", prompt: "p", expect: { pr: { checks: "SUCCESS" }, benchmarks: [{ id: "latency", baseline: 100, higherIsBetter: false }] } })
+const goalSpec = decodeGoalOrThrow({
+  id: "demo",
+  repo: "/r",
+  prompt: "p",
+  expect: { pr: { checks: "SUCCESS" }, benchmarks: [{ id: "latency", baseline: 100, higherIsBetter: false }] },
+})
 
 describe("criteriaResults", () => {
   test("pass, fail and missing per criterion; unprovenCriteria keeps its output", () => {
@@ -244,19 +381,65 @@ describe("criteriaResults", () => {
   })
 })
 
+describe("grade evidence files", () => {
+  test("gh output: no PR, a PR, and bad JSON as a grading error", () => {
+    expect(parsePrList("[]")).toEqual({ pr: null })
+    expect(
+      parsePrList(
+        '[{"number":3,"url":"u","state":"OPEN","headRefOid":"h","baseRefName":"main","body":null,"files":null,"statusCheckRollup":null}]',
+      ),
+    ).toEqual({
+      pr: { number: 3, url: "u", state: "OPEN", head: "h", base: "main", body: "", files: [], checks: "NONE" },
+    })
+    expect("error" in parsePrList("<html>rate limited")).toBe(true)
+    expect("error" in parsePrList("{}")).toBe(true)
+  })
+  test("benchmarks.json: absent, values, malformed is a grading error", () => {
+    expect(parseBenchmarks(null)).toEqual({ values: null })
+    expect(parseBenchmarks('{"latency": 90}')).toEqual({ values: { latency: 90 } })
+    expect("error" in parseBenchmarks('{"latency": "fast"}')).toBe(true)
+    expect("error" in parseBenchmarks("nope")).toBe(true)
+  })
+  test("quality.json: entries without a judge are dropped; a malformed file is only a note", () => {
+    const judged = { score: 7, scale: "0-10", judge: { model: "m", harness: "h" }, evidence: "e" }
+    expect(parseQuality(null)).toEqual({ entries: [] })
+    expect(parseQuality(JSON.stringify([judged, { score: 9, scale: "0-10", evidence: "e" }]))).toEqual({
+      entries: [judged],
+    })
+    expect(parseQuality("{").entries).toEqual([])
+    expect(parseQuality("{").note).toContain("quality.json")
+    expect(parseQuality("{}").note).toContain("quality.json")
+  })
+})
+
 describe("gradeStatus", () => {
-  const base = { criteria: { "AC-1": "pass" as const }, prChecks: { required: true, state: "SUCCESS" as const }, benchmarks: [], errors: [], prRequired: true, prFound: true }
+  const base = {
+    criteria: { "AC-1": "pass" as const },
+    prChecks: { required: true, state: "SUCCESS" as const },
+    benchmarks: [],
+    errors: [],
+    prRequired: true,
+    prFound: true,
+  }
   test.each([
     ["all required results pass", {}, "pass"],
     ["a failed criterion fails", { criteria: { "AC-1": "fail", "AC-2": "missing" } }, "fail"],
     ["a failed PR check fails", { prChecks: { required: false, state: "FAILURE" } }, "fail"],
     ["a regressed benchmark fails", { benchmarks: [{ value: 120, regressed: true }] }, "fail"],
     ["fail beats a grader error", { criteria: { "AC-1": "fail" }, errors: ["gh: timeout"] }, "fail"],
-    ["a grader error is error, not fail", { errors: ["gh: timeout"], prFound: false, prChecks: { required: true, state: "missing" } }, "error"],
+    [
+      "a grader error is error, not fail",
+      { errors: ["gh: timeout"], prFound: false, prChecks: { required: true, state: "missing" } },
+      "error",
+    ],
     ["a missing criterion is unknown", { criteria: { "AC-1": "pass", "AC-2": "missing" } }, "unknown"],
     ["no criteria is unknown", { criteria: {} }, "unknown"],
     ["pending required checks are unknown", { prChecks: { required: true, state: "PENDING" } }, "unknown"],
-    ["no PR when one is required is unknown", { prFound: false, prChecks: { required: false, state: "missing" } }, "unknown"],
+    [
+      "no PR when one is required is unknown",
+      { prFound: false, prChecks: { required: false, state: "missing" } },
+      "unknown",
+    ],
     ["a benchmark that did not run is unknown", { benchmarks: [{ value: null, regressed: null }] }, "unknown"],
     ["NONE checks that are not required pass", { prChecks: { required: false, state: "NONE" } }, "pass"],
   ] as const)("%s", (_name, over, want) => {
@@ -268,39 +451,98 @@ describe("buildGrade", () => {
   test("goal subject: linked to thread, factory commit, grading version and evidence; results reported separately", () => {
     const g = buildGrade(greenRun, inputs({ benchmarks: { latency: 90 } }), goalSpec)
     expect(g.key).toBe(`t|c0ffee|done|${GRADING_VERSION}`)
-    expect([g.threadId, g.factoryCommit, g.gradingVersion, g.subject]).toEqual(["t", "f00d", GRADING_VERSION, { kind: "goal", id: "demo" }])
+    expect([g.threadId, g.factoryCommit, g.gradingVersion, g.subject]).toEqual([
+      "t",
+      "f00d",
+      GRADING_VERSION,
+      { kind: "goal", id: "demo" },
+    ])
     expect(g.evidence).toEqual([
       { kind: "file", ref: ".factory/evidence.md", sha256: "abc" },
       { kind: "pr", ref: "u" },
       { kind: "commit", ref: "c0ffee" },
     ])
-    expect(g.criteria).toEqual({ results: { "AC-1": "pass", "AC-2": "pass" }, passed: 2, evaluated: 2, total: 2, rate: 1 })
+    expect(g.criteria).toEqual({
+      results: { "AC-1": "pass", "AC-2": "pass" },
+      passed: 2,
+      evaluated: 2,
+      total: 2,
+      rate: 1,
+    })
     expect(g.prChecks).toEqual({ required: true, state: "SUCCESS", url: "u" })
     expect(g.benchmarks).toEqual([{ id: "latency", baseline: 100, value: 90, regressed: false }])
     expect(g.status).toBe("pass")
   })
   test("criteria rate is passed / evaluated; a regression against the fixed baseline fails", () => {
-    const g = buildGrade(greenRun, inputs({ criteria: { "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" }, benchmarks: { latency: 130 } }), goalSpec)
+    const g = buildGrade(
+      greenRun,
+      inputs({ criteria: { "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" }, benchmarks: { latency: 130 } }),
+      goalSpec,
+    )
     expect(g.criteria).toMatchObject({ passed: 1, evaluated: 2, total: 3, rate: 0.5 })
     expect(g.benchmarks[0]?.regressed).toBe(true)
     expect(g.status).toBe("fail")
   })
+  test("a benchmark regresses only beyond its tolerance, in its direction; 0 is a value", () => {
+    const specFor = (higherIsBetter: boolean) =>
+      decodeGoalOrThrow({
+        id: "demo",
+        repo: "/r",
+        prompt: "p",
+        expect: { benchmarks: [{ id: "b", baseline: 100, higherIsBetter, tolerance: 5 }] },
+      })
+    const regressedAt = (higherIsBetter: boolean, value: number) =>
+      buildGrade(greenRun, inputs({ benchmarks: { b: value } }), specFor(higherIsBetter)).benchmarks[0]?.regressed
+    expect([95, 94].map((v) => regressedAt(true, v))).toEqual([false, true])
+    expect([105, 106].map((v) => regressedAt(false, v))).toEqual([false, true])
+    expect(buildGrade(greenRun, inputs({ benchmarks: { b: 0 } }), specFor(true)).benchmarks[0]?.value).toBe(0)
+  })
+  test("a goal without a PR expectation requires neither PR nor checks", () => {
+    const g = buildGrade({ ...run, pr: null }, inputs(), decodeGoalOrThrow({ id: "demo", repo: "/r", prompt: "p" }))
+    expect(g.prChecks).toEqual({ required: false, state: "missing", url: null })
+    expect(g.status).toBe("pass")
+  })
+  test("history marks grade lines with status, criteria and grading version", () => {
+    const g = buildGrade(
+      greenRun,
+      inputs({ criteria: { "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" } }),
+      goalSpec,
+    )
+    const base = { at: g.at, factoryCommit: "abc1234", threadId: "thread-1", unmet: [], prUrl: null }
+    expect(runLine({ ...base, outcome: "fail", grade: g })).toContain("grade fail")
+    expect(runLine({ ...base, outcome: "fail", grade: g })).toContain("AC 1/2 g1")
+    expect(runLine({ ...base, outcome: "pass" })).not.toContain("grade")
+  })
   test("prompt subject: PR required when done, checks required only when CI reported", () => {
     const prompt = inputs({ subject: { kind: "prompt", id: "0123456789ab" } })
     const g = buildGrade({ ...run, pr: { ...run.pr!, checks: "NONE" } }, prompt)
-    expect([g.subject.kind, g.threadId, g.factoryCommit, g.gradingVersion]).toEqual(["prompt", "t", "f00d", GRADING_VERSION])
+    expect([g.subject.kind, g.threadId, g.factoryCommit, g.gradingVersion]).toEqual([
+      "prompt",
+      "t",
+      "f00d",
+      GRADING_VERSION,
+    ])
     expect(g.prChecks).toEqual({ required: false, state: "NONE", url: "u" })
     expect(g.benchmarks).toEqual([])
     expect(g.status).toBe("pass")
     expect(buildGrade({ ...run, pr: null }, prompt).status).toBe("unknown")
-    expect(buildGrade({ ...run, pr: null }, inputs({ subject: prompt.subject, report: { status: "blocked", commit: "c0ffee" } })).status).toBe("pass")
+    expect(
+      buildGrade(
+        { ...run, pr: null },
+        inputs({ subject: prompt.subject, report: { status: "blocked", commit: "c0ffee" } }),
+      ).status,
+    ).toBe("pass")
   })
   test("a gh error is a grading error, not a failed grade or 'no PR'", () => {
     const g = buildGrade({ ...run, pr: null, prError: "gh: HTTP 502" }, inputs(), goalSpec)
     expect(g.status).toBe("error")
     expect(g.errors).toEqual(["PR lookup failed: gh: HTTP 502"])
-    expect(goalUnmet({ ...run, pr: null, prError: "gh: HTTP 502" }, goalSpec.expect)).toContain("PR lookup failed: gh: HTTP 502")
-    expect(goalUnmet({ ...run, pr: null, prError: "gh: HTTP 502" }, goalSpec.expect)).not.toContain("no PR for the branch")
+    expect(goalUnmet({ ...run, pr: null, prError: "gh: HTTP 502" }, goalSpec.expect)).toContain(
+      "PR lookup failed: gh: HTTP 502",
+    )
+    expect(goalUnmet({ ...run, pr: null, prError: "gh: HTTP 502" }, goalSpec.expect)).not.toContain(
+      "no PR for the branch",
+    )
   })
   test("a model-judged quality score never changes the status", () => {
     const judged = [{ score: 0, scale: "0-10", judge: { model: "m", harness: "h" }, evidence: "quality.json" }]
@@ -319,16 +561,30 @@ describe("grade persistence", () => {
     g.save({ id: "demo", repo: "/r", prompt: "p" })
     g.appendRun("demo", { at: 1, factoryCommit: "abc", threadId: "t", outcome: "blocked" })
     const grade = buildGrade(greenRun, inputs(), goalSpec)
-    const line = { at: grade.at, factoryCommit: grade.factoryCommit, threadId: grade.threadId, outcome: grade.status, grade }
+    const line = {
+      at: grade.at,
+      factoryCommit: grade.factoryCommit,
+      threadId: grade.threadId,
+      outcome: grade.status,
+      grade,
+    }
     expect(g.appendGrade("demo", line)?.grade?.key).toBe(grade.key)
     expect(g.appendGrade("demo", line)).toBeNull()
-    expect(g.runs("demo").filter((r) => r.grade).map((r) => r.grade!.key)).toEqual([grade.key])
+    expect(
+      g
+        .runs("demo")
+        .filter((r) => r.grade)
+        .map((r) => r.grade!.key),
+    ).toEqual([grade.key])
     const [listed] = g.list()
     expect([listed?.runs, listed?.last?.outcome, listed?.grades.map((x) => x.key)]).toEqual([1, "blocked", [grade.key]])
     // The same thread and commit reporting again with another status is a second, real grading.
     const later = buildGrade(greenRun, inputs({ report: { status: "blocked", commit: "c0ffee" } }), goalSpec)
     expect(g.appendGrade("demo", { ...line, grade: later })).not.toBeNull()
     expect(g.list()[0]?.grades).toHaveLength(2)
+    expect(() => g.appendGrade("demo", { at: 2, factoryCommit: "abc", threadId: "t", outcome: "pass" })).toThrow(
+      "a grade line needs a grade",
+    )
   })
   test("prompt: Threads.addGrade stores one grade per key, across a restart", () => {
     const root = mkdtempSync(path.join(tmpdir(), "sf-thread-grades-"))
@@ -355,27 +611,56 @@ describe("improvement proposals", () => {
   const proposal = proposeImprovement(failed, "ap1", false)!
 
   test("a failed grade proposes; other grades and improvement runs never do", () => {
-    expect(proposal).toEqual({ sourceKey: failed.key, sourceThreadId: "t", approvalId: "ap1", status: "proposed", approvedBy: null, attempts: 0, launchedThreadId: null, lastError: null })
+    expect(proposal).toEqual({
+      sourceKey: failed.key,
+      sourceThreadId: "t",
+      approvalId: "ap1",
+      status: "proposed",
+      approvedBy: null,
+      attempts: 0,
+      launchedThreadId: null,
+      lastError: null,
+    })
     expect(proposeImprovement(buildGrade(greenRun, inputs(), goalSpec), "ap1", false)).toBeNull()
     expect(proposeImprovement({ ...failed, status: "error" }, "ap1", false)).toBeNull()
     expect(proposeImprovement(failed, "ap1", true)).toBeNull()
   })
   test("no improvement run starts before a human approval", () => {
     expect(nextImprovementAction(proposal, policy, undefined, false).kind).toBe("wait")
-    expect(nextImprovementAction(proposal, policy, approval({ status: "pending", answer: null }), false).kind).toBe("wait")
+    expect(nextImprovementAction(proposal, policy, approval({ status: "pending", answer: null }), false).kind).toBe(
+      "wait",
+    )
     expect(nextImprovementAction(proposal, policy, approval(), false).kind).toBe("launch")
   })
   test("the goal auto-approval policy cannot answer it", () => {
-    expect(nextImprovementAction(proposal, policy, approval({ answeredBy: "goal demo (policy other=auto)" }), false).kind).toBe("refuse")
+    expect(
+      nextImprovementAction(proposal, policy, approval({ answeredBy: "goal demo (policy other=auto)" }), false).kind,
+    ).toBe("refuse")
     expect(nextImprovementAction(proposal, policy, approval({ answer: "Reject" }), false).kind).toBe("refuse")
-    expect(decodeGoal({ id: "demo", repo: "/r", prompt: "p", improve: { approval: "auto" } })._tag).toBe("Failure")
+    expect(Exit.isFailure(decodeGoal({ id: "demo", repo: "/r", prompt: "p", improve: { approval: "auto" } }))).toBe(
+      true,
+    )
   })
   test("retries stop at 1 + maxRetries launch attempts; launched proposals never relaunch", () => {
     expect(policy).toEqual({ approval: "human", maxRetries: 1 })
-    expect(nextImprovementAction({ ...proposal, status: "launch-failed", attempts: 1 }, policy, approval(), false).kind).toBe("launch")
-    expect(nextImprovementAction({ ...proposal, status: "launch-failed", attempts: 2 }, policy, approval(), false).kind).toBe("refuse")
-    expect(nextImprovementAction({ ...proposal, status: "launch-failed", attempts: 1 }, { approval: "human", maxRetries: 0 }, approval(), false).kind).toBe("refuse")
-    expect(nextImprovementAction({ ...proposal, status: "launched", attempts: 1 }, policy, approval(), false).kind).toBe("refuse")
+    expect(
+      nextImprovementAction({ ...proposal, status: "launch-failed", attempts: 1 }, policy, approval(), false).kind,
+    ).toBe("launch")
+    expect(
+      nextImprovementAction({ ...proposal, status: "launch-failed", attempts: 2 }, policy, approval(), false).kind,
+    ).toBe("refuse")
+    expect(
+      nextImprovementAction(
+        { ...proposal, status: "launch-failed", attempts: 1 },
+        { approval: "human", maxRetries: 0 },
+        approval(),
+        false,
+      ).kind,
+    ).toBe("refuse")
+    expect(
+      nextImprovementAction({ ...proposal, status: "launched", attempts: 1 }, policy, approval(), false).kind,
+    ).toBe("refuse")
+    expect(nextImprovementAction({ ...proposal, status: "rejected" }, policy, approval(), false).kind).toBe("refuse")
   })
   test("an improvement thread's own grade never launches more work", () => {
     expect(nextImprovementAction(proposal, policy, approval(), true).kind).toBe("refuse")
@@ -391,20 +676,23 @@ describe("backward compatibility", () => {
     ]
     for (const l of lines) {
       const exit = decodeGoalRun(JSON.parse(l))
-      expect(exit._tag).toBe("Success")
-      if (exit._tag === "Success") expect(exit.value.grade).toBeUndefined()
+      expect(Exit.isSuccess(exit)).toBe(true)
+      if (Exit.isSuccess(exit)) expect(exit.value.grade).toBeUndefined()
     }
   })
   test("every saved spec and run log in docs/goals/factory decodes", () => {
     const dir = goalsDir({})
     const names = readdirSync(dir)
     expect(names.filter((n) => n.endsWith(".json")).length).toBeGreaterThan(0)
-    for (const n of names.filter((n) => n.endsWith(".json"))) {
-      const spec = decodeGoalOrThrow(JSON.parse(readFileSync(path.join(dir, n), "utf8")))
-      expect(spec.improve).toEqual({ approval: "human", maxRetries: 1 })
-      expect(spec.expect.benchmarks).toEqual([])
+    for (const n of names.filter((f) => f.endsWith(".json"))) {
+      const saved = decodeGoalOrThrow(JSON.parse(readFileSync(path.join(dir, n), "utf8")))
+      expect(saved.improve).toEqual({ approval: "human", maxRetries: 1 })
+      expect(saved.expect.benchmarks).toEqual([])
     }
-    for (const n of names.filter((n) => n.endsWith(".runs.jsonl")))
-      for (const l of readFileSync(path.join(dir, n), "utf8").split("\n").filter((x) => x.trim())) expect(decodeGoalRun(JSON.parse(l))._tag).toBe("Success")
+    for (const n of names.filter((f) => f.endsWith(".runs.jsonl")))
+      for (const l of readFileSync(path.join(dir, n), "utf8")
+        .split("\n")
+        .filter((x) => x.trim()))
+        expect(Exit.isSuccess(decodeGoalRun(JSON.parse(l)))).toBe(true)
   })
 })

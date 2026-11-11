@@ -1,23 +1,38 @@
 // Goal specs and their run logs on disk: <dir>/<id>.json and <dir>/<id>.runs.jsonl (append only).
 // The default dir is docs/goals/factory of the checkout the coordinator runs from, so specs are versioned.
+import { Exit } from "effect"
 import { execFileSync } from "node:child_process"
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { decodeGoal, decodeGoalRun, goalProblems, type GoalRun, type GoalSpec } from "../../shared/goal.ts"
+import { decodeGoal, decodeGoalRun, goalProblems, type GoalRun, type GoalSpec, type Grade } from "../../shared/goal.ts"
 
 export const goalsDir = (env = process.env): string =>
   env.SF_GOALS_DIR ?? path.resolve(new URL(".", import.meta.url).pathname, "../../../../docs/goals/factory")
 
 export class GoalError extends Error {}
 
-const errorText = (exit: { _tag: string; cause?: unknown }) => String((exit as any).cause?.toString?.() ?? exit._tag)
+const errorText = (exit: Exit.Exit<unknown, unknown>) => (Exit.isFailure(exit) ? String(exit.cause) : "Success")
 
 export const decodeGoalOrThrow = (u: unknown, knownSteps?: readonly string[]): GoalSpec => {
   const exit = decodeGoal(u)
-  if (exit._tag !== "Success") throw new GoalError(`invalid goal: ${errorText(exit)}`)
+  if (!Exit.isSuccess(exit)) throw new GoalError(`invalid goal: ${errorText(exit)}`)
   const problems = goalProblems(exit.value, knownSteps)
   if (problems.length) throw new GoalError(`invalid goal: ${problems.join("; ")}`)
   return exit.value
+}
+
+/** `runs` and `last` count runner lines only, so grade lines do not use up the loop's run budget. */
+const summarize = (
+  spec: GoalSpec,
+  all: GoalRun[],
+): { spec: GoalSpec; runs: number; last: GoalRun | null; grades: Grade[] } => {
+  const runnerLines = all.filter((x) => !x.grade)
+  return {
+    spec,
+    runs: runnerLines.length,
+    last: runnerLines.at(-1) ?? null,
+    grades: all.flatMap((x) => (x.grade ? [x.grade] : [])),
+  }
 }
 
 export const makeGoals = (dir: string, knownSteps: readonly string[]) => {
@@ -33,8 +48,20 @@ export const makeGoals = (dir: string, knownSteps: readonly string[]) => {
       .filter((l) => l.trim())
       .flatMap((l) => {
         const exit = decodeGoalRun(JSON.parse(l))
-        return exit._tag === "Success" ? [exit.value] : []
+        if (Exit.isSuccess(exit)) return [exit.value]
+        console.warn(`goal ${id}: dropped a run line that does not decode: ${l.slice(0, 200)}`)
+        return []
       })
+  }
+  const decodeLine = (id: string, u: unknown): GoalRun => {
+    if (!get(id)) throw new GoalError(`no goal ${id}`)
+    const exit = decodeGoalRun(u)
+    if (!Exit.isSuccess(exit)) throw new GoalError(`invalid run: ${errorText(exit)}`)
+    return exit.value
+  }
+  const write = (id: string, line: GoalRun): GoalRun => {
+    appendFileSync(file(id, ".runs.jsonl"), `${JSON.stringify(line)}\n`)
+    return line
   }
   const get = (id: string): GoalSpec | null => {
     const f = file(id, ".json")
@@ -42,7 +69,7 @@ export const makeGoals = (dir: string, knownSteps: readonly string[]) => {
   }
   return {
     dir,
-    list: (): { spec: GoalSpec; runs: number; last: GoalRun | null }[] =>
+    list: (): ReturnType<typeof summarize>[] =>
       existsSync(dir)
         ? readdirSync(dir)
             .filter((n) => n.endsWith(".json"))
@@ -51,8 +78,7 @@ export const makeGoals = (dir: string, knownSteps: readonly string[]) => {
               try {
                 const spec = get(n.slice(0, -5))
                 if (!spec) return []
-                const r = runs(spec.id)
-                return [{ spec, runs: r.length, last: r.at(-1) ?? null }]
+                return [summarize(spec, runs(spec.id))]
               } catch {
                 return []
               }
@@ -67,12 +93,13 @@ export const makeGoals = (dir: string, knownSteps: readonly string[]) => {
       writeFileSync(file(spec.id, ".json"), `${JSON.stringify(spec, null, 2)}\n`)
       return spec
     },
-    appendRun: (id: string, u: unknown): GoalRun => {
-      if (!get(id)) throw new GoalError(`no goal ${id}`)
-      const exit = decodeGoalRun(u)
-      if (exit._tag !== "Success") throw new GoalError(`invalid run: ${errorText(exit)}`)
-      appendFileSync(file(id, ".runs.jsonl"), `${JSON.stringify(exit.value)}\n`)
-      return exit.value
+    appendRun: (id: string, u: unknown): GoalRun => write(id, decodeLine(id, u)),
+    /** Append a grade line; null (nothing written) when a line with the same grade key exists, so a replay adds nothing. */
+    appendGrade: (id: string, u: unknown): GoalRun | null => {
+      const line = decodeLine(id, u)
+      const key = line.grade?.key
+      if (!key) throw new GoalError("a grade line needs a grade")
+      return runs(id).some((r) => r.grade?.key === key) ? null : write(id, line)
     },
   }
 }

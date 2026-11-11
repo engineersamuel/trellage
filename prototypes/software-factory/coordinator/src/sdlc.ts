@@ -10,6 +10,7 @@ import { decisionLabel, decisionsAvailable, systemOne } from "./decide.ts"
 import { loadPrompt } from "./prompt.ts"
 import { factoryConfig, type FactoryConfig } from "./config.ts"
 import { recordCase } from "./promptEval.ts"
+import type { Verdict } from "../../shared/goal.ts"
 
 // ---------- Artifacts ----------
 
@@ -40,11 +41,20 @@ export const criteriaMarkdown = (criteria: string[]): string =>
   `# Acceptance criteria\n\n${criteria.map((c, i) => `AC-${i + 1}: ${c.trim()}`).join("\n")}\n`
 export const parseCriteria = (md: string): string[] => [...md.matchAll(/^AC-(\d+):\s*(.+)$/gm)].map((m) => m[2]!.trim())
 
-/** Criteria without a PASS line in evidence.md (`AC-n: PASS — command — output`). */
-export const unprovenCriteria = (criteria: string[], evidence: string | null): string[] => {
-  const passed = new Set([...(evidence ?? "").matchAll(/^AC-(\d+):\s*PASS\b/gim)].map((m) => Number(m[1])))
-  return criteria.flatMap((_, i) => (passed.has(i + 1) ? [] : [`AC-${i + 1}`]))
+/** Each criterion's verdict from evidence.md lines (`AC-n: PASS|FAIL — command — output`): a PASS line proves it,
+ *  else a FAIL line fails it, else it is missing. */
+export const criteriaResults = (criteria: string[], evidence: string | null): Record<string, Verdict> => {
+  const lines = (word: string) =>
+    new Set([...(evidence ?? "").matchAll(new RegExp(`^AC-(\\d+):\\s*${word}\\b`, "gim"))].map((m) => Number(m[1])))
+  const [passed, failed] = [lines("PASS"), lines("FAIL")]
+  return Object.fromEntries(
+    criteria.map((_, i) => [`AC-${i + 1}`, passed.has(i + 1) ? "pass" : failed.has(i + 1) ? "fail" : "missing"]),
+  )
 }
+
+/** Criteria without a PASS line in evidence.md. */
+export const unprovenCriteria = (criteria: string[], evidence: string | null): string[] =>
+  Object.entries(criteriaResults(criteria, evidence)).flatMap(([id, v]) => (v === "pass" ? [] : [id]))
 
 // ---------- Repo checks (the same commands CI runs) ----------
 
@@ -234,8 +244,8 @@ export const askGates = async (
     })
     const probabilities = Object.fromEntries(
       gates.flatMap((g) => {
-        const p = res.answers[g.id]?.noul
-        return typeof p === "number" ? [[g.id, p]] : []
+        const p = res.answers?.[g.id]?.noul
+        return typeof p === "number" ? [[g.id, p] as const] : []
       }),
     )
     for (const [id, p] of Object.entries(probabilities))
@@ -450,7 +460,7 @@ const run = (cmd: string, args: string[], cwd: string): Promise<{ code: number; 
       { cwd, timeout: 300_000, maxBuffer: 32 << 20 },
       (err, stdout, stderr) =>
         resolve({
-          code: err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 127) : 0,
+          code: err ? (typeof err.code === "number" ? err.code : 127) : 0,
           out: `${stdout}${stderr}`,
           stdout,
         }),
@@ -494,7 +504,6 @@ export const supplyChainScan = async (workdir: string, base: string): Promise<{ 
     : { ok: true, detail: `betterleaks clean; ${lockfiles.length} changed lockfile(s) scanned, no new flags${note}` }
 }
 
-/** osv-scanner flags for one lockfile: `name@version: ID` per advisory, `name@version: license X` per license outside the allowlist. */
 type OsvReport = {
   results?: {
     packages?: {
@@ -505,7 +514,8 @@ type OsvReport = {
   }[]
 }
 
-export const osvFlagsFrom = (report: OsvReport | null): Set<string> => {
+/** osv-scanner flags for one lockfile: `name@version: ID` per advisory, `name@version: license X` per license outside the allowlist. */
+export const osvFlagsFrom = (report: OsvReport | null | undefined): Set<string> => {
   const flags = new Set<string>()
   for (const r of report?.results ?? [])
     for (const p of r.packages ?? []) {
