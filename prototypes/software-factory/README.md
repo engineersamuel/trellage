@@ -70,7 +70,7 @@ PRs; a human merges.
 | Part | Where |
 |---|---|
 | Spec Schema, scoring, form draft | `shared/goal.ts` (one Schema for the UI, the API and `sf`) |
-| Specs and run logs | `docs/goals/factory/<id>.json`, `<id>.runs.jsonl` (append only; each line has the factory commit) |
+| Specs and run logs | `docs/goals/factory/<id>.json`, `<id>.runs.jsonl` (append only except unknown-grade regrading; each line has the factory commit) |
 | API | `GET/POST /api/goals`, `GET /api/goals/<id>`, `GET /api/goals/<id>/prompt`, `GET/POST /api/goals/<id>/runs`, `GET /api/runs/<thread>` |
 | Form | Foldkit navbar **◎ Goals**: steps and skills come from `/api/steps`, repos from `/api/folders` |
 | CLI | `sf goal list | show ID | new | save FILE | run ID [--thread T] | check ID THREAD | history ID` |
@@ -88,6 +88,83 @@ A spec says:
 Flow: fill the form (or `sf goal new`) → copy `/factory-loop <id>` → paste into Claude Code. `sf goal run` exits 0 pass,
 1 fail/timeout, 2 waiting for the human, 3 blocked. `sf -f FOLDER -b BRANCH` branches the worktree from BRANCH and the
 finish worker opens the PR against it. `make factory-test` (also in CI) runs the coordinator type check and tests.
+
+### Grading
+
+When a sub-coordinator's `report_up` ends with `done` or `blocked`, the coordinator grades the conversation in the
+background from objective evidence. A grader failure never fails `report_up`. Prompted runs and saved-goal runs are both
+graded. `SF_GRADING=off` turns off grading and improvement retries.
+
+How others grade agents, and what we take from each:
+
+| Project | Metric | Limitation | Taken here |
+|---|---|---|---|
+| [SWE-bench](https://www.swebench.com/SWE-bench/guides/evaluation/) / [Verified](https://openai.com/index/introducing-swe-bench-verified/) | % resolved: all `FAIL_TO_PASS` and `PASS_TO_PASS` tests pass | Tests can be too narrow or underspecified; public issues may leak into training data | "Instances with errors" are counted apart from "unresolved"; every required check must pass |
+| [Inspect AI](https://inspect.aisi.org.uk/scorers.html) ([errors](https://inspect.aisi.org.uk/handling-errors.html)) | Per-sample scorer values aggregated by `accuracy()`/`mean()` | Model-graded scorers inherit the judge's bias | Errored samples are not scored; the judge model is recorded |
+| [Terminal-Bench](https://www.tbench.ai/) | Resolution rate of sandboxed test scripts, with a 95% CI | Flaky test scripts; contamination (canary GUIDs) | An oracle solution proves the grader can pass |
+| [Aider polyglot](https://aider.chat/2024/12/21/polyglot.html) | `pass_rate_N`: tasks with all tests passing in N tries | Public problems; scores saturate | Malformed responses and timeouts are reported apart from the pass rate; the commit is recorded |
+| [OpenAI Evals](https://github.com/openai/evals/blob/main/docs/eval-templates.md) | Match/Includes templates or `ModelBasedClassify` | Self-grading bias; invalid output is folded into the score | Judged scores are kept apart from status |
+
+Metrics, each reported separately on every grade:
+
+- **Criteria pass rate** = passed / evaluated. Each `AC-n` of the run's SDLC acceptance criteria is `pass` (an `AC-n … PASS`
+  line in `.factory/evidence.md`), `fail` (a `FAIL` line) or `missing`. Missing criteria are not evaluated, so the rate
+  is `-` when none were evaluated; `total` is reported beside it. Any `FAIL` takes precedence over conflicting `PASS` lines.
+- **PR checks**: the PR's check rollup (`SUCCESS`, `FAILURE`, `PENDING`, `NONE`, `missing`). Checks are required when
+  the goal sets `expect.pr.checks`; for a prompted `done` run, when the PR reported any.
+- **Benchmarks**: `expect.benchmarks` is a list of `{id, baseline, higherIsBetter, tolerance}` with fixed baselines.
+  The run writes the values to `.factory/benchmarks.json` (`{"id": number}`); a value worse than the baseline by more
+  than the tolerance has regressed. Editing a goal in Foldkit preserves its benchmarks and improvement policy,
+  even though those settings are not editable in the form.
+- **Quality** (optional `.factory/quality.json`): model-judged scores, each with its judge model and harness. They are
+  stored but **never change the status**. An unreadable or malformed quality file records only an evidence note.
+
+Rubric (`gradingVersion` `g1`), applied in order:
+
+| # | Condition | Status |
+|---|---|---|
+| 1 | Any evaluated criterion fails, a PR check fails, or a benchmark regressed | `fail` |
+| 2 | The grader could not grade (a `gh` failure or bad output, an unreadable or malformed evidence file) | `error`: a grading error, not a failed run |
+| 3 | Evidence is missing: no evaluated criteria or a `missing` one, required checks not `SUCCESS`, no PR when one is required, or a benchmark value absent | `unknown` |
+| 4 | Every required result passes | `pass` |
+
+Limitations: criteria verdicts come from the run's own evidence file, so a run that writes `PASS` dishonestly passes
+that criterion (the PR checks and the human reviewer are the counterweight). Benchmarks are only as good as the
+numbers the run writes. One grade per report is not a statistic: compare pass rates only within one grading version.
+
+Where grades live (key `threadId|reportCommit|reportStatus|gradingVersion`; a replayed report with the same key is
+dropped, so a restart never duplicates a grade):
+
+- Every minute, the coordinator regrades an `unknown` grade whose PR checks were `PENDING`. Once checks settle,
+  it replaces that grade under the same key, never appending a second grade. Settled grades cannot be superseded,
+  and replaying a completion does not regrade it.
+- **Saved goal** (the thread was created with `goalId`): a `GoalRun` line with a `grade` in
+  `docs/goals/factory/<id>.runs.jsonl`. Its `outcome` is the grade status. `sf goal list` and the run limit count only
+  lines without a grade; `sf goal history` marks grade lines `grade` with the criteria rate and grading version.
+  The thread retains the validated goal snapshot from launch, so edits or deletion cannot change its benchmarks or
+  retry policy. Older threads without a snapshot report goal lookup failures as grading errors, never as plain prompts.
+  Grades are also saved on the thread, keeping them available through the run API if the goal log cannot be read or written.
+  Regrading atomically replaces the matching grade line using a temporary file and rename; all other lines,
+  including runner lines, remain byte-identical.
+- **Plain prompt**: in the thread's `grades` in `threads.json`; `subject.id` is the first 12 hex digits of the prompt's
+  sha256.
+- Each grade links the thread, the factory commit, the report commit, the grading version and its evidence (files read
+  with their sha256, the PR URL, the commit). `GET /api/runs/<thread>` shows `grades`, `prError` and `improvement`.
+  The Foldkit **◎ Goals** dialog charts them under **Grade history**: one chart per goal and grading version, never
+  merged.
+
+Improvement policy: a failed grade opens one improvement proposal, a desk approval ("Launch improvement run" or
+"Reject"), keyed by the grade key. A pending grade that settles to failure opens at most one proposal.
+Each distinct failed grade can propose new work, even after an earlier proposal was rejected; earlier
+proposals retain their own approval routing and retry state. Only a human answer launches it: the answer must have no `by`
+(goal runners always send one), the goal's
+`improve.approval` can only be `"human"`, and the proposal is not part of any goal run's approvals. On "Launch", the
+coordinator starts one Factory improvement conversation in the factory checkout. A failed launch is retried at most
+`improve.maxRetries` times (default 1). This must be a whole number >= 0; goal saves and Foldkit drafts reject
+fractional, negative, or nonfinite counts rather than rounding them. Zero allows only the initial launch.
+A run started to improve the Factory never opens a proposal of its own, and
+merging its PR stays human. Risk: the approval API is unauthenticated, as for every approval; any local caller that
+omits `by` counts as the human.
 
 ## Model routing
 

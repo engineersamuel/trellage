@@ -41,6 +41,7 @@ import { freshTurn, reportNudge, reportPrompt, shouldReport, type Report } from 
 import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, type Run } from "./run.ts"
 import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
+import { makeGrading } from "./grading.ts"
 import { postMergeCheck } from "./postmerge.ts"
 import { ARTIFACTS_DIR, servableImage } from "./files.ts"
 import { checkoutCommit, GoalError, goalsDir, loopPrompt, makeGoals } from "./goals.ts"
@@ -373,7 +374,8 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
           ...(t.base ? { base: t.base } : {}),
           label: folder.name,
           folderId: folder.id,
-          report: (r) => reportToGeneral(folder.name, threads.get(t.id) ?? t, r),
+          report: (r) =>
+            reportToGeneral(folder.name, threads.get(t.id) ?? t, r).finally(() => void gradeThread(t.id, r)),
         }),
         permissions: factory.subPermissions,
         workdir: t.worktree,
@@ -476,13 +478,24 @@ const watchSub = (w: Worker, threadId: string, ev: SessionEvent) => {
   deliverAndLog(threadId, reportNudge())
 }
 
-/** Global coordinator tool: open a conversation in a folder (id, or a repo path to add) and give its sub-coordinator a task. */
-const startConversation = async (folder: string, task: string, parentThreadId: string | null = null) => {
+/** Open a conversation in a folder (id, or a repo path to add) with `meta` set before its first prompt, and send the task. */
+const openConversation = async (
+  folder: string,
+  task: string,
+  meta: Pick<Thread, "parentThreadId" | "improvementOf"> = {},
+) => {
   const f = threads.folder(folder) ?? threads.addFolder(folder)
   const t = createThread(task, f.id)
-  if (parentThreadId) threads.setMeta(t.id, { parentThreadId })
-  logFailure(await deliverToThread(t.id, `[from the global coordinator] ${task}`))
-  return { threadId: t.id, folder: f.name, worktree: t.worktree ?? null, branch: t.branch ?? null }
+  threads.setMeta(t.id, meta)
+  const sent = await deliverToThread(t.id, `[from the global coordinator] ${task}`)
+  return { info: { threadId: t.id, folder: f.name, worktree: t.worktree ?? null, branch: t.branch ?? null }, sent }
+}
+
+/** Global coordinator tool: open a conversation and give its sub-coordinator a task. */
+const startConversation = async (folder: string, task: string, parentThreadId: string | null = null) => {
+  const { info, sent } = await openConversation(folder, task, parentThreadId ? { parentThreadId } : {})
+  logFailure(sent)
+  return info
 }
 
 /**
@@ -647,7 +660,7 @@ const resumeAnswers = (resume: unknown): string[] =>
       const note = typeof payload.note === "string" && payload.note.trim() ? payload.note.trim() : null
       const a = factory.approvals.answer(String(r.interruptId), payload.answer, note)
       factory.publish("coordinator", "factory.approval_answered", null, now(), a)
-      return [answerPrompt(a)]
+      return improvementAnswered(a) ? [] : [answerPrompt(a)]
     } catch (e) {
       // Answered elsewhere first, or an unknown id: the coordinator already got that answer.
       console.error(`resume ${String(r.interruptId)}: ${e instanceof Error ? e.message : e}`)
@@ -1197,6 +1210,14 @@ const latestReport = (threadId: string): Run["report"] => {
   return r ? { status: r.status, summary: r.summary, gaps: r.gaps } : null
 }
 
+/** The branch's PR, or why it could not be read: a gh failure is a grading error, never "no PR". */
+const prOf = async (t: Thread): Promise<Pick<Run, "pr" | "prError">> => {
+  const repo = threads.folder(t.folderId)?.path
+  if (!repo || !t.branch) return { pr: null }
+  const r = await branchPr(repo, t.branch)
+  return "error" in r ? { pr: null, prError: r.error } : { pr: r.pr }
+}
+
 /** The delivery record of a repo conversation; null when the thread does not exist. */
 const runRecord = async (threadId: string): Promise<Run | null> => {
   const t = threads.get(threadId)
@@ -1205,7 +1226,6 @@ const runRecord = async (threadId: string): Promise<Run | null> => {
   const listed = runWorkers(started, subId(t.id), (id) => factory.workers.get(id)?.status)
   const invoked = factory.store.skillsInvoked(listed.map((w) => w.id))
   const workers = listed.map((w) => ({ ...w, skills: invoked.get(w.id) ?? [] }))
-  const repo = threads.folders().find((f) => f.id === t.folderId)?.path
   return {
     threadId: t.id,
     status: statusOf(t.id),
@@ -1229,8 +1249,37 @@ const runRecord = async (threadId: string): Promise<Run | null> => {
       .map((r) => ({ id: r.id, status: r.status })),
     report: latestReport(t.id),
     sdlc: runSdlc(subId(t.id), t.worktree),
-    pr: repo && t.branch ? await branchPr(repo, t.branch) : null,
+    ...(await prOf(t)),
+    grades: gradesOf(t),
+    improvement: t.improvement ?? null,
+    ...(t.improvementOf ? { improvementOf: t.improvementOf } : {}),
   }
+}
+
+// ---------- grading and human-gated improvement (README "Grading") ----------
+
+const {
+  enabled: GRADING,
+  gradesOf,
+  gradeThread,
+  improvementAnswered,
+  retryImprovements,
+  regradePending,
+} = makeGrading({
+  threads,
+  goals,
+  approvals: factory.approvals,
+  runRecord,
+  openConversation,
+  criteria: (id) => factory.sdlc.get(subId(id))?.criteria ?? [],
+  deskThreadId: () => deskThread().id,
+  factoryDir: FACTORY_DIR,
+  publish: (type, data) => factory.publish("coordinator", type, null, now(), data),
+})
+
+if (GRADING) {
+  loop("improvement-retry", "1 minute", retryImprovements)
+  loop("grade-pending-checks", "1 minute", regradePending)
 }
 
 const routes: [string, RegExp, Handler][] = [
@@ -1396,7 +1445,7 @@ const routes: [string, RegExp, Handler][] = [
           typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 200) : null,
         )
         factory.publish("coordinator", "factory.approval_answered", null, now(), a)
-        answerApproval(a)
+        if (!improvementAnswered(a)) answerApproval(a)
         return json(a)
       } catch (e) {
         return bad(e)
@@ -1652,13 +1701,16 @@ const routes: [string, RegExp, Handler][] = [
       const folderId = typeof b.folderId === "string" ? b.folderId : cookieFolder(req)
       try {
         const base = typeof b.base === "string" && b.base.trim() ? b.base.trim() : undefined
-        return json(
-          createThread(
-            typeof first === "string" ? first : null,
-            threads.folder(folderId) ? folderId : GENERAL.id,
-            base,
-          ),
+        const goalId = typeof b.goalId === "string" ? b.goalId : undefined
+        const goalSpec = goalId ? goals.get(goalId) : null
+        if (goalId && !goalSpec) throw new Error(`no goal ${goalId}`)
+        const t = createThread(
+          typeof first === "string" ? first : null,
+          threads.folder(folderId) ? folderId : GENERAL.id,
+          base,
         )
+        if (goalId && goalSpec) threads.setMeta(t.id, { goalId, goalSpec })
+        return json(threads.get(t.id) ?? t)
       } catch (e) {
         return bad(e)
       }
