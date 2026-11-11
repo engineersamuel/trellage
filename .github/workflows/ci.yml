@@ -117,16 +117,29 @@ jobs:
         with:
           tools: static
       - name: Install system test prerequisites
-        # The runner's package mirror sometimes fails DNS for a minute; retry so one network blip does not fail
-        # the job (and with it the deterministic-contracts gate).
+        # The runner's package mirror list (azure.archive.ubuntu.com) sometimes fails DNS, for minutes or longer.
+        # On the first failure, use the Ubuntu archive directly, so a mirror outage does not fail the job (and with it
+        # the deterministic-contracts gate).
         run: |
-          for attempt in 1 2 3; do
-            if sudo apt-get -o Acquire::Retries=5 update -qq &&
-              sudo apt-get -o Acquire::Retries=5 install --yes --no-install-recommends fish ripgrep libseccomp2; then
-              exit 0
-            fi
-            echo "::warning::apt attempt $attempt failed; retrying in $((attempt * 20))s"
-            sleep $((attempt * 20))
+          # A down mirror makes apt hang on DNS retries, so each apt run gets a time limit and few retries.
+          install() {
+            sudo timeout 240 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 update -qq &&
+              sudo timeout 240 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 \
+                install --yes --no-install-recommends fish ripgrep libseccomp2
+          }
+          install && exit 0
+          echo "::warning::apt failed on the runner mirror; switching to archive.ubuntu.com"
+          sudo sed -i -E \
+            -e 's#^URIs: mirror\+file:/etc/apt/apt-mirrors\.txt#URIs: http://archive.ubuntu.com/ubuntu/#' \
+            -e 's#^URIs: http://azure\.archive\.ubuntu\.com/ubuntu/?#URIs: http://archive.ubuntu.com/ubuntu/#' \
+            /etc/apt/sources.list.d/*.sources || true
+          sudo sed -i -E 's#(mirror\+file:/etc/apt/apt-mirrors\.txt|http://azure\.archive\.ubuntu\.com/ubuntu/?)#http://archive.ubuntu.com/ubuntu/#' \
+            /etc/apt/sources.list 2>/dev/null || true
+          grep -rh '^URIs:' /etc/apt/sources.list.d/ || true
+          for attempt in 1 2; do
+            install && exit 0
+            echo "::warning::apt on archive.ubuntu.com attempt $attempt failed; retrying in 30s"
+            sleep 30
           done
           exit 1
       - name: Verify system test prerequisites
