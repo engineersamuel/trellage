@@ -24,6 +24,8 @@ export type Step = {
   gateTools?: boolean
   /** Started by the factory itself; Jev and spawn_worker never pick it. */
   factoryOnly?: boolean
+  /** Claude harness: the proxy's model router (Jev) picks the worker's `sonnet` subagent model from this text. */
+  subagentRoute?: string
   /** Run in the Claude Agent SDK or Pi SDK with these trx profiles, for skills and plugins built for that harness. Default: Copilot SDK. */
   harness?: HarnessSpec
 }
@@ -53,6 +55,7 @@ const stepMeta = (id: string, meta: Record<string, unknown>) => {
     ...(typeof meta.instructions === "string" ? { instructions: meta.instructions } : {}),
     ...(typeof meta.gate_tools === "boolean" ? { gateTools: meta.gate_tools } : {}),
     ...(meta.factory_only === true ? { factoryOnly: true } : {}),
+    ...(typeof meta.subagent_route === "string" ? { subagentRoute: meta.subagent_route } : {}),
     ...(h
       ? {
           harness: {
@@ -112,6 +115,10 @@ export const SKILL_REPOS: Record<string, Repo> = {
     url: "https://github.com/davila7/claude-code-templates.git",
     sparse: ["cli-tool/components/skills/development/systematic-debugging"],
   },
+  "2x-skills": {
+    url: "https://github.com/intercom/2x-skills.git",
+    sparse: ["plugins/incident-tools/skills/five-whys"],
+  },
 }
 export const TOOL_REPOS: Record<string, string> = {
   crapper: "https://github.com/unclebob/crapper.git",
@@ -156,6 +163,12 @@ export const stepSetup = (step: Step | null, skillRoot: string, toolRoot: string
     ].join(" "),
   }
 }
+
+/** The task prefix of a Claude or Pi worker: one line per loaded skill, then the step's instructions. */
+export const harnessPrefix = (skills: string[], step: Step | null): string =>
+  skills.length
+    ? [...skills.map((k) => `Use the ${k} skill.`), ...(step?.instructions ? [step.instructions] : [])].join("\n")
+    : ""
 
 /** One skill a step names, resolved to its folder. `problem` says why a worker cannot use it. */
 export type SkillCheck = { name: string; dir: string | null; healed: boolean; problem: string | null }

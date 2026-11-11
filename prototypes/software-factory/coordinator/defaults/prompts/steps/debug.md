@@ -1,7 +1,7 @@
 +++
 order = 6
 best_for = ["A failing test, build, CI check, crash, or unexpected behavior", "An earlier step that ended in an error"]
-avoid_for = ["New features with no error", "Work that has no failure to explain"]
+avoid_for = ["New features with no error", "Work that has no failure to explain", "Why our process let a failure happen, once its code cause is known (use five-whys)"]
 skills = ["systematic-debugging"]
 skill_dirs = ["claude-code-templates/cli-tool/components/skills/development"]
 gate_tools = false

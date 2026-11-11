@@ -28,6 +28,7 @@ import * as S from "./settings.ts"
 import { appendCompact } from "../../shared/feed.ts"
 import {
   ensureClones,
+  harnessPrefix,
   prepareStepSkills,
   SKILL_REPOS,
   stepById,
@@ -35,6 +36,7 @@ import {
   TOOL_REPOS,
   type HarnessSpec,
   type SkillCheck,
+  type Step,
 } from "./steps.ts"
 import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./claude.ts"
 import { composePi, withProxyModel, PiSession } from "./pi.ts"
@@ -573,7 +575,15 @@ export class Factory {
     const stepSkills = skills.flatMap((s) => (s.dir ? [{ name: s.name, dir: s.dir }] : []))
     const { session, model, loaded } =
       harness.kind === "claude"
-        ? await this.claudeSession(spec, workdir, harness, emit, stepSkills, home)
+        ? await this.claudeSession(
+            spec,
+            workdir,
+            harness,
+            emit,
+            stepSkills,
+            home,
+            await this.subagentModel(spec, spec.step ? stepById(spec.step) : null),
+          )
         : await this.piSession(spec, workdir, harness, emit, stepSkills)
     worker = new Worker(
       id,
@@ -600,7 +610,10 @@ export class Factory {
       sessionId: null,
     }
     // The step's prefix ("Use the ub-mode skill.") applies in every SDK, not only Copilot.
-    const prefix = skills.length ? skills.map((s) => `Use the ${s.name} skill.`).join("\n") : ""
+    const prefix = harnessPrefix(
+      skills.map((s) => s.name),
+      spec.step ? stepById(spec.step) : null,
+    )
     const task = spec.task && (prefix ? `${prefix}\n\n${spec.task}` : spec.task)
     return this.register(worker, task && (harness.entry ? `${harness.entry} ${task}` : task))
   }
@@ -612,8 +625,11 @@ export class Factory {
     emit: (ev: HarnessEvent) => void,
     stepSkills: { name: string; dir: string }[] = [],
     home = workdir,
+    subagent: string | null = null,
   ) {
     const launch = await composeClaude(harness.profiles, workdir)
+    // Skills ask for `model: "sonnet"` subagents; the alias resolves to this model.
+    if (subagent) launch.env.ANTHROPIC_DEFAULT_SONNET_MODEL = subagent
     // The step's skills (ub-mode, security-audit, ...) load under their own names, as in a Copilot worker:
     // a .claude/skills folder in the worker's home, added as a working directory (a plugin would prefix them).
     const skillRoot = stepSkills.length ? stepSkillDir(path.join(home, "step-skills"), stepSkills) : null
@@ -679,6 +695,45 @@ export class Factory {
     if (!routed) return { model: this.defaultModel, source: { kind: "fallback" } }
     this.publish("coordinator", "factory.model_routed", null, now(), { worker: spec.name, ...routed })
     return { model: routed.id, source: { kind: "routed", by: routed.routedBy, confidence: routed.confidence } }
+  }
+
+  /** The step's subagent model: Jev's pick for the step's short subagent text (a whole task hides it), or null. */
+  async subagentModel(spec: SpawnSpec, step: Step | null): Promise<string | null> {
+    if (!step?.subagentRoute) return null
+    const routed = await this.routeModel(step.subagentRoute, "proxy")
+    // Claude Code sends `thinking` to subagents; Copilot rejects it for some models (claude-haiku-5.5), so take
+    // the first model in Jev's ranking that accepts it.
+    for (const id of routed?.ranked.slice(0, 4) ?? []) {
+      if (!(await this.acceptsThinking(id))) continue
+      this.publish("coordinator", "factory.model_routed", null, now(), {
+        worker: spec.name,
+        subagents: true,
+        ...routed,
+        id,
+      })
+      return id
+    }
+    return null
+  }
+
+  /** One tiny Messages call through the proxy with `thinking` on, as a Claude Code subagent sends it. */
+  async acceptsThinking(model: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.proxyUrl}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": "factory", "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model,
+          max_tokens: 2048,
+          thinking: { type: "enabled", budget_tokens: 1024 },
+          messages: [{ role: "user", content: "ok" }],
+        }),
+        signal: AbortSignal.timeout(30_000),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
   }
 
   private prepareSpawn(spec: SpawnSpec, id: string, home: string, step: ReturnType<typeof stepById> | null) {
@@ -804,7 +859,10 @@ export class Factory {
    * Ask copilot-proxy-rs (`POST /v1/models`, Jev) which model fits a task. Returns null when the
    * proxy is down or its pick is not a model this worker's auth can use.
    */
-  async routeModel(task: string, auth: Auth): Promise<{ id: string; confidence: number; routedBy: string } | null> {
+  async routeModel(
+    task: string,
+    auth: Auth,
+  ): Promise<{ id: string; confidence: number; routedBy: string; ranked: string[] } | null> {
     try {
       const res = await fetch(`${this.proxyUrl}/models`, {
         method: "POST",
@@ -826,7 +884,12 @@ export class Factory {
           : (await (this.get("coordinator").client as CopilotClient).listModels()).map((m) => m.id)
       const id = ranked.find((m) => available.includes(m))
       return id
-        ? { id, confidence: r.confidence ?? 0, routedBy: id === r.recommended?.id ? r.routed_by : "jev-ranking" }
+        ? {
+            id,
+            confidence: r.confidence ?? 0,
+            routedBy: id === r.recommended?.id ? r.routed_by : "jev-ranking",
+            ranked: [...new Set(ranked.filter((m) => available.includes(m)))],
+          }
         : null
     } catch {
       return null
