@@ -701,3 +701,23 @@
   background: var(--sf-surface);
   color: var(--sf-text);
 }
+/* Cost table (shared/costs.ts): a run's agents or the factory's runs. */
+.sfp-p3 table.sf-cost {
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+}
+.sfp-p3 table.sf-cost th,
+.sfp-p3 table.sf-cost td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--sf-border, #333);
+  white-space: pre;
+}
+.sfp-p3 table.sf-cost tr:nth-child(2) td {
+  font-weight: 600;
+}
+.sfp-p3 .sf-cost-note {
+  font-size: 11px;
+  color: var(--sf-muted);
+}

@@ -4,6 +4,7 @@ import { Database, type Statement } from "bun:sqlite"
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs"
 import path from "node:path"
 import type { FeedEvent } from "./factory.ts"
+import type { Rates, UsageRow } from "./costs.ts"
 
 /** Rows kept per agent; older ones are pruned when the store opens. */
 export const KEEP_PER_WORKER = 20_000
@@ -33,7 +34,8 @@ export const ftsQuery = (q: string): string | null => {
 }
 
 /** One event row as a JSON object, built in SQLite so reads skip a parse and re-serialize. */
-const ROW_JSON = "json_object('seq', seq, 'workerId', worker, 'type', type, 'agentId', agent, 'timestamp', ts, 'data', json(data))"
+const ROW_JSON =
+  "json_object('seq', seq, 'workerId', worker, 'type', type, 'agentId', agent, 'timestamp', ts, 'data', json(data))"
 
 export class EventStore {
   private readonly db: Database
@@ -45,7 +47,9 @@ export class EventStore {
     // WAL + NORMAL: a crash can lose the last commits, never corrupt the file.
     this.db.run("PRAGMA synchronous = NORMAL")
     this.migrate()
-    this.insert = this.db.prepare("INSERT OR IGNORE INTO events (seq, worker, type, agent, ts, data) VALUES (?, ?, ?, ?, ?, ?)")
+    this.insert = this.db.prepare(
+      "INSERT OR IGNORE INTO events (seq, worker, type, agent, ts, data) VALUES (?, ?, ?, ?, ?, ?)",
+    )
     this.prune(KEEP_PER_WORKER)
   }
 
@@ -64,8 +68,12 @@ export class EventStore {
     this.db.run("CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(text, tokenize = 'unicode61')")
     this.db.run(`CREATE TRIGGER IF NOT EXISTS events_fts_add AFTER INSERT ON events WHEN new.type IN ${SEARCH_TYPES}
       BEGIN INSERT INTO events_fts (rowid, text) VALUES (new.seq, ${SEARCH_TEXT}); END`)
-    this.db.run("CREATE TRIGGER IF NOT EXISTS events_fts_del AFTER DELETE ON events BEGIN DELETE FROM events_fts WHERE rowid = old.seq; END")
-    this.db.run(`INSERT INTO events_fts (rowid, text) SELECT seq, ${SEARCH_TEXT.replaceAll("new.", "")} FROM events WHERE type IN ${SEARCH_TYPES}`)
+    this.db.run(
+      "CREATE TRIGGER IF NOT EXISTS events_fts_del AFTER DELETE ON events BEGIN DELETE FROM events_fts WHERE rowid = old.seq; END",
+    )
+    this.db.run(
+      `INSERT INTO events_fts (rowid, text) SELECT seq, ${SEARCH_TEXT.replaceAll("new.", "")} FROM events WHERE type IN ${SEARCH_TYPES}`,
+    )
   }
 
   private migrateV2(): void {
@@ -79,17 +87,18 @@ export class EventStore {
       this.db.run("CREATE INDEX events_type ON events (type, seq)")
       // Version 1 kept one JSON blob per row.
       if (old) {
-        this.db.run(`INSERT OR IGNORE INTO events SELECT json_extract(event, '$.seq'), worker, json_extract(event, '$.type'),
+        this.db
+          .run(`INSERT OR IGNORE INTO events SELECT json_extract(event, '$.seq'), worker, json_extract(event, '$.type'),
           json_extract(event, '$.agentId'), json_extract(event, '$.timestamp'), json(json_extract(event, '$.data')) FROM events_v1`)
         this.db.run("DROP TABLE events_v1")
       }
     }
   }
 
-  /** Keep the newest `keep` rows of each agent. */
+  /** Keep the newest `keep` rows of each agent. Usage rows stay: cost totals need every call. */
   prune(keep: number): void {
     this.db.run(
-      "DELETE FROM events WHERE seq IN (SELECT seq FROM (SELECT seq, ROW_NUMBER() OVER (PARTITION BY worker ORDER BY seq DESC) AS n FROM events) WHERE n > ?)",
+      "DELETE FROM events WHERE seq IN (SELECT seq FROM (SELECT seq, ROW_NUMBER() OVER (PARTITION BY worker ORDER BY seq DESC) AS n FROM events WHERE type != 'assistant.usage') WHERE n > ?)",
       [keep],
     )
   }
@@ -109,7 +118,9 @@ export class EventStore {
   load(worker: string, limit: number, home?: string): FeedEvent[] {
     if (home) this.importLegacy(worker, home)
     const rows = this.db
-      .query(`SELECT ${ROW_JSON} AS e FROM (SELECT * FROM events WHERE worker = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq`)
+      .query(
+        `SELECT ${ROW_JSON} AS e FROM (SELECT * FROM events WHERE worker = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq`,
+      )
       .all(worker, limit) as { e: string }[]
     return rows.map((r) => JSON.parse(r.e))
   }
@@ -121,9 +132,18 @@ export class EventStore {
   timeline(q: { workers?: string[]; types?: string[]; perWorker: number; since?: number }): string {
     const where: string[] = []
     const args: (string | number)[] = []
-    if (q.workers?.length) where.push(`worker IN (${q.workers.map(() => "?").join(",")})`), args.push(...q.workers)
-    if (q.types?.length) where.push(`type IN (${q.types.map(() => "?").join(",")})`), args.push(...q.types)
-    if (q.since !== undefined) where.push("seq > ?"), args.push(q.since)
+    if (q.workers?.length) {
+      where.push(`worker IN (${q.workers.map(() => "?").join(",")})`)
+      args.push(...q.workers)
+    }
+    if (q.types?.length) {
+      where.push(`type IN (${q.types.map(() => "?").join(",")})`)
+      args.push(...q.types)
+    }
+    if (q.since !== undefined) {
+      where.push("seq > ?")
+      args.push(q.since)
+    }
     const sql = `SELECT coalesce(json_group_array(json(e)), '[]') AS a FROM (
       SELECT ${ROW_JSON} AS e, seq FROM (
         SELECT *, ROW_NUMBER() OVER (PARTITION BY worker ORDER BY seq DESC) AS n FROM events
@@ -138,7 +158,9 @@ export class EventStore {
    */
   after(seq: number, limit: number, worker?: string | null): FeedEvent[] | null {
     const rows = this.db
-      .query(`SELECT ${ROW_JSON} AS e FROM events WHERE seq > ? ${worker ? "AND (worker = ? OR type LIKE 'factory.%')" : ""} ORDER BY seq LIMIT ?`)
+      .query(
+        `SELECT ${ROW_JSON} AS e FROM events WHERE seq > ? ${worker ? "AND (worker = ? OR type LIKE 'factory.%')" : ""} ORDER BY seq LIMIT ?`,
+      )
       .all(...(worker ? [seq, worker, limit + 1] : [seq, limit + 1])) as { e: string }[]
     return rows.length > limit ? null : rows.map((r) => JSON.parse(r.e))
   }
@@ -170,16 +192,53 @@ export class EventStore {
     const out = new Map<string, string[]>()
     if (!workers.length) return out
     const rows = this.db
-      .query(`SELECT DISTINCT worker, json_extract(data, '$.name') AS name FROM events WHERE type = 'skill.invoked' AND worker IN (${workers.map(() => "?").join(",")})`)
+      .query(
+        `SELECT DISTINCT worker, json_extract(data, '$.name') AS name FROM events WHERE type = 'skill.invoked' AND worker IN (${workers.map(() => "?").join(",")})`,
+      )
       .all(...workers) as { worker: string; name: string | null }[]
     for (const r of rows) if (r.name) out.set(r.worker, [...(out.get(r.worker) ?? []), r.name])
+    return out
+  }
+
+  /** Token and nano-AIU sums of every `assistant.usage` call, by agent, model and whether Copilot reported the AIC. */
+  usageRows(): UsageRow[] {
+    const rows = this.db
+      .query(
+        `SELECT worker, coalesce(json_extract(data, '$.model'), 'unknown') AS model,
+           json_extract(data, '$.copilotUsage.totalNanoAiu') IS NOT NULL AS reported, count(*) AS calls,
+           total(json_extract(data, '$.inputTokens')) AS inputTokens, total(json_extract(data, '$.outputTokens')) AS outputTokens,
+           total(json_extract(data, '$.cacheReadTokens')) AS cacheReadTokens, total(json_extract(data, '$.cacheWriteTokens')) AS cacheWriteTokens,
+           total(json_extract(data, '$.copilotUsage.totalNanoAiu')) AS nanoAiu
+         FROM events WHERE type = 'assistant.usage' GROUP BY 1, 2, 3`,
+      )
+      .all() as (Omit<UsageRow, "reported"> & { reported: number })[]
+    return rows.map((r) => ({ ...r, reported: r.reported === 1 }))
+  }
+
+  /** Copilot's per-token rates (nano-AIU per token) by model and token type, from the newest call that reported them. */
+  rates(): Record<string, Rates> {
+    const rows = this.db
+      .query(
+        `SELECT coalesce(json_extract(d.value, '$.model'), json_extract(e.data, '$.copilotUsage.model'), json_extract(e.data, '$.model')) AS model,
+           json_extract(d.value, '$.tokenType') AS type,
+           json_extract(d.value, '$.costPerBatch') * 1.0 / json_extract(d.value, '$.batchSize') AS rate
+         FROM events e, json_each(e.data, '$.copilotUsage.tokenDetails') d
+         WHERE e.seq IN (SELECT max(seq) FROM events WHERE type = 'assistant.usage'
+           AND json_extract(data, '$.copilotUsage.tokenDetails') IS NOT NULL GROUP BY json_extract(data, '$.model'))
+           AND json_extract(d.value, '$.batchSize') > 0`,
+      )
+      .all() as { model: string | null; type: string | null; rate: number }[]
+    const out: Record<string, Rates> = {}
+    for (const r of rows) if (r.model && r.type) (out[r.model] ??= {})[r.type] = r.rate
     return out
   }
 
   /** Time and data of the newest `limit` events of one type, across agents, oldest first. */
   latestTimed(type: string, limit: number): { ts: number; data: unknown }[] {
     const rows = this.db
-      .query("SELECT ts, data FROM (SELECT ts, data, seq FROM events WHERE type = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq")
+      .query(
+        "SELECT ts, data FROM (SELECT ts, data, seq FROM events WHERE type = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq",
+      )
       .all(type, limit) as { ts: string; data: string }[]
     return rows.map((r) => ({ ts: Number(r.ts), data: JSON.parse(r.data) }))
   }
@@ -194,7 +253,8 @@ export class EventStore {
 
   /** Import every agent's old `<root>/<id>/events.json`, so cross-agent queries see stopped agents too. */
   importAll(root: string): void {
-    for (const d of readdirSync(root, { withFileTypes: true })) if (d.isDirectory()) this.importLegacy(d.name, path.join(root, d.name))
+    for (const d of readdirSync(root, { withFileTypes: true }))
+      if (d.isDirectory()) this.importLegacy(d.name, path.join(root, d.name))
   }
 
   private importLegacy(worker: string, home: string): void {

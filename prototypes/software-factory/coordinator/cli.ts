@@ -15,9 +15,11 @@
 //   sf draft ID enhance|council|debate|research|hyperresearch|dismiss|run
 //   sf draft ID pick N | use VERSION_ID | edit "prompt" | rm
 //   sf run THREAD                       delivery record: workers and steps, approvals, security reviews, PR
+//   sf cost [THREAD] [--json]          cost: global and per sub-coordinator run, or one run by agent (USD, AIC, tokens)
 //   sf goal ...                         goal specs: create, run, score, history (see goal-cli.ts)
 import { Console, Effect, Stream } from "effect"
 import { goalCommand } from "./goal-cli.ts"
+import { reportText, runText, type CostReport, type RunCost } from "./src/costs.ts"
 import type { Draft, Thread } from "./src/threads.ts"
 
 const base = process.env.SF_URL ?? "http://127.0.0.1:7700"
@@ -159,10 +161,19 @@ const program = (() => {
     case "-h":
     case "--help":
       return Console.log(
-        'usage: sf "prompt" | sf -t THREAD "prompt" | sf -f FOLDER [-b BASE] "prompt" | sf folders [PATH] | sf status | sf workers | sf threads | sf settings [PATCH_JSON] | sf run THREAD | sf goal [list|show ID|new|save FILE|run ID [--thread T]|check ID THREAD|history ID] | sf approvals | sf approve ID "Option" [note] | sf draft FOLDER "prompt" | sf draft ID [enhance|council|debate|research|hyperresearch|dismiss|run|pick N|use VERSION|edit "prompt"|rm]',
+        'usage: sf "prompt" | sf -t THREAD "prompt" | sf -f FOLDER [-b BASE] "prompt" | sf folders [PATH] | sf status | sf workers | sf threads | sf settings [PATCH_JSON] | sf run THREAD | sf cost [THREAD] [--json] | sf goal [list|show ID|new|save FILE|run ID [--thread T]|check ID THREAD|history ID] | sf approvals | sf approve ID "Option" [note] | sf draft FOLDER "prompt" | sf draft ID [enhance|council|debate|research|hyperresearch|dismiss|run|pick N|use VERSION|edit "prompt"|rm]',
       )
     case "run":
       return json(`/api/runs/${encodeURIComponent(rest[0] ?? "")}`).pipe(Effect.flatMap(print))
+    case "cost": {
+      const asJson = rest.includes("--json")
+      const id = rest.find((a) => a !== "--json")
+      return id
+        ? json<RunCost>(`/api/costs/${encodeURIComponent(id)}`).pipe(
+            Effect.flatMap((r) => (asJson ? print(r) : Console.log(runText(r)))),
+          )
+        : json<CostReport>("/api/costs").pipe(Effect.flatMap((r) => (asJson ? print(r) : Console.log(reportText(r)))))
+    }
     case "goal":
       return goalCommand(
         json,

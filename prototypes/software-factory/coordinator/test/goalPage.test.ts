@@ -114,3 +114,57 @@ test("startGoalRun rejects when the CLI exits without a thread", async () => {
     "exited 1 before it started a thread",
   )
 })
+
+test("each Goal page model call records its usage for cost reports", async () => {
+  const usage: Record<string, unknown>[] = []
+  const rewrites = [1, 2, 3].map((i) => ({ title: `t${i}`, prompt: "p", notes: "n" }))
+  // The quality gate runs offline with no sockets: stub fetch instead of serving a fake proxy.
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () =>
+    Response.json({
+      choices: [
+        {
+          message: {
+            content: null,
+            tool_calls: [
+              { id: "c", type: "function", function: { name: "rewrites", arguments: JSON.stringify({ rewrites }) } },
+            ],
+          },
+        },
+      ],
+      usage: { prompt_tokens: 1000, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 800 } },
+    })) as unknown as typeof fetch
+  try {
+    const gp = makeGoalPage({
+      proxyUrl: () => "http://127.0.0.1:1/v1",
+      folders: () => [],
+      knownSteps: () => [],
+      goals: makeGoals(path.join(root, "goals"), []),
+      startResearch: async () => {
+        throw new Error("not in this test")
+      },
+      workerState: () => undefined,
+      removeDraft: async () => {},
+      startRun: async () => "t",
+      recordUsage: (d) => usage.push(d),
+    })
+    // The model call is recorded before enhance asks Jev; Jev's result (none without TYPESAFE_API_KEY, as in CI) does not matter here.
+    await gp.handle(
+      new Request("http://x/api/goal-page/enhance", { method: "POST", body: JSON.stringify({ doc }) }),
+      "enhance",
+    )
+    expect(usage).toEqual([
+      {
+        model: "gpt-6.1-sol",
+        inputTokens: 1000,
+        outputTokens: 50,
+        cacheReadTokens: 800,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        aiCreditsStatus: "unavailable",
+      },
+    ])
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})

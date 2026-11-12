@@ -53,6 +53,7 @@ const FactoryConfigSchema = Schema.Struct({
     deep_stable: Probability,
     finding_change: Probability,
   }),
+  costs: Schema.Struct({ usd_per_ai_credit: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)) }),
 })
 export type FactoryConfig = typeof FactoryConfigSchema.Type
 

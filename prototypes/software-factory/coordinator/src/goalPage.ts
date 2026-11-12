@@ -9,6 +9,7 @@ import { existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, 
 import path from "node:path"
 import { promisify } from "node:util"
 import { factoryConfig } from "./config.ts"
+import { chatUsage } from "./costs.ts"
 import { systemOne, type Answer, type DecideRequest } from "./decide.ts"
 import { loadPrompt, promptFile } from "./prompt.ts"
 import { gateDefs } from "./sdlc.ts"
@@ -94,7 +95,9 @@ type ToolArgs = {
   fact?: string
   source?: string
 }
-type ChatReply = { choices?: { message?: { content?: string | null; tool_calls?: ToolCall[] } }[] }
+type ChatReply = {
+  choices?: { message?: { content?: string | null; tool_calls?: ToolCall[] } }[]
+} & Parameters<typeof chatUsage>[1]
 const log = (s: string) => console.error(`goal-page: ${s}`)
 
 // ---------- Model calls ----------
@@ -136,6 +139,8 @@ export type GoalPageDeps = {
   removeDraft: (threadId: string) => Promise<void>
   /** Start `sf goal run <id>`; resolves with its thread id. */
   startRun: (goalId: string) => Promise<string>
+  /** Store one model call's usage (`assistant.usage` data) for cost reports. */
+  recordUsage?: (data: Record<string, unknown>) => void
 }
 
 export const makeGoalPage = (d: GoalPageDeps) => {
@@ -157,7 +162,10 @@ export const makeGoalPage = (d: GoalPageDeps) => {
       }),
     })
     if (!r.ok) throw new PageError(502, `${model()} ${r.status}: ${(await r.text()).slice(0, 300)}`)
-    const msg = ((await r.json()) as ChatReply).choices?.[0]?.message
+    const reply = (await r.json()) as ChatReply
+    const usage = chatUsage(model(), reply)
+    if (usage) d.recordUsage?.(usage)
+    const msg = reply.choices?.[0]?.message
     if (!msg) throw new PageError(502, `${model()}: empty reply`)
     return { role: "assistant", content: msg.content ?? null, tool_calls: msg.tool_calls }
   }

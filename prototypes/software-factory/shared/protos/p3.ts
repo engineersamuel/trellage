@@ -9,6 +9,7 @@ import { harnessBadge } from "../harness"
 import { critterOf, layoutCrittersOn, mountCritter, onLayoutCritters } from "../critter"
 import { treeLines } from "../treeLines"
 import { openSpec } from "../spec"
+import { costSummary, mountCost } from "../costs"
 import { draftDetail, draftForm } from "./drafts"
 import { mountCanvas } from "./canvas"
 import {
@@ -116,6 +117,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   /** Sub-coordinators whose Timeline (milestones) is shown instead of the chat or live activity, and the milestone to open first. */
   const tlOn = new Set<string>()
   let tlFocus: string | null = null
+  /** Nodes showing their cost table instead of the chat (sub-coordinator runs and the desk). */
+  const costOn = new Set<string>()
   /** Live by default while the coordinator runs a turn, unless the human switched it off; on when switched on. */
   const showsLive = (n: Node) =>
     !!n.agent &&
@@ -438,6 +441,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       ),
       ...(reason ? [reason] : []),
     )
+    // Cost of a sub-coordinator run (its whole agent tree) or, on the desk, of the whole factory.
+    const costable = n.kind === "sub" || n.kind === "desk"
+    const cost = costable ? costSummary(n.kind === "sub" ? n.thread!.id : null, render) : null
+    if (cost) st.append(el("span", "p3-why", `💲 ${n.kind === "desk" ? "global " : "run "}${cost}`))
     const acts = el("div", "p3-acts")
     for (const d of n.pending) acts.append(btn(`⚑ ${d.title}`, () => openDecision(d.id), "warn"))
     if (n.agent) acts.append(btn("⚙ Spec", () => openSpec(n.id)))
@@ -460,6 +467,12 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     }
     // A dormant sub-coordinator (no live agent) still has its stored events, so its Timeline shows too.
     if (n.kind === "sub" && !tl) acts.append(btn("🕘 Timeline", () => (tlOn.add(n.id), render())))
+    if (costable)
+      acts.append(
+        costOn.has(n.id)
+          ? btn("💬 Chat", () => (costOn.delete(n.id), render()))
+          : btn("💲 Cost", () => (costOn.add(n.id), tlOn.delete(n.id), render())),
+      )
     if (n.agent?.status === "running")
       acts.append(btn("■ Stop", () => fire(send(`/api/workers/${encodeURIComponent(n.id)}/abort`, "POST"))))
     draftEls = []
@@ -655,16 +668,23 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       return
     }
     renderHead(n)
-    const tl = tlOn.has(n.id) && n.kind === "sub"
-    const live = !tl && showsLive(n)
-    const chat = !tl && showsChat(n.id) && !live
-    const key = tl ? `tl:${n.id}` : live ? `live:${n.id}` : n.id
+    const costView = costOn.has(n.id) && (n.kind === "sub" || n.kind === "desk")
+    const tl = !costView && tlOn.has(n.id) && n.kind === "sub"
+    const live = !costView && !tl && showsLive(n)
+    const chat = !costView && !tl && showsChat(n.id) && !live
+    const key = costView ? `cost:${n.id}` : tl ? `tl:${n.id}` : live ? `live:${n.id}` : n.id
     if (mounted?.key === key && n.kind === "worker") renderAsks(n)
     if (mounted?.key === key && n.kind === "draft") draftBody()
     if (chat) placeOverBody()
     if (mounted?.key === key) return
     mounted?.stop()
-    if (tl) {
+    if (costView) {
+      placeChat(null)
+      askBox = null
+      const box = el("div", "p3-log")
+      body.replaceChildren(box)
+      mounted = { key, stop: mountCost(box, n.kind === "sub" ? n.thread!.id : null) }
+    } else if (tl) {
       placeChat(null)
       askBox = null
       const box = el("div")

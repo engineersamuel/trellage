@@ -1,13 +1,25 @@
 // Claude harness: a worker that runs in the Claude Agent SDK with a trx-composed profile.
 // Its messages are mapped to the Copilot event names the factory, feed and UIs already use.
 import path from "node:path"
-import { query, type CanUseTool, type Options, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import {
+  query,
+  type CanUseTool,
+  type Options,
+  type Query,
+  type SDKMessage,
+  type SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk"
 import { forbiddenCommand } from "./guard.ts"
 import { prepareRun } from "../../../../packages/trellage-runtime/src/native-run/run.ts"
 
-export type HarnessEvent = { type: string; timestamp: string; agentId?: string; data: any }
+export type HarnessEvent = { type: string; timestamp: string; agentId?: string; data: Record<string, unknown> }
 
-export type ClaudeLaunch = { plugins: string[]; env: Record<string, string>; model: string | undefined; effort: string | undefined }
+export type ClaudeLaunch = {
+  plugins: string[]
+  env: Record<string, string>
+  model: string | undefined
+  effort: string | undefined
+}
 
 /** Compose trx profiles for Claude (plugins, skills, CLAUDE_CONFIG_DIR, proxy env) without starting the CLI. */
 export const composeClaude = async (profiles: string[], cwd: string): Promise<ClaudeLaunch> => {
@@ -30,7 +42,10 @@ export const composeClaude = async (profiles: string[], cwd: string): Promise<Cl
 /** Permission gate for Claude workers: never merge, push, or delete branches or worktrees; the human does that. */
 export const claudeGate: CanUseTool = async (toolName, input) =>
   toolName === "Bash" && typeof input.command === "string" && forbiddenCommand(input.command)
-    ? { behavior: "deny", message: "Workers never merge, push, or delete branches or worktrees. Report it to the coordinator." }
+    ? {
+        behavior: "deny",
+        message: "Workers never merge, push, or delete branches or worktrees. Report it to the coordinator.",
+      }
     : { behavior: "allow", updatedInput: input }
 
 /** Prompts for the SDK's streaming input; `end` closes the session. */
@@ -57,14 +72,26 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
 }
 
 const textOf = (c: unknown): string =>
-  typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => (b?.type === "text" ? b.text : "")).join("") : ""
+  typeof c === "string"
+    ? c
+    : Array.isArray(c)
+      ? c.map((b: { type?: unknown; text?: unknown } | null) => (b?.type === "text" ? String(b.text) : "")).join("")
+      : ""
 
 /** Claude Edit/Write output (`tool_use_result.structuredPatch`) as a unified diff, like the Copilot SDK's `detailedContent`. */
-export const patchOf = (r: any): string | undefined => {
+type Hunk = { oldStart: number; oldLines: number; newStart: number; newLines: number; lines: string[] }
+type PatchResult = { structuredPatch?: Hunk[]; filePath?: unknown; type?: unknown }
+export const patchOf = (input: unknown): string | undefined => {
+  const r = input as PatchResult | null | undefined
   const hunks = r?.structuredPatch
-  if (!Array.isArray(hunks) || !hunks.length || typeof r.filePath !== "string") return undefined
+  if (!r || !Array.isArray(hunks) || !hunks.length || typeof r.filePath !== "string") return undefined
   const head = `--- ${r.type === "create" ? "/dev/null" : `a/${r.filePath}`}\n+++ b/${r.filePath}\n`
-  return head + hunks.map((h: any) => `@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@\n${h.lines.join("\n")}`).join("\n")
+  return (
+    head +
+    hunks
+      .map((h) => `@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@\n${h.lines.join("\n")}`)
+      .join("\n")
+  )
 }
 
 const detail = (m: SDKMessage) => {
@@ -75,10 +102,10 @@ const detail = (m: SDKMessage) => {
 /** One SDK message as factory events. Subagent messages carry their parent tool call as agentId. */
 export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessEvent[] => {
   const agentId = "parent_tool_use_id" in m && m.parent_tool_use_id ? { agentId: m.parent_tool_use_id } : {}
-  const ev = (type: string, data: any): HarnessEvent => ({ type, timestamp: at, ...agentId, data })
+  const ev = (type: string, data: Record<string, unknown>): HarnessEvent => ({ type, timestamp: at, ...agentId, data })
   switch (m.type) {
     case "assistant":
-      return m.message.content.flatMap((b: any, i: number) =>
+      return m.message.content.flatMap((b, i) =>
         b.type === "text"
           ? [ev("assistant.message", { messageId: `${m.uuid}:${i}`, content: b.text })]
           : b.type === "thinking"
@@ -86,17 +113,35 @@ export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessE
             : b.type === "tool_use"
               ? [
                   // Factory tools come over MCP as mcp__factory__<name>; the feed, cards and UIs know them by <name>.
-                  ev("tool.execution_start", { toolCallId: b.id, toolName: String(b.name).replace(/^mcp__factory__/, ""), arguments: b.input }),
+                  ev("tool.execution_start", {
+                    toolCallId: b.id,
+                    toolName: String(b.name).replace(/^mcp__factory__/, ""),
+                    arguments: b.input,
+                  }),
                   // The Skill tool is Claude's skill invocation: the same event Copilot runtimes emit (plugin prefix dropped).
-                  ...(b.name === "Skill" && typeof b.input?.skill === "string" ? [ev("skill.invoked", { name: String(b.input.skill).split(":").at(-1) })] : []),
+                  ...(b.name === "Skill" && typeof (b.input as { skill?: unknown } | null)?.skill === "string"
+                    ? [
+                        ev("skill.invoked", {
+                          name: String((b.input as { skill: string }).skill)
+                            .split(":")
+                            .at(-1),
+                        }),
+                      ]
+                    : []),
                 ]
               : [],
       )
     case "user":
       return Array.isArray(m.message.content)
-        ? m.message.content.flatMap((b: any) =>
+        ? m.message.content.flatMap((b) =>
             b.type === "tool_result"
-              ? [ev("tool.execution_complete", { toolCallId: b.tool_use_id, success: !b.is_error, result: { content: textOf(b.content), ...detail(m) } })]
+              ? [
+                  ev("tool.execution_complete", {
+                    toolCallId: b.tool_use_id,
+                    success: !b.is_error,
+                    result: { content: textOf(b.content), ...detail(m) },
+                  }),
+                ]
               : [],
           )
         : []
@@ -105,9 +150,13 @@ export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessE
       if (m.subtype !== "init") return []
       return [
         ev("session.start", { context: { cwd: m.cwd } }),
-        ev("session.skills_loaded", { skills: m.skills.map((name: string) => ({ name, source: "claude", enabled: true })) }),
-        ev("session.mcp_servers_loaded", { servers: m.mcp_servers.map((x: any) => ({ name: x.name, status: x.status, source: x.source ?? null })) }),
-        ev("session.plugins_loaded", { plugins: (m.plugins ?? []).map((x: any) => x.name) }),
+        ev("session.skills_loaded", {
+          skills: m.skills.map((name: string) => ({ name, source: "claude", enabled: true })),
+        }),
+        ev("session.mcp_servers_loaded", {
+          servers: m.mcp_servers.map((x) => ({ name: x.name, status: x.status, source: x.source ?? null })),
+        }),
+        ev("session.plugins_loaded", { plugins: (m.plugins ?? []).map((x) => x.name) }),
       ]
     case "result":
       return [
@@ -116,6 +165,51 @@ export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessE
       ]
     default:
       return []
+  }
+}
+
+/**
+ * Claude result messages carry the session's running token totals per model (`modelUsage`, main loop and
+ * subagents). Emit what each result added as one `assistant.usage` per model, in Copilot's shape: `inputTokens`
+ * includes the cached tokens. No AIC: costs.ts estimates it from Copilot's rates. A resumed session's first result
+ * also carries the turns of the earlier process, so they count again.
+ */
+export class UsageMeter {
+  private seen = new Map<
+    string,
+    { input: number; output: number; cacheRead: number; cacheWrite: number; thinking: number }
+  >()
+
+  map(m: SDKMessage, at = new Date().toISOString()): HarnessEvent[] {
+    if (m.type !== "result" || !m.modelUsage) return []
+    const out: HarnessEvent[] = []
+    for (const [model, u] of Object.entries(m.modelUsage)) {
+      const now = {
+        input: u.inputTokens ?? 0,
+        output: u.outputTokens ?? 0,
+        cacheRead: u.cacheReadInputTokens ?? 0,
+        cacheWrite: u.cacheCreationInputTokens ?? 0,
+        thinking: u.thinkingTokens ?? 0,
+      }
+      const before = this.seen.get(model) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, thinking: 0 }
+      this.seen.set(model, now)
+      const d = (k: keyof typeof now) => Math.max(0, now[k] - before[k])
+      if (!d("input") && !d("output") && !d("cacheRead") && !d("cacheWrite")) continue
+      out.push({
+        type: "assistant.usage",
+        timestamp: at,
+        data: {
+          model,
+          inputTokens: d("input") + d("cacheRead") + d("cacheWrite"),
+          outputTokens: d("output"),
+          cacheReadTokens: d("cacheRead"),
+          cacheWriteTokens: d("cacheWrite"),
+          reasoningTokens: d("thinking"),
+          aiCreditsStatus: "unavailable",
+        },
+      })
+    }
+    return out
   }
 }
 
@@ -136,8 +230,13 @@ export class ClaudeStream {
   map(m: SDKMessage, at = new Date().toISOString()): HarnessEvent[] {
     if (m.type !== "stream_event") return m.type === "assistant" ? this.reuseIds(m, toEvents(m, at)) : toEvents(m, at)
     const agentId = m.parent_tool_use_id ? { agentId: m.parent_tool_use_id } : {}
-    const ev = (type: string, data: any): HarnessEvent => ({ type, timestamp: at, ...agentId, data })
-    const e: any = m.event
+    const ev = (type: string, data: Record<string, unknown>): HarnessEvent => ({
+      type,
+      timestamp: at,
+      ...agentId,
+      data,
+    })
+    const e = m.event
     switch (e.type) {
       case "message_start":
         this.message = String(e.message?.id ?? m.uuid)
@@ -145,14 +244,21 @@ export class ClaudeStream {
         return []
       case "content_block_start": {
         const kind = e.content_block?.type
-        if (kind === "tool_use") this.tools.set(e.index, { id: e.content_block.id, name: String(e.content_block.name).replace(/^mcp__factory__/, "") })
-        if (kind === "text" || kind === "thinking") this.open.set(e.index, { kind, id: `${this.message}:${e.index}`, text: "", message: this.message })
+        if (kind === "tool_use")
+          this.tools.set(e.index, {
+            id: e.content_block.id,
+            name: String(e.content_block.name).replace(/^mcp__factory__/, ""),
+          })
+        if (kind === "text" || kind === "thinking")
+          this.open.set(e.index, { kind, id: `${this.message}:${e.index}`, text: "", message: this.message })
         return []
       }
       case "content_block_delta": {
         const t = this.tools.get(e.index)
         if (t && e.delta?.type === "input_json_delta" && e.delta.partial_json)
-          return [ev("assistant.tool_call_delta", { toolCallId: t.id, toolName: t.name, inputDelta: e.delta.partial_json })]
+          return [
+            ev("assistant.tool_call_delta", { toolCallId: t.id, toolName: t.name, inputDelta: e.delta.partial_json }),
+          ]
         const b = this.open.get(e.index)
         if (!b) return []
         if (e.delta?.type === "text_delta" && e.delta.text) {
@@ -168,7 +274,10 @@ export class ClaudeStream {
       case "content_block_stop": {
         this.tools.delete(e.index)
         const b = this.open.get(e.index)
-        if (b) (this.open.delete(e.index), this.finished.push(b))
+        if (b) {
+          this.open.delete(e.index)
+          this.finished.push(b)
+        }
         return []
       }
       default:
@@ -183,9 +292,10 @@ export class ClaudeStream {
       return i < 0 ? undefined : this.finished.splice(i, 1)[0]!.id
     }
     for (const ev of events) {
-      if (ev.type === "assistant.message") ev.data.messageId = take("text", ev.data.content) ?? ev.data.messageId
+      if (ev.type === "assistant.message")
+        ev.data.messageId = take("text", String(ev.data.content)) ?? ev.data.messageId
       if (ev.type === "assistant.reasoning") {
-        const id = take("thinking", ev.data.content)
+        const id = take("thinking", String(ev.data.content))
         if (id) ev.data.reasoningId = id
       }
     }
@@ -213,11 +323,15 @@ export class TurnTracker {
     for (const ev of events) {
       if (ev.type === "session.idle") {
         if (this.tasks.size) {
-          out.push({ type: "session.info", timestamp: at, data: { infoType: "background", message: `waiting for ${this.tasks.size} background task(s)` } })
+          out.push({
+            type: "session.info",
+            timestamp: at,
+            data: { infoType: "background", message: `waiting for ${this.tasks.size} background task(s)` },
+          })
           continue
         }
         this.busy = false
-      } else if (!this.busy && !ev.agentId && /^(assistant\.|tool\.execution_start)/.test(ev.type)) {
+      } else if (!this.busy && !ev.agentId && /^(assistant\.(?!usage)|tool\.execution_start)/.test(ev.type)) {
         // The session resumed on its own (a background task finished): start a turn so status is running again.
         out.push({ type: "assistant.turn_start", timestamp: at, data: {} })
         this.busy = true
@@ -234,6 +348,7 @@ export class ClaudeSession {
   private readonly q: Query
   private readonly turns = new TurnTracker()
   private readonly stream = new ClaudeStream()
+  private readonly meter = new UsageMeter()
 
   constructor(
     options: Options,
@@ -243,10 +358,16 @@ export class ClaudeSession {
     this.q = q
     void (async () => {
       try {
-        for await (const m of q) for (const ev of this.turns.map(m, this.stream.map(m))) this.emit(ev)
+        // Usage goes before the result's session.idle, so a turn's cost is stored when the turn ends.
+        for await (const m of q)
+          for (const ev of this.turns.map(m, [...this.meter.map(m), ...this.stream.map(m)])) this.emit(ev)
       } catch (e) {
         const at = new Date().toISOString()
-        this.emit({ type: "session.error", timestamp: at, data: { message: e instanceof Error ? e.message : String(e) } })
+        this.emit({
+          type: "session.error",
+          timestamp: at,
+          data: { message: e instanceof Error ? e.message : String(e) },
+        })
         this.emit({ type: "session.idle", timestamp: at, data: {} })
       }
     })()
