@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test"
+import { expect, spyOn, test } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -236,20 +236,20 @@ test("a step's subagent model is Jev's pick for the step's route text; none with
 })
 
 test("routeModel keeps Jev's pick from the copilot-proxy-rs list, even a model native Copilot does not serve", async () => {
-  const server = Bun.serve({
-    port: 0,
-    fetch: () =>
-      Response.json({
-        routed_by: "jev",
-        recommended: { id: "gemini-4-argon" },
-        confidence: 0.4,
-        ranking: [{ id: "gemini-4-argon", probability: 0.4 }],
-      }),
-  })
+  const sent: unknown[] = []
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation((async (_url: string, init: { body: string }) => {
+    sent.push(JSON.parse(init.body))
+    return Response.json({
+      routed_by: "jev",
+      recommended: { id: "gemini-4-argon" },
+      confidence: 0.4,
+      ranking: [{ id: "gemini-4-argon", probability: 0.4 }],
+    })
+  }) as unknown as typeof fetch)
   try {
     const f = new Factory({
       SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-r-")),
-      SF_PROXY_URL: `http://localhost:${server.port}`,
+      SF_PROXY_URL: "http://proxy.test",
     })
     expect(await f.routeModel("t")).toEqual({
       id: "gemini-4-argon",
@@ -257,8 +257,10 @@ test("routeModel keeps Jev's pick from the copilot-proxy-rs list, even a model n
       routedBy: "jev",
       ranked: ["gemini-4-argon"],
     })
+    // Agents need a chat model: the router is asked for chat models only.
+    expect(sent).toEqual([{ input: "t", type: "chat" }])
   } finally {
-    server.stop(true)
+    fetchMock.mockRestore()
   }
 })
 
