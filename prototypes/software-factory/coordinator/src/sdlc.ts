@@ -392,7 +392,7 @@ const commits = (workdir: string, base: string): { files: string[] }[] => {
   }
 }
 
-const TEST = /(^|\/)(tests?|__tests__|spec)\/|[._-](test|spec)\.[a-z]+$|_test\.(go|rs|py)$/i
+const TEST = /(^|\/)(tests?|__tests__|spec)\/|(^|\/)(tests?\.sh|test_[^/]+\.[a-z0-9]+)$|[._-](test|spec)\.[a-z0-9]+$/i
 export const isTestPath = (p: string): boolean => TEST.test(p)
 
 /** Test-first: a commit that changes only tests comes before the first commit that changes other code. */
