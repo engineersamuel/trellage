@@ -24,8 +24,22 @@ const pushesOnly = (args: string[], { branch, forceWithLease }: PushRule): boole
   )
 }
 
+/** Options of `git config` that only read. Any other use writes, and a worktree's config is the shared .git/config. */
+const CONFIG_READ =
+  /^(--get|--get-all|--get-regexp|--get-urlmatch|--list|-l|--show-origin|--show-scope|--name-only|--null|-z|--type=.*|--bool|--int|--path|--default=.*)$/
+
+/** `git config` that changes a value: a key with a value, or any non-read option (--unset, --add, --file, --global...). */
+const writesConfig = (rest: string[]): boolean => {
+  const opts = rest.filter((x) => x.startsWith("-"))
+  const pos = rest.filter((x) => !x.startsWith("-"))
+  return (
+    opts.some((x) => !CONFIG_READ.test(x)) || (pos[0] === "get" ? false : pos[0] === "list" ? false : pos.length > 1)
+  )
+}
+
 const forbiddenGit = ([sub, ...rest]: string[], push?: PushRule): boolean =>
   sub === "merge" ||
+  (sub === "config" && writesConfig(rest)) ||
   (sub === "push" && !(push && pushesOnly(rest, push))) ||
   (sub === "branch" && rest.some((x) => x === "--delete" || /^-[a-zA-Z]*[dD]/.test(x))) ||
   (sub === "worktree" && rest[0] === "remove") ||
@@ -104,12 +118,19 @@ const forbiddenAfter = (command: string, rest: string[], push?: PushRule): boole
   (command === "gh" && forbiddenGh(rest)) ||
   (command === "rm" && recursiveForce(rest))
 
+/**
+ * Pointing git at another repository through the environment (`GIT_DIR=… cmd`, `export GIT_DIR=…`, `env GIT_DIR=…`):
+ * a test that runs `git init` then writes the main checkout's shared .git/config (it once set core.bare=true there).
+ */
+const GIT_REDIRECT =
+  /^(GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_INDEX_FILE|GIT_OBJECT_DIRECTORY|GIT_CONFIG|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM)=/
+
 const forbiddenWords = (words: string[], push?: PushRule): boolean =>
-  words.some((w, i) => forbiddenAfter(basename(w), words.slice(i + 1), push))
+  words.some((w) => GIT_REDIRECT.test(w)) || words.some((w, i) => forbiddenAfter(basename(w), words.slice(i + 1), push))
 
 /**
  * True when the shell line merges, pushes, deletes a branch or worktree, hard-resets, force-removes recursively,
- * or merges or deletes through gh. With `push`, `git push [-u] origin <branch>` is allowed, with
+ * changes git config, points git at another repository through GIT_DIR and the like, or merges or deletes through gh. With `push`, `git push [-u] origin <branch>` is allowed, with
  * `--force-with-lease` when `push.forceWithLease`.
  */
 export const forbiddenCommand = (cmd: string, push?: PushRule): boolean =>

@@ -44,7 +44,8 @@ export const claudeGate: CanUseTool = async (toolName, input) =>
   toolName === "Bash" && typeof input.command === "string" && forbiddenCommand(input.command)
     ? {
         behavior: "deny",
-        message: "Workers never merge, push, or delete branches or worktrees. Report it to the coordinator.",
+        message:
+          "Workers never merge, push, delete branches or worktrees, change git config, or point git at another repository (GIT_DIR and the like). Report it to the coordinator.",
       }
     : { behavior: "allow", updatedInput: input }
 

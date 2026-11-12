@@ -1160,7 +1160,8 @@ export const workerPermissions: PermissionHandler = (request, invocation) =>
   request.kind === "shell" && forbiddenCommand(request.fullCommandText)
     ? {
         kind: "reject",
-        feedback: "Workers never merge, push, or delete branches or worktrees. Report it to the coordinator.",
+        feedback:
+          "Workers never merge, push, delete branches or worktrees, change git config, or point git at another repository (GIT_DIR and the like). Report it to the coordinator.",
       }
     : approveAll(request, invocation)
 

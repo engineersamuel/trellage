@@ -164,3 +164,29 @@ test("agents never copy or move credential files; reading them in place is fine"
   ])
     expect([cmd, forbiddenCommand(cmd)]).toEqual([cmd, false])
 })
+
+test("forbiddenCommand blocks git config writes and pointing git at another repository; config reads stay open", () => {
+  for (const cmd of [
+    "git config core.bare true",
+    "git -C /r config user.name x",
+    "git config --unset core.bare",
+    "git config --global user.email a@b",
+    "git config --file /r/.git/config core.bare false",
+    "GIT_DIR=/r/.git bun test",
+    "cd x && GIT_DIR=/r/.git GIT_WORK_TREE=/r git status",
+    "export GIT_DIR=/r/.git",
+    "env GIT_COMMON_DIR=/r/.git bun test",
+    "bash -c 'GIT_DIR=/r/.git bun test'",
+  ])
+    expect({ cmd, forbidden: forbiddenCommand(cmd) }).toEqual({ cmd, forbidden: true })
+  for (const cmd of [
+    "git config core.bare",
+    "git config --get remote.origin.url",
+    "git config --list --show-origin",
+    "git config get user.name",
+    "echo GIT_DIR is unset",
+    "env -u GIT_DIR bun test",
+    "bun test",
+  ])
+    expect({ cmd, forbidden: forbiddenCommand(cmd) }).toEqual({ cmd, forbidden: false })
+})

@@ -190,7 +190,8 @@ export class PiSession {
             e.toolName === "bash" && forbiddenCommand(String((e.input as { command?: unknown }).command ?? ""))
               ? {
                   block: true,
-                  reason: "Workers never merge, push, or delete branches or worktrees. Report it to the coordinator.",
+                  reason:
+                    "Workers never merge, push, delete branches or worktrees, change git config, or point git at another repository (GIT_DIR and the like). Report it to the coordinator.",
                 }
               : undefined,
           )
