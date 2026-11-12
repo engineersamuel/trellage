@@ -607,7 +607,12 @@ test.each([undefined, "after-staging"])("contains default installer caches witho
 
 test("shares the Bun download cache through the Git common directory", () => {
   const { root, home, parent, destination } = sourceFixture()
-  const initialized = spawnSync("git", ["init", "--quiet", root], { encoding: "utf8" })
+  // Git hooks export GIT_DIR; it must not redirect the fixture to the enclosing repository.
+  const gitLocation = { GIT_DIR: undefined, GIT_WORK_TREE: undefined, GIT_COMMON_DIR: undefined }
+  const initialized = spawnSync("git", ["init", "--quiet", root], {
+    encoding: "utf8",
+    env: { ...process.env, ...gitLocation },
+  })
   expect(initialized.status, initialized.stderr).toBe(0)
   const before = readdirSync(home)
   const probe = path.join(parent, "cache-paths")
@@ -626,6 +631,7 @@ test("shares the Bun download cache through the Git common directory", () => {
   const result = run("install", root, destination, {
     HOME: home,
     PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+    ...gitLocation,
     CACHE_PROBE: probe,
     BUN_INSTALL_CACHE_DIR: undefined,
     npm_config_registry: undefined,
