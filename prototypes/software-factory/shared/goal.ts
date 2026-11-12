@@ -125,6 +125,8 @@ export type GoalState = {
   loops: GoalLoop[]
   /** Loops in a row without progress. */
   noProgress: number
+  /** `noProgress` before the current loop first reported; a repeated report of one loop recounts from it. */
+  noProgressBefore?: number
   /** Why the goal is paused, stopped or waiting. */
   reason?: string
   /** Open human decision (no progress, factory defect, child done). */

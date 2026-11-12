@@ -2330,6 +2330,10 @@ const resumeInterrupted = async () => {
     if (!t?.worktree || t.cleanedAt || t.archivedAt) continue
     // A run of a goal paused at its cost limit stays paused; the human's answer resumes it.
     if (goalBlocked(t.goalId)) continue
+    // A goal whose current loop already reported is the goal loop's to continue (next loop, or a human decision);
+    // waking that loop again would repeat work it finished and report it twice.
+    const g = t.goalId ? goalStates.get(t.goalId) : null
+    if (g && g.threadId === t.id && g.loops.some((l) => l.n === g.loop && l.at <= shutdownRec.at)) continue
     handoff(t, lost, shutdownRec.at)
     done.push(scopeId)
   }

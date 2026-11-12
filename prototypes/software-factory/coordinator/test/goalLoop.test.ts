@@ -74,6 +74,18 @@ test("a factory defect and needs-decision stop the loop for the human", () => {
   expect(wait.state.next).toBe(false)
 })
 
+test("a repeated report of one loop does not count twice toward no progress", () => {
+  let s = afterReport(newGoalState("g", "t"), facts()).state
+  s = afterReport({ ...s, loop: 2 }, facts()).state
+  expect(s.noProgress).toBe(1)
+  // Loop 2 reports again (a retry inside it): still 1, not 2, so the goal does not pause.
+  const again = afterReport(s, facts({ summary: "retry" }))
+  expect(again.state.noProgress).toBe(1)
+  expect(again.decision).toEqual({ kind: "next-loop" })
+  // Loop 3 without progress is the second loop in a row: it pauses.
+  expect(afterReport({ ...again.state, loop: 3 }, facts()).decision).toEqual({ kind: "no-progress" })
+})
+
 test("a repeated report of the same loop replaces its entry", () => {
   const s = afterReport(newGoalState("g", "t"), facts()).state
   const again = afterReport({ ...s, loop: 1 }, facts({ summary: "second" })).state
