@@ -203,6 +203,12 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
     parameters: obj({}),
     handler: (a: Args) => json(cardData(f, scope, "show_code_review", a ?? {})),
   }),
+  defineTool("show_evaluation", {
+    description:
+      "Show this conversation's independent acceptance evaluation as a live card: status, round, evaluator model, each criterion's pass/fail verdict with the command it ran and its note, and the evaluator's notes. Use it when the evaluation finishes, before asking to ship, and when the human asks about the acceptance checks.",
+    parameters: obj({}),
+    handler: (a: Args) => json(cardData(f, scope, "show_evaluation", a ?? {})),
+  }),
   defineTool("show_sdlc", {
     description:
       "Show this conversation's SDLC gates as a live card: risk tier, each gate (floor or Jev probability vs threshold, status), criteria proven, review findings kept, and what still blocks shipping. Use it after sdlc_plan, after implement, and before asking to ship.",
@@ -1056,6 +1062,19 @@ export const cardData = (f: Factory, scope: Scope, name: string, a: Record<strin
         lensProbabilities: r.lensProbabilities,
         findings: r.findings,
         ...(r.error ? { error: r.error } : {}),
+      }
+    }
+    case "show_evaluation": {
+      const e = lastEvaluation(f.evaluations.values(), scope.id)
+      if (!e) return { note: "No acceptance evaluation yet." }
+      return {
+        evaluationId: e.id,
+        status: e.status,
+        round: e.round,
+        model: e.model,
+        verdicts: e.verdicts.map((v) => ({ id: v.id, verdict: v.verdict, command: v.command, note: v.note })),
+        notes: e.notes,
+        ...(e.error ? { error: e.error } : {}),
       }
     }
     case "show_sdlc": {
