@@ -1,0 +1,13 @@
+{
+  "id": "factory-evaluator-card",
+  "title": "Factory: a live card for the independent evaluator",
+  "repo": "/Users/smendenh/.herdr/worktrees/trellage/worktree-anthropic-harness-design",
+  "base": "worktree/anthropic-harness-design",
+  "prompt": "Add a live card for the independent acceptance evaluator to the software factory (prototypes/software-factory), the way the security and code reviews already have one. Today the evaluator's results (src/evaluate.ts: `Evaluation` in `f.evaluations`, published as `factory.evaluation`) show only in the PR body and the grade.\n\nFollow the existing `show_security_review` card exactly: the tool in coordinator/src/tools.ts (defineTool + cardData case), the OpenUI program in coordinator/src/cards.ts (CARD_TOOLS and the switch), and the view in shared/cardviews.ts. Name the tool `show_evaluation`. The card shows: the evaluation status, round and model; one row per acceptance criterion with its verdict (pass/fail as a tag), the command it ran and its note; and the evaluation's notes. With no evaluation yet it shows a short note, like the other cards. Mention the tool once in defaults/prompts/sub-coordinator.md where show_code_review and show_security_review are mentioned. Keep the change minimal: no new UI framework code, no changes to the evaluator itself.\n\nAcceptance criteria:\nAC-1: `cardData(f, scope, \"show_evaluation\", {})` returns the newest evaluation of the scope (status, round, model, one row per verdict with id, verdict, command, note, and notes), and `{ note }` with no `status` when there is none.\nAC-2: the `show_evaluation` tool is registered for sub-coordinators and is in CARD_TOOLS, and cards.ts renders it as an OpenUI program with one table row per verdict.\nAC-3: shared/cardviews.ts renders `show_evaluation` with a title, the status in the subtitle, pass and fail counts, and a warning tone when any verdict is fail.\nAC-4: tests cover AC-1..AC-3 next to the existing card tests, and `bun run check` and `bun test` pass in prototypes/software-factory/coordinator, and `bun test ../shared/test` passes.",
+  "expect": {
+    "steps": { "implement": { "min": 1 }, "verify": { "min": 1 }, "finish": { "min": 1 } },
+    "pr": { "state": "OPEN", "checks": "SUCCESS" }
+  },
+  "approvals": { "plan": "auto", "findings": "auto", "ship": "auto", "other": "human" },
+  "limits": { "usd": 250 }
+}
