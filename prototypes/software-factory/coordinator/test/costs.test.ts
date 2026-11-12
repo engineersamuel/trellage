@@ -2,7 +2,16 @@ import { expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { chatUsage, costReport, estimateNano, GOAL_PAGE_AGENT, rollUp, runCost, type UsageRow } from "../src/costs.ts"
+import {
+  chatUsage,
+  costReport,
+  estimateNano,
+  GOAL_PAGE_AGENT,
+  gradeCost,
+  rollUp,
+  runCost,
+  type UsageRow,
+} from "../src/costs.ts"
 import { EventStore } from "../src/events.ts"
 import { UsageMeter } from "../src/claude.ts"
 import { piEvents } from "../src/pi.ts"
@@ -254,4 +263,32 @@ test("Goal page calls count in global and on their own line, in no run", () => {
     0.01,
   )
   expect([r.global.aic, r.goalPage.aic, r.runs[0]!.total.aic]).toEqual([3, 2, 1])
+})
+
+test("a grade's cost has the run total and each step's own calls; agents with no step count as coordinator", () => {
+  const agents = [
+    { id: "sub-bbbbbbbb", name: "sub", role: "coordinator", owner: "coordinator" },
+    { id: "w-1", name: "impl", role: "worker", owner: "sub-bbbbbbbb", step: "implement" },
+    { id: "w-2", name: "impl 2", role: "worker", owner: "sub-bbbbbbbb", step: "implement" },
+    { id: "w-3", name: "verify", role: "worker", owner: "sub-bbbbbbbb", step: "verify" },
+  ]
+  const rows = [
+    row("sub-bbbbbbbb", { nanoAiu: 1e9, outputTokens: 10 }),
+    row("w-1", { nanoAiu: 4e9 }),
+    row("w-2", { nanoAiu: 2e9, calls: 3 }),
+    row("w-3", { nanoAiu: 1e9 }),
+  ]
+  const c = rollUp(rows, agents, {}, 0.01)
+  const g = gradeCost(
+    runCost(c, { id: "bbbbbbbb-2", title: "t", createdAt: 1, worktree: "/w" }, (id) => `sub-${id.slice(0, 8)}`, true)!,
+  )
+  expect(g.total).toMatchObject({ aic: 8, usd: 0.08, calls: 6 })
+  expect(Object.fromEntries(Object.entries(g.byStep).map(([k, v]) => [k, [v.aic, v.calls]]))).toEqual({
+    coordinator: [1, 1],
+    implement: [6, 4],
+    verify: [1, 1],
+  })
+  expect(Object.keys(g.total).sort()).toEqual(
+    ["aic", "aicEstimated", "calls", "outputTokens", "totalTokens", "unpricedCalls", "usd"].sort(),
+  )
 })

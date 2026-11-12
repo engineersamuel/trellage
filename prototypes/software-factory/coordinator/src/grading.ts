@@ -10,6 +10,7 @@ import {
   proposeImprovement,
   type GoalSpec,
   type Grade,
+  type GradeCost,
   type GradeInputs,
   type ImprovePolicy,
   type ImprovementProposal,
@@ -31,6 +32,14 @@ export type GradingDependencies = {
     meta: Pick<Thread, "improvementOf">,
   ) => Promise<{ info: { threadId: string }; sent: { sent: Promise<unknown> } }>
   criteria: (threadId: string) => string[]
+  /** The independent evaluator's verdicts and their file; null when no evaluation finished (grade g1 from evidence.md). */
+  evaluation?: (
+    threadId: string,
+  ) => { results: Record<string, "pass" | "fail">; file: { path: string; sha256: string } } | null
+  /** True when the thread is a goal whose loops the coordinator runs (goalLoop.ts). */
+  loopManaged?: (threadId: string) => boolean
+  /** The run's spend so far; recorded on the grade, never graded. */
+  cost?: (threadId: string) => GradeCost | null
   deskThreadId: () => string
   factoryDir: string
   publish: (type: string, data: object) => void
@@ -117,6 +126,13 @@ class Grading {
   private readEvidence(t: Thread, base: GradeInputs): GradeInputs {
     const input = { ...base, evidence: [...base.evidence], errors: [...base.errors] }
     input.criteria = criteriaResults(this.d.criteria(t.id), readArtifact(t, "evidence.md", input))
+    // g2: the evaluator's verdicts are the criteria; the run's own evidence is kept beside them.
+    const ev = this.d.evaluation?.(t.id)
+    if (ev) {
+      input.selfCriteria = input.criteria
+      input.criteria = Object.fromEntries(Object.keys(input.criteria).map((id) => [id, ev.results[id] ?? "missing"]))
+      input.evidence = [...input.evidence, { kind: "file", ref: ev.file.path, sha256: ev.file.sha256 }]
+    }
     const benchmarks = parseBenchmarks(readArtifact(t, "benchmarks.json", input))
     const quality = parseQuality(readArtifact(t, "quality.json", input))
     if ("error" in benchmarks) input.errors.push(benchmarks.error)
@@ -141,8 +157,15 @@ class Grading {
     const run = await orNull(`run ${t.id}`, base.errors, () => this.d.runRecord(t.id))
     if (!run) base.errors.push("grader could not read the run record")
     const evidence = await orNull(`evidence ${t.id}`, base.errors, () => this.readEvidence(t, base))
+    // A cost lookup failure is only logged: cost is recorded, never graded, so it must not make a grading error.
+    let cost: GradeCost | null = null
+    try {
+      cost = this.d.cost?.(t.id) ?? null
+    } catch (e) {
+      console.error(`grading: cost ${t.id}: ${errorMessage(e)}`)
+    }
     return {
-      grade: buildGrade(run ?? { threadId: t.id, pr: null }, evidence ?? base, spec),
+      grade: buildGrade(run ?? { threadId: t.id, pr: null }, { ...(evidence ?? base), cost }, spec),
       unmet: run && spec ? goalUnmet(run, spec.expect, spec.base) : [],
     }
   }
@@ -175,7 +198,9 @@ class Grading {
     const existing = this.gradesOf(t).find((x) => x.key === g.key)
     if (existing && (!regrade || existing.status !== "unknown" || g.prChecks.state === "PENDING")) return
     const previous = proposalsOf(t).find((p) => p.sourceKey === g.key)
-    const draft = proposeImprovement(g, "", !!t.improvementOf)
+    // A goal the loop driver manages opens no improvement proposal: a failed loop is followed by the next loop, and a
+    // factory defect becomes a child goal (ADR 0007).
+    const draft = this.d.loopManaged?.(t.id) ? null : proposeImprovement(g, "", !!t.improvementOf)
     const proposal = previous ?? (draft && { ...draft, approvalId: this.openProposal(t, g) })
     const graded = proposal ? { ...g, proposalId: proposal.approvalId } : g
     if (proposal) this.setProposal(t, proposal)

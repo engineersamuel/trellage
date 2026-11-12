@@ -1,6 +1,6 @@
 // Wiring of the SDLC gates into a repo conversation: plan (criteria, plan-phase gates), the hooks after implement
 // and verify (risk tier, diff-phase gates, code review, supply chain), and the ship check.
-import { writeFileSync } from "node:fs"
+import { rmSync, writeFileSync } from "node:fs"
 import { now, type Auth, type Factory } from "./factory.ts"
 import { codeReview, codeReviewDoneSince, lenses, reviewModelFor } from "./review.ts"
 import { pinnedConfig, snapshotConfig } from "./config.ts"
@@ -37,6 +37,16 @@ import { noul } from "@typesafe-ai/sdk"
 import { decisionLabel, decisionsAvailable, systemOne } from "./decide.ts"
 import type { Scope } from "./tools.ts"
 import { recordCase } from "./promptEval.ts"
+import { PAUSE_REASON } from "./budget.ts"
+import {
+  agreeContract,
+  contractMarkdown,
+  contractProblems,
+  evaluate,
+  lastEvaluation,
+  lockedCount,
+  pendingEvaluation,
+} from "./evaluate.ts"
 
 const publish = (f: Factory, s: Sdlc) => {
   f.sdlc.set(s.scopeId, s)
@@ -49,14 +59,19 @@ const setGate = (f: Factory, scopeId: string, id: GateId, status: GateStatus, de
   publish(f, { ...s, gates: s.gates.map((g) => (g.id === id ? { ...g, status, ...(detail ? { detail } : {}) } : g)) })
 }
 
-/** sdlc_plan: save the criteria, read the repo's CI checks, ask Jev which plan-phase gates this change needs. */
+/**
+ * sdlc_plan: save the criteria, read the repo's CI checks, ask Jev which plan-phase gates this change needs, and (when
+ * [evaluate] is on, for at most contract_rounds calls) start the independent evaluator's contract in the background.
+ * A contract applies only to the criteria it was agreed for: new criteria drop it. `job` settles when the contract does.
+ */
 export const planSdlc = async (
   f: Factory,
   scope: Scope,
   request: string,
   criteria: string[],
   plan: string,
-): Promise<Sdlc> => {
+  contract: typeof agreeContract = agreeContract,
+): Promise<Sdlc & { job?: Promise<void> }> => {
   const workdir = scope.workdir!
   ensureFactoryDir(workdir)
   writeFileSync(artifact(workdir, "acceptance.md"), criteriaMarkdown(criteria))
@@ -72,9 +87,60 @@ export const planSdlc = async (
       { ...pinned, request, criteria, checks: repoChecks(workdir) },
       decide("plan", probabilities, null, error, c),
     )
-    publish(f, s)
-    return s
+    const same = JSON.stringify(s.contractState?.criteria) === JSON.stringify(criteria)
+    // Changed criteria drop the old contract and its file: a check is matched by AC number and would test the wrong thing.
+    const fresh: Sdlc = same ? s : { ...s, contract: undefined, contractState: undefined }
+    if (!same) rmSync(artifact(workdir, "contract.md"), { force: true })
+    publish(f, fresh)
+    const rounds = fresh.contractRounds ?? 0
+    if (!c.evaluate.enabled || rounds >= c.evaluate.contract_rounds || fresh.contractState?.status === "running")
+      return fresh
+    const round = rounds + 1
+    const state = { criteria, round, open: [], locked: [], final: round >= c.evaluate.contract_rounds }
+    const started: Sdlc = { ...fresh, contractRounds: round, contractState: { ...state, status: "running" } }
+    publish(f, started)
+    // Settles into the newest state only while it is still for these criteria; a later sdlc_plan wins.
+    const settle = (patch: Partial<Sdlc>) => {
+      const current = f.sdlc.get(scope.id)
+      if (current?.contractState?.status === "running" && current.contractState.round === round)
+        publish(f, { ...current, ...patch })
+    }
+    const job = contract(f, scope, { request, plan, criteria, c }).then(
+      (items) => {
+        if (!items)
+          return settle({ contractState: { ...state, status: "failed", error: "the evaluator gave no contract" } })
+        writeFileSync(artifact(workdir, "contract.md"), contractMarkdown(criteria, items))
+        settle({
+          contract: items,
+          contractState: { ...state, status: "done", ...contractProblems(items, lockedCount(request)) },
+        })
+      },
+      (e) =>
+        settle({ contractState: { ...state, status: "failed", error: e instanceof Error ? e.message : String(e) } }),
+    )
+    return { ...started, job }
   })
+}
+
+/**
+ * Why the plan approval must wait for the contract; null when it may go on. `notes` are untestable criteria the
+ * approval summary must name (the last round's open problems, and problems on locked criteria).
+ */
+export const planApprovalCheck = (f: Factory, scopeId: string): { wait: string | null; notes: string[] } => {
+  const k = f.sdlc.get(scopeId)?.contractState
+  const line = (x: { id: string; problem: string; rewrite: string }) => `${x.id}: ${x.problem} Suggested: ${x.rewrite}`
+  if (!k || k.status === "failed") return { wait: null, notes: [] }
+  if (k.status === "running")
+    return {
+      wait: "the independent evaluator is still agreeing a check per criterion; wait with next_step, then ask again.",
+      notes: [],
+    }
+  if (k.open.length && !k.final)
+    return {
+      wait: `the independent evaluator cannot test these criteria as written. Rewrite them (or use the suggestion) and call sdlc_plan again:\n- ${k.open.map(line).join("\n- ")}`,
+      notes: [],
+    }
+  return { wait: null, notes: [...k.open, ...k.locked].map(line) }
 }
 
 /** Run `fn` with the delivery run's pinned config and prompts (no run yet: the live ones). */
@@ -137,11 +203,35 @@ const growthNeeded = async (state: Record<string, unknown>): Promise<number | nu
 export const afterImplement = (f: Factory, scope: Scope, implementWorkerId: string, scopeAuth: Auth | undefined) =>
   inScopeRun(f, scope, () => afterImplementIn(f, scope, implementWorkerId, scopeAuth))
 
-const afterImplementIn = async (f: Factory, scope: Scope, implementWorkerId: string, scopeAuth: Auth | undefined) => {
+/** A gate error from a coordinator restart or a cost-limit pause: the work did not fail, it was stopped. */
+const interrupted = (detail: string | undefined) =>
+  !!detail && (detail === "coordinator restarted" || detail.includes(PAUSE_REASON))
+
+/**
+ * After a coordinator restart or a cost-limit pause: run again a code review the restart stopped (restore marked its gate failed with
+ * "coordinator restarted"). The stopped round does not count, and the last implement time stays, so no new verify
+ * is needed for it. True when a review started.
+ */
+export const rerunInterruptedReview = (f: Factory, scope: Scope): boolean => {
+  const s = f.sdlc.get(scope.id)
+  const cr = s && gate(s, "codeReview")
+  if (!s || s.implementDoneAt === null || cr?.status !== "failed" || !interrupted(cr.detail)) return false
+  publish(f, { ...s, reviewRounds: Math.max(0, s.reviewRounds - 1) })
+  void inScopeRun(f, scope, () => afterImplementIn(f, scope, null, f.workers.get(scope.id)?.auth))
+  return true
+}
+
+const afterImplementIn = async (
+  f: Factory,
+  scope: Scope,
+  implementWorkerId: string | null,
+  scopeAuth: Auth | undefined,
+) => {
   const s0prev = f.sdlc.get(scope.id) ?? newSdlc(scope.id, scope.threadId)
-  const s0 = { ...s0prev, implementerModel: f.workers.get(implementWorkerId)?.model ?? s0prev.implementerModel ?? null }
+  const implementer = implementWorkerId ? f.workers.get(implementWorkerId) : undefined
+  const s0 = { ...s0prev, implementerModel: implementer?.model ?? s0prev.implementerModel ?? null }
   const c = pinnedConfig(f.root, s0.configId)
-  publish(f, { ...s0, implementDoneAt: Date.now() })
+  publish(f, implementWorkerId ? { ...s0, implementDoneAt: Date.now() } : s0)
   const workdir = scope.workdir
   const base = scope.base
   if (!workdir || !base) return
@@ -191,7 +281,7 @@ const afterImplementIn = async (f: Factory, scope: Scope, implementWorkerId: str
     f,
     withGates({ ...f.sdlc.get(scope.id)!, risk, firstLines: s0.firstLines ?? risk.lines, scopeWarning }, gates),
   )
-  const auth = f.workers.get(implementWorkerId)?.auth ?? scopeAuth ?? f.defaultAuth
+  const auth = implementer?.auth ?? scopeAuth ?? f.defaultAuth
   const jobs: Promise<unknown>[] = []
   if (gate(f.sdlc.get(scope.id)!, "supplyChain")?.chosen) {
     setGate(f, scope.id, "supplyChain", "running")
@@ -286,6 +376,29 @@ const startFinalSecurityIn = (f: Factory, scope: Scope): string | null => {
     reviewModelFor(s.implementerModel, process.env.SF_SECURITY_MODEL, true, pinnedConfig(f.root, s.configId)),
   )
   return loadPrompt("final-security-started")
+}
+
+/**
+ * The independent evaluation (src/evaluate.ts): started at a ship request when everything before the security review
+ * is ready, once per implement. Returns a wait note while it runs; it never blocks shipping by its verdicts.
+ * An evaluation a coordinator restart stopped runs again.
+ */
+export const startEvaluation = (f: Factory, scope: Scope): string | null =>
+  inScopeRun(f, scope, () => startEvaluationIn(f, scope))
+
+const startEvaluationIn = (f: Factory, scope: Scope): string | null => {
+  const s = f.sdlc.get(scope.id)
+  const c = pinnedConfig(f.root, s?.configId)
+  if (!scope.workdir || !s?.criteria.length || !c.evaluate.enabled) return null
+  if (blockersBeforeSecurity(f, scope).length || sdlcBusy(f, scope.id)) return null
+  const pending = pendingEvaluation(f.evaluations.values(), scope.id)
+  if (pending)
+    return `the independent evaluation ${pending.id} is ${pending.status} (round ${pending.round}); wait with next_step, then ask to ship again.`
+  const last = lastEvaluation(f.evaluations.values(), scope.id)
+  const restarted = last?.status === "failed" && interrupted(last.error)
+  if (last && !restarted && last.at >= (s.implementDoneAt ?? 0)) return null
+  void evaluate(f, scope, s, c)
+  return loadPrompt("evaluate-started")
 }
 
 export const afterVerify = (f: Factory, scope: Scope) => inScopeRun(f, scope, () => afterVerifyIn(f, scope))

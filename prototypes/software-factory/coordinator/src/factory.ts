@@ -1,5 +1,6 @@
 // Worker lifecycle: each worker is a separate agent process with its own home. A Claude model runs in the Claude
 // Agent SDK; any other model in the Copilot SDK (a runtime over TCP). A step may name its own harness.
+import type { Evaluation } from "./evaluate.ts"
 import { deskShellFeedback, readOnlyViolation, subShellFeedback } from "./readonly.ts"
 import { isolatedLauncher, reapRuntimes, recordRuntime, spawnIsolated } from "./isolate.ts"
 import { factoryMcpServer, gateFromPermissions, MCP_SERVER, mcpToolNames } from "./claudetools.ts"
@@ -507,6 +508,8 @@ export class Factory {
   readonly securityReviews = new Map<string, SecurityReview>()
   /** Code reviews (the codeReview gate) by id. */
   readonly codeReviews = new Map<string, CodeReview>()
+  /** Independent acceptance evaluations (src/evaluate.ts) by id. */
+  readonly evaluations = new Map<string, Evaluation>()
   /** SDLC state per sub-coordinator id: criteria, risk tier, gates. */
   readonly sdlc = new Map<string, Sdlc>()
   /** Sub-coordinator turns by worker id, for the report_up nudge. */
@@ -1285,6 +1288,16 @@ export class Factory {
     await w.session.disconnect().catch(() => {})
     if (!w.sharedRuntime) await w.client.stop().catch(() => {})
     this.publish(id, "factory.worker_stopped", null, now(), { id })
+  }
+
+  /** Stop a worker so that whoever waits on it sees it end with an error (`reason`), as a dead runtime would. */
+  async interrupt(id: string, reason: string): Promise<void> {
+    const w = this.workers.get(id)
+    if (!w) return
+    const ev = { type: "session.error", timestamp: new Date().toISOString(), data: { message: reason } } as SessionEvent
+    w.observe(this, ev)
+    w.events.send(ev)
+    await this.stop(id).catch(() => {})
   }
 
   async stopAll(): Promise<void> {

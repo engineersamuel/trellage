@@ -1,0 +1,1 @@
+Everything else is ready, so the independent evaluator started now: a model from another family runs each criterion's agreed check on this branch, and a failed criterion gets one fix and verify round. Its verdicts never block shipping; they go to the PR body and the grade. Wait with next_step until it is done, then ask to ship again (the final security review starts then).

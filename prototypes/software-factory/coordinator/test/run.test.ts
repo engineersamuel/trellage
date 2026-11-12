@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { Effect, Exit } from "effect"
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -113,7 +113,7 @@ describe("goal spec", () => {
   test("defaults fill approvals, limits, base and PR state", () => {
     expect(spec.base).toBe("main")
     expect(spec.approvals).toEqual({ plan: "auto", findings: "auto", ship: "auto", other: "human" })
-    expect(spec.limits).toEqual({ runs: 5, minutesPerRun: 720 })
+    expect(spec.limits).toEqual({ usd: 250 })
     expect(spec.expect.steps.implement).toEqual({ min: 1 })
     expect(spec.expect.pr?.state).toBe("OPEN")
   })
@@ -224,7 +224,7 @@ describe("goal store", () => {
 })
 
 describe("goal cli helpers", () => {
-  test("run numbering counts runner records, not appended grades", async () => {
+  test("sf goal run --thread watches until the goal state is done, then logs one runner line", async () => {
     const saved = decodeGoalOrThrow({ id: "demo", repo: "/r", prompt: "p" })
     const calls: string[] = []
     const json: Parameters<typeof goalCommand>[0] = <A>(url: string, init?: RequestInit) => {
@@ -233,7 +233,7 @@ describe("goal cli helpers", () => {
         url === "/api/goals/demo"
           ? saved
           : url === "/api/runs/t"
-            ? run
+            ? { ...run, goal: { status: "done", loop: 2 } }
             : url === "/api/goals/demo/runs" && !init
               ? [
                   { threadId: "old", outcome: "pass" },
@@ -251,7 +251,6 @@ describe("goal cli helpers", () => {
           goalCommand(json, () => Effect.die("unexpected launch"), ["run", "demo", "--thread", "t"]),
         ),
       ).toBe(0)
-      expect(error).toHaveBeenCalledWith("goal demo: run 2 (limit 5 per loop)")
       expect(calls).toContain("POST /api/goals/demo/runs")
     } finally {
       log.mockRestore()
@@ -335,7 +334,7 @@ describe("goal form draft", () => {
     expect(r.spec.expect.steps).toEqual({
       implement: { min: 1 },
       security: { min: 1 },
-      finish: { min: 1, max: 1 },
+      finish: { min: 1 },
       review: { min: 2 },
     })
     expect(r.spec.expect.pr).toEqual({ state: "OPEN", checks: "SUCCESS", bodyIncludes: ["18080", "OK"], untouched: [] })
@@ -575,6 +574,10 @@ describe("buildGrade", () => {
     expect(runLine({ ...base, outcome: "fail", grade: g })).toContain("grade fail")
     expect(runLine({ ...base, outcome: "fail", grade: g })).toContain("AC 1/2 g1")
     expect(runLine({ ...base, outcome: "pass" })).not.toContain("grade")
+    const t = { usd: 12.345, aic: 1234.5, aicEstimated: 0, totalTokens: 1, outputTokens: 1, calls: 1, unpricedCalls: 0 }
+    expect(runLine({ ...base, outcome: "fail", grade: { ...g, cost: { total: t, byStep: {} } } })).toContain(
+      "AC 1/2 g1  $12.35",
+    )
   })
   test("prompt subject: PR required when done, checks required only when CI reported", () => {
     const prompt = inputs({ subject: { kind: "prompt", id: "0123456789ab" } })
@@ -808,8 +811,8 @@ describe("backward compatibility", () => {
   })
   test("every saved spec and run log in docs/goals/factory decodes", () => {
     const dir = goalsDir({})
-    const names = readdirSync(dir)
-    expect(names.filter((n) => n.endsWith(".json")).length).toBeGreaterThan(0)
+    // The benchmark-style specs were removed (ADR 0007); every spec saved since must still decode.
+    const names = existsSync(dir) ? readdirSync(dir) : []
     for (const n of names.filter((f) => f.endsWith(".json"))) {
       const saved = decodeGoalOrThrow(JSON.parse(readFileSync(path.join(dir, n), "utf8")))
       expect(saved.improve).toEqual({ approval: "human", maxRetries: 1 })
