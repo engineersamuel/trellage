@@ -40,6 +40,8 @@ import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, reportNudge, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, type Run } from "./run.ts"
+import { costReport, GOAL_PAGE_AGENT, rollUp, runCost, type AgentInfo } from "./costs.ts"
+import { factoryConfig } from "./config.ts"
 import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
 import { postMergeCheck } from "./postmerge.ts"
@@ -1174,6 +1176,7 @@ const goalPage = makeGoalPage({
   workerState: (id) => factory.workers.get(id)?.summary(),
   removeDraft: (id) => drafts.remove(id),
   startRun: startGoalRun(`http://${hostname}:${port}`, path.join(factory.root, "logs", "goal-runs")),
+  recordUsage: (data) => factory.publish(GOAL_PAGE_AGENT, "assistant.usage", null, now(), data),
 })
 
 /** JSON reply for a goal route: GoalError is 400, anything else 500. */
@@ -1233,6 +1236,22 @@ const prOf = async (t: Thread): Promise<Pick<Run, "pr" | "prError">> => {
   if (!repo || !t.branch) return { pr: null }
   const r = await branchPr(repo, t.branch)
   return "error" in r ? { pr: null, prError: r.error } : { pr: r.pr }
+}
+
+/** Cost of every agent, rolled up the agent tree; owners from each agent's start event (live agents win). */
+const costTree = () => {
+  const byId = new Map<string, AgentInfo>()
+  for (const a of [...(factory.store.latest("factory.worker_started", 100_000) as AgentInfo[]), ...factory.summaries()])
+    byId.set(a.id, {
+      id: a.id,
+      name: a.name,
+      role: a.role,
+      owner: a.owner,
+      step: a.step ?? null,
+      harness: a.harness ?? "copilot",
+    })
+  const usd = factoryConfig().costs.usd_per_ai_credit
+  return { costs: rollUp(factory.store.usageRows(), [...byId.values()], factory.store.rates(), usd, DESK_ID), usd }
 }
 
 /** The delivery record of a repo conversation; null when the thread does not exist. */
@@ -1640,6 +1659,40 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/agui\/capabilities$/, () => json(CAPABILITIES)],
   ["POST", /^\/api\/agui$/, (req, url) => aguiRun(null, url, req)],
   ["POST", /^\/api\/agui\/([^/]+)$/, (req, url, [id]) => aguiRun(id!, url, req)],
+  [
+    "GET",
+    /^\/api\/costs$/,
+    () => {
+      const { costs, usd } = costTree()
+      return json(costReport(costs, threads.list(), subId, usd, DESK_ID))
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/costs\/([^/]+)$/,
+    (_req, _url, [id]) => {
+      const t = threads.get(id!)
+      const r = t && runCost(costTree().costs, t, subId, true)
+      return r ? json(r) : json({ error: `no repo conversation ${id}` }, 404)
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/costs$/,
+    () => {
+      const { costs, usd } = costTree()
+      return json(costReport(costs, threads.list(), subId, usd, DESK_ID))
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/costs\/([^/]+)$/,
+    (_req, _url, [id]) => {
+      const t = threads.get(id!)
+      const r = t && runCost(costTree().costs, t, subId, true)
+      return r ? json(r) : json({ error: `no repo conversation ${id}` }, 404)
+    },
+  ],
   [
     "GET",
     /^\/api\/runs\/([^/]+)$/,

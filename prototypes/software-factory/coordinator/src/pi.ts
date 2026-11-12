@@ -54,7 +54,8 @@ export const withProxyModel = (launch: PiLaunch, model: string, dest: string): P
   if (!existsSync(file)) return { ...launch, model }
   const doc = JSON.parse(readFileSync(file, "utf8"))
   const provider = doc.providers?.[launch.provider]
-  if (!provider?.models?.length || provider.models.some((m: any) => m.id === model)) return { ...launch, model }
+  if (!provider?.models?.length || provider.models.some((m: { id?: unknown }) => m.id === model))
+    return { ...launch, model }
   provider.models.push({ ...provider.models[0], id: model, name: model })
   mkdirSync(dest, { recursive: true })
   cpSync(launch.agentDir, dest, { recursive: true, dereference: false })
@@ -63,7 +64,11 @@ export const withProxyModel = (launch: PiLaunch, model: string, dest: string): P
 }
 
 const textOf = (c: unknown): string =>
-  typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => (b?.type === "text" ? b.text : "")).join("") : ""
+  typeof c === "string"
+    ? c
+    : Array.isArray(c)
+      ? c.map((b: { type?: unknown; text?: unknown } | null) => (b?.type === "text" ? String(b.text) : "")).join("")
+      : ""
 
 /** A skill the session loaded: Pi has no skill tool, the model reads `filePath` to use it. */
 export type PiSkill = { name: string; filePath: string }
@@ -72,29 +77,41 @@ export type PiSkill = { name: string; filePath: string }
  * One Pi session event as factory events. Calls made by another tool carry their parent as agentId.
  * A read of a loaded skill's SKILL.md, or a `/skill:name` prompt, is also `skill.invoked`, as Claude's Skill tool is.
  */
-export const piEvents = (e: AgentSessionEvent, at = new Date().toISOString(), skills: PiSkill[] = [], cwd = process.cwd()): HarnessEvent[] => {
+export const piEvents = (
+  e: AgentSessionEvent,
+  at = new Date().toISOString(),
+  skills: PiSkill[] = [],
+  cwd = process.cwd(),
+): HarnessEvent[] => {
   const parent = (e as { parentToolCallId?: string }).parentToolCallId
-  const ev = (type: string, data: any): HarnessEvent => ({ type, timestamp: at, ...(parent ? { agentId: parent } : {}), data })
+  const ev = (type: string, data: Record<string, unknown>): HarnessEvent => ({
+    type,
+    timestamp: at,
+    ...(parent ? { agentId: parent } : {}),
+    data,
+  })
   // One id per content block, the same in the deltas and the final message, so the feed drops the deltas.
-  const blockId = (m: any, i: number) => `${m.timestamp ?? m.responseId}:${i}`
+  const blockId = (m: { timestamp?: unknown; responseId?: unknown }, i: number) => `${m.timestamp ?? m.responseId}:${i}`
   switch (e.type) {
     case "message_update": {
-      const m: any = e.message
-      const a: any = e.assistantMessageEvent
-      if (m.role !== "assistant" || !a.delta) return []
-      if (a.type === "text_delta") return [ev("assistant.message_delta", { messageId: blockId(m, a.contentIndex), deltaContent: a.delta })]
-      if (a.type === "thinking_delta") return [ev("assistant.reasoning_delta", { reasoningId: blockId(m, a.contentIndex), deltaContent: a.delta })]
+      const m = e.message
+      const a = e.assistantMessageEvent
+      if (m.role !== "assistant" || !("delta" in a) || !a.delta) return []
+      if (a.type === "text_delta")
+        return [ev("assistant.message_delta", { messageId: blockId(m, a.contentIndex), deltaContent: a.delta })]
+      if (a.type === "thinking_delta")
+        return [ev("assistant.reasoning_delta", { reasoningId: blockId(m, a.contentIndex), deltaContent: a.delta })]
       return []
     }
     case "message_end": {
-      const m: any = e.message
+      const m = e.message
       if (m.role === "user") {
         const block = parseSkillBlock(textOf(m.content))
         return block ? [ev("skill.invoked", { name: block.name })] : []
       }
       if (m.role !== "assistant") return []
       return [
-        ...m.content.flatMap((b: any, i: number) =>
+        ...m.content.flatMap((b, i) =>
           b.type === "text" && b.text
             ? [ev("assistant.message", { messageId: blockId(m, i), content: b.text })]
             : b.type === "thinking" && b.thinking
@@ -102,6 +119,20 @@ export const piEvents = (e: AgentSessionEvent, at = new Date().toISOString(), sk
               : [],
         ),
         ...(m.stopReason === "error" ? [ev("session.error", { message: m.errorMessage ?? "model error" })] : []),
+        // One model call. Copilot's shape: inputTokens includes the cached tokens. No AIC; costs.ts estimates it.
+        ...(m.usage
+          ? [
+              ev("assistant.usage", {
+                model: String(m.model ?? "unknown"),
+                inputTokens: (m.usage.input ?? 0) + (m.usage.cacheRead ?? 0) + (m.usage.cacheWrite ?? 0),
+                outputTokens: m.usage.output ?? 0,
+                cacheReadTokens: m.usage.cacheRead ?? 0,
+                cacheWriteTokens: m.usage.cacheWrite ?? 0,
+                reasoningTokens: m.usage.reasoning ?? 0,
+                aiCreditsStatus: "unavailable",
+              }),
+            ]
+          : []),
       ]
     }
     case "tool_execution_start": {
@@ -157,7 +188,10 @@ export class PiSession {
         (pi) => {
           pi.on("tool_call", (e) =>
             e.toolName === "bash" && forbiddenCommand(String((e.input as { command?: unknown }).command ?? ""))
-              ? { block: true, reason: "Workers never merge, push, or delete branches or worktrees. Report it to the coordinator." }
+              ? {
+                  block: true,
+                  reason: "Workers never merge, push, or delete branches or worktrees. Report it to the coordinator.",
+                }
               : undefined,
           )
         },
@@ -187,7 +221,11 @@ export class PiSession {
     // Sent with the first prompt: events emitted while the session starts have no worker to reach yet.
     if (!this.announced) {
       this.announced = true
-      this.emit({ type: "session.skills_loaded", timestamp: at, data: { skills: this.skills.map((s) => ({ name: s.name, source: "pi", enabled: true, path: s.filePath })) } })
+      this.emit({
+        type: "session.skills_loaded",
+        timestamp: at,
+        data: { skills: this.skills.map((s) => ({ name: s.name, source: "pi", enabled: true, path: s.filePath })) },
+      })
     }
     this.emit({ type: "user.message", timestamp: at, data: { content: prompt } })
     this.emit({ type: "assistant.turn_start", timestamp: at, data: {} })

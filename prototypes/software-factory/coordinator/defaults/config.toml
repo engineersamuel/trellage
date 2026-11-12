@@ -68,4 +68,9 @@ deep_stable = 0.7
 # A research finding is proposed as a change at or above this.
 finding_change = 0.6
 
+# Cost reports (GET /api/costs, `sf cost`). AIC per call comes from Copilot (1e9 nano-AIU = 1 AI Credit).
+[costs]
+# US dollars per GitHub AI Credit (docs.github.com: 1 AI Credit = $0.01).
+usd_per_ai_credit = 0.01
+
 # Steps, research workflows and review lenses are prompt files: prompts/steps/, prompts/research/, prompts/lenses/.
