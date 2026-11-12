@@ -1,0 +1,13 @@
+{
+  "id": "factory-test-file-names",
+  "title": "Factory: the test-first gate sees test.sh and test_x.py as tests",
+  "repo": "/Users/smendenh/.herdr/worktrees/trellage/worktree-anthropic-harness-design",
+  "base": "worktree/anthropic-harness-design",
+  "prompt": "Fix a defect in the software factory (prototypes/software-factory/coordinator). The test-first gate and the code-review re-review count decide whether a changed file is a test with the regex TEST in src/sdlc.ts (`isTestPath`, `testsCameFirst`). It misses common test file names. Seen in a real goal loop: a commit `test: add test.sh` that only adds a root-level `test.sh` did not count as a tests-only commit, so sdlc_status kept reporting 'test-first gate: no tests-only commit before the first code commit'.\n\nMake these count as test files: `test.sh` and `tests.sh` (any directory), `test_<name>.<ext>` (pytest style, e.g. `test_api.py`), and `<name>_test.<ext>` for any extension (today only go, rs, py). Keep every file that counts today counting, and keep normal code files (e.g. `src/testing.ts`, `src/latest.ts`, `contest.py`, `src/attest.rs`) not counting. Keep the change minimal: the regex and its tests.\n\nAcceptance criteria:\nAC-1: `isTestPath` returns true for `test.sh`, `scripts/test.sh`, `tests.sh`, `test_api.py`, `pkg/test_util.py`, `cli_test.ts`, and for every path it accepted before (e.g. `tests/a.rs`, `src/a.test.ts`, `a_test.go`, `__tests__/x.js`, `spec/x.rb`).\nAC-2: `isTestPath` returns false for `src/testing.ts`, `src/latest.ts`, `contest.py`, `src/attest.rs`, `README.md`.\nAC-3: `testsCameFirst([{ files: [\"test.sh\"] }, { files: [\"hello.txt\"] }])` is true.\nAC-4: unit tests for AC-1..AC-3 are in coordinator/test/sdlc.test.ts, and `bun run check` and `bun test` pass in prototypes/software-factory/coordinator.",
+  "expect": {
+    "steps": { "implement": { "min": 1 }, "verify": { "min": 1 }, "finish": { "min": 1 } },
+    "pr": { "state": "OPEN", "checks": "SUCCESS" }
+  },
+  "approvals": { "plan": "auto", "findings": "auto", "ship": "auto", "other": "human" },
+  "limits": { "usd": 250 }
+}
