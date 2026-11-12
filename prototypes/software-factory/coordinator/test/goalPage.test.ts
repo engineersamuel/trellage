@@ -148,11 +148,11 @@ test("each Goal page model call records its usage for cost reports", async () =>
       startRun: async () => "t",
       recordUsage: (d) => usage.push(d),
     })
-    const r = await gp.handle(
+    // The model call is recorded before enhance asks Jev; Jev's result (none without TYPESAFE_API_KEY, as in CI) does not matter here.
+    await gp.handle(
       new Request("http://x/api/goal-page/enhance", { method: "POST", body: JSON.stringify({ doc }) }),
       "enhance",
     )
-    expect(r.status).toBe(200)
     expect(usage).toEqual([
       {
         model: "gpt-6.1-sol",
