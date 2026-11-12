@@ -152,6 +152,7 @@ export const goalLoopPrompt = (
   s: GoalState,
   goal: { id: string; prompt: string; usd: number },
   note?: string,
+  decisions: { title: string; answer: string; note?: string | null }[] = [],
 ): string => {
   const acs = Object.entries(s.acs)
   return loadPrompt("goal-loop", {
@@ -175,6 +176,12 @@ export const goalLoopPrompt = (
         )
         .join("\n") || "- none",
     note: note ?? "",
+    decisions: decisions
+      .map(
+        (d) =>
+          `- ${d.title.replace(/\s+/g, " ").slice(0, 160)}: ${d.answer}${d.note ? ` (note: ${d.note.replace(/\s+/g, " ").slice(0, 600)})` : ""}`,
+      )
+      .join("\n"),
     usd: String(goal.usd),
   })
 }

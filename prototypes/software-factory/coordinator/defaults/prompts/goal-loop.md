@@ -1,5 +1,5 @@
 +++
-inputs = ["goal", "loop", "prompt", "acs", "acSource", "pr", "history", "note", "usd"]
+inputs = ["goal", "loop", "prompt", "acs", "acSource", "pr", "history", "decisions", "note", "usd"]
 +++
 [goal loop {{loop}}] You start loop {{loop}} of goal "{{goal}}" with a fresh context. Earlier loops worked in this same worktree, branch and PR; their chat is gone, so the goal state below is your memory. Continue the work until every acceptance criterion passes and the PR is green. Do not start over, do not open a second PR, and do not redo what already passes.
 
@@ -11,9 +11,12 @@ Acceptance criteria (status from {{acSource}}):
 
 PR: {{pr}}
 
-Earlier loops (newest last):
+Earlier loops (newest last). These are what each loop reported at its end; the human or other work may have changed things since. Check the current state (git, files, sdlc_status) before you act on a gap, and never ask the human again about a gap a newer decision below already settles:
 {{history}}
-{{#note}}
+{{#decisions}}
+Human decisions since the last loop ended (newer than the reports above; they win):
+{{decisions}}
+{{/decisions}}{{#note}}
 Direction from the human for this loop:
 {{note}}
 {{/note}}

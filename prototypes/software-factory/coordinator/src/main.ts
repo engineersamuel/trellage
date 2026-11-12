@@ -2197,7 +2197,18 @@ const startNextLoop = async (s: GoalState) => {
   console.error(`goal ${s.goalId}: loop ${next.loop}`)
   deliverAndLog(
     t.id,
-    goalLoopPrompt(next, { id: s.goalId, prompt: spec.prompt, usd: budgetOf(s.goalId).limitUsd }, s.note),
+    goalLoopPrompt(
+      next,
+      { id: s.goalId, prompt: spec.prompt, usd: budgetOf(s.goalId).limitUsd },
+      s.note,
+      // Answers given after the last loop reported are newer than its gaps: the fresh session must see them.
+      factory.approvals
+        .list()
+        .filter(
+          (a) => a.threadId === t.id && a.status === "answered" && (a.answeredAt ?? 0) > (s.loops.at(-1)?.at ?? 0),
+        )
+        .map((a) => ({ title: a.title, answer: a.answer ?? "", note: a.note })),
+    ),
   )
 }
 
