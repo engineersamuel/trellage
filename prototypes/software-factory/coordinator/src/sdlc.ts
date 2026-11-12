@@ -258,6 +258,21 @@ export const askGates = async (
 
 // ---------- Per-conversation state ----------
 
+/** The evaluator's answer for one criterion at sdlc_plan (src/evaluate.ts). */
+export type ContractItem =
+  | { id: string; check: string; expect: string }
+  | { id: string; problem: string; rewrite: string }
+
+/** Criteria with their agreed check, for implement and verify tasks and the evaluator. */
+export const criteriaWithChecks = (criteria: string[], contract: ContractItem[] | undefined): string =>
+  criteria
+    .map((c, i) => {
+      const k = contract?.find((x) => x.id === `AC-${i + 1}`)
+      const check = k && "check" in k ? `\n  check: ${k.check}${k.expect ? `\n  expect: ${k.expect}` : ""}` : ""
+      return `AC-${i + 1}: ${c}${check}`
+    })
+    .join("\n")
+
 export type Sdlc = {
   scopeId: string
   threadId: string | null
@@ -288,7 +303,33 @@ export type Sdlc = {
   configId?: string
   /** Snapshot id of the prompt files this run pinned at sdlc_plan ($SF_STATE_DIR/prompt-snapshots/). */
   promptsId?: string
+  /** The evaluator's check per criterion, agreed at sdlc_plan; only for the criteria in `contractState.criteria`. */
+  contract?: ContractItem[]
+  /** Contract rounds started (a round a restart stopped is not counted). */
+  contractRounds?: number
+  /** The contract job of the newest sdlc_plan call: it runs in the background; the plan approval waits for it. */
+  contractState?: ContractState
 }
+
+/** Untestable criteria the evaluator found: `open` go back to the sub-coordinator; `locked` are the human's (notes). */
+export type ContractProblem = { id: string; problem: string; rewrite: string }
+export type ContractState = {
+  status: "running" | "done" | "failed"
+  /** The criteria this contract is for; a contract never applies to other criteria. */
+  criteria: string[]
+  round: number
+  open: ContractProblem[]
+  locked: ContractProblem[]
+  /** True on the last allowed round: open problems no longer block the plan approval; they go in its summary. */
+  final: boolean
+  error?: string
+}
+
+/** The contract only when it was agreed for exactly these criteria. */
+export const contractFor = (s: Sdlc): ContractItem[] | undefined =>
+  s.contractState?.status === "done" && JSON.stringify(s.contractState.criteria) === JSON.stringify(s.criteria)
+    ? s.contract
+    : undefined
 
 export const newSdlc = (scopeId: string, threadId: string | null): Sdlc => ({
   scopeId,
@@ -399,7 +440,7 @@ export const shipBlockers = (
 
 export const implementAddendum = (s: Sdlc): string =>
   `\n\n${loadPrompt("tasks/implement-rules", {
-    criteria: s.criteria.map((c, i) => `AC-${i + 1}: ${c}`).join("\n"),
+    criteria: criteriaWithChecks(s.criteria, contractFor(s)),
     design: isOn(s, "design"),
     testFirst: isOn(s, "testFirst"),
     docs: isOn(s, "docs"),
@@ -409,11 +450,11 @@ export const implementAddendum = (s: Sdlc): string =>
 export const verifyAddendum = (s: Sdlc): string =>
   `\n\n${loadPrompt("tasks/verify-rules", {
     checks: s.checks.map((c) => `- \`${c}\``).join("\n"),
-    criteria: s.criteria.map((c, i) => `AC-${i + 1}: ${c}`).join("\n"),
+    criteria: criteriaWithChecks(s.criteria, contractFor(s)),
   })}`
 
 /** PR body from the artifacts: criteria with ✓, tier, gates, evidence, rollback, how to try it. */
-export const prBody = (s: Sdlc, workdir: string, summary: string): string => {
+export const prBody = (s: Sdlc, workdir: string, summary: string, evaluation?: string): string => {
   const evidence = readOr(artifact(workdir, "evidence.md")) ?? ""
   const design = readOr(artifact(workdir, "design.md"))
   const unproven = new Set(unprovenCriteria(s.criteria, evidence))
@@ -424,6 +465,7 @@ export const prBody = (s: Sdlc, workdir: string, summary: string): string => {
     `## Acceptance criteria\n${s.criteria.map((c, i) => `- [${unproven.has(`AC-${i + 1}`) ? " " : "x"}] AC-${i + 1}: ${c}`).join("\n")}`,
     `## Risk\nTier ${s.risk?.tier ?? "?"}${s.risk?.reasons.length ? `: ${s.risk.reasons.join("; ")}` : ""}`,
     `## Gates\n${s.gates.map((g) => `- ${g.id}: ${g.chosen ? g.status : "skipped"} (${g.reason})`).join("\n")}`,
+    ...(evaluation ? [`## Independent evaluation\n${evaluation}`] : []),
     `## Evidence\n\`\`\`\n${evidence.trim().slice(0, 6000)}\n\`\`\``,
     `## Rollback\n${rollback}`,
     `## How to try it\nSee the evidence commands above.`,

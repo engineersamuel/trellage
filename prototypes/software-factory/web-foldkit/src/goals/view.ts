@@ -480,13 +480,12 @@ const approvalsSection = (model: Model, h: HtmlBuilder<Message>): Html =>
           ),
         ),
       ),
-      input("goal-runs", "Max runs", model.draft.runs, "5", (value) => Message.UpdatedRuns({ value }), h),
       input(
-        "goal-minutes",
-        "Minutes per run",
-        model.draft.minutesPerRun,
-        "720",
-        (value) => Message.UpdatedMinutes({ value }),
+        "goal-usd",
+        "Cost limit of the goal ($, all loops; pauses for you)",
+        model.draft.usd,
+        "250",
+        (value) => Message.UpdatedUsd({ value }),
         h,
       ),
     ],
@@ -513,12 +512,19 @@ const result = (model: Model, h: HtmlBuilder<Message>): Html =>
     onNone: () => h.empty,
     onSome: ({ skill, prompt }) =>
       section(
-        "Saved · paste one of these into Claude Code",
+        "Saved · start it",
         [
-          h.p([h.Class("fk-muted")], ["With the skill installed (mise run factory:skill):"]),
+          h.p(
+            [h.Class("fk-muted")],
+            [
+              "The factory runs the goal's loops by itself until every criterion passes and the PR is green, or the cost limit asks you. Start it from a terminal:",
+            ],
+          ),
           copyBlock("command", skill, model, h),
-          h.p([h.Class("fk-muted")], ["Any agent, no skill needed:"]),
-          h.details([], [h.summary([], ["full loop prompt"]), copyBlock("prompt", prompt, model, h, true)]),
+          h.details(
+            [],
+            [h.summary([], ["for an agent (Claude Code etc.)"]), copyBlock("prompt", prompt, model, h, true)],
+          ),
         ],
         h,
       ),

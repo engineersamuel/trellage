@@ -24,8 +24,7 @@ export const GoalDraft = Schema.Struct({
   gatesRun: Schema.Array(Schema.String),
   gatesSkipped: Schema.Array(Schema.String),
   approvals: Schema.Struct({ plan: Policy, findings: Policy, ship: Policy, other: Policy }),
-  runs: Schema.String,
-  minutesPerRun: Schema.String,
+  usd: Schema.String,
   benchmarks: Schema.Array(Benchmark),
   improve: ImprovePolicy,
 })

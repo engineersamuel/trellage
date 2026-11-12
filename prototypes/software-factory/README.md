@@ -47,6 +47,7 @@ per gate against its threshold, `GATES` in `coordinator/src/sdlc.ts`); a risk ti
 | Criteria + evidence | always (floor) | `sdlc_plan` writes `.factory/acceptance.md`; verify writes `AC-n: PASS` lines to `.factory/evidence.md` |
 | Verify after implement | always (floor) | runs the repo's CI commands (`.github/workflows`, `AGENTS.md`) |
 | Security review | always (floor) | `security.ts` |
+| Independent evaluation | `[evaluate] enabled` (default on); never blocks | `evaluate.ts`: contract at `sdlc_plan`, verdicts at the first ship request (below) |
 | Design note | Jev ≥ 0.6 | `.factory/design.md` (decision, alternatives, rollback) |
 | Tests first | Jev ≥ 0.5 | a tests-only commit before the first code commit |
 | Code review | Jev ≥ 0.6, or tier T2 | `review.ts`: Jev picks ≤3 lenses, parallel reviewers, synthesis, Jev scores each finding (real ≥ 0.7 and worth ≥ 0.6), fix + verify |
@@ -61,20 +62,38 @@ shown to the next sub-coordinator. The `show_sdlc` card shows it all live; `/api
 metrics (minutes, workers, findings kept and dropped), and goal specs can require it (`expect.sdlc`: `criteriaProven`,
 `gatesRun`, `gatesSkipped`, `maxTier`).
 
-## Goals: the self-improve loop
+## Goals: loops until the objective is met
 
-A goal is one test case for the factory: a prompt for a repo, and what the run must show. The loop runs the goal; when
-the run fails, an outer agent fixes the factory code, commits, restarts, and runs again until it passes. Agents open
-PRs; a human merges.
+A goal is one objective in one target repo (which may be the factory itself), [ADR 0007](../../docs/adr/0007-factory-goal-loops.md).
+The coordinator works on it in **loops**: each loop is a fresh sub-coordinator session (a fresh context) in the goal's
+one conversation, so every loop shares one worktree, branch and PR. Code in the coordinator (`src/goalLoop.ts`), not an
+agent, runs the loops. Agents open the PR; a human merges.
+
+After every `report_up` of a loop, the coordinator updates the **goal state** (`$SF_STATE_DIR/goal-state/<id>.json`,
+`GET /api/goals/<id>/state`): AC status (the independent evaluator's verdicts, else the run's evidence), the PR and
+its checks, each loop's summary, gaps, commit and spend. Then, in order:
+
+1. Every AC passes and the PR checks are `SUCCESS` (or the repo has none): **done**. A report goes to the global
+   coordinator; the human merges. Checks still `PENDING`: it checks again every 30 s.
+2. `needs-decision`: wait for the human.
+3. `report_up` names a `factoryDefect`: a `goal` decision for the human: open a **child goal** on the factory repo
+   (this goal waits; when the child is done the human merges it, restarts the factory, and resumes), loop again, or stop.
+4. **No progress** in 2 loops in a row (no AC newly passing, no new commit): a `goal` decision: run another loop (typed
+   text goes into its handoff as direction) or stop.
+5. Otherwise the **next loop** starts once the conversation is idle: the sub-coordinator's session is replaced by a
+   new one (same agent id, new session id `sf-sub-<id>-l<n>`), whose first turn (`prompts/goal-loop.md`) carries the goal
+   and its state.
+
+`budget` and `goal` decisions are never auto-answered. Failed grades of goal loops open no improvement proposal.
 
 | Part | Where |
 |---|---|
 | Spec Schema, scoring, form draft | `shared/goal.ts` (one Schema for the UI, the API and `sf`) |
 | Specs and run logs | `docs/goals/factory/<id>.json`, `<id>.runs.jsonl` (append only except unknown-grade regrading; each line has the factory commit) |
-| API | `GET/POST /api/goals`, `GET /api/goals/<id>`, `GET /api/goals/<id>/prompt`, `GET/POST /api/goals/<id>/runs`, `GET /api/runs/<thread>` |
+| API | `GET/POST /api/goals`, `GET /api/goals/<id>`, `POST /api/goals/<id>/start`, `GET /api/goals/<id>/state`, `GET /api/goals/<id>/runs`, `GET /api/runs/<thread>` |
 | Form | Foldkit navbar **◎ Goals**: steps and skills come from `/api/steps`, repos from `/api/folders` |
 | CLI | `sf goal list | show ID | new | save FILE | run ID [--thread T] | check ID THREAD | history ID` |
-| Loop protocol | `skills/factory-loop/SKILL.md`; `mise run factory:skill` links it so `/factory-loop <id>` works in Claude Code |
+| Agent protocol | `skills/factory-loop/SKILL.md` (`/factory-loop <id>`): start the goal with `sf goal run`, relay human decisions |
 
 A spec says:
 
@@ -83,10 +102,20 @@ A spec says:
 - `expect.pr`: `state`, `checks`, `base` (defaults to the goal's base), `bodyIncludes`, `untouched` files.
 - `approvals`: per topic (`plan`, `findings`, `ship`, `other`) who answers: `auto` (the runner picks the first option)
   or `human` (`sf goal run` stops with exit 2). Approvals carry a `topic`; a ship request is always `ship`.
-- `limits`: runs per loop, minutes per run.
+- `limits`: `usd`, the cost limit of the **goal**: all its loops together (default $250). There
+  is **no time limit**: a goal may run for days. Every 30 s the coordinator sums the spend of every run of the goal
+  (`sf cost` per run) and compares it with the limit. At the limit it stops the goal's running agents and opens a
+  `budget` decision for the human (never auto-answered): "Continue to $X" (2-3 higher limits), any typed dollar amount
+  above the spend, or "Stop the goal". Going on resumes each paused run with a handoff turn, like a restart resume. A
+  stopped goal starts no new run (`sf goal run` is refused and the card opens again) until the human raises the limit.
+  The human's raised limit and the pause are kept in `$SF_STATE_DIR/goal-budgets.json` and survive a restart; a
+  higher `usd` in the spec wins over it. Plain prompts (no goal) have no cost limit. Old specs with `minutesPerRun`
+  load; the key is ignored.
 
-Flow: fill the form (or `sf goal new`) → copy `/factory-loop <id>` → paste into Claude Code. `sf goal run` exits 0 pass,
-1 fail/timeout, 2 waiting for the human, 3 blocked. `sf -f FOLDER -b BRANCH` branches the worktree from BRANCH and the
+Flow: fill the form (or `sf goal new`, or the guided goal page) → `sf goal run <id>` (the goal page's Launch does it).
+`sf goal run` starts the goal or attaches to its conversation, answers the decisions its policy allows, and exits 0 when
+the goal is done, 2 when a decision waits for the human (cost limit, no progress, factory defect, or policy), 3 when the
+goal was stopped. `sf -f FOLDER -b BRANCH` branches the worktree from BRANCH and the
 finish worker opens the PR against it. `make factory-test` (also in CI) runs the coordinator type check and tests.
 
 ### Grading
@@ -116,6 +145,9 @@ Metrics, each reported separately on every grade:
   The run writes the values to `.factory/benchmarks.json` (`{"id": number}`); a value worse than the baseline by more
   than the tolerance has regressed. Editing a goal in Foldkit preserves its benchmarks and improvement policy,
   even though those settings are not editable in the form.
+- **Cost**: the run's spend when it was graded (`cost.total` and `cost.byStep`: USD, AIC, tokens, calls; agents with no
+  step count as `coordinator`), from the same roll-up as `sf cost`. Recorded only; it **never changes the status**,
+  and a failed cost lookup is only logged. `sf goal history` shows the USD on each grade line. Older grades have none.
 - **Quality** (optional `.factory/quality.json`): model-judged scores, each with its judge model and harness. They are
   stored but **never change the status**. An unreadable or malformed quality file records only an evidence note.
 
@@ -256,6 +288,39 @@ failures, fix, test, commit, push, at most 5 fix rounds after the first push per
 push; a new approval resets it). Decisions, ship grants and push counts are kept in SQLite (`approvals.db` in the state
 directory), so they survive a restart; an old `approvals.json` is imported once. It never merges. All agents are refused
 `gh pr merge`, `gh pr close -d`, and `gh repo delete`; `gh api` stays open.
+
+## Independent evaluator
+
+`src/evaluate.ts` ([ADR 0006](../../docs/adr/0006-factory-acceptance-evaluator.md)). One worker (`step=evaluate`) from a
+model family other than the builder's, in a fresh context, with a permission gate: it may build, run and call the
+deliverable, writes only its own output folder (outside the worktree), and never changes git state.
+
+1. **Contract** (`sdlc_plan`, in the background): one `check` and `expect` per criterion, or a `problem` and a testable
+   `rewrite`. `sdlc_plan` returns at once; `next_step` returns `wait_contract` and a `topic=plan` approval is refused
+   while it runs, and while open problems remain, for `[evaluate].contract_rounds` rounds (default 2). After the last
+   round the open problems are appended to the plan approval summary. The factory writes `.factory/contract.md`;
+   implement and verify tasks get each criterion with its check. A contract applies only to the exact criteria it was
+   agreed for: new criteria drop it (and its file). Criteria the goal page locked are never sent back. A restart
+   stops a running contract without counting its round.
+2. **Evaluation** (first ship request after the floors and other gates, before the final security review): it runs
+   every check and writes `verdicts.json` (a criterion with no verdict fails). A failed criterion gets a fix
+   (`implement`) and a `verify` worker, then a new evaluation, at most `[evaluate].max_rounds` evaluations (default 2).
+   It **never blocks shipping**: the verdicts go to the PR body (`## Independent evaluation`) and the grade.
+3. **Grade `g2`**: when an evaluation has verdicts, the criteria come from them; `selfCriteria` keeps the run's own
+   `evidence.md` results and `disagreements` lists criteria the run marked PASS and the evaluator failed. Without an
+   evaluation the grade stays `g1`. `g1` and `g2` are charted apart.
+
+A coordinator restart marks a running evaluation failed; the next ship request runs it again.
+
+## Restart resume
+
+A coordinator stop (`factory:restart`, SIGTERM) publishes `factory.shutdown` with every running agent. The next start
+sends each repo conversation that had running work one `[factory restarted]` turn (`src/resume.ts`,
+`prompts/resume.md`): the stopped workers and their tasks, the branch commits, uncommitted files, criteria and gates.
+The sub-coordinator spawns the stopped steps again. A code review the restart stopped runs again by itself and its
+round is not counted; a stopped security review starts again at the next ship request. `factory.resumed` marks the
+shutdown handled, so a second restart does not repeat it. A crash (no shutdown record) resumes nothing.
+`sf goal run` keeps polling while the coordinator is unreachable or answers 5xx.
 
 ## Notes
 

@@ -18,6 +18,7 @@ const fakeFactory = () => {
     workers: new Map(),
     securityReviews: new Map(),
     codeReviews: new Map(),
+    evaluations: new Map(),
     sdlc: new Map(),
     researchBatches: new Map(),
     turns: new Map(),
@@ -329,6 +330,20 @@ test("step=finish needs an accepted ship approval for this conversation's factor
     status: "done",
     model: "",
     findings: [],
+    at: 3,
+  })
+  // The independent evaluation of this implement finished (it never blocks shipping by its verdicts).
+  f.evaluations.set("ev-1", {
+    id: "ev-1",
+    scopeId: "sub-1",
+    threadId: "t",
+    workdir: repo,
+    status: "done",
+    round: 1,
+    model: "m",
+    verdicts: [],
+    workerIds: [],
+    notes: [],
     at: 3,
   })
   const finish = () => tool(tools, "spawn_worker")({ name: "finish", task: "ship", step: "finish", harness: "claude" })

@@ -3,6 +3,7 @@
 // AIC follows Copilot: each call's `assistant.usage` carries `copilotUsage.totalNanoAiu`; 1e9 nano-AIU = 1 AIC.
 // A call without it (Claude and Pi harness workers, a few Copilot calls) is priced from Copilot's own per-token
 // rates for that model (`copilotUsage.tokenDetails` of the newest reported call), and marked estimated.
+import type { GradeCost } from "../../shared/goal.ts"
 
 /** Copilot per-token rates of one model, nano-AIU per token, by token type (input, output, cache_read, cache_write). */
 export type Rates = Record<string, number>
@@ -309,5 +310,28 @@ export const chatUsage = (
     ...(typeof nano === "number"
       ? { copilotUsage: { totalNanoAiu: nano }, aiCreditsStatus: "complete" }
       : { aiCreditsStatus: "unavailable" }),
+  }
+}
+
+const gradeTotals = (t: Totals): GradeCost["total"] => ({
+  usd: t.usd,
+  aic: t.aic,
+  aicEstimated: t.aicEstimated,
+  totalTokens: t.totalTokens,
+  outputTokens: t.outputTokens,
+  calls: t.calls,
+  unpricedCalls: t.unpricedCalls,
+})
+
+/** A run's cost as a grade records it: the total and each step's own calls (no step: `coordinator`). */
+export const gradeCost = (r: RunCost): GradeCost => {
+  const byStep = new Map<string, Totals>()
+  for (const a of r.agents ?? []) {
+    const step = a.step ?? "coordinator"
+    byStep.set(step, add(byStep.get(step) ?? zero(), a.own))
+  }
+  return {
+    total: gradeTotals(r.total),
+    byStep: Object.fromEntries([...byStep].map(([k, v]) => [k, gradeTotals(v)])),
   }
 }

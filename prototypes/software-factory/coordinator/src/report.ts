@@ -11,6 +11,8 @@ export type Report = {
   checks: Check[]
   gaps: string[]
   nextSteps: string[]
+  /** A defect in the software factory itself (not this repo) that stops the work; goals open a child goal for it. */
+  factoryDefect?: string
 }
 
 const STATUSES: readonly string[] = ["done", "blocked", "needs-decision"]
@@ -47,6 +49,9 @@ export const parseReport = (args: unknown): ReportInput => {
     checks: checksOf(a.checks),
     gaps: strings(a.gaps, "gaps"),
     nextSteps: strings(a.nextSteps, "nextSteps"),
+    ...(typeof a.factoryDefect === "string" && a.factoryDefect.trim()
+      ? { factoryDefect: a.factoryDefect.trim().slice(0, 2000) }
+      : {}),
   }
 }
 

@@ -167,6 +167,34 @@ describe("report grading orchestration", () => {
     expect(f.approvals.list()).toHaveLength(0)
   })
 
+  test("a grade records the run's cost; it never changes the status, and a failed lookup is only logged", async () => {
+    const f = fixture()
+    const one = { usd: 1.5, aic: 150, aicEstimated: 0, totalTokens: 9, outputTokens: 1, calls: 2, unpricedCalls: 0 }
+    f.deps.cost = () => ({ total: one, byStep: { implement: one } })
+    const graded = makeGrading(f.deps)
+    await graded.gradeThread(f.t.id, report)
+    const grade = graded.gradesOf(f.t)[0]!
+    expect(grade.cost).toEqual({ total: one, byStep: { implement: one } })
+    expect(grade.status).toBe("pass")
+    expect(f.goals.runs(f.spec.id).at(-1)!.grade!.cost!.total.usd).toBe(1.5)
+
+    const g = fixture()
+    g.deps.cost = () => {
+      throw new Error("store closed")
+    }
+    const error = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const failing = makeGrading(g.deps)
+      await failing.gradeThread(g.t.id, report)
+      const plain = failing.gradesOf(g.t)[0]!
+      expect(plain).toMatchObject({ status: "pass", errors: [] })
+      expect("cost" in plain).toBe(false)
+      expect(error.mock.calls.flat().join("\n")).toContain("store closed")
+    } finally {
+      error.mockRestore()
+    }
+  })
+
   test("non-completion reports and unknown threads do not grade", async () => {
     const f = fixture()
     await f.grading.gradeThread(f.t.id, { ...report, status: "needs-decision" })

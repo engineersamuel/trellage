@@ -22,15 +22,18 @@ import { briefProblem } from "./reports.ts"
 import { diffSummary, reportFindings } from "./cards.ts"
 import { pendingReview, reviewIn } from "./security.ts"
 import { codeReviewIn, pendingCodeReview } from "./review.ts"
+import { evaluationIn, evaluationMarkdown, lastEvaluation, pendingEvaluation } from "./evaluate.ts"
 import {
   afterImplement,
   afterVerify,
   inRun,
   countWorker,
+  planApprovalCheck,
   planSdlc,
   sdlcBusy,
   sdlcShipBlockers,
   sdlcTask,
+  startEvaluation,
   startFinalSecurity,
 } from "./gates.ts"
 import { addLessons, artifact, prBody, unprovenCriteria } from "./sdlc.ts"
@@ -93,6 +96,18 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
           step: "wait_security_review",
           securityReview: { id: pending.id, status: pending.status, workerId: pending.workerId ?? null },
           note: "The automatic security review of the last implement step is still running. Wait for its current worker with read_worker wait=true, then call next_step again.",
+        })
+      if (f.sdlc.get(scope.id)?.contractState?.status === "running")
+        return json({
+          step: "wait_contract",
+          note: "The independent evaluator is agreeing a check per acceptance criterion. Call next_step again in a moment; then ask for the plan approval.",
+        })
+      const ev = pendingEvaluation(f.evaluations.values(), scope.id)
+      if (ev)
+        return json({
+          step: "wait_evaluation",
+          evaluation: { id: ev.id, status: ev.status, round: ev.round, workerId: ev.workerId ?? null },
+          note: "The independent evaluator is checking the acceptance criteria (and fixing failed ones). Wait for its current worker with read_worker wait=true, then call next_step again.",
         })
       const cr = pendingCodeReview(f.codeReviews.values(), scope.id)
       if (cr)
@@ -275,6 +290,12 @@ const sdlcPlanTool = (f: Factory, scope: Scope) =>
       const s = await planSdlc(f, scope, str(a, "request"), criteria, str(a, "plan"))
       return json({
         criteria: s.criteria.map((c, i) => `AC-${i + 1}: ${c}`),
+        ...(s.contractState?.status === "running"
+          ? {
+              contract:
+                "The independent evaluator is agreeing a check per criterion in the background (.factory/contract.md). The plan approval waits for it; meanwhile you may spawn step=plan for a design note.",
+            }
+          : {}),
         checks: s.checks,
         gates: s.gates,
         next: [
@@ -302,7 +323,11 @@ const sdlcStatusTool = (f: Factory, scope: Scope) =>
       let prFile: string | null = null
       if (s && typeof a.summary === "string" && a.summary.trim() && scope.workdir) {
         prFile = `${scope.workdir}/.factory/pr.md`
-        await Bun.write(prFile, prBody(s, scope.workdir, a.summary))
+        const ev = lastEvaluation(f.evaluations.values(), scope.id)
+        await Bun.write(
+          prFile,
+          prBody(s, scope.workdir, a.summary, ev && ev.verdicts.length ? evaluationMarkdown(ev) : undefined),
+        )
       }
       return json({
         tier: s?.risk ?? null,
@@ -383,11 +408,18 @@ export const spawnHealing = async (
 const spawnBlocked = (f: Factory, scope: Scope): string | null => {
   const workdir = scope.workdir ?? f.run?.worktree
   const r = workdir
-    ? (reviewIn(f.securityReviews.values(), workdir) ?? codeReviewIn(f.codeReviews.values(), workdir))
+    ? (reviewIn(f.securityReviews.values(), workdir) ??
+      codeReviewIn(f.codeReviews.values(), workdir) ??
+      evaluationIn(f.evaluations.values(), workdir))
     : undefined
   if (!r) return null
   const wait = r.workerId ? `wait for worker ${r.workerId} with read_worker wait=true` : "call next_step to wait for it"
-  return `${r.id.startsWith("cr-") ? "code" : "security"} review ${r.id} is ${r.status} in this worktree; ${wait}, then spawn again.`
+  const what = r.id.startsWith("cr-")
+    ? "code review"
+    : r.id.startsWith("ev-")
+      ? "independent evaluation"
+      : "security review"
+  return `${what} ${r.id} is ${r.status} in this worktree; ${wait}, then spawn again.`
 }
 
 const fanoutTool = (name: string, description: string, run: (request: string) => Promise<unknown>) =>
@@ -645,6 +677,12 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
       const shipBranch = ships && a.ship === true ? gitOr(scope.workdir!, "--abbrev-ref", "HEAD") : null
       if (shipBranch !== null && !shipBranch.startsWith("factory/"))
         return json({ error: `Only factory/* branches ship; this worktree is on ${shipBranch}` })
+      // A plan approval waits for the contract and names the criteria the evaluator could not test.
+      const plan = ships && a.topic === "plan" && !shipBranch ? planApprovalCheck(f, scope.id) : null
+      if (plan?.wait) return json({ error: `Not ready for the plan approval: ${plan.wait}` })
+      // The independent evaluation runs before the final security review, so security sees the evaluator's fixes.
+      const evaluation = shipBranch !== null ? startEvaluation(f, scope) : null
+      if (evaluation) return json({ error: `Not ready to ship yet: ${evaluation}` })
       const security = shipBranch !== null ? startFinalSecurity(f, scope) : null
       if (security) return json({ error: `Not ready to ship yet: ${security}` })
       const blockers = shipBranch !== null ? sdlcShipBlockers(f, scope) : []
@@ -656,7 +694,9 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
         kind: name === "ask_user" ? "question" : "approval",
         threadId: scope.threadId ?? f.currentThread,
         title: str(a, "title"),
-        summary: str(a, "summary"),
+        summary: plan?.notes.length
+          ? `${str(a, "summary")}\n\n**Untestable criteria (independent evaluator):**\n- ${plan.notes.join("\n- ")}`
+          : str(a, "summary"),
         options:
           Array.isArray(a.options) && a.options.length
             ? a.options.map(String)
@@ -827,6 +867,11 @@ const reportUp = (f: Factory, scope: Scope, workdir: string) =>
           ...list,
           description:
             "0-3 short lessons about this repo for the next conversation (a check that failed in CI, a tool quirk, a convention). Saved per repo.",
+        },
+        factoryDefect: {
+          type: "string",
+          description:
+            "Only when a defect in the software factory itself (its tools, gates, workers or prompts; not this repo) stops your work: what it is and how you saw it. A goal then asks the human to open a goal that fixes the factory.",
         },
       },
       ["status", "summary"],

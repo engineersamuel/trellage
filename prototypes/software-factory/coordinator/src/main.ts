@@ -1,6 +1,7 @@
 // Software factory coordinator: HTTP API, raw feed, and AG-UI over SSE.
 import { KEEP_PER_WORKER } from "./events.ts"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
 import path from "node:path"
 import { Translator } from "./agui.ts"
 import { Factory, now, type FeedEvent, type Worker, type WorkerSummary } from "./factory.ts"
@@ -17,7 +18,33 @@ import { cardsPrompt, coordinatorPrompt, deskPrompt, globalPrompt, researchPromp
 import { loadPrompt } from "./prompt.ts"
 import { configStore, type Scalar } from "./config.ts"
 import { settleProposal } from "./configChanges.ts"
-import { inRun } from "./gates.ts"
+import { inRun, rerunInterruptedReview } from "./gates.ts"
+import { interruptedScopes, resumePrompt, type Interrupted, type Resumed, type Shutdown } from "./resume.ts"
+import { GoalBudgets, pauseApproval, PAUSE_REASON, readAnswer, shouldPause, type Budget } from "./budget.ts"
+import {
+  afterReport,
+  childDoneCard,
+  childGoalId,
+  childGoalPrompt,
+  defectCard,
+  goalVerdict,
+  GoalStates,
+  LOOP_ANYWAY,
+  goalLoopPrompt,
+  loopSessionId,
+  newGoalState,
+  noProgressCard,
+  OPEN_CHILD,
+  RESUME,
+  RUN_AGAIN,
+  STOP_GOAL,
+  type GoalState,
+} from "./goalLoop.ts"
+import { criteriaResults } from "./sdlc.ts"
+import type { Verdict } from "../../shared/goal.ts"
+import { DEFAULT_RUN_USD } from "../../shared/goal.ts"
+import type { Approval } from "./approvals.ts"
+import { lastEvaluation, verdictResults } from "./evaluate.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
 import { findingTask, findReport } from "./reports.ts"
 import { CARD_TOOLS, cardOpenUi, reportFindings } from "./cards.ts"
@@ -40,7 +67,7 @@ import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, reportNudge, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, type Run } from "./run.ts"
-import { costReport, GOAL_PAGE_AGENT, rollUp, runCost, type AgentInfo } from "./costs.ts"
+import { costReport, GOAL_PAGE_AGENT, gradeCost, rollUp, runCost, type AgentInfo } from "./costs.ts"
 import { factoryConfig } from "./config.ts"
 import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
@@ -90,18 +117,33 @@ restore(
   (r) => r.status !== "done" && r.status !== "failed",
 )
 restore(
+  "factory.evaluation",
+  (e) => e.id,
+  factory.evaluations,
+  (e) => e.status !== "done" && e.status !== "failed",
+)
+restore(
   "factory.security_review",
   (r) => r.id,
   factory.securityReviews,
   (r) => r.status !== "done" && r.status !== "failed",
 )
-for (const [k, s] of factory.sdlc)
+for (const [k, s] of factory.sdlc) {
+  const stopped = s.contractState?.status === "running"
   factory.sdlc.set(k, {
     ...s,
     gates: s.gates.map((g) =>
       g.status === "running" ? { ...g, status: "failed", detail: "coordinator restarted" } : g,
     ),
+    // A contract the restart stopped does not count as a round; sdlc_plan runs it again.
+    ...(stopped
+      ? {
+          contractRounds: Math.max(0, (s.contractRounds ?? 1) - 1),
+          contractState: { ...s.contractState!, status: "failed" as const, error: "coordinator restarted" },
+        }
+      : {}),
   })
+}
 const threads = new Threads(factory.root)
 const instructions = readInstructions()
 const config = configStore()
@@ -231,8 +273,8 @@ const chatCoordinator = (t: Thread): Promise<Worker> => {
   return startingChat.get(id)!
 }
 
-const s = coord.summary()
-console.error(`coordinator runtime pid=${s.pid} auth=${s.auth} model=${s.model}`)
+const desk = coord.summary()
+console.error(`coordinator runtime pid=${desk.pid} auth=${desk.auth} model=${desk.model}`)
 
 // ---------- helpers ----------
 
@@ -348,6 +390,26 @@ const createThread = (text: string | null, folderId: string, base?: string) => {
   return t
 }
 
+/** The tool scope of a repo conversation's sub-coordinator. */
+const subScope = (t: Thread): Scope => {
+  const folder = threads.folder(t.folderId)!
+  return {
+    id: subId(t.id),
+    threadId: t.id,
+    workdir: t.worktree!,
+    ...(t.base ? { base: t.base } : {}),
+    label: folder.name,
+    folderId: folder.id,
+    report: (r) =>
+      reportToGeneral(folder.name, threads.get(t.id) ?? t, r).finally(
+        () =>
+          void gradeThread(t.id, r).finally(
+            () => void goalReported(t.id, r).catch((e) => console.error(`goal loop: ${e}`)),
+          ),
+      ),
+  }
+}
+
 /** The coordinator for a conversation: the global one, or the conversation's sub-coordinator in its worktree (started on first use). */
 const starting = new Map<string, Promise<Worker>>()
 const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
@@ -367,20 +429,12 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
         role: "coordinator",
         ...(t.parentThreadId ? { owner: genId(t.parentThreadId) } : {}),
         system: `${coordinatorPrompt()}\n\n${cardsPrompt()}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!, t.prBase, readLessons(factory.root, folder.id))}\n\n${researchPrompt()}\n\n# OpenUI Lang\n${openuiPrompt}`,
-        tools: coordinatorTools(factory, {
-          id,
-          threadId: t.id,
-          workdir: t.worktree,
-          ...(t.base ? { base: t.base } : {}),
-          label: folder.name,
-          folderId: folder.id,
-          report: (r) =>
-            reportToGeneral(folder.name, threads.get(t.id) ?? t, r).finally(() => void gradeThread(t.id, r)),
-        }),
+        tools: coordinatorTools(factory, subScope(t)),
         permissions: factory.subPermissions,
         workdir: t.worktree,
         model: factory.settings.subAgent.model,
-        sessionId: `sf-${id}`,
+        // A goal's loop n > 1 is a fresh session (a fresh context) of the same sub-coordinator (ADR 0007).
+        sessionId: loopSessionId(id, (t.goalId && goalStates.get(t.goalId)?.loop) || 1),
       })
       .then(async (w) => {
         // Resumed sessions keep their old model: always apply the sub-coordinator model and effort.
@@ -434,6 +488,10 @@ const deliverToThread = async (threadId: string | null, text: string): Promise<D
   const t = threadId ? threads.get(threadId) : undefined
   if (t?.cleanedAt)
     return delivery(Promise.reject(new Error(`not delivered: conversation ${t.id} is merged and cleaned up`)))
+  if (t?.goalId && goalBlocked(t.goalId))
+    return delivery(
+      Promise.reject(new Error(`not delivered: goal ${t.goalId} is ${budgetOf(t.goalId).status} at its cost limit`)),
+    )
   const c = await coordinatorFor(t)
   const sent = sendWhenIdle(c, factory.coordinatorPrompt(text), () => t && recordTurn(t, c, text)).catch((e) => {
     throw new Error(`delivery to ${c.id} failed: ${e instanceof Error ? e.message : e}`)
@@ -660,7 +718,7 @@ const resumeAnswers = (resume: unknown): string[] =>
       const note = typeof payload.note === "string" && payload.note.trim() ? payload.note.trim() : null
       const a = factory.approvals.answer(String(r.interruptId), payload.answer, note)
       factory.publish("coordinator", "factory.approval_answered", null, now(), a)
-      return improvementAnswered(a) ? [] : [answerPrompt(a)]
+      return improvementAnswered(a) || budgetAnswered(a) || goalAnswered(a) ? [] : [answerPrompt(a)]
     } catch (e) {
       // Answered elsewhere first, or an unknown id: the coordinator already got that answer.
       console.error(`resume ${String(r.interruptId)}: ${e instanceof Error ? e.message : e}`)
@@ -1152,6 +1210,9 @@ const cardScope = (id: string): Scope => {
   return { id, threadId: t?.id ?? null }
 }
 
+// Per-goal state (ADR 0007) and cost limits; created before the server so every handler can use them.
+const goalStates = new GoalStates(factory.root)
+const goalBudgets = new GoalBudgets(factory.root)
 const goals = makeGoals(
   goalsDir(),
   steps().map((step) => step.id),
@@ -1287,6 +1348,19 @@ const runRecord = async (threadId: string): Promise<Run | null> => {
     sdlc: runSdlc(subId(t.id), t.worktree),
     ...(await prOf(t)),
     grades: gradesOf(t),
+    goal: t.goalId ? goalStates.get(t.goalId) : null,
+    budget: t.goalId
+      ? (() => {
+          const costs = costTree().costs
+          const b = budgetOf(t.goalId)
+          return {
+            limitUsd: b.limitUsd,
+            spentUsd: goalSpent(t.goalId, costs),
+            runUsd: runCost(costs, t, subId, false)?.total.usd ?? 0,
+            status: b.status,
+          }
+        })()
+      : null,
     improvement: t.improvement ?? null,
     ...(t.improvementOf ? { improvementOf: t.improvementOf } : {}),
   }
@@ -1308,6 +1382,16 @@ const {
   runRecord,
   openConversation,
   criteria: (id) => factory.sdlc.get(subId(id))?.criteria ?? [],
+  loopManaged: (id) => !!goalStates.byThread(id),
+  evaluation: (id) => {
+    const e = lastEvaluation(factory.evaluations.values(), subId(id))
+    return e && e.verdicts.length && e.file ? { results: verdictResults(e), file: e.file } : null
+  },
+  cost: (id) => {
+    const t = threads.get(id)
+    const r = t && runCost(costTree().costs, t, subId, true)
+    return r ? gradeCost(r) : null
+  },
   deskThreadId: () => deskThread().id,
   factoryDir: FACTORY_DIR,
   publish: (type, data) => factory.publish("coordinator", type, null, now(), data),
@@ -1481,7 +1565,7 @@ const routes: [string, RegExp, Handler][] = [
           typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 200) : null,
         )
         factory.publish("coordinator", "factory.approval_answered", null, now(), a)
-        if (!improvementAnswered(a)) answerApproval(a)
+        if (!improvementAnswered(a) && !budgetAnswered(a) && !goalAnswered(a)) answerApproval(a)
         return json(a)
       } catch (e) {
         return bad(e)
@@ -1714,7 +1798,12 @@ const routes: [string, RegExp, Handler][] = [
   [
     "GET",
     /^\/api\/goals$/,
-    () => goalReply(() => ({ dir: goals.dir, factoryCommit: checkoutCommit(FACTORY_DIR), goals: goals.list() })),
+    () =>
+      goalReply(() => ({
+        dir: goals.dir,
+        factoryCommit: checkoutCommit(FACTORY_DIR),
+        goals: goals.list().map((g) => ({ ...g, state: goalStates.get(g.spec.id) })),
+      })),
   ],
   ["POST", /^\/api\/goals$/, (req) => goalReply(async () => goals.save(await req.json()))],
   ["GET", /^\/api\/goals\/([^/]+)$/, (_req, _url, [id]) => goalReply(() => goals.get(id!))],
@@ -1726,13 +1815,24 @@ const routes: [string, RegExp, Handler][] = [
         const spec = goals.get(id!)
         return (
           spec && {
-            skill: `/factory-loop ${spec.id}`,
+            skill: `sf goal run ${spec.id}`,
             prompt: loopPrompt(readFileSync(path.join(FACTORY_DIR, "skills/factory-loop/SKILL.md"), "utf8"), spec),
           }
         )
       }),
   ],
   ["GET", /^\/api\/goals\/([^/]+)\/runs$/, (_req, _url, [id]) => goalReply(() => goals.runs(id!))],
+  [
+    "POST",
+    /^\/api\/goals\/([^/]+)\/start$/,
+    (_req, _url, [id]) =>
+      goalReply(async () => {
+        const r = await startGoal(id!)
+        const s = goalStates.get(id!)
+        return { ...r, loop: s?.loop ?? 1, status: s?.status ?? "running" }
+      }),
+  ],
+  ["GET", /^\/api\/goals\/([^/]+)\/state$/, (_req, _url, [id]) => goalReply(() => goalStates.get(id!))],
   [
     "POST",
     /^\/api\/goals\/([^/]+)\/runs$/,
@@ -1774,6 +1874,14 @@ const routes: [string, RegExp, Handler][] = [
         const goalId = typeof b.goalId === "string" ? b.goalId : undefined
         const goalSpec = goalId ? goals.get(goalId) : null
         if (goalId && !goalSpec) throw new Error(`no goal ${goalId}`)
+        // A paused or stopped goal starts no new run; a stopped one asks the human again for a limit.
+        if (goalId && goalBlocked(goalId)) {
+          const gb = budgetOf(goalId)
+          const item = gb.status === "stopped" ? openPause(goalId, gb, goalSpent(goalId), [], "stopped earlier") : null
+          throw new Error(
+            `goal ${goalId} is ${gb.status} at its cost limit ($${gb.limitUsd} for all its runs); answer approval ${item?.id ?? gb.approvalId} to raise the limit, then run it again`,
+          )
+        }
         const t = createThread(
           typeof first === "string" ? first : null,
           threads.folder(folderId) ? folderId : GENERAL.id,
@@ -1868,9 +1976,341 @@ const server = Bun.serve({
 })
 console.error(`software-factory coordinator on http://${server.hostname}:${server.port}`)
 
+/** Hand a stopped conversation back to its sub-coordinator: rerun a stopped code review, then one handoff turn. */
+const handoff = (t: Thread, lost: Interrupted[], at: number, event?: { tag: string; text: string }) => {
+  const scopeId = subId(t.id)
+  rerunInterruptedReview(factory, subScope(t))
+  // Review and security workers belong to their gate (it runs again by itself), not to the sub-coordinator.
+  const gateWorkers = new Set([
+    ...[...factory.codeReviews.values()].flatMap((r) => (r.scopeId === scopeId ? r.workerIds : [])),
+    ...[...factory.securityReviews.values()].flatMap((r) => (r.scopeId === scopeId && r.workerId ? [r.workerId] : [])),
+    ...[...factory.evaluations.values()].flatMap((e) => (e.scopeId === scopeId ? e.workerIds : [])),
+  ])
+  const text = resumePrompt({
+    at,
+    ...(event ? { event } : {}),
+    lost: lost.filter((w) => !gateWorkers.has(w.id) && w.id !== scopeId),
+    workdir: t.worktree!,
+    base: t.base,
+    sdlc: factory.sdlc.get(scopeId),
+  })
+  deliverAndLog(t.id, text)
+}
+
+// ---------- cost limit of goals (budget.ts): no time limit; pause the goal at its limit and ask the human ----------
+
+/** Every run (repo conversation) of a goal. */
+const goalRuns = (goalId: string) => threads.list().filter((t) => t.goalId === goalId && t.worktree)
+const specUsd = (goalId: string) =>
+  goals.get(goalId)?.limits.usd ?? goalRuns(goalId).at(-1)?.goalSpec?.limits.usd ?? DEFAULT_RUN_USD
+const budgetOf = (goalId: string): Budget => goalBudgets.get(goalId, specUsd(goalId))
+/** What the goal spent: every run of it together. */
+const goalSpent = (goalId: string, costs = costTree().costs): number =>
+  goalRuns(goalId).reduce((n, t) => n + (runCost(costs, t, subId, false)?.total.usd ?? 0), 0)
+const runAgents = (t: Thread) =>
+  [...factory.workers.values()].filter((w) => w.id === subId(t.id) || w.owner === subId(t.id))
+const goalBlocked = (goalId: string | undefined) => !!goalId && budgetOf(goalId).status !== "ok"
+
+/** Open the decision card of a paused or stopped goal and record it. */
+const openPause = (goalId: string, b: Budget, spent: number, paused: Budget["paused"], why?: string) => {
+  const card = pauseApproval(goalId, b, spent, goalRuns(goalId).length)
+  const at = paused?.[0]?.threadId ?? goalRuns(goalId).at(-1)?.id ?? null
+  const item = factory.approvals.open({
+    threadId: at,
+    ...card,
+    context: `cost limit · ${why ?? "human only"}`,
+    topic: "budget",
+  })
+  goalBudgets.set(goalId, { ...b, status: "paused", approvalId: item.id, pausedAt: b.pausedAt ?? Date.now(), paused })
+  factory.publish("coordinator", "factory.approval_requested", null, now(), item)
+  return item
+}
+
+const pauseGoal = async (goalId: string, b: Budget, spent: number) => {
+  const busy = goalRuns(goalId).filter((t) => runAgents(t).some((w) => w.status === "running"))
+  const paused = busy.map((t) => ({
+    threadId: t.id,
+    lost: runAgents(t)
+      .filter((w) => w.status === "running")
+      .map((w) => w.summary())
+      .map((w) => ({ id: w.id, name: w.name, owner: w.owner, step: w.step, task: w.task })),
+  }))
+  openPause(goalId, b, spent, paused)
+  for (const t of busy) {
+    const sub = subId(t.id)
+    // A contract the pause stops is not a round, as after a restart; the handoff asks for sdlc_plan again.
+    const s = factory.sdlc.get(sub)
+    if (s?.contractState?.status === "running")
+      factory.sdlc.set(sub, {
+        ...s,
+        contractRounds: Math.max(0, (s.contractRounds ?? 1) - 1),
+        contractState: { ...s.contractState, status: "failed", error: PAUSE_REASON },
+      })
+    // Workers first, so gates waiting on them end with PAUSE_REASON (and run again when the run goes on).
+    for (const w of runAgents(t).filter((x) => x.id !== sub)) await factory.interrupt(w.id, PAUSE_REASON)
+    await factory.interrupt(sub, PAUSE_REASON)
+    factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
+  }
+  factory.publish("coordinator", "factory.budget_paused", null, now(), {
+    goalId,
+    limitUsd: b.limitUsd,
+    spentUsd: spent,
+  })
+  console.error(`goal ${goalId} paused at its cost limit: $${spent.toFixed(2)} of $${b.limitUsd}`)
+}
+
+const checkBudgets = async () => {
+  const costs = costTree().costs
+  const ids = new Set(threads.list().flatMap((t) => (t.goalId && t.worktree && !t.cleanedAt ? [t.goalId] : [])))
+  for (const goalId of ids) {
+    const b = budgetOf(goalId)
+    const busy = goalRuns(goalId).some((t) => runAgents(t).some((w) => w.status === "running"))
+    const spent = goalSpent(goalId, costs)
+    if (shouldPause(b, spent, busy)) await pauseGoal(goalId, b, spent)
+  }
+}
+loop("goal-budgets", "30 seconds", checkBudgets)
+
+// ---------- goal loops (goalLoop.ts, ADR 0007): code runs the loops; each loop is a fresh sub-coordinator ----------
+
+const repoRoot = (dir: string) => {
+  try {
+    return execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim()
+  } catch {
+    return dir
+  }
+}
+
+/** Start a goal (a new conversation and loop 1), or return its live conversation. */
+const startGoal = async (goalId: string, parentGoalId?: string): Promise<{ threadId: string; resumed: boolean }> => {
+  const spec = goals.get(goalId)
+  if (!spec) throw new Error(`no goal ${goalId}`)
+  if (goalBlocked(goalId)) {
+    const gb = budgetOf(goalId)
+    const item = gb.status === "stopped" ? openPause(goalId, gb, goalSpent(goalId), [], "stopped earlier") : null
+    throw new Error(
+      `goal ${goalId} is ${gb.status} at its cost limit ($${gb.limitUsd} for all its loops); answer approval ${item?.id ?? gb.approvalId} to raise the limit, then run it again`,
+    )
+  }
+  const s = goalStates.get(goalId)
+  const live = s && threads.get(s.threadId)
+  if (s && live?.worktree && !live.cleanedAt) {
+    // A stopped goal started again continues with its next loop.
+    if (s.status === "stopped") goalStates.set({ ...s, status: "running", next: true, reason: undefined })
+    return { threadId: s.threadId, resumed: true }
+  }
+  const f = threads.folder(spec.repo) ?? threads.addFolder(spec.repo)
+  const t = createThread(spec.prompt, f.id, spec.base)
+  threads.setMeta(t.id, { goalId, goalSpec: spec })
+  goalStates.set(newGoalState(goalId, t.id, parentGoalId))
+  logFailure(await deliverToThread(t.id, spec.prompt))
+  return { threadId: t.id, resumed: false }
+}
+
+/** AC results of a goal loop: the independent evaluator's verdicts, else the run's own evidence. */
+const goalAcs = (t: Thread): { acs: Record<string, Verdict>; acSource: GoalState["acSource"] } => {
+  const e = lastEvaluation(factory.evaluations.values(), subId(t.id))
+  const criteria = factory.sdlc.get(subId(t.id))?.criteria ?? []
+  if (e?.verdicts.length) {
+    const v = verdictResults(e)
+    return {
+      acs: Object.fromEntries(criteria.map((_, i) => [`AC-${i + 1}`, v[`AC-${i + 1}`] ?? "missing"])),
+      acSource: "evaluator",
+    }
+  }
+  const ev =
+    t.worktree && existsSync(artifact(t.worktree, "evidence.md"))
+      ? readFileSync(artifact(t.worktree, "evidence.md"), "utf8")
+      : null
+  return { acs: criteriaResults(criteria, ev), acSource: criteria.length ? "evidence" : null }
+}
+
+const goalPr = async (t: Thread): Promise<GoalState["pr"]> => {
+  const { pr } = await prOf(t)
+  return pr ? { url: pr.url, checks: pr.checks } : null
+}
+
+/** Open a human-only decision of the goal loop and remember it. */
+const askGoal = (
+  s: GoalState,
+  card: { title: string; summary: string; options: string[]; optionDetails: string[]; allowText: boolean },
+  patch: Partial<GoalState>,
+) => {
+  const item = factory.approvals.open({
+    threadId: s.threadId,
+    ...card,
+    context: `goal ${s.goalId} · human only`,
+    topic: "goal",
+  })
+  factory.publish("coordinator", "factory.approval_requested", null, now(), item)
+  return goalStates.set({ ...s, ...patch, approvalId: item.id })
+}
+
+const goalDone = (s: GoalState) => {
+  const t = threads.get(s.threadId)
+  if (t)
+    deliverAndLog(
+      reportTarget(t, threads.list(), deskThread().id),
+      `[goal ${s.goalId} done] Every acceptance criterion passes and the PR is green after ${s.loop} loop(s): ${s.pr?.url ?? "no PR"}. The human merges it.`,
+    )
+  const parent = s.parentGoalId && goalStates.get(s.parentGoalId)
+  if (parent && parent.status === "waiting-child" && parent.childGoalId === s.goalId)
+    askGoal(parent, childDoneCard(parent, s), {})
+}
+
+/** report_up of a goal's loop: update the goal state, then decide in code. */
+const goalReported = async (threadId: string, r: Report) => {
+  const t = threads.get(threadId)
+  const s = t?.goalId ? goalStates.get(t.goalId) : undefined
+  if (!t || !s || s.threadId !== t.id || s.status === "stopped" || s.status === "done") return
+  const { state, decision } = afterReport(s, {
+    at: Date.now(),
+    status: r.status,
+    summary: r.summary,
+    gaps: r.gaps,
+    commit: r.commit,
+    ...(r.factoryDefect ? { factoryDefect: r.factoryDefect } : {}),
+    ...goalAcs(t),
+    pr: await goalPr(t),
+    usd: goalSpent(t.goalId!),
+  })
+  const saved = goalStates.set(state)
+  factory.publish("coordinator", "factory.goal_updated", null, now(), saved)
+  if (decision.kind === "done") goalDone(saved)
+  else if (decision.kind === "no-progress") askGoal(saved, noProgressCard(saved), {})
+  else if (decision.kind === "factory-defect")
+    askGoal(saved, defectCard(saved, decision.defect), { reason: decision.defect.slice(0, 300) })
+}
+
+const conversationIdle = (t: Thread) =>
+  !runAgents(t).some((w) => w.status === "running") && !factory.approvals.pending().some((a) => a.threadId === t.id)
+
+/** Start the next loop: a fresh sub-coordinator session on the same worktree, seeded from the goal state. */
+const startNextLoop = async (s: GoalState) => {
+  const t = threads.get(s.threadId)
+  const spec = t?.goalSpec ?? goals.get(s.goalId)
+  if (!t?.worktree || t.cleanedAt || !spec)
+    return void goalStates.set({ ...s, next: false, status: "stopped", reason: "the goal's conversation is gone" })
+  const next = goalStates.set({ ...s, loop: s.loop + 1, next: false, note: undefined, status: "running" })
+  if (factory.workers.has(subId(t.id))) await factory.stop(subId(t.id))
+  factory.publish("coordinator", "factory.goal_updated", null, now(), next)
+  console.error(`goal ${s.goalId}: loop ${next.loop}`)
+  deliverAndLog(
+    t.id,
+    goalLoopPrompt(next, { id: s.goalId, prompt: spec.prompt, usd: budgetOf(s.goalId).limitUsd }, s.note),
+  )
+}
+
+const tickGoals = async () => {
+  for (const s of goalStates.list()) {
+    const t = threads.get(s.threadId)
+    if (!t?.worktree || t.cleanedAt || goalBlocked(s.goalId)) continue
+    if (s.status === "checking" && conversationIdle(t)) {
+      const pr = await goalPr(t)
+      const v = goalVerdict(s.acs, pr)
+      if (v === "done") goalDone(goalStates.set({ ...s, pr, status: "done" }))
+      else if (v === "not-done") goalStates.set({ ...s, pr, status: "running", next: true })
+    } else if (s.status === "running" && s.next && conversationIdle(t)) await startNextLoop(s)
+  }
+}
+loop("goal-loops", "30 seconds", tickGoals)
+
+/** The human answered a goal-loop decision. True when `a` was one. */
+const goalAnswered = (a: Approval): boolean => {
+  const s = goalStates.byApproval(a.id)
+  if (!s) return false
+  const answer = a.answer ?? ""
+  const base = { ...s, approvalId: undefined }
+  if (answer === STOP_GOAL) goalStates.set({ ...base, status: "stopped", next: false, reason: "stopped by the human" })
+  else if (answer === OPEN_CHILD) {
+    const parent = threads.get(s.threadId)
+    const spec = goals.get(s.goalId)
+    const id = childGoalId(s.goalId, (x) => !!goals.get(x))
+    goals.save({
+      id,
+      title: `Factory fix for goal ${s.goalId}`,
+      repo: repoRoot(FACTORY_DIR),
+      base: "main",
+      prompt: childGoalPrompt({ id: s.goalId, repo: spec?.repo ?? "" }, s.reason ?? "see the parent goal", s.threadId),
+      limits: { usd: spec?.limits.usd ?? DEFAULT_RUN_USD },
+    })
+    goalStates.set({ ...base, status: "waiting-child", childGoalId: id, next: false })
+    void startGoal(id, s.goalId).catch((e) => console.error(`child goal ${id}: ${e}`))
+    if (parent)
+      deliverAndLog(
+        reportTarget(parent, threads.list(), deskThread().id),
+        `[goal ${s.goalId}] waits for child goal ${id}, which fixes a factory defect.`,
+      )
+  } else {
+    // Run another loop, loop again without a fix, resume after a child goal, or typed direction.
+    const typed = ![RUN_AGAIN, LOOP_ANYWAY, RESUME].includes(answer)
+    goalStates.set({
+      ...base,
+      status: "running",
+      next: true,
+      noProgress: 0,
+      reason: undefined,
+      ...(typed ? { note: answer.slice(0, 2000) } : {}),
+    })
+  }
+  factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: s.threadId })
+  return true
+}
+
+/** The human answered a cost-limit pause: stop the goal, or raise its limit and resume. True when `a` was one. */
+const budgetAnswered = (a: Approval): boolean => {
+  const goalId = goalBudgets.byApproval(a.id)
+  if (!goalId) return false
+  const b = budgetOf(goalId)
+  const spent = goalSpent(goalId)
+  const r = readAnswer(a.answer ?? "", spent)
+  if (r.kind === "stop") goalBudgets.set(goalId, { ...b, status: "stopped", approvalId: undefined })
+  // Ask again with the same choices; the goal stays paused.
+  else if (r.kind === "invalid") openPause(goalId, b, spent, b.paused, r.why)
+  else {
+    goalBudgets.set(goalId, { limitUsd: r.limitUsd, status: "ok" })
+    for (const p of b.paused ?? []) {
+      const t = threads.get(p.threadId)
+      if (!t?.worktree || t.cleanedAt) continue
+      handoff(t, p.lost, b.pausedAt ?? Date.now(), {
+        tag: "cost limit raised",
+        text: `Goal ${goalId} reached its cost limit of $${b.limitUsd} (all its runs together) and this run was paused; the human raised the goal's limit to $${r.limitUsd}. Continue; keep the work focused on the criteria.`,
+      })
+    }
+  }
+  for (const t of goalRuns(goalId))
+    factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
+  return true
+}
+
+// Repo conversations whose work the last shutdown stopped get one handoff turn (resume.ts), after the server is up.
+const resumeInterrupted = async () => {
+  const shutdownRec = factory.store.latest("factory.shutdown", 1)[0] as Shutdown | undefined
+  const resumed = factory.store.latest("factory.resumed", 1)[0] as Resumed | undefined
+  const scopes = interruptedScopes(shutdownRec, resumed)
+  if (!shutdownRec || !scopes.size) return
+  const done: string[] = []
+  for (const [scopeId, lost] of scopes) {
+    const t = threads.list().find((x) => subId(x.id) === scopeId)
+    if (!t?.worktree || t.cleanedAt || t.archivedAt) continue
+    // A run of a goal paused at its cost limit stays paused; the human's answer resumes it.
+    if (goalBlocked(t.goalId)) continue
+    handoff(t, lost, shutdownRec.at)
+    done.push(scopeId)
+  }
+  factory.publish("coordinator", "factory.resumed", null, now(), { shutdownAt: shutdownRec.at, scopes: done })
+  console.error(`resumed ${done.length} interrupted conversation(s): ${done.join(", ")}`)
+}
+void resumeInterrupted().catch((e) => console.error(`resume after restart failed: ${e}`))
+
 const shutdown = async (signal: string) => {
   // Say who asked: a restart from process-compose, a human, or a stray group signal from a tool tree.
   console.error(`coordinator: ${signal} received (ppid ${process.ppid}); stopping`)
+  const running = factory
+    .summaries()
+    .filter((w) => w.status === "running")
+    .map((w) => ({ id: w.id, name: w.name, owner: w.owner, step: w.step, task: w.task }))
+  factory.publish("coordinator", "factory.shutdown", null, now(), { at: Date.now(), running } satisfies Shutdown)
   await stopLoops()
   await factory.stopAll()
   process.exit(0)
