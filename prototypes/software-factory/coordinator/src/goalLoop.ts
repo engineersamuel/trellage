@@ -122,10 +122,22 @@ export const afterReport = (s: GoalState, r: ReportFacts): { state: GoalState; d
     usd: r.usd,
     progress: false,
   }
+  // A second report of the same loop (a retry inside it) replaces its entry and must not count as another loop.
+  const repeat = s.loops.some((l) => l.n === s.loop)
   const earlier = s.loops.filter((l) => l.n !== s.loop)
   loop.progress = madeProgress(earlier, loop)
   const loops = [...earlier, loop]
-  const base: GoalState = { ...s, acs: r.acs, acSource: r.acSource, pr: r.pr, loops, next: false, reason: undefined }
+  const base: GoalState = {
+    ...s,
+    acs: r.acs,
+    acSource: r.acSource,
+    pr: r.pr,
+    loops,
+    next: false,
+    reason: undefined,
+    // The count before this loop's first report, so a repeated report recomputes from the same start.
+    noProgressBefore: repeat ? (s.noProgressBefore ?? 0) : s.noProgress,
+  }
   const verdict = goalVerdict(r.acs, r.pr)
   if (verdict === "done") return { state: { ...base, status: "done" }, decision: { kind: "done" } }
   if (verdict === "checking") return { state: { ...base, status: "checking" }, decision: { kind: "checking" } }
@@ -135,7 +147,8 @@ export const afterReport = (s: GoalState, r: ReportFacts): { state: GoalState; d
       state: { ...base, status: "paused", reason: "factory defect" },
       decision: { kind: "factory-defect", defect: r.factoryDefect.trim() },
     }
-  const noProgress = loop.progress ? 0 : s.noProgress + 1
+  const before = repeat ? (s.noProgressBefore ?? 0) : s.noProgress
+  const noProgress = loop.progress ? 0 : before + 1
   if (noProgress >= NO_PROGRESS_LIMIT)
     return {
       state: { ...base, noProgress, status: "paused", reason: `no progress in ${noProgress} loops` },
