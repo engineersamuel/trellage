@@ -1,10 +1,13 @@
-import { afterEach, expect, test } from "bun:test"
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test"
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { expandMcpEnvironment } from "../../src/native-run/mcp-stdio.ts"
+
+// Startup waits are bounded by STARTUP_MS; the shutdown deadlines under test are measured separately.
+setDefaultTimeout(30_000)
 
 const wrapperPath = fileURLToPath(new URL("../../src/native-run/mcp-stdio.ts", import.meta.url))
 const roots: string[] = []
@@ -60,8 +63,11 @@ const fixture = async (source: string, env: Record<string, string> = {}, launchE
   return { root, wrapper, exited, output: () => ({ stdout, stderr }) }
 }
 
+/** Fixture servers are Bun processes; on a loaded host (the pre-push hook) startup can take seconds. */
+const STARTUP_MS = 15_000
+
 const waitForPid = async (root: string, file: string, group = false): Promise<number> => {
-  for (let attempt = 0; attempt < 150; attempt++) {
+  for (const deadline = Date.now() + STARTUP_MS; Date.now() < deadline;) {
     const value = await readFile(path.join(root, file), "utf8").catch(() => "")
     if (value) {
       const pid = Number(value)
@@ -91,18 +97,20 @@ test("stdio aliases capture original values without restoring foreign authentica
     "captured",
   )
   expect(expandMcpEnvironment("${KEY}", { KEY: "legacy" }, true)).toBe("legacy")
+  // The server exits once it has echoed the message, before stdin closes. Closing stdin first would start the
+  // wrapper's 100 ms EOF grace while a slow (loaded) host is still starting the server, which then dies by TERM.
   const run = await fixture(
     `
 console.log(JSON.stringify({ key: process.env.CONFIGURED_KEY, foreign: process.env.GH_TOKEN ?? null }));
-process.stdin.on("data", chunk => process.stdout.write(chunk));
-process.stdin.on("end", () => process.exit(0));
+process.stdin.on("data", chunk => process.stdout.write(chunk, () => process.exit(0)));
 `,
     { CONFIGURED_KEY: "${GH_TOKEN}" },
     { GH_TOKEN: undefined, TRX_MCP_ENV_GH_TOKEN: "fixture-only-token" },
   )
   const protocol = '{"jsonrpc":"2.0","method":"initialize"}\n'
-  run.wrapper.stdin.end(protocol)
+  run.wrapper.stdin.write(protocol)
   expect(await run.exited).toBe(0)
+  run.wrapper.stdin.end()
   expect(run.output()).toEqual({
     stdout: '{"key":"fixture-only-token","foreign":null}\n' + protocol,
     stderr: "",

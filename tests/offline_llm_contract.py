@@ -71,6 +71,18 @@ class OfflineContract(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_git_hook_repository_variables_are_not_inherited(self):
+        # A pre-push hook exports GIT_DIR; inherited, a fixture's `git init` once made the main checkout bare.
+        hook = {
+            "GIT_DIR": "/host/.git",
+            "GIT_WORK_TREE": "/host",
+            "GIT_COMMON_DIR": "/host/.git",
+            "GIT_INDEX_FILE": "/host/.git/index",
+        }
+        with patch.dict(os.environ, hook):
+            result = self.run_offline(f"import os; assert not set({list(hook)!r}) & os.environ.keys()")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_isolation_preserves_user_and_ancestor_ownership(self):
         paths = [str(ROOT), *(str(parent) for parent in ROOT.parents)]
         expected = [(path, os.stat(path).st_uid, os.stat(path).st_gid) for path in paths]

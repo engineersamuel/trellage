@@ -63,6 +63,21 @@ def prepare_process_listing(directory: Path, env: dict[str, str]) -> None:
     raise RuntimeError("cannot inspect test processes inside Seatbelt; Apple Silicon may require Rosetta 2")
 
 
+GIT_LOCATION = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_PREFIX",
+    "GIT_NAMESPACE",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+)
+
+
 def isolated_environment(violations: Path) -> dict[str, str]:
     env = {
         # Unix fixture sockets remain available. Never hand tests the host
@@ -75,6 +90,10 @@ def isolated_environment(violations: Path) -> dict[str, str]:
     # Fixtures replace HOME; inherited absolute paths would still select the
     # host's config and make parallel tests share mutable Native state.
     for key in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "TRELLAGE_CONFIG"):
+        env.pop(key, None)
+    # Git hooks (pre-push runs these tests) export GIT_DIR and friends. Inherited, they send every fixture's
+    # `git init` or `git config` to the enclosing repository: one such run made the main checkout bare.
+    for key in GIT_LOCATION:
         env.pop(key, None)
     # Resolve the pinned executable before fixtures replace HOME. A mise shim
     # would otherwise consult the fixture's empty trust database on every call.

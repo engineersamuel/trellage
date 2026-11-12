@@ -5,7 +5,11 @@ import { nativePresetProfiles } from "@trellage/runtime/native-run"
 
 const shellWord = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
 
-/** Metadata-only lifecycle executables; callers must still inject the final harness spawner. */
+/**
+ * Metadata-only lifecycle executables; callers must still inject the final harness spawner.
+ * Each mock is plain /bin/sh with its replies baked in: no interpreter start per call, so a loaded host
+ * (the pre-push hook runs these beside the whole suite) cannot push a call past its timeout.
+ */
 export const createAdmissionMocks = async (root: string, executable: string) => {
   assert.equal(process.env.TRELLAGE_TEST_OFFLINE, "1", "run through scripts/test-offline.sh")
   assert(path.isAbsolute(root) && path.isAbsolute(executable))
@@ -14,7 +18,6 @@ export const createAdmissionMocks = async (root: string, executable: string) => 
   await mkdir(plugin, { recursive: true })
   await writeFile(path.join(plugin, "plugin.json"), JSON.stringify({ name: "fixture-plugin", version: "1.0.0" }))
   const calls = path.join(directory, "calls.jsonl")
-  const program = path.join(directory, "metadata.ts")
   const registrations = [{ name: "fixture-plugin", marketplace: "fixture", enabled: true, cache_path: plugin }]
   const settings = {
     enabledPlugins: { "fixture-plugin@fixture": true },
@@ -26,34 +29,51 @@ export const createAdmissionMocks = async (root: string, executable: string) => 
     copilot: { installedPlugins: path.dirname(plugin), pluginRegistrations: registrations, settings },
     agency: { readiness: "healthy", authenticationMethod: "AzureCliCredential" },
   }
-  await writeFile(
-    program,
-    `import { appendFileSync } from "node:fs"
-const role = process.argv[2]
-const args = process.argv.slice(3)
-const fail = () => { process.stderr.write("Unexpected lifecycle metadata request\\n"); process.exit(97) }
-appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ role, args }) + "\\n")
-const payloads = ${JSON.stringify(payloads)}
-if (role === "claude" || role === "copilot") {
-  const allowed = role === "claude" ? ["default", "office", "office-charts"] : ${JSON.stringify(nativePresetProfiles("copilot"))}
-  if (process.env["TRELLAGE_TRX_" + role.toUpperCase() + "_ADAPTER"] !== "1" || args.length !== 2 || args[0] !== "_trx-admit" || !allowed.includes(args[1])) fail()
-  console.log(JSON.stringify(payloads[role]))
-} else if (role === "agency") {
-  if (JSON.stringify(args) !== JSON.stringify(["inventory", "trellage-azure", "--json"])) fail()
-  console.log(JSON.stringify(payloads.agency))
-} else if (role === "jcode") {
-  if (process.env.TRELLAGE_TRX_JCODE_ADAPTER !== "1" || JSON.stringify(args) !== JSON.stringify(["_trx-executable"])) fail()
-  console.log(${JSON.stringify(executable)})
-} else fail()
-`,
-  )
+  // What each role accepts: the exact argument lists, whether the adapter guard must be set, and the reply.
+  const roles: Record<string, { allowed: string[][]; guarded: boolean; reply: string }> = {
+    claude: {
+      allowed: ["default", "office", "office-charts"].map((profile) => ["_trx-admit", profile]),
+      guarded: true,
+      reply: JSON.stringify(payloads.claude),
+    },
+    copilot: {
+      allowed: nativePresetProfiles("copilot").map((profile) => ["_trx-admit", profile]),
+      guarded: true,
+      reply: JSON.stringify(payloads.copilot),
+    },
+    agency: {
+      allowed: [["inventory", "trellage-azure", "--json"]],
+      guarded: false,
+      reply: JSON.stringify(payloads.agency),
+    },
+    jcode: { allowed: [["_trx-executable"]], guarded: true, reply: executable },
+  }
   const environment: NodeJS.ProcessEnv = {}
   const binaries: Record<string, string> = {}
-  for (const role of ["claude", "copilot", "agency", "jcode"]) {
+  for (const [role, spec] of Object.entries(roles)) {
     const binary = path.join(directory, role)
+    const guard = `TRELLAGE_TRX_${role.toUpperCase()}_ADAPTER`
+    // Arguments are joined with a unit separator, so "a b" and ["a", "b"] differ; fixtures never contain \037.
+    const cases = spec.allowed.map((args) => `  ${shellWord(args.join("\x1f"))}) ok=1 ;;`).join("\n")
     await writeFile(
       binary,
-      `#!/bin/sh\nexec ${shellWord(process.execPath)} ${shellWord(program)} ${shellWord(role)} "$@"\n`,
+      `#!/bin/sh
+# Log the call as JSON: {"role": ..., "args": [...]}; arguments are plain fixture tokens, escaped for " and \\.
+esc() { printf '%s' "$1" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g'; }
+line='{"role":"${role}","args":['
+sep=''
+for a in "$@"; do line="$line$sep\\"$(esc "$a")\\""; sep=','; done
+printf '%s]}\\n' "$line" >> ${shellWord(calls)}
+fail() { printf 'Unexpected lifecycle metadata request\\n' >&2; exit 97; }
+${spec.guarded ? `[ "\${${guard}:-}" = 1 ] || fail` : ""}
+joined=$(printf '%s\\037' "$@"); joined=\${joined%?}
+ok=0
+case "$joined" in
+${cases}
+esac
+[ "$ok" = 1 ] || fail
+printf '%s\\n' ${shellWord(spec.reply)}
+`,
       { mode: 0o700 },
     )
     binaries[role] = binary
