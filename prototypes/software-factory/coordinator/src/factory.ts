@@ -1,12 +1,14 @@
-// Worker lifecycle: each worker is a separate agent process with its own home. Copilot SDK is the
-// default harness (a runtime over TCP); a step may name the Claude Agent SDK harness instead.
+// Worker lifecycle: each worker is a separate agent process with its own home. A Claude model runs in the Claude
+// Agent SDK; any other model in the Copilot SDK (a runtime over TCP). A step may name its own harness.
 import { readOnlyViolation, subShellFeedback } from "./readonly.ts"
 import { isolatedLauncher, reapRuntimes, recordRuntime, spawnIsolated } from "./isolate.ts"
 import { factoryMcpServer, gateFromPermissions, MCP_SERVER, mcpToolNames } from "./claudetools.ts"
+import { imageTool } from "./images.ts"
+import { loadPrompt } from "./prompt.ts"
 import type { CodeReview } from "./review.ts"
 import type { Sdlc } from "./sdlc.ts"
 import { type ChildProcess, execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { homedir } from "node:os"
 import {
@@ -55,7 +57,7 @@ export type Session = {
   abort(): Promise<void>
   disconnect(): Promise<void>
   setModel(model: string, options?: { reasoningEffort?: never }): Promise<void>
-  /** Replace the tools this client supplies (Copilot SDK, experimental). */
+  /** Replace the tools this client supplies (Copilot SDK setTools; Claude: an MCP server for client tools). */
   setTools?(tools: Tool<Record<string, unknown>>[]): Promise<void>
 }
 
@@ -168,6 +170,8 @@ export class Worker {
   context: [number, number] | null = null
   lastMessage: string | null = null
   log: FeedEvent[] = []
+  /** Handoff from the session this coordinator replaces (another SDK); sent once with the next message. */
+  handoff: string | null = null
   /** Supervisor inputs: last event time, consecutive failed tool calls, last error, result read. */
   lastActivity = Date.now()
   readonly startedAt = Date.now()
@@ -187,7 +191,7 @@ export class Worker {
   readonly events = new Channel<SessionEvent>()
   session!: Session
   harness: Harness = "copilot"
-  /** The session's own tools; AG-UI client tools are added to these for one run (Copilot sessions only). */
+  /** The session's own tools; AG-UI client tools are added to these for one run. */
   tools: Tool<Record<string, unknown>>[] = []
   /** Names of the client tools the session has now; "" when it has only its own. */
   clientToolKey = ""
@@ -237,6 +241,11 @@ export class Worker {
 
   /** Mark running before sending so a reader never sees a stale "idle". */
   async send(prompt: string): Promise<void> {
+    // The first message after an SDK switch carries the old session's handoff.
+    if (this.handoff) {
+      prompt = `${this.handoff}\n\n---\n\n${prompt}`
+      this.handoff = null
+    }
     this.status = "running"
     this.collected = false
     this.lastActivity = Date.now()
@@ -338,10 +347,52 @@ export class Worker {
   }
 }
 
+/** How long a coordinator that changes SDK may take to write its handoff summary. */
+const HANDOFF_WAIT_MS = 120_000
+const HANDOFF_MAX_CHARS = 16_000
+
+const handoffFile = (root: string, id: string) => path.join(root, id, "handoff.md")
+
+/** A saved handoff for this coordinator, read once (the file is removed). */
+const takeHandoff = (root: string, id: string): string | null => {
+  const file = handoffFile(root, id)
+  if (!existsSync(file)) return null
+  const text = readFileSync(file, "utf8")
+  rmSync(file, { force: true })
+  return text
+}
+
+/** The last turns of a coordinator's log as text: user and assistant messages, tool names. At most 16k chars. */
+export const handoffTranscript = (log: readonly FeedEvent[], max = HANDOFF_MAX_CHARS): string => {
+  const lines = log.flatMap((e) => {
+    const d = (e.data ?? {}) as Record<string, unknown>
+    if (e.type === "user.message" && typeof d.content === "string") return [`USER: ${d.content}`]
+    if (e.type === "assistant.message" && e.agentId === null && typeof d.content === "string" && d.content)
+      return [`YOU: ${d.content}`]
+    if (e.type === "tool.execution_start" && e.agentId === null) return [`(tool ${String(d.toolName)})`]
+    return []
+  })
+  const out: string[] = []
+  let size = 0
+  for (const line of lines.reverse()) {
+    if (size + line.length > max) break
+    out.unshift(line)
+    size += line.length + 1
+  }
+  return out.join("\n")
+}
+
+/** How long a coordinator that changes SDK may finish its turn before it stops anyway. */
+const SDK_MOVE_WAIT_MS = 30 * 60_000
+
+const CLAUDE_DEFAULT: HarnessSpec = { kind: "claude", profiles: ["default"] }
+
 /**
- * The harness a worker runs in. `auto`: the step's or the spawn's choice (Copilot SDK when none). A forced SDK
- * applies to every worker; a step's own profiles (e.g. council in Claude) are kept when the forced SDK matches.
- * Global coordinators stay on the Copilot SDK; a repo sub-coordinator moves to Claude when Claude is forced.
+ * The harness a worker runs in. `auto`: the step's or the spawn's choice; else a Claude model runs in the Claude
+ * Agent SDK, any other model in the Copilot SDK. A forced SDK applies to every worker; a step's own profiles
+ * (e.g. council in Claude) are kept when the forced SDK matches.
+ * Coordinators (desk, General chats, sub-coordinators) run in Claude with a Claude model, else in the Copilot SDK;
+ * a repo sub-coordinator also moves to Claude when Claude is forced.
  */
 export const workerHarness = (
   setting: string,
@@ -349,11 +400,13 @@ export const workerHarness = (
   chosen: HarnessSpec | undefined,
   gated = false,
   subCoordinator = false,
+  model?: string,
 ): HarnessSpec | undefined => {
-  // A repo sub-coordinator follows a forced Claude SDK too (its tools are served over MCP); global ones never move.
-  if (subCoordinator && setting === "claude") return { kind: "claude", profiles: ["default"] }
+  const claudeModel = !!model && /^claude/.test(model)
+  if (role !== "worker") return claudeModel || (subCoordinator && setting === "claude") ? CLAUDE_DEFAULT : chosen
   // A worker with its own Copilot permission gate (the finish worker's push gate) stays on the Copilot SDK.
-  if (role !== "worker" || setting === "auto" || gated) return chosen
+  if (gated) return chosen
+  if (setting === "auto") return chosen ?? (claudeModel ? CLAUDE_DEFAULT : undefined)
   if (setting === "copilot") return undefined
   const kind = setting as HarnessSpec["kind"]
   return chosen?.kind === kind ? chosen : { kind, profiles: kind === "claude" ? ["default"] : [] }
@@ -520,22 +573,32 @@ export class Factory {
   /** Spawn an isolated runtime process, connect to it, and open one session. */
   async spawn(spec: SpawnSpec): Promise<Worker> {
     const id = spec.id ?? `w-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`
-    const auth = spec.auth ?? this.defaultAuth
+    let auth = spec.auth ?? this.defaultAuth
     const home = path.join(this.root, id)
     const step = spec.step ? stepById(spec.step) : null
     const missing = step ? missingProfiles(step.id, step.harness) : []
     if (missing.length) throw new Error(`refused: ${missing.join("; ")}`)
     // Skill preflight runs first, so a worker with an unusable skill fails before any model call.
     const { workdir, setup, skills } = this.prepareSpawn(spec, id, home, step)
+    const setting = this.settings.workers.harness
+    const chosen = spec.harness ?? step?.harness
+    // With no harness chosen, the worker's model (pinned, routed or default) decides the SDK: route it first.
+    const routed = spec.role === "worker" && !chosen && setting === "auto" ? await this.spawnModel(spec) : null
     const harness = workerHarness(
-      this.settings.workers.harness,
+      setting,
       spec.role,
-      spec.harness ?? step?.harness,
+      chosen,
       spec.role === "worker" && !!spec.permissions,
       id.startsWith("sub-"),
+      routed?.model ?? spec.model,
     )
-    if (harness) return this.spawnHarness(spec, id, home, workdir, harness, skills)
-    const { model, source } = await this.spawnModel(spec, auth)
+    if (harness) {
+      const pinned = routed ? { ...spec, model: routed.model } : spec
+      return this.spawnHarness(pinned, id, home, workdir, harness, skills, routed?.source)
+    }
+    const { model, source } = routed ?? (await this.spawnModel(spec))
+    // A worker model the native Copilot runtime does not serve goes through copilot-proxy-rs (BYOK).
+    if (spec.role === "worker" && auth === "native" && !(await this.nativeServes(model))) auth = "proxy"
     const host = spec.shareRuntimeOf ? this.workers.get(spec.shareRuntimeOf) : undefined
     if (host && !(host.client instanceof CopilotClient))
       throw new Error(`cannot share the runtime of ${host.id}: not a Copilot runtime`)
@@ -566,6 +629,7 @@ export class Factory {
     workdir: string,
     harness: HarnessSpec,
     skills: SkillCheck[] = [],
+    source?: ModelSource,
   ): Promise<Worker> {
     let worker: Worker | undefined
     const emit = (ev: HarnessEvent) => {
@@ -596,7 +660,8 @@ export class Factory {
       model,
     )
     worker.harness = harness.kind
-    if (spec.model) worker.modelSource = { kind: "pinned" }
+    if (source) worker.modelSource = source
+    else if (spec.model) worker.modelSource = { kind: "pinned" }
     worker.session = session
     this.configureWorker(worker, spec)
     worker.spec = {
@@ -638,6 +703,8 @@ export class Factory {
       spec.model ??
       launch.model ??
       (/^claude/.test(this.defaultModel) ? this.defaultModel : factoryConfig().models.claude_worker)
+    // A coordinator's factory tools, or a worker's generate_image: an in-process MCP server either way.
+    const tools = this.sessionTools(spec, workdir)
     const session = new ClaudeSession(
       {
         cwd: workdir,
@@ -650,9 +717,9 @@ export class Factory {
         permissionMode: "default",
         canUseTool: spec.permissions ? gateFromPermissions(spec.permissions) : claudeGate,
         disallowedTools: ["AskUserQuestion"],
-        // A coordinator: the factory tools as an in-process MCP server, and its role prompt after Claude Code's.
-        ...(spec.tools?.length
-          ? { mcpServers: { [MCP_SERVER]: factoryMcpServer(spec.tools) }, allowedTools: mcpToolNames(spec.tools) }
+        // Its tools (above) and its role prompt after Claude Code's.
+        ...(tools.length
+          ? { mcpServers: { [MCP_SERVER]: factoryMcpServer(tools) }, allowedTools: mcpToolNames(tools) }
           : {}),
         ...(spec.system
           ? { systemPrompt: { type: "preset" as const, preset: "claude_code" as const, append: spec.system } }
@@ -667,6 +734,11 @@ export class Factory {
         spawnClaudeCodeProcess: spawnIsolated as never,
       },
       emit,
+      {
+        ownTools: tools.map((t) => t.name),
+        // A crashed Claude process ends its workers like a Copilot runtime exit (the desk then restarts the service).
+        onExit: (message) => this.runtimeExited(session, `claude process exited (${message})`),
+      },
     )
     return { session, model, loaded: `plugins ${launch.plugins.map((p) => path.basename(p)).join(", ")}` }
   }
@@ -688,10 +760,10 @@ export class Factory {
     return { session, model: session.model, loaded: `skills ${launch.skills.map((p) => path.basename(p)).join(", ")}` }
   }
 
-  private async spawnModel(spec: SpawnSpec, auth: Auth): Promise<{ model: string; source: ModelSource }> {
+  private async spawnModel(spec: SpawnSpec): Promise<{ model: string; source: ModelSource }> {
     if (spec.model) return { model: spec.model, source: { kind: "pinned" } }
     if (spec.role !== "worker" || !spec.task) return { model: this.defaultModel, source: { kind: "default" } }
-    const routed = await this.routeModel(spec.task, auth)
+    const routed = await this.routeModel(spec.task)
     if (!routed) return { model: this.defaultModel, source: { kind: "fallback" } }
     this.publish("coordinator", "factory.model_routed", null, now(), { worker: spec.name, ...routed })
     return { model: routed.id, source: { kind: "routed", by: routed.routedBy, confidence: routed.confidence } }
@@ -700,7 +772,7 @@ export class Factory {
   /** The step's subagent model: Jev's pick for the step's short subagent text (a whole task hides it), or null. */
   async subagentModel(spec: SpawnSpec, step: Step | null): Promise<string | null> {
     if (!step?.subagentRoute) return null
-    const routed = await this.routeModel(step.subagentRoute, "proxy")
+    const routed = await this.routeModel(step.subagentRoute)
     // Claude Code sends `thinking` to subagents; Copilot rejects it for some models (claude-haiku-5.5), so take
     // the first model in Jev's ranking that accepts it.
     for (const id of routed?.ranked.slice(0, 4) ?? []) {
@@ -806,6 +878,12 @@ export class Factory {
     if (spec.threadId) worker.threadId = spec.threadId
   }
 
+  /** A session's own tools: the spec's, plus generate_image for every worker. */
+  private sessionTools(spec: SpawnSpec, workdir: string): Tool<Record<string, unknown>>[] {
+    const own = (spec.tools ?? []) as Tool<Record<string, unknown>>[]
+    return spec.role === "worker" ? [...own, imageTool(this.proxyUrl, workdir)] : own
+  }
+
   private sessionConfig(
     spec: SpawnSpec,
     worker: Worker,
@@ -819,7 +897,7 @@ export class Factory {
       streaming: true,
       model,
       workingDirectory: workdir,
-      tools: spec.tools ?? [],
+      tools: this.sessionTools(spec, workdir),
       ...(setup.skillDirectories.length ? { skillDirectories: setup.skillDirectories } : {}),
       // Registered before session.create so no startup event is lost.
       onEvent: (ev) => {
@@ -843,6 +921,7 @@ export class Factory {
 
   /** Register a started worker and send its first prompt. A worker whose prompt fails is stopped, and the error rethrown. */
   async register(worker: Worker, prompt?: string | null): Promise<Worker> {
+    if (worker.role === "coordinator") worker.handoff = takeHandoff(this.root, worker.id)
     this.workers.set(worker.id, worker)
     this.publish(worker.id, "factory.worker_started", null, now(), worker.summary())
     if (!prompt) return worker
@@ -859,15 +938,45 @@ export class Factory {
    * Ask copilot-proxy-rs (`POST /v1/models`, Jev) which model fits a task. Returns null when the
    * proxy is down or its pick is not a model this worker's auth can use.
    */
+  /** A Copilot client only for the model list, when the desk runs in another SDK. Started on first use. */
+  private modelClient: Promise<CopilotClient> | null = null
+
+  /** Models the native Copilot runtime serves: from the desk's runtime, else from a small client of its own. */
+  async copilotModels(): Promise<string[]> {
+    const desk = this.workers.get("coordinator")?.client
+    const client =
+      desk instanceof CopilotClient
+        ? desk
+        : await (this.modelClient ??= (() => {
+            const home = path.join(this.root, "model-list")
+            mkdirSync(home, { recursive: true })
+            const setup = stepSetup(null, path.join(this.root, "skills"), path.join(this.root, "tools"))
+            return this.startClient(home, home, "native", setup).catch((e) => {
+              this.modelClient = null
+              throw e
+            })
+          })())
+    return (await client.listModels()).map((m) => m.id)
+  }
+
+  /** Whether the native Copilot runtime serves this model. Unknown (list failed) counts as served. */
+  private async nativeServes(model: string): Promise<boolean> {
+    try {
+      return (await this.copilotModels()).includes(model)
+    } catch {
+      return true
+    }
+  }
+
   async routeModel(
     task: string,
-    auth: Auth,
   ): Promise<{ id: string; confidence: number; routedBy: string; ranked: string[] } | null> {
     try {
       const res = await fetch(`${this.proxyUrl}/models`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ input: task.slice(0, 16_000) }),
+        // Agents need a chat model: copilot-proxy-rs routes only between models of this type (#69).
+        body: JSON.stringify({ input: task.slice(0, 16_000), type: "chat" }),
         signal: AbortSignal.timeout(25_000),
       })
       if (!res.ok) return null
@@ -877,20 +986,13 @@ export class Factory {
         confidence?: number
         routed_by: string
       }
-      const ranked = [r.recommended?.id, ...(r.ranking ?? []).map((x) => x.id)].filter(Boolean) as string[]
-      const available =
-        auth === "proxy"
-          ? ranked
-          : (await (this.get("coordinator").client as CopilotClient).listModels()).map((m) => m.id)
-      const id = ranked.find((m) => available.includes(m))
-      return id
-        ? {
-            id,
-            confidence: r.confidence ?? 0,
-            routedBy: id === r.recommended?.id ? r.routed_by : "jev-ranking",
-            ranked: [...new Set(ranked.filter((m) => available.includes(m)))],
-          }
-        : null
+      // copilot-proxy-rs GET /v1/models is the authoritative list: Jev chose among it, so its pick stands. A model
+      // the native Copilot runtime does not serve (e.g. gemini-4-argon) runs over proxy auth (see spawn).
+      const ranked = [
+        ...new Set([r.recommended?.id, ...(r.ranking ?? []).map((x) => x.id)].filter(Boolean) as string[]),
+      ]
+      const id = ranked[0]
+      return id ? { id, confidence: r.confidence ?? 0, routedBy: r.routed_by, ranked } : null
     } catch {
       return null
     }
@@ -917,7 +1019,7 @@ export class Factory {
   async settingsView() {
     let models: string[] = []
     try {
-      models = (await (this.get("coordinator").client as CopilotClient).listModels()).map((m) => m.id)
+      models = await this.copilotModels()
     } catch {}
     return {
       settings: this.settings,
@@ -985,6 +1087,7 @@ export class Factory {
       live.map(async (w) => {
         const c = w.id.startsWith("sub-") ? next.subAgent : next.agent
         if (w.model === c.model) return
+        if (this.moveSdk(w, c.model)) return
         try {
           await w.setModel(c.model, c.reasoningEffort)
         } catch (e) {
@@ -1006,12 +1109,71 @@ export class Factory {
           .filter((w) => w.role === "coordinator")
           .map((w) => {
             const c = w.id.startsWith("sub-") ? next.subAgent : next.agent
-            return w.setModel(c.model, c.reasoningEffort)
+            return this.moveSdk(w, c.model) ? undefined : w.setModel(c.model, c.reasoningEffort)
           }),
       )
     } catch (e) {
       throw new Error(`model change rejected: ${e instanceof Error ? e.message : e}`, { cause: e })
     }
+  }
+
+  /**
+   * The handoff of a coordinator that changes SDK: its own summary, else (no answer in time, or a dead session) the
+   * last turns from the event log. Saved in its home, so it survives the service restart a desk switch needs.
+   */
+  private async writeHandoff(w: Worker): Promise<void> {
+    const before = w.lastMessage
+    let summary: string | null = null
+    try {
+      await w.send(loadPrompt("handoff-ask"))
+      if ((await w.waitIdle(HANDOFF_WAIT_MS)) && w.lastMessage && w.lastMessage !== before) summary = w.lastMessage
+    } catch {}
+    const body =
+      summary ?? `Transcript of the last turns (the old session wrote no summary):\n\n${handoffTranscript(w.log)}`
+    try {
+      mkdirSync(path.join(this.root, w.id), { recursive: true })
+      writeFileSync(handoffFile(this.root, w.id), `${loadPrompt("handoff-start")}\n\n${body}`)
+    } catch (e) {
+      console.error(`handoff of ${w.id} not saved: ${e instanceof Error ? e.message : e}`)
+    }
+  }
+
+  /** Resolves when no agent runs (checked every 5 s), or when the timeout expires. */
+  private async allIdle(timeoutMs: number): Promise<void> {
+    const end = Date.now() + timeoutMs
+    while (Date.now() < end && [...this.workers.values()].some((x) => x.status === "running"))
+      await new Promise((r) => setTimeout(r, 5_000))
+  }
+
+  /** Called when the desk must change SDK: main.ts restarts the service, which starts the desk in the new one. */
+  onDeskSdkChange: (() => void) | null = null
+
+  /**
+   * A coordinator whose new model needs the other SDK cannot switch in place. After its current turn it stops; a
+   * sub-coordinator or General chat starts again in the new SDK on its next message, the desk by a service restart.
+   * Each SDK keeps its own transcript, so before it stops it writes a handoff (handoff.md in its home) that the new
+   * session gets with its first message. True when it moves.
+   */
+  private moveSdk(w: Worker, model: string): boolean {
+    const kind = workerHarness(
+      this.settings.workers.harness,
+      "coordinator",
+      undefined,
+      false,
+      w.id.startsWith("sub-"),
+      model,
+    )?.kind
+    if ((kind ?? "copilot") === w.harness) return false
+    console.error(`factory config: ${w.id} moves from ${w.harness} to ${kind ?? "copilot"} after its turn (${model})`)
+    // The desk restarts the whole service, which stops every worker: it waits until no agent runs.
+    const wait = w.id === "coordinator" ? this.allIdle(SDK_MOVE_WAIT_MS) : w.waitIdle(SDK_MOVE_WAIT_MS)
+    void wait.then(async () => {
+      if (this.workers.get(w.id) !== w) return
+      await this.writeHandoff(w)
+      if (w.id === "coordinator") return this.onDeskSdkChange?.()
+      void this.stop(w.id).catch(() => {})
+    })
+    return true
   }
 
   private clearChangedExtensionErrors(prev: S.Settings, next: S.Settings): void {
@@ -1041,7 +1203,12 @@ export class Factory {
   }
 
   async stopAll(): Promise<void> {
-    await Promise.all([...this.workers.keys()].map((id) => this.stop(id).catch(() => {})))
+    const lister = this.modelClient
+    this.modelClient = null
+    await Promise.all([
+      ...[...this.workers.keys()].map((id) => this.stop(id).catch(() => {})),
+      lister?.then((c) => c.stop()).catch(() => {}),
+    ])
   }
 
   /** Coordinator permission gate: denies tool kinds disabled in settings. */

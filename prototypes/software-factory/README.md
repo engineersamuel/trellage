@@ -215,8 +215,24 @@ request; entries at or above 0.65 are selected, at most 4 (the most probable win
 
 ## Harnesses
 
-Copilot SDK is the default harness for every worker. A step that needs skills or plugins built for another harness names
-it (`harness` in `coordinator/src/steps.ts`), and `spawn_worker` takes `harness` (`claude` or `pi`) and `profiles`. The
+The model picks the harness. A Claude model runs in the Claude Agent SDK; any other model runs in the Copilot SDK. This
+applies to the desk, General chats and sub-coordinators (their model at spawn), and to workers with `workers.harness =
+auto` (pinned, routed or default model). A step that needs skills or plugins built for another harness names it
+(`harness` in `coordinator/src/steps.ts`), and `spawn_worker` takes `harness` (`claude` or `pi`) and `profiles`; these
+choices win for workers. The finish worker stays in the Copilot SDK. Jev picks from the copilot-proxy-rs `GET /v1/models`
+list; a worker model the native Copilot runtime does not serve (e.g. `gemini-4-argon`) runs over proxy auth.
+
+A Claude coordinator gets the run's AG-UI client tools on an extra MCP server (`setMcpServers`). A coordinator whose new
+model needs the other SDK stops after its turn and starts in that SDK on its next message. Before it stops it writes a
+handoff (its own summary, else the last turns from the event log) that the new session gets first;
+the desk restarts the service once no agent runs. The Copilot model list comes from the desk's runtime, else from a
+small Copilot client of its own.
+
+Every worker has a `generate_image` tool (`coordinator/src/images.ts`): Jev picks the image model from copilot-proxy-rs
+(`POST /v1/models` with `type: "image"`), the proxy generates it (`POST /v1/images/generations`), and the file is
+saved in the worker's folder, by default in `.factory/images/` (git-excluded). A named `path` must stay inside that
+folder, not under `.git`, end in `.png`, `.jpg`, `.jpeg` or `.webp` (the image is made in that format), and not be a
+symlink; an existing file is replaced only with `overwrite: true`. The
 factory composes the trx profiles in process, as `trx run <harness> <profile>` would, and runs the worker in that
 harness's TypeScript SDK:
 

@@ -182,6 +182,8 @@ const coord = await factory.spawn({
   system: globalSystem(`\n\n${deskPrompt()}`),
   tools: globalScopeTools(DESK_ID, null),
   permissions: factory.globalPermissions,
+  // The model decides the SDK: a Claude model runs the desk in the Claude Agent SDK, any other in the Copilot SDK.
+  model: factory.settings.agent.model,
 })
 const { model, reasoningEffort } = factory.settings.agent
 if (reasoningEffort !== "default")
@@ -620,8 +622,9 @@ const clientTool = (t: { name: string; description?: unknown; parameters?: unkno
   })
 
 /**
- * Give the session the run's client tools (AG-UI `tools`) next to its own. Only Copilot sessions can change
- * tools; a run without client tools (Foldkit) puts the session back to its own. Returns the client tool names.
+ * Give the session the run's client tools (AG-UI `tools`) next to its own: Copilot sessions through setTools, Claude
+ * sessions through an MCP server. A run without client tools (Foldkit) puts the session back to its own. Returns the
+ * client tool names.
  */
 const syncClientTools = async (w: Worker, tools: unknown): Promise<Set<string>> => {
   if (!w.session.setTools) return new Set()
@@ -1875,11 +1878,13 @@ const shutdown = async (signal: string) => {
   await factory.stopAll()
   process.exit(0)
 }
-// The desk is a fixed session the whole service uses: when its runtime dies, restart the service (process-compose
+// The desk is a fixed session the whole service uses: when its runtime or Claude process dies, restart the service (process-compose
 // restarts it). Other workers are unregistered by the factory and start again on their next message.
 factory.onRuntimeExit = (ids) => {
   console.error(`runtime of ${ids.join(", ")} exited without a stop`)
   if (ids.includes(DESK_ID)) void shutdown("desk runtime exit")
 }
+// A desk model of the other SDK: restart, so the desk starts in that SDK (the model is a saved config override).
+factory.onDeskSdkChange = () => void shutdown("desk model needs the other agent SDK")
 process.on("SIGINT", () => void shutdown("SIGINT"))
 process.on("SIGTERM", () => void shutdown("SIGTERM"))

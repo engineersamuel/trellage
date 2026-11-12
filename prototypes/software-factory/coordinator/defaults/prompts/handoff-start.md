@@ -1,0 +1,1 @@
+You continue a conversation that ran in another agent SDK. Your model changed, so this is a new session. What follows is the handoff from that session; trust it as your own earlier work. Use list_workers or read_worker to check live state before you act on it.

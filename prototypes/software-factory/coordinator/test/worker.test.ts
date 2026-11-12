@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import type { PermissionHandler } from "@github/copilot-sdk"
@@ -121,25 +121,25 @@ test("spawnModel records how the model was picked", async () => {
   type Spy = {
     publish: () => void
     routeModel: () => Promise<{ id: string; confidence: number; routedBy: string } | null>
-    spawnModel: (spec: object, auth: string) => Promise<unknown>
+    spawnModel: (spec: object) => Promise<unknown>
   }
   const f = as<Spy>(new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-m-")), SF_MODEL: "dflt" }))
   f.publish = () => {}
   f.routeModel = async () => ({ id: "gpt-x", confidence: 0.7, routedBy: "jev" })
-  expect(await f.spawnModel({ name: "a", role: "worker", task: "t" }, "native")).toEqual({
+  expect(await f.spawnModel({ name: "a", role: "worker", task: "t" })).toEqual({
     model: "gpt-x",
     source: { kind: "routed", by: "jev", confidence: 0.7 },
   })
-  expect(await f.spawnModel({ name: "a", role: "worker", task: "t", model: "pin" }, "native")).toEqual({
+  expect(await f.spawnModel({ name: "a", role: "worker", task: "t", model: "pin" })).toEqual({
     model: "pin",
     source: { kind: "pinned" },
   })
-  expect(await f.spawnModel({ name: "a", role: "coordinator", task: "t" }, "native")).toEqual({
+  expect(await f.spawnModel({ name: "a", role: "coordinator", task: "t" })).toEqual({
     model: "dflt",
     source: { kind: "default" },
   })
   f.routeModel = async () => null
-  expect(await f.spawnModel({ name: "a", role: "worker", task: "t" }, "native")).toEqual({
+  expect(await f.spawnModel({ name: "a", role: "worker", task: "t" })).toEqual({
     model: "dflt",
     source: { kind: "fallback" },
   })
@@ -157,6 +157,23 @@ test("workers.harness: auto keeps the step's choice; a forced SDK applies to wor
   expect(workerHarness("copilot", "worker", council)).toBeUndefined()
   expect(workerHarness("claude", "coordinator", undefined)).toBeUndefined()
   expect(workerHarness("claude", "worker", undefined, true)).toBeUndefined()
+})
+
+test("auto: a Claude model picks the Claude Agent SDK, any other model the Copilot SDK; the step's choice wins", () => {
+  const claude = { kind: "claude" as const, profiles: ["default"] }
+  const council = { kind: "claude" as const, profiles: ["council"], entry: "/council" }
+  const pi = { kind: "pi" as const, profiles: [] }
+  expect(workerHarness("auto", "worker", undefined, false, false, "claude-sonnet-5.5")).toEqual(claude)
+  expect(workerHarness("auto", "worker", undefined, false, false, "gpt-6-astra")).toBeUndefined()
+  expect(workerHarness("auto", "worker", council, false, false, "claude-sonnet-5.5")).toBe(council)
+  expect(workerHarness("auto", "worker", pi, false, false, "claude-sonnet-5.5")).toBe(pi)
+  expect(workerHarness("copilot", "worker", undefined, false, false, "claude-sonnet-5.5")).toBeUndefined()
+  expect(workerHarness("auto", "worker", undefined, true, false, "claude-sonnet-5.5")).toBeUndefined()
+  // Desk, General chats and sub-coordinators: Claude model -> Claude SDK, else Copilot SDK.
+  expect(workerHarness("auto", "coordinator", undefined, false, false, "claude-opus-5.5")).toEqual(claude)
+  expect(workerHarness("auto", "coordinator", undefined, false, true, "claude-opus-5.5")).toEqual(claude)
+  expect(workerHarness("auto", "coordinator", undefined, false, false, "gpt-6-astra")).toBeUndefined()
+  expect(workerHarness("copilot", "coordinator", undefined, false, true, "claude-opus-5.5")).toEqual(claude)
 })
 
 test("stepSkillDir links the step's skills into .claude/skills (no plugin prefix)", () => {
@@ -192,7 +209,7 @@ test("a runtime that exits without a stop ends its workers' turns with an error 
 test("a step's subagent model is Jev's pick for the step's route text; none without one or when routing fails", async () => {
   type Spy = {
     publish: () => void
-    routeModel: (task: string, auth: string) => Promise<{ id: string; confidence: number; routedBy: string } | null>
+    routeModel: (task: string) => Promise<{ id: string; confidence: number; routedBy: string } | null>
     subagentModel: (spec: object, step: object | null) => Promise<string | null>
     acceptsThinking: (model: string) => Promise<boolean>
   }
@@ -216,4 +233,85 @@ test("a step's subagent model is Jev's pick for the step's route text; none with
   expect(await f.subagentModel(spec, null)).toBeNull()
   f.routeModel = async () => null
   expect(await f.subagentModel(spec, { subagentRoute: "Low-cost checks" })).toBeNull()
+})
+
+test("routeModel keeps Jev's pick from the copilot-proxy-rs list, even a model native Copilot does not serve", async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch: () =>
+      Response.json({
+        routed_by: "jev",
+        recommended: { id: "gemini-4-argon" },
+        confidence: 0.4,
+        ranking: [{ id: "gemini-4-argon", probability: 0.4 }],
+      }),
+  })
+  try {
+    const f = new Factory({
+      SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-r-")),
+      SF_PROXY_URL: `http://localhost:${server.port}`,
+    })
+    expect(await f.routeModel("t")).toEqual({
+      id: "gemini-4-argon",
+      confidence: 0.4,
+      routedBy: "jev",
+      ranked: ["gemini-4-argon"],
+    })
+  } finally {
+    server.stop(true)
+  }
+})
+
+test("a coordinator model of the other SDK stops the coordinator after its turn; the same SDK switches in place", async () => {
+  type Spy = {
+    workers: Map<string, unknown>
+    stop: (id: string) => Promise<void>
+    onConfigChanged: () => Promise<void>
+  }
+  const f = as<Spy>(new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-sdk-")) }))
+  const stopped: string[] = []
+  const switched: string[] = []
+  f.stop = async (id) => void (stopped.push(id), f.workers.delete(id))
+  const fake = (id: string, harness: string, model: string) => ({
+    id,
+    role: "coordinator",
+    harness,
+    model,
+    status: "idle",
+    lastMessage: "old answer",
+    log: [] as unknown[],
+    waitIdle: async () => true,
+    // sub-1 answers the handoff question with its summary.
+    send: async function (this: { lastMessage: string }) {
+      this.lastMessage = `summary of ${id}`
+    },
+    setModel: async (m: string) => void switched.push(`${id}:${m}`),
+  })
+  const subModel = (f as unknown as Factory).settings.subAgent.model
+  // The sub-coordinator runs in Copilot with an old GPT model; the config says a Claude model.
+  f.workers.set("sub-1", fake("sub-1", "copilot", "gpt-old"))
+  // A sub-coordinator already in Claude with an old Claude model switches in place.
+  f.workers.set("sub-2", fake("sub-2", "claude", "claude-old"))
+  await f.onConfigChanged()
+  await new Promise((r) => setTimeout(r, 20))
+  expect(subModel).toMatch(/^claude/)
+  expect(stopped).toEqual(["sub-1"])
+  expect(switched).toEqual([`sub-2:${subModel}`])
+  // The handoff is saved in its home and given once to the next session with that id.
+  const root = (f as unknown as Factory).root
+  expect(readFileSync(path.join(root, "sub-1", "handoff.md"), "utf8")).toContain("summary of sub-1")
+})
+
+test("handoffTranscript keeps the last turns: messages and tool names, not subagent events", async () => {
+  const { handoffTranscript } = await import("../src/factory.ts")
+  const event = (type: string, data: unknown, agentId: string | null = null) =>
+    ({ seq: 0, workerId: "sub-1", type, agentId, timestamp: "", data }) as never
+  const log = [
+    event("user.message", { content: "first ask" }),
+    event("tool.execution_start", { toolName: "spawn_worker" }),
+    event("assistant.message", { content: "inner" }, "sub-agent"),
+    event("assistant.message", { content: "done" }),
+  ]
+  expect(handoffTranscript(log)).toBe("USER: first ask\n(tool spawn_worker)\nYOU: done")
+  expect(handoffTranscript(log, 12)).toBe("YOU: done")
 })
