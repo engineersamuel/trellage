@@ -223,11 +223,11 @@ const fixAndVerify = async (spawn: Spawn, set: Set, kept: TriagedFinding[], base
 }
 
 /** Review workers run with the picked model. */
-const pickReviewModel = async (f: Factory, auth: Auth) => {
+const pickReviewModel = async (f: Factory) => {
   const env = process.env.SF_SECURITY_MODEL
   const routed = env?.trim()
     ? undefined
-    : (await f.routeModel("security audit / vulnerability review of a code diff", auth))?.id
+    : (await f.routeModel("security audit / vulnerability review of a code diff"))?.id
   return pickModel(env, routed, f.defaultModel)
 }
 
@@ -238,7 +238,7 @@ const run = async (f: Factory, scope: Scope, r: SecurityReview, set: Set, pinned
     throw new Error(
       `no auth for the review: implement worker ${r.implementWorkerId} and coordinator ${scope.id} are gone`,
     )
-  const model = pinned ?? (await pickReviewModel(f, auth))
+  const model = pinned ?? (await pickReviewModel(f))
   set({ model })
   const started: string[] = []
   const spawn: Spawn = async (name, step, task, id) => {

@@ -10,6 +10,8 @@ import {
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk"
 import { forbiddenCommand } from "./guard.ts"
+import { CLIENT_SERVER, factoryMcpServer, stripMcp } from "./claudetools.ts"
+import type { Tool } from "@github/copilot-sdk"
 import { prepareRun } from "../../../../packages/trellage-runtime/src/native-run/run.ts"
 
 export type HarnessEvent = { type: string; timestamp: string; agentId?: string; data: Record<string, unknown> }
@@ -112,10 +114,10 @@ export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessE
             ? [ev("assistant.reasoning", { content: b.thinking })]
             : b.type === "tool_use"
               ? [
-                  // Factory tools come over MCP as mcp__factory__<name>; the feed, cards and UIs know them by <name>.
+                  // Factory and client tools come over MCP as mcp__<server>__<name>; the feed, cards and UIs know them by <name>.
                   ev("tool.execution_start", {
                     toolCallId: b.id,
-                    toolName: String(b.name).replace(/^mcp__factory__/, ""),
+                    toolName: stripMcp(String(b.name)),
                     arguments: b.input,
                   }),
                   // The Skill tool is Claude's skill invocation: the same event Copilot runtimes emit (plugin prefix dropped).
@@ -245,10 +247,7 @@ export class ClaudeStream {
       case "content_block_start": {
         const kind = e.content_block?.type
         if (kind === "tool_use")
-          this.tools.set(e.index, {
-            id: e.content_block.id,
-            name: String(e.content_block.name).replace(/^mcp__factory__/, ""),
-          })
+          this.tools.set(e.index, { id: e.content_block.id, name: stripMcp(String(e.content_block.name)) })
         if (kind === "text" || kind === "thinking")
           this.open.set(e.index, { kind, id: `${this.message}:${e.index}`, text: "", message: this.message })
         return []
@@ -350,27 +349,59 @@ export class ClaudeSession {
   private readonly stream = new ClaudeStream()
   private readonly meter = new UsageMeter()
 
+  private stopped = false
+  /** The session's own MCP servers (the factory tools); client tools are added next to them. */
+  private readonly ownServers: NonNullable<Options["mcpServers"]>
+  private clientKey = ""
+
+  /**
+   * `onExit`: the Claude process ended without a stop (crash or kill), like a Copilot runtime exit. Without it, the
+   * session reports a session.error and goes idle itself.
+   */
   constructor(
     options: Options,
     private readonly emit: (ev: HarnessEvent) => void,
+    private readonly hooks: { ownTools?: readonly string[]; onExit?: (message: string) => void } = {},
   ) {
+    this.ownServers = options.mcpServers ?? {}
     const q = query({ prompt: this.inbox, options })
     this.q = q
     void (async () => {
+      let message = "claude session ended"
       try {
         // Usage goes before the result's session.idle, so a turn's cost is stored when the turn ends.
         for await (const m of q)
           for (const ev of this.turns.map(m, [...this.meter.map(m), ...this.stream.map(m)])) this.emit(ev)
       } catch (e) {
-        const at = new Date().toISOString()
-        this.emit({
-          type: "session.error",
-          timestamp: at,
-          data: { message: e instanceof Error ? e.message : String(e) },
-        })
-        this.emit({ type: "session.idle", timestamp: at, data: {} })
+        message = e instanceof Error ? e.message : String(e)
       }
+      if (this.stopped) return
+      if (hooks.onExit) return hooks.onExit(message)
+      const at = new Date().toISOString()
+      this.emit({ type: "session.error", timestamp: at, data: { message } })
+      this.emit({ type: "session.idle", timestamp: at, data: {} })
     })()
+  }
+
+  /**
+   * Replace the client tools (AG-UI frontend tools) next to the session's own, like the Copilot SDK's setTools.
+   * They run on their own MCP server; its name changes with the tool set, as setMcpServers keeps a server whose
+   * name is unchanged.
+   */
+  async setTools(tools: Tool<Record<string, unknown>>[]): Promise<void> {
+    const own = new Set(this.hooks.ownTools ?? [])
+    const client = tools.filter((t) => !own.has(t.name))
+    const key = client
+      .map((t) => t.name)
+      .sort()
+      .join(",")
+    if (key === this.clientKey) return
+    const name = `${CLIENT_SERVER}-${new Bun.CryptoHasher("sha256").update(key).digest("hex").slice(0, 8)}`
+    await this.q.setMcpServers({
+      ...this.ownServers,
+      ...(client.length ? { [name]: factoryMcpServer(client, name) } : {}),
+    })
+    this.clientKey = key
   }
 
   /** The SDK does not echo input; emit the turn start so status and onDone work as for Copilot. */
@@ -390,6 +421,7 @@ export class ClaudeSession {
     if (effort) await this.q.applyFlagSettings({ effortLevel: effort as never })
   }
   async disconnect(): Promise<void> {
+    this.stopped = true
     this.inbox.end()
     this.q.close()
   }

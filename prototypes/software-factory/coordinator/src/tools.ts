@@ -528,7 +528,7 @@ const spawnWorker = (f: Factory, scope: Scope) =>
           type: "string",
           enum: ["copilot", "claude", "pi"],
           description:
-            "Agent harness. Default copilot. Use claude only for skills or plugins built for Claude, pi only for skills built for Pi. A step that needs one sets it itself.",
+            "Agent harness. Omit it to let the factory pick: claude when the worker model is a Claude (Anthropic) model, else copilot. Strongly prefer claude for any Claude model. Use pi only for skills built for Pi. A step that needs one sets it itself.",
         },
         profiles: {
           type: "array",

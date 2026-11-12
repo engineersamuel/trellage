@@ -1,0 +1,1 @@
+The factory moves you to another agent SDK after this turn, because your model changed. The new session does not see this conversation. Write a handoff for it, in at most 400 words: the goal, the decisions made and why, what is done, what is open, the worker ids and steps still in use, and the next action. Do not call any tool.

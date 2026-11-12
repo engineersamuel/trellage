@@ -71,7 +71,7 @@ const SettingsSchema = Schema.Struct({
       Effect.sync(() => ({ model: factoryConfig().models.sub_coordinator, reasoningEffort: "high" })),
     ),
   ),
-  /** Agent SDK of every worker: auto (the step decides; Copilot SDK by default) or one SDK forced for all workers. */
+  /** Agent SDK of every worker: auto (the step decides, else Claude Agent SDK for a Claude model, Copilot SDK for others) or one SDK forced for all workers. */
   /** forceWithLease: finish workers may `git push --force-with-lease` their own branch (after a rebase). */
   workers: Schema.Struct({
     harness: Schema.String,
