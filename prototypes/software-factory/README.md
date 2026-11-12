@@ -321,7 +321,8 @@ deliverable, writes only its own output folder (outside the worktree), and never
 2. **Evaluation** (first ship request after the floors and other gates, before the final security review): it runs
    every check and writes `verdicts.json` (a criterion with no verdict fails). A failed criterion gets a fix
    (`implement`) and a `verify` worker, then a new evaluation, at most `[evaluate].max_rounds` evaluations (default 2).
-   It **never blocks shipping**: the verdicts go to the PR body (`## Independent evaluation`) and the grade.
+   It **never blocks shipping**: the verdicts go to the PR body (`## Independent evaluation`) and the grade, and the
+   `show_evaluation` card shows them live.
 3. **Grade `g2`**: when an evaluation has verdicts, the criteria come from them; `selfCriteria` keeps the run's own
    `evidence.md` results and `disagreements` lists criteria the run marked PASS and the evaluator failed. Without an
    evaluation the grade stays `g1`. `g1` and `g2` are charted apart.
