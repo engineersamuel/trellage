@@ -97,6 +97,13 @@ test("the handoff names the loop, the AC status, the PR, earlier loops and the h
   expect(text).toContain("Gaps: AC-2 stub")
   expect(text).toContain("try the other API")
   expect(goalLoopPrompt(s, { id: "g", prompt: "p", usd: 1 })).not.toContain("Direction from the human")
+  expect(text).toContain("may have changed things since")
+  expect(text).not.toContain("Human decisions since")
+  const decided = goalLoopPrompt(s, { id: "g", prompt: "p", usd: 1 }, undefined, [
+    { title: "Fix main checkout?", answer: "Fixed; ship", note: "core.bare is false" },
+  ])
+  expect(decided).toContain("Human decisions since the last loop ended")
+  expect(decided).toContain("- Fix main checkout?: Fixed; ship (note: core.bare is false)")
 })
 
 test("goal states persist per goal, found by thread and by open approval; child ids do not collide", () => {
