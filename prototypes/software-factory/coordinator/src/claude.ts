@@ -350,6 +350,7 @@ export class ClaudeSession {
   private readonly meter = new UsageMeter()
 
   private stopped = false
+  private measuring = false
   /** The session's own MCP servers (the factory tools); client tools are added next to them. */
   private readonly ownServers: NonNullable<Options["mcpServers"]>
   private clientKey = ""
@@ -370,8 +371,10 @@ export class ClaudeSession {
       let message = "claude session ended"
       try {
         // Usage goes before the result's session.idle, so a turn's cost is stored when the turn ends.
-        for await (const m of q)
+        for await (const m of q) {
           for (const ev of this.turns.map(m, [...this.meter.map(m), ...this.stream.map(m)])) this.emit(ev)
+          if (m.type === "assistant" && !m.parent_tool_use_id) void this.measureContext()
+        }
       } catch (e) {
         message = e instanceof Error ? e.message : String(e)
       }
@@ -381,6 +384,24 @@ export class ClaudeSession {
       this.emit({ type: "session.error", timestamp: at, data: { message } })
       this.emit({ type: "session.idle", timestamp: at, data: {} })
     })()
+  }
+
+  /** Context fill after a main-loop model call, as the Copilot runtime's `session.usage_info`. One request at a time. */
+  private async measureContext(): Promise<void> {
+    if (this.measuring || this.stopped) return
+    this.measuring = true
+    try {
+      const u = await this.q.getContextUsage({ detail: "summary" })
+      this.emit({
+        type: "session.usage_info",
+        timestamp: new Date().toISOString(),
+        data: { currentTokens: u.totalTokens, tokenLimit: u.maxTokens },
+      })
+    } catch {
+      // No reading this time; the next model call tries again.
+    } finally {
+      this.measuring = false
+    }
   }
 
   /**
