@@ -26,6 +26,7 @@ import {
 } from "./core"
 import { mountStream, openHistory, type StreamAgent } from "./stream"
 import { mountTimeline } from "./timeline-view"
+import { mountPins } from "./pins-view"
 import {
   ancestors,
   bornAt,
@@ -429,6 +430,17 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       : "◔ ctx –"
     ctxEl.title = limit ? `${used} of ${limit} context tokens` : "No context reading yet"
   }
+  /** Pinned prompt and plan of the shown sub-coordinator; kept across head redraws so open disclosures stay open. */
+  let pinned: { id: string; el: HTMLElement; stop: () => void } | null = null
+  const pinsOf = (n: Node): HTMLElement[] => {
+    if (n.kind !== "sub") return (pinned?.stop(), (pinned = null), [])
+    if (pinned?.id !== n.id) {
+      pinned?.stop()
+      const box = el("div")
+      pinned = { id: n.id, el: box, stop: mountPins(box, n.id) }
+    }
+    return [pinned.el]
+  }
   const renderHead = (n: Node) => {
     const crumbs = el("div", "p3-crumbs")
     for (const a of ancestors(m, n.id))
@@ -506,7 +518,14 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       b.prepend(el("i", "p3-dot"))
       kids.append(b)
     }
-    head.replaceChildren(crumbs, el("h2", "p3-ell", n.title), st, acts, ...(kids.childElementCount ? [kids] : []))
+    head.replaceChildren(
+      crumbs,
+      el("h2", "p3-ell", n.title),
+      st,
+      ...pinsOf(n),
+      acts,
+      ...(kids.childElementCount ? [kids] : []),
+    )
   }
   /** Worker: its live transcript and a composer to the worker or to the coordinator it reports to. */
   const workerBody = (n: Node): (() => void) => {
@@ -857,6 +876,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     window.removeEventListener("pointerup", release, true),
     window.removeEventListener("pointercancel", release, true),
     mounted?.stop(),
+    pinned?.stop(),
     root.classList.remove("sfp-p3")
   )
 }
