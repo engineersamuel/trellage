@@ -5,6 +5,40 @@ import { nativePresetProfiles } from "@trellage/runtime/native-run"
 
 const shellWord = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
 
+export type AdmissionRules = {
+  payloads: Record<string, unknown>
+  executable: string
+  profiles: { claude: string[]; copilot: string[] }
+}
+export type AdmissionResult = { status: number; stdout: string; stderr: string }
+
+/** The mock's whole decision: metadata for declared admission requests, exit 97 for anything else (a model command).
+ *  Self-contained (no imports or outer names): the generated program embeds its source. */
+export function admit(
+  rules: AdmissionRules,
+  role: string,
+  args: string[],
+  env: Record<string, string | undefined>,
+): AdmissionResult {
+  const fail = { status: 97, stdout: "", stderr: "Unexpected lifecycle metadata request\n" }
+  const ok = (value: unknown) => ({
+    status: 0,
+    stdout: (typeof value === "string" ? value : JSON.stringify(value)) + "\n",
+    stderr: "",
+  })
+  const same = (a: string[], b: string[]) => JSON.stringify(a) === JSON.stringify(b)
+  if (role === "claude" || role === "copilot") {
+    const guarded = env["TRELLAGE_TRX_" + role.toUpperCase() + "_ADAPTER"] === "1"
+    return guarded && args.length === 2 && args[0] === "_trx-admit" && rules.profiles[role].includes(args[1]!)
+      ? ok(rules.payloads[role])
+      : fail
+  }
+  if (role === "agency") return same(args, ["inventory", "trellage-azure", "--json"]) ? ok(rules.payloads.agency) : fail
+  if (role === "jcode")
+    return env.TRELLAGE_TRX_JCODE_ADAPTER === "1" && same(args, ["_trx-executable"]) ? ok(rules.executable) : fail
+  return fail
+}
+
 /** Metadata-only lifecycle executables; callers must still inject the final harness spawner. */
 export const createAdmissionMocks = async (root: string, executable: string) => {
   assert.equal(process.env.TRELLAGE_TEST_OFFLINE, "1", "run through scripts/test-offline.sh")
@@ -26,25 +60,23 @@ export const createAdmissionMocks = async (root: string, executable: string) => 
     copilot: { installedPlugins: path.dirname(plugin), pluginRegistrations: registrations, settings },
     agency: { readiness: "healthy", authenticationMethod: "AzureCliCredential" },
   }
+  const rules: AdmissionRules = {
+    payloads,
+    executable,
+    profiles: { claude: ["default", "office", "office-charts"], copilot: nativePresetProfiles("copilot") },
+  }
+  // The program embeds admit() itself, so the in-process tests check the code the binaries run.
   await writeFile(
     program,
     `import { appendFileSync } from "node:fs"
 const role = process.argv[2]
 const args = process.argv.slice(3)
-const fail = () => { process.stderr.write("Unexpected lifecycle metadata request\\n"); process.exit(97) }
 appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ role, args }) + "\\n")
-const payloads = ${JSON.stringify(payloads)}
-if (role === "claude" || role === "copilot") {
-  const allowed = role === "claude" ? ["default", "office", "office-charts"] : ${JSON.stringify(nativePresetProfiles("copilot"))}
-  if (process.env["TRELLAGE_TRX_" + role.toUpperCase() + "_ADAPTER"] !== "1" || args.length !== 2 || args[0] !== "_trx-admit" || !allowed.includes(args[1])) fail()
-  console.log(JSON.stringify(payloads[role]))
-} else if (role === "agency") {
-  if (JSON.stringify(args) !== JSON.stringify(["inventory", "trellage-azure", "--json"])) fail()
-  console.log(JSON.stringify(payloads.agency))
-} else if (role === "jcode") {
-  if (process.env.TRELLAGE_TRX_JCODE_ADAPTER !== "1" || JSON.stringify(args) !== JSON.stringify(["_trx-executable"])) fail()
-  console.log(${JSON.stringify(executable)})
-} else fail()
+const admit = ${admit.toString()}
+const r = admit(${JSON.stringify(rules)}, role, args, process.env)
+process.stdout.write(r.stdout)
+process.stderr.write(r.stderr)
+process.exit(r.status)
 `,
   )
   const environment: NodeJS.ProcessEnv = {}
@@ -60,6 +92,7 @@ if (role === "claude" || role === "copilot") {
     environment[`TRELLAGE_${role.toUpperCase()}_LIFECYCLE_BIN`] = binary
   }
   return {
+    rules,
     environment,
     binaries,
     plugin,
