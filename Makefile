@@ -83,8 +83,10 @@ test-pr:
 quality-contract:
 	uv run --offline --no-project python -m unittest discover -s tests -p 'test_quality*.py'
 
+# Process-spawning contract tests (each mock call starts a program): Bun's 5 s unit-test default is too tight when
+# the pre-push hook runs them beside the whole suite.
 script-tests:
-	bash scripts/test-offline.sh --native-sources bun test --isolate scripts/*.test.ts
+	bash scripts/test-offline.sh --native-sources bun test --isolate --timeout 30000 scripts/*.test.ts
 	uv run --offline --no-project python tests/test_benchmark_tests.py
 	uv run --offline --no-project python tests/test_exhaustive_terminal.py
 	uv run --offline --no-project python tests/test_exhaustive_runner.py
