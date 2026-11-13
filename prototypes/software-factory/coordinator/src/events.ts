@@ -243,6 +243,21 @@ export class EventStore {
     return rows.map((r) => ({ ts: Number(r.ts), data: JSON.parse(r.data) }))
   }
 
+  /** Every stored subagent event (subagent.*, and Pi's `subagent` tool calls with their results), oldest first. */
+  subagentEvents(): { worker: string; type: string; agent: string | null; data: Record<string, unknown> }[] {
+    const rows = this.db
+      .query(
+        `WITH pi AS (SELECT json_extract(data, '$.toolCallId') id FROM events
+           WHERE type = 'tool.execution_start' AND json_extract(data, '$.toolName') = 'subagent')
+         SELECT worker, type, agent, data FROM events
+         WHERE type IN ('subagent.started', 'subagent.completed', 'subagent.failed')
+            OR (type IN ('tool.execution_start', 'tool.execution_complete') AND json_extract(data, '$.toolCallId') IN (SELECT id FROM pi))
+         ORDER BY seq`,
+      )
+      .all() as { worker: string; type: string; agent: string | null; data: string }[]
+    return rows.map((r) => ({ ...r, data: JSON.parse(r.data) }))
+  }
+
   /** Data of the newest `limit` events of one type, across agents, oldest first. */
   latest(type: string, limit: number): unknown[] {
     const rows = this.db

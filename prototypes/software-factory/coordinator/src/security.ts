@@ -254,6 +254,12 @@ const run = async (f: Factory, scope: Scope, r: SecurityReview, set: Set, pinned
       step,
       task,
       owner: scope.id,
+      // The final review passes the scope id, not a worker: then the group sits under the sub-coordinator.
+      group: {
+        id: r.id,
+        title: "Security review",
+        after: r.implementWorkerId === scope.id ? null : r.implementWorkerId,
+      },
       workdir,
     })
     started.push(w.id)

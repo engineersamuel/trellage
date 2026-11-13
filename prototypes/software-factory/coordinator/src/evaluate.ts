@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { approveAll, type PermissionHandler } from "@github/copilot-sdk"
 import type { FactoryConfig } from "./config.ts"
-import { now, type Auth, type Factory, type Worker } from "./factory.ts"
+import { now, type Auth, type Factory, type GateGroup, type Worker } from "./factory.ts"
 import { forbiddenCommand } from "./guard.ts"
 import { awaitGateWorker } from "./gateWorker.ts"
 import { loadPrompt } from "./prompt.ts"
@@ -146,7 +146,7 @@ const status = (workdir: string): string => {
   }
 }
 
-type Run = { f: Factory; scope: Scope; workdir: string; auth: Auth | undefined; c: FactoryConfig }
+type Run = { f: Factory; scope: Scope; workdir: string; auth: Auth | undefined; c: FactoryConfig; group?: GateGroup }
 
 const work = async (
   r: Run,
@@ -179,6 +179,7 @@ const spawnOne = (
     step: p.step,
     task: p.task,
     owner: r.scope.id,
+    ...(r.group ? { group: r.group } : {}),
     workdir: r.workdir,
     ...(p.model ? { model: p.model } : {}),
     ...(p.evaluator ? { permissions: evaluatorPermissions(p.evaluator) } : {}),
@@ -285,7 +286,14 @@ export const evaluate = async (f: Factory, scope: Scope, s: Sdlc, c: FactoryConf
   }
   // Synchronous first transition: ship and spawn gates see it before any await.
   set({})
-  const r: Run = { f, scope, workdir, auth: f.workers.get(scope.id)?.auth, c }
+  const r: Run = {
+    f,
+    scope,
+    workdir,
+    auth: f.workers.get(scope.id)?.auth,
+    c,
+    group: { id: e.id, title: "Evaluation", after: null },
+  }
   const track = (w: Worker) => set({ workerId: w.id, workerIds: [...e.workerIds, w.id] })
   const contract = criteriaWithChecks(s.criteria, contractFor(s))
   try {

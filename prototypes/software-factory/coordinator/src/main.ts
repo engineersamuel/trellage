@@ -67,7 +67,7 @@ import { loop, stopLoops } from "./loops.ts"
 import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, reportNudge, reportPrompt, shouldReport, type Report } from "./report.ts"
 import { pendingReview } from "./security.ts"
-import { branchPr, pastWorkers, runWorkers, type Run } from "./run.ts"
+import { branchPr, pastWorkers, runWorkers, withSubagents, type Run } from "./run.ts"
 import { costReport, GOAL_PAGE_AGENT, gradeCost, rollUp, runCost, type AgentInfo } from "./costs.ts"
 import { factoryConfig } from "./config.ts"
 import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
@@ -1618,9 +1618,12 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/workers\/past$/,
     () =>
       json(
-        pastWorkers(
-          factory.store.latestTimed("factory.worker_started", 100_000) as { ts: number; data: WorkerSummary }[],
-          (id) => factory.workers.has(id),
+        withSubagents(
+          pastWorkers(
+            factory.store.latestTimed("factory.worker_started", 100_000) as { ts: number; data: WorkerSummary }[],
+            (id) => factory.workers.has(id),
+          ),
+          factory.store.subagentEvents(),
         ),
       ),
   ],

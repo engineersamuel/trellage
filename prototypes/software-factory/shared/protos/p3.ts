@@ -52,13 +52,23 @@ const LABEL: Record<Node["status"], string> = {
   draft: "Draft",
   stopped: "Stopped",
 }
-const ICON: Record<Node["kind"], string> = { desk: "🌐", chat: "💬", sub: "◆", worker: "⚙", draft: "📄" }
+const ICON: Record<Node["kind"], string> = {
+  desk: "🌐",
+  chat: "💬",
+  sub: "◆",
+  worker: "⚙",
+  draft: "📄",
+  gate: "🛡",
+  subagent: "↳",
+}
 const KIND: Record<Node["kind"], string> = {
   desk: "Factory desk",
   chat: "General chat",
   sub: "Sub-coordinator",
   worker: "Worker",
   draft: "Draft",
+  gate: "Gate",
+  subagent: "Subagent",
 }
 /** Agent fields that change on every model call and that p3 does not draw. */
 const VOLATILE = new Set(["contextTokens", "contextLimit", "rssKb", "eventCount", "lastMessage", "pid"])
@@ -321,7 +331,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       w.append(...kids.map((k) => linked(k.children.length ? subCard(k) : row(k), n.id, k)))
       c.append(w)
     } else {
-      const more = el("div", "p3-more", `▸ ${kids.length} workers, all quiet`)
+      const more = el("div", "p3-more", `▸ ${kids.length} below, all quiet`)
       more.onclick = (e) => (e.stopPropagation(), opened.add(n.id), render())
       c.append(more)
     }
@@ -611,6 +621,19 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     box.append(el("div", "p3-sub", "Not started yet. Refine it, research it, then Run it."), ...draftEls)
     body.replaceChildren(box)
   }
+  /** A gate or a subagent has no transcript of its own: say where its work is. */
+  const shownBody = (n: Node) => {
+    const parent = n.parent ? m.nodes.get(n.parent) : undefined
+    const text =
+      n.kind === "gate"
+        ? "The factory ran this gate with the workers below. Open one to read its transcript."
+        : `A subagent ${parent?.agent?.name ?? "its worker"} started inside its own harness. Its tool calls are in that worker's transcript.`
+    const box = el("div", "p3-draftbody")
+    box.append(el("div", "p3-sub", text))
+    if (n.kind === "subagent" && parent)
+      box.append(btn(`Open ${parent.agent?.name ?? parent.title}`, () => choose(parent.id)))
+    body.replaceChildren(box)
+  }
   /** Place the host's native chat over the detail body. */
   const placeOverBody = () => {
     const box = body.getBoundingClientRect(),
@@ -636,6 +659,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     sub: "sub",
     worker: "worker",
     draft: "sub",
+    gate: "worker",
+    subagent: "worker",
   }
   const streamAgent = (id: string): StreamAgent | undefined => {
     const n = m.nodes.get(id)
@@ -741,7 +766,11 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     } else {
       placeChat(null)
       askBox = null
-      mounted = { key: n.id, stop: n.kind === "worker" ? workerBody(n) : (draftBody(), () => {}) }
+      mounted = {
+        key: n.id,
+        stop:
+          n.kind === "worker" ? workerBody(n) : n.kind === "draft" ? (draftBody(), () => {}) : (shownBody(n), () => {}),
+      }
       if (n.kind === "worker") renderAsks(n)
     }
   }
@@ -767,10 +796,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     renderTree()
     syncDetail()
   }
-  /** Native chat shows only for a conversation (chat, sub-coordinator, desk), never over a worker or draft. */
+  /** Native chat shows only for a conversation (chat, sub-coordinator, desk), never over a worker, draft, gate or subagent. */
   const showsChat = (id: string | null) => {
     const k = id ? m.nodes.get(id)?.kind : undefined
-    return !!k && k !== "worker" && k !== "draft"
+    return k === "desk" || k === "chat" || k === "sub"
   }
   /** "Open in timeline" on a plan or decision tool card in the live activity: show the Timeline at that milestone. */
   const openTimeline = (e: Event) => {

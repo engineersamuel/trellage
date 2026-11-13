@@ -48,6 +48,7 @@ import { composePi, piBudgetFile, PiSession, usePiSubagentDir, withProxyModel } 
 import { configStore, factoryConfig, missingProfiles, userConfigPath, type FactoryConfig } from "./config.ts"
 import { setDecisionEngine } from "./decide.ts"
 import { acquireStateLock, migrateLegacyState, stateDir } from "./statedir.ts"
+import { trackSubagent } from "./subagents.ts"
 
 const LOG_CAP = 4000
 
@@ -96,7 +97,20 @@ export type WorkerSummary = {
   workdir: string | null
   /** When the factory started this agent (ms); gives the spawn order. */
   startedAt: number
+  /** The gate this worker runs in, for the tree only (owner still decides stop, collect and cost). */
+  group: GateGroup | null
+  /** Subagents this agent started inside its own harness. */
+  subagents: SubagentInfo[]
 }
+
+/**
+ * A gate the factory code runs with several workers (code review, security review, evaluation). The tree shows it as
+ * one node: under `after` (the implement worker whose finish started it) when set, else under the owner.
+ */
+export type GateGroup = { id: string; title: string; after: string | null }
+
+/** A subagent an agent started inside its harness (Copilot task, Claude Agent, Pi subagent); id = the spawning tool call. */
+export type SubagentInfo = { id: string; name: string; description: string; status: "running" | "done" | "failed" }
 
 /** One event in the factory feed. `seq` is global so a client can resume. */
 export type FeedEvent = {
@@ -126,6 +140,8 @@ export type SpawnSpec = {
   workdir?: string
   /** Coordinator that started this worker; supervisor issues go to it. */
   owner?: string
+  /** The gate this worker runs in; the tree groups it there. The owner keeps stop, collect, supervisor and cost. */
+  group?: GateGroup
   /** Stable session id: resume this session (its memory) when it exists, else create it. */
   sessionId?: string
   /** Fired once when the worker goes idle after its initial task's work. */
@@ -195,6 +211,8 @@ export class Worker {
   lastError: string | null = null
   collected = false
   owner = "coordinator"
+  group: GateGroup | null = null
+  subagents: SubagentInfo[] = []
   /** Pending onDone hook; armed by the first turn so an idle before the task starts does not fire it. */
   onDone: ((w: Worker) => void) | null = null
   private doneArmed = false
@@ -252,6 +270,8 @@ export class Worker {
       step: this.spec?.step ?? null,
       workdir: this.spec?.workdir ?? null,
       startedAt: this.startedAt,
+      group: this.group,
+      subagents: this.subagents,
     }
   }
 
@@ -277,7 +297,9 @@ export class Worker {
     this.lastActivity = Date.now()
     this.observeToolResult(ev.type, agentId, data)
     const fe = factory.publish(this.id, ev.type, agentId, ev.timestamp, data)
-    const changed = this.applyEventState(ev.type, agentId, data)
+    const subs = trackSubagent(this.subagents, ev.type, agentId, data, this.harness)
+    if (subs) this.subagents = subs
+    const changed = this.applyEventState(ev.type, agentId, data) || !!subs
     // Model-layer events are large and duplicate assistant.*; keep them out of the log.
     if (!ev.type.startsWith("model.")) this.persistEvent(fe)
     if (changed) factory.publish(this.id, "factory.worker_updated", null, now(), this.summary())
@@ -953,6 +975,7 @@ export class Factory {
 
   private configureWorker(worker: Worker, spec: SpawnSpec): void {
     if (spec.owner) worker.owner = spec.owner
+    if (spec.group) worker.group = spec.group
     worker.tools = spec.tools ?? []
     worker.log = this.store.load(worker.id, LOG_CAP, worker.home)
     if (spec.onDone) worker.onDone = spec.onDone
