@@ -26,7 +26,9 @@
     "@plana-solutions/agent-interface": "0.5.0",
     "effect": "4.1.2",
     "foldkit": "0.170.0",
-    "highlight.js": "11.11.1"
+    "highlight.js": "11.11.1",
+    "micromark": "4.0.3",
+    "micromark-extension-gfm": "3.0.0"
   },
   "devDependencies": {
     "@foldkit/oxlint-plugin": "0.15.4",

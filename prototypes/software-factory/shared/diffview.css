@@ -103,3 +103,38 @@
 .dv-style-github .dv-row.del mark { background: rgb(248 81 73 / .4); }
 .dv-style-github .dv-row.gap { background: rgb(56 139 253 / .1); color: var(--dv-muted); }
 .dv-style-github .dv-more { padding: 4px 10px; }
+
+/* Markdown preview: a "Preview" button in the header of .md diffs opens the rendered file in a modal. */
+.dv .dv-preview-open {
+  margin-left: auto; font: inherit; font-size: 11px; color: var(--dv-muted); background: transparent;
+  border: 1px solid var(--dv-line); border-radius: 4px; padding: 0 6px; cursor: pointer;
+}
+.dv .dv-preview-open + .dv-pick { margin-left: 0; }
+.dv .dv-preview-open:hover { color: var(--dv-ink); }
+.dv-preview {
+  width: min(860px, 92vw); max-height: 86vh; padding: 0; border: 1px solid var(--sf-border, #30363d); border-radius: 8px;
+  background: var(--sf-bg, #0d1117); color: var(--sf-text, #e6edf3); font: 14px/1.6 system-ui, sans-serif;
+}
+.dv-preview::backdrop { background: rgb(0 0 0 / .55); }
+.dv-preview-head {
+  position: sticky; top: 0; display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  background: inherit; border-bottom: 1px solid var(--sf-border, #30363d); font-family: ui-monospace, monospace; font-size: 12px;
+}
+.dv-preview-note { color: var(--sf-muted, #8b949e); }
+.dv-preview-x { all: unset; cursor: pointer; margin-left: auto; order: 2; color: var(--sf-muted, #8b949e); padding: 0 4px; }
+.dv-preview-x:hover { color: var(--sf-text, #e6edf3); }
+.dv-preview-body { padding: 4px 20px 16px; overflow-wrap: anywhere; }
+.dv-preview-body h1 { font-size: 24px; margin: 18px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--sf-border, #30363d); }
+.dv-preview-body h2 { font-size: 19px; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--sf-border, #30363d); }
+.dv-preview-body h3 { font-size: 16px; margin: 16px 0 6px; }
+.dv-preview-body h4, .dv-preview-body h5, .dv-preview-body h6 { font-size: 14px; margin: 14px 0 6px; }
+.dv-preview-body blockquote { margin: 8px 0; padding: 0 12px; border-left: 3px solid var(--sf-border, #30363d); color: var(--sf-muted, #8b949e); }
+.dv-preview-body hr { border: 0; border-top: 1px solid var(--sf-border, #30363d); margin: 16px 0; }
+.dv-preview-body img { max-width: 100%; }
+.dv-preview-body li > input[type="checkbox"] { margin-right: 6px; }
+.dv-preview-body table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.dv-preview-body th, .dv-preview-body td { border: 1px solid var(--sf-border, #30363d); padding: 4px 8px; text-align: left; vertical-align: top; }
+.dv-preview-body code { font: 12px ui-monospace, monospace; background: rgb(127 127 127 / .15); border-radius: 3px; padding: 0 3px; }
+.dv-preview-body pre { background: rgb(127 127 127 / .1); padding: 8px 10px; border-radius: 6px; overflow-x: auto; }
+.dv-preview-body pre code { background: none; padding: 0; }
+.dv-preview-body a { color: #58a6ff; }

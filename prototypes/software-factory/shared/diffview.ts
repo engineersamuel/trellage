@@ -1,5 +1,6 @@
 import "./diffview.css"
 import { parseUnified, shortPath, toolDiffs, wordRanges, type DiffStyle, type FileDiff, type Line } from "./diff"
+import { markdown } from "./decisions"
 import { fire, send } from "./http"
 // Colored file diffs for tool calls, shared by both UIs (plain DOM). Four styles. The setting `diffStyle` picks one
 // (default terminal); the picker in any diff header and the settings drawer change it, and every diff redraws.
@@ -174,6 +175,48 @@ const stats = (f: FileDiff, blocks: boolean): HTMLElement => {
   return s
 }
 
+/** Markdown to safe HTML. The host registers a full renderer (Foldkit: micromark + GFM); without it, the small built-in one. */
+let markdownRenderer: (md: string) => string = markdown
+export const setMarkdownRenderer = (r: (md: string) => string): void => {
+  markdownRenderer = r
+}
+
+/** The text after the change: added and unchanged lines. Whole file for a created file; only the shown hunks for an edit. */
+export const newText = (f: FileDiff): string =>
+  f.lines
+    .map((l) => (l.kind === "gap" ? "\n…\n" : l.kind === "del" ? null : l.text))
+    .filter((t) => t !== null)
+    .join("\n")
+
+/** Open a modal with the rendered markdown of `f`. Esc or the backdrop closes it. */
+export const openPreview = (f: FileDiff): void => {
+  const d = el("dialog", "dv-preview")
+  const head = el("header", "dv-preview-head")
+  const close = el("button", "dv-preview-x", "✕")
+  close.type = "button"
+  close.setAttribute("aria-label", "Close")
+  close.onclick = () => d.close()
+  head.append(el("b", "", shortPath(f.path)), close)
+  if (f.op === "edited") head.append(el("span", "dv-preview-note", "Changed parts only"))
+  const body = el("div", "dv-preview-body")
+  body.innerHTML = markdownRenderer(newText(f))
+  d.append(head, body)
+  d.onclick = (e) => {
+    if (e.target === d) d.close()
+  }
+  d.onclose = () => d.remove()
+  document.body.append(d)
+  d.showModal()
+}
+
+const previewButton = (f: FileDiff): HTMLElement => {
+  const b = el("button", "dv-preview-open", "Preview")
+  b.type = "button"
+  b.title = "Show rendered markdown"
+  b.onclick = (e) => (e.stopPropagation(), openPreview(f))
+  return b
+}
+
 const header = (f: FileDiff, style: DiffStyle, toggle?: () => void): HTMLElement => {
   const h = el("div", "dv-head")
   if (toggle) {
@@ -185,6 +228,7 @@ const header = (f: FileDiff, style: DiffStyle, toggle?: () => void): HTMLElement
   const name = el("span", "dv-path", style === "github" ? shortPath(f.path, 6) : shortPath(f.path))
   name.title = f.path
   h.append(el("span", `dv-verb dv-${f.op}`, VERB[f.op]), name, stats(f, style === "github"), picker())
+  if (langOf(f.path) === "markdown" && f.op !== "deleted") h.insertBefore(previewButton(f), h.lastChild)
   return h
 }
 
