@@ -60,7 +60,8 @@ test("lifecycle mocks return only declared metadata and reject model commands an
   } finally {
     await rm(root, { recursive: true, force: true })
   }
-})
+  // About 40 sequential process launches, each allowed 5 s: the 5 s test default fails on a loaded host.
+}, 60_000)
 
 for (const harness of ["claude", "copilot", "agency", "jcode"]) {
   test(`${harness} reaches its real admission adapter and only the inert final spawner`, async () => {
@@ -80,7 +81,9 @@ for (const harness of ["claude", "copilot", "agency", "jcode"]) {
       })
       expect(result).toBe(23)
       expect(world.launches).toHaveLength(1)
-      expect(world.lines.some(line => line.startsWith("Resume     "))).toBe(harness === "claude" || harness === "copilot")
+      expect(world.lines.some((line) => line.startsWith("Resume     "))).toBe(
+        harness === "claude" || harness === "copilot",
+      )
       expect(world.unexpected).toEqual([])
       expect(await world.discoveries()).toEqual([])
       const { launch, cwd } = world.launches[0]!

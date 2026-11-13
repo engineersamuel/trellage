@@ -101,6 +101,9 @@ process.stdin.on("end", () => process.exit(0));
     { GH_TOKEN: undefined, TRX_MCP_ENV_GH_TOKEN: "fixture-only-token" },
   )
   const protocol = '{"jsonrpc":"2.0","method":"initialize"}\n'
+  // The wrapper stops the server 100 ms after stdin ends. Close stdin only after the server has started,
+  // or a slow start on a loaded host is killed (exit 143) before it can echo and exit.
+  for (let attempt = 0; attempt < 1000 && !run.output().stdout; attempt++) await pause(10)
   run.wrapper.stdin.end(protocol)
   expect(await run.exited).toBe(0)
   expect(run.output()).toEqual({
