@@ -35,6 +35,7 @@ import {
 } from "./gates.ts"
 import { addLessons, artifact, prBody, unprovenCriteria } from "./sdlc.ts"
 import { decideNext, selectableSteps, SkillPreflightError } from "./steps.ts"
+import { homeFor, readHome } from "./home.ts"
 import { fanoutCatalog, routeFanout, type FanoutSelection } from "./workflows.ts"
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
@@ -506,6 +507,12 @@ export const shipGrant = (f: Factory, scope: Scope): ShipGrant | string => {
     : `No accepted ship approval for branch ${branch}. Call request_approval with ship=true, end your turn, and spawn step=finish after the human picks the first option.`
 }
 
+/** Workers run in a worktree outside ~/projects, so they get their repo's part of FACTORY.md in the task. */
+export const withHome = (task: string, scope: Pick<Scope, "folderId" | "label">): string => {
+  const h = scope.folderId && scope.label ? homeFor(readHome(), scope.label) : ""
+  return h ? `${task}\n\n${h}` : task
+}
+
 /** Start a worker; every step waits while a security review is unfinished in the same worktree. */
 const spawnWorker = (f: Factory, scope: Scope) =>
   defineTool("spawn_worker", {
@@ -550,7 +557,7 @@ const spawnWorker = (f: Factory, scope: Scope) =>
         role: "worker",
         auth,
         ...(typeof a.model === "string" ? { model: a.model } : {}),
-        task: sdlcTask(f, scope, a.step as string | undefined, str(a, "task")),
+        task: withHome(sdlcTask(f, scope, a.step as string | undefined, str(a, "task")), scope),
         ...(typeof a.step === "string" ? { step: a.step } : {}),
         ...(ship
           ? {

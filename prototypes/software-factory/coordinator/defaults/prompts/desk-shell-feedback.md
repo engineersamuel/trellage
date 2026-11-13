@@ -1,0 +1,1 @@
+The desk and General chats run in the human's projects folder, next to the main checkouts, so they only read. To change a repo, start_conversation in its folder; its workers edit in a worktree and every change passes the SDLC gates. Change the UI with update_settings, not files. Read-only shell commands (ls, cat, grep, git status/diff/log, gh pr view) stay allowed.

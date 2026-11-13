@@ -66,6 +66,15 @@ test("the global coordinator's permissions reject forbidden shell commands and k
   const ask = (request: object) => f.globalPermissions(request as Request, { sessionId: "s" } as Invocation)
   expect(await ask({ kind: "shell", fullCommandText: "git push origin main" })).toMatchObject({ kind: "reject" })
   expect(await ask({ kind: "shell", fullCommandText: "git status" })).toEqual({ kind: "approve-once" })
+  // It runs in ~/projects beside the main checkouts: reading only, changes go through a conversation's worktree.
+  expect(await ask({ kind: "shell", fullCommandText: "git -C trellage log -1 && cat skills/AGENTS.md" })).toEqual({
+    kind: "approve-once",
+  })
+  expect(await ask({ kind: "write", fileName: "trellage/README.md" })).toMatchObject({ kind: "reject" })
+  expect(await ask({ kind: "shell", fullCommandText: "echo x > weavekit/a.txt" })).toMatchObject({ kind: "reject" })
+  expect(await ask({ kind: "shell", fullCommandText: "git -C trellage commit -am x" })).toMatchObject({
+    kind: "reject",
+  })
   await f.updateSettings({ agent: { disabledTools: ["shell"] } })
   expect(await ask({ kind: "shell", fullCommandText: "git status" })).toMatchObject({ kind: "reject" })
 })

@@ -280,6 +280,21 @@ directory), so they survive a restart; an old `approvals.json` is imported once.
 - State lives in `~/.local/state/trellage/factory/<worker-id>` (override with `SF_STATE_DIR`).
 - Ctrl-C stops the coordinator and terminates every runtime process.
 
+## Factory home file
+
+`~/projects/FACTORY.md` (override with `SF_HOME_FILE`) says how the human's repos relate and which rules cross them.
+Text before the first level-2 heading goes to every agent. A `## <folder name>` heading starts a section that goes
+only to agents in that repo.
+
+- The desk and General chats get the whole file, so they pick the right repo.
+- A repo sub-coordinator, every worker it spawns, and Discover on the goal page get the shared text plus their
+  repo's section. Workers run in worktrees outside `~/projects`, so their harness never finds the file itself.
+- Each copy is tagged with the file's path and a 12-character hash. Discover lists it as a fact.
+- Keep paths in Folders, build and test commands in each repo's AGENTS.md, and secrets out.
+- Read at use time: an edit applies to the next session, worker, or Discover call.
+- A section reaches only a folder with the same name. At start and on each new folder, the coordinator log
+  names sections with no folder and folders with no section.
+
 ## Factory config and prompts
 
 One rule: text a model reads is a prompt file, numbers and model names are config, contracts with code stay in code.
