@@ -101,11 +101,436 @@ describe("test-first", () => {
 const repo = () => {
   const r = mkdtempSync(path.join(tmpdir(), "sf-sdlc-"))
   const git = (...a: string[]) =>
-    execFileSync("git", ["-C", r, "-c", "user.email=t@t", "-c", "user.name=t", ...a], { encoding: "utf8" }).trim()
+    execFileSync("git", ["-C", r, "-c", "user.email=t@t", "-c", "user.name=t", ...a], {
+      encoding: "utf8",
+    }).trim()
   git("init", "-q")
   git("commit", "-q", "--allow-empty", "-m", "base")
   return { r, git, base: git("rev-parse", "HEAD") }
 }
+
+const rustPlan = (): Sdlc =>
+  withGates(
+    { ...newSdlc("sub", "t"), criteria: ["works"], implementDoneAt: 1, verifyDoneAt: 2 },
+    decide("plan", { design: 0.1, testFirst: 0.9 }, null),
+  )
+
+describe("test-first rust", () => {
+  test("AC-1: inline-test-only commit on src/lib.rs then production commit passes test-first gate", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/lib.rs"), "pub fn add(a: i32, b: i32) -> i32 {\n  a\n}\n")
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "chore: scaffold")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn add(a: i32, b: i32) -> i32 {",
+        "  a",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  use super::*;",
+        "",
+        "  #[test]",
+        "  fn adds_numbers() {",
+        "    assert_eq!(add(2, 3), 5);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: inline add test")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn add(a: i32, b: i32) -> i32 {",
+        "  a + b",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  use super::*;",
+        "",
+        "  #[test]",
+        "  fn adds_numbers() {",
+        "    assert_eq!(add(2, 3), 5);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "feat: implement add")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    expect(blockers.some((b) => b.startsWith("test-first gate"))).toBe(false)
+  })
+
+  test.each([
+    [
+      "stub fn",
+      [
+        "pub enum Kind {",
+        "  One,",
+        "}",
+        "",
+        "fn helper() -> i32 {",
+        "  1",
+        "}",
+        "",
+        "pub fn stub() -> i32 {",
+        "  0",
+        "}",
+      ],
+      "src/lib.rs:9",
+    ],
+    [
+      "use line",
+      ["use std::fmt;", "", "pub enum Kind {", "  One,", "}", "", "fn helper() -> i32 {", "  1", "}"],
+      "src/lib.rs:1",
+    ],
+    [
+      "enum variant",
+      ["pub enum Kind {", "  One,", "  Two,", "}", "", "fn helper() -> i32 {", "  1", "}"],
+      "src/lib.rs:3",
+    ],
+    [
+      "pub(crate) visibility change",
+      ["pub enum Kind {", "  One,", "}", "", "pub(crate) fn helper() -> i32 {", "  1", "}"],
+      "src/lib.rs:5",
+    ],
+  ])("AC-2: inline test plus %s outside test module fails with short sha and file:line", (_label, prodLines, loc) => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      ["pub enum Kind {", "  One,", "}", "", "fn helper() -> i32 {", "  1", "}", ""].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "chore: base scaffold")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [...prodLines, "", "#[cfg(test)]", "mod tests {", "  #[test]", "  fn it_works() {}", "}", ""].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: mixed commit")
+    const shortSha = git("rev-parse", "--short", "HEAD")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(shortSha)
+    expect(gate).toContain(loc)
+  })
+
+  test("AC-3: production .rs commit followed by inline-test-only commit still fails", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/lib.rs"), "pub fn run() -> i32 {\n  1\n}\n")
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/lib.rs"), "pub fn run() -> i32 {\n  2\n}\n")
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "feat: prod first")
+    const firstSha = git("rev-parse", "--short", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn run() -> i32 {",
+        "  2",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn checks_run() {}",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: inline second")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(firstSha)
+    expect(gate).toContain("src/lib.rs:2")
+  })
+
+  test.each([
+    [
+      "no column-0 closing brace",
+      ["pub fn f() {}", "", "#[cfg(test)]", "mod tests {", "  #[test]", "  fn t() {}", "  }", ""].join("\n"),
+    ],
+    [
+      "non-blank column-0 interior line",
+      ["pub fn f() {}", "", "#[cfg(test)]", "mod tests {", "  #[test]", "  fn t() {}", "fn sneaky() {}", "}", ""].join(
+        "\n",
+      ),
+    ],
+  ])("AC-4: malformed test module (%s) fails closed as could not be classified", (_label, content) => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/lib.rs"), "pub fn f() {}\n")
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/lib.rs"), content)
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: malformed")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain("src/lib.rs")
+    expect(gate).toContain("could not be classified")
+  })
+
+  test("AC-5: commit removing non-blank lines inside an existing Rust test module counts as tests-only", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn val() -> i32 {",
+        "  1",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn old_test() {",
+        "    assert_eq!(1, 1);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "chore: base with test")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn val() -> i32 {",
+        "  1",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn old_test() {",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: trim assertion")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn val() -> i32 {",
+        "  2",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn old_test() {",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "feat: update val")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    expect(blockers.some((b) => b.startsWith("test-first gate"))).toBe(false)
+  })
+
+  test("AC-6: plain mod history; with new test-only src/history.rs passes test-first gate", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/main.rs"), "fn main() {}\n")
+    git("add", "src/main.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/main.rs"), "mod history;\nfn main() {}\n")
+    writeFileSync(
+      path.join(r, "src/history.rs"),
+      [
+        "//! History module tests.",
+        "// Plain comment.",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn records_entry() {",
+        "    assert!(true);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/main.rs", "src/history.rs")
+    git("commit", "-q", "-m", "test: add history test module")
+
+    writeFileSync(
+      path.join(r, "src/history.rs"),
+      [
+        "//! History module tests.",
+        "pub fn entries() -> usize {",
+        "  0",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn records_entry() {",
+        "    assert!(true);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/history.rs")
+    git("commit", "-q", "-m", "feat: implement entries")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    expect(blockers.some((b) => b.startsWith("test-first gate"))).toBe(false)
+  })
+
+  test("AC-6: new module file containing a production fn fails test-first gate", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/main.rs"), "fn main() {}\n")
+    git("add", "src/main.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/main.rs"), "mod history;\nfn main() {}\n")
+    writeFileSync(
+      path.join(r, "src/history.rs"),
+      [
+        "//! History module.",
+        "pub fn prod() {}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn t() {}",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/main.rs", "src/history.rs")
+    git("commit", "-q", "-m", "test: history with prod fn")
+    const shortSha = git("rev-parse", "--short", "HEAD")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(shortSha)
+  })
+
+  test("AC-6: plain mod line naming an omitted module file fails test-first gate", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(
+      path.join(r, "src/main.rs"),
+      ["fn main() {}", "", "#[cfg(test)]", "mod tests {", "  #[test]", "  fn a() {}", "}", ""].join("\n"),
+    )
+    git("add", "src/main.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/main.rs"),
+      [
+        "mod other;",
+        "fn main() {}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn a() {",
+        "    assert!(true);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/main.rs")
+    git("commit", "-q", "-m", "test: missing other.rs")
+    const shortSha = git("rev-parse", "--short", "HEAD")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(shortSha)
+    expect(gate).toContain("src/main.rs:1")
+  })
+
+  test("AC-6: plain mod line referencing a pre-existing test-only file in base fails test-first gate", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/main.rs"), "fn main() {}\n")
+    writeFileSync(
+      path.join(r, "src/other.rs"),
+      ["#[cfg(test)]", "mod tests {", "  #[test]", "  fn existing() {}", "}", ""].join("\n"),
+    )
+    git("add", "src/main.rs", "src/other.rs")
+    git("commit", "-q", "-m", "chore: base with pre-existing other.rs")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/main.rs"), "mod other;\nfn main() {}\n")
+    git("add", "src/main.rs")
+    git("commit", "-q", "-m", "test: wire pre-existing other.rs")
+    const shortSha = git("rev-parse", "--short", "HEAD")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(shortSha)
+    expect(gate).toContain("src/main.rs:1")
+  })
+})
 
 describe("worktree artifacts", () => {
   test(".factory is git-excluded; CI and AGENTS.md checks are read", () => {
@@ -133,7 +558,12 @@ describe("worktree artifacts", () => {
     expect(shipBlockers(undefined, r, base, true, true)).toEqual([
       "no SDLC plan: call sdlc_plan with the acceptance criteria first",
     ])
-    let s: Sdlc = { ...newSdlc("sub", "t"), criteria: ["works"], implementDoneAt: 2, verifyDoneAt: 1 }
+    let s: Sdlc = {
+      ...newSdlc("sub", "t"),
+      criteria: ["works"],
+      implementDoneAt: 2,
+      verifyDoneAt: 1,
+    }
     s = withGates(s, decide("plan", { design: 0.9, testFirst: 0.9 }, null))
     s = withGates(
       s,
@@ -193,11 +623,15 @@ describe("lessons", () => {
 describe("code review", () => {
   test("lens pick: threshold, cap, at least one, default without Jev", () => {
     expect(pickLenses(null)).toEqual(["correctness", "tests"])
-    expect(pickLenses({ correctness: 0.9, tests: 0.7, design: 0.65, performance: 0.8, operability: 0.1 })).toEqual([
-      "correctness",
-      "performance",
-      "tests",
-    ])
+    expect(
+      pickLenses({
+        correctness: 0.9,
+        tests: 0.7,
+        design: 0.65,
+        performance: 0.8,
+        operability: 0.1,
+      }),
+    ).toEqual(["correctness", "performance", "tests"])
     expect(pickLenses({ correctness: 0.1, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.3 })).toEqual([
       "operability",
     ])
@@ -212,7 +646,15 @@ describe("code review", () => {
   test("findings parse and score", () => {
     const fs = parseReviewFindings(JSON.stringify([{ title: "t", problem: "p", severity: "high" }, { nope: 1 }]))
     expect(fs).toEqual([
-      { id: "cr1", title: "t", file: "unknown", severity: "high", problem: "p", fix: "", lenses: [] },
+      {
+        id: "cr1",
+        title: "t",
+        file: "unknown",
+        severity: "high",
+        problem: "p",
+        fix: "",
+        lenses: [],
+      },
     ])
     expect(parseReviewFindings("not json")).toEqual([])
     expect(score(fs[0]!, 0.8, 0.7).keep).toBe(true)
@@ -272,7 +714,9 @@ describe("reviewer model", () => {
     const { reviewerRoute } = await import("../src/review.ts")
     expect(reviewerRoute("gemini-4-argon", "copilot")).toEqual({ auth: "proxy" })
     expect(reviewerRoute("gemini-4-argon", "auto")).toEqual({ auth: "proxy" })
-    expect(reviewerRoute("gemini-4-argon", "claude")).toEqual({ harness: { kind: "claude", profiles: ["default"] } })
+    expect(reviewerRoute("gemini-4-argon", "claude")).toEqual({
+      harness: { kind: "claude", profiles: ["default"] },
+    })
     expect(reviewerRoute("gpt-6-astra", "copilot")).toEqual({})
     expect(reviewerRoute("gemini-4-argon", "pi")).toEqual({})
     expect(reviewModelFor("gpt-6-astra", "")).toBe("claude-opus-5.5")
@@ -294,7 +738,11 @@ test("osv flags: advisories and license violations per package", () => {
             vulnerabilities: [{ id: "RUSTSEC-1" }],
             license_violations: [],
           },
-          { package: { name: "subtle", version: "2.6.1" }, vulnerabilities: [], license_violations: ["BSD-3-Clause"] },
+          {
+            package: { name: "subtle", version: "2.6.1" },
+            vulnerabilities: [],
+            license_violations: ["BSD-3-Clause"],
+          },
           { package: { name: "toml", version: "1.2.1" } },
         ],
       },
