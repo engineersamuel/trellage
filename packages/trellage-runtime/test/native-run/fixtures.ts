@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { existsSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -58,3 +59,12 @@ export const fixturePaths = async (root: string): Promise<NativeRunPaths> => ({
   data: path.join(root, "data"),
   state: path.join(root, "state"),
 })
+
+/**
+ * Wait until a fixture child process has written `file`. Children are Bun processes; on a loaded host (the pre-push
+ * hook runs these tests beside the whole suite) their startup can take seconds, so this waits on a 15 s deadline.
+ */
+export const waitForFile = async (file: string, deadlineMs = 15_000): Promise<boolean> => {
+  for (const until = Date.now() + deadlineMs; Date.now() < until; await Bun.sleep(10)) if (existsSync(file)) return true
+  return existsSync(file)
+}
