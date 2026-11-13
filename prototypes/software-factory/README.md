@@ -374,6 +374,8 @@ One rule: text a model reads is a prompt file, numbers and model names are confi
   `steps/`, `research/`, `lenses/`, `gates/`). Override one by putting a file at the same path under
   `~/.config/trellage/factory/prompts/`; add a catalog item by adding a file.
 - Config: `coordinator/defaults/config.toml`, overridden key by key in `~/.config/trellage/factory/config.toml`.
+  `sf config sync [--dry-run]` adds the shipped sections and keys your file lacks, commented out with their comments,
+  so you see every option and its default; it never changes a line you have, and works with the factory down.
 - Edits apply live; a delivery run keeps the config and prompts it started with.
 - Full reference, including a walkthrough of `~/.config/trellage/factory/`: `coordinator/AGENTS.md`.
 
