@@ -13,6 +13,7 @@ import {
   worktreeRoot,
   type Worktree,
 } from "./folders.ts"
+import { homeAll, homeFor, homeFile, homeWarning, readHome } from "./home.ts"
 import { cardsPrompt, coordinatorPrompt, deskPrompt, globalPrompt, researchPrompt, subPrompt } from "./prompts.ts"
 import { loadPrompt } from "./prompt.ts"
 import { configStore, type Scalar } from "./config.ts"
@@ -103,6 +104,18 @@ for (const [k, s] of factory.sdlc)
     ),
   })
 const threads = new Threads(factory.root)
+/** Warn when FACTORY.md sections and the repo folders disagree: a section only reaches a matching folder. */
+const checkHome = () => {
+  const w = homeWarning(
+    readHome(),
+    threads
+      .folders()
+      .filter((f) => f.path)
+      .map((f) => f.name),
+  )
+  if (w) console.error(`factory home: ${w}`)
+}
+checkHome()
 const instructions = readInstructions()
 const config = configStore()
 console.error(`factory config: ${config.user}${config.error ? ` (invalid, using defaults: ${config.error})` : ""}`)
@@ -170,8 +183,13 @@ const snapshot = () =>
     subId,
   )
 
+/** The desk and General chats work in the folder that holds FACTORY.md (~/projects), like a home repo. */
+const DESK_DIR = path.dirname(homeFile())
+const deskWhere = `Your working directory is ${DESK_DIR}, the folder that holds the human's repos. Read any repo there (ls, cat, git -C <repo> log). Never edit there: writes and non-read-only shell are refused. To change a repo, start_conversation in its folder; its workers edit in their own worktree.`
+const homeBlock = (h: string) => (h ? `\n\n${h}` : "")
+
 const globalSystem = (extra: string) =>
-  `${coordinatorPrompt()}\n\n${cardsPrompt()}\n\n${globalPrompt()}${extra}${instructions ? `\n\n<human-instructions>\n${instructions}\n</human-instructions>` : ""}\n\n# OpenUI Lang\n${openuiPrompt}`
+  `${coordinatorPrompt()}\n\n${cardsPrompt()}\n\n${globalPrompt()}${extra}${homeBlock(homeAll(readHome()))}\n\n${deskWhere}${instructions ? `\n\n<human-instructions>\n${instructions}\n</human-instructions>` : ""}\n\n# OpenUI Lang\n${openuiPrompt}`
 
 // The Factory desk keeps the id "coordinator" and its runtime process; General chats open their own sessions on it.
 const coord = await factory.spawn({
@@ -184,6 +202,7 @@ const coord = await factory.spawn({
   permissions: factory.globalPermissions,
   // The model decides the SDK: a Claude model runs the desk in the Claude Agent SDK, any other in the Copilot SDK.
   model: factory.settings.agent.model,
+  workdir: DESK_DIR,
 })
 const { model, reasoningEffort } = factory.settings.agent
 if (reasoningEffort !== "default")
@@ -220,6 +239,7 @@ const chatCoordinator = (t: Thread): Promise<Worker> => {
         system: globalSystem(""),
         tools: globalScopeTools(id, t.id),
         permissions: factory.globalPermissions,
+        workdir: DESK_DIR,
         model: factory.settings.agent.model,
       })
       .then(async (w) => {
@@ -368,7 +388,7 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
         name: `${folder.name} · ${t.title}`.slice(0, 60),
         role: "coordinator",
         ...(t.parentThreadId ? { owner: genId(t.parentThreadId) } : {}),
-        system: `${coordinatorPrompt()}\n\n${cardsPrompt()}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!, t.prBase, readLessons(factory.root, folder.id))}\n\n${researchPrompt()}\n\n# OpenUI Lang\n${openuiPrompt}`,
+        system: `${coordinatorPrompt()}\n\n${cardsPrompt()}\n\n${subPrompt(folder.name, folder.path, t.worktree, t.branch!, t.prBase, readLessons(factory.root, folder.id))}${homeBlock(homeFor(readHome(), folder.name))}\n\n${researchPrompt()}\n\n# OpenUI Lang\n${openuiPrompt}`,
         tools: coordinatorTools(factory, {
           id,
           threadId: t.id,
@@ -1430,6 +1450,7 @@ const routes: [string, RegExp, Handler][] = [
     async (req) => {
       try {
         const f = threads.addFolder(String(bodyFields(await req.json()).path ?? ""))
+        checkHome()
         factory.publish("coordinator", "factory.thread_updated", null, now(), { folderId: f.id })
         return json(f)
       } catch (e) {

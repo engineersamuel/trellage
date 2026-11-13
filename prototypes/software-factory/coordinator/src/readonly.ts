@@ -199,3 +199,4 @@ export const readOnlyViolation = (line: string): string | null => {
 }
 
 export const subShellFeedback = () => loadPrompt("sub-shell-feedback")
+export const deskShellFeedback = () => loadPrompt("desk-shell-feedback")

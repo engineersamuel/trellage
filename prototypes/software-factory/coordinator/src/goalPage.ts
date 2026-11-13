@@ -12,6 +12,7 @@ import { factoryConfig } from "./config.ts"
 import { chatUsage } from "./costs.ts"
 import { systemOne, type Answer, type DecideRequest } from "./decide.ts"
 import { loadPrompt, promptFile } from "./prompt.ts"
+import { homeFor, readHome } from "./home.ts"
 import { gateDefs } from "./sdlc.ts"
 import type { Goals } from "./goals.ts"
 import { decodeGoal, goalProblems } from "../../shared/goal.ts"
@@ -449,6 +450,13 @@ export const makeGoalPage = (d: GoalPageDeps) => {
     const { repo, seed } = decode(Schema.Struct({ repo: Schema.String, seed: Schema.String }), body, "discover request")
     const root = repoRoot(repo)
     const facts: { fact: string; source: string }[] = []
+    const home = readHome()
+    const homeText = homeFor(home, d.folders().find((f) => f.path === repo)?.name ?? path.basename(root))
+    if (homeText) {
+      const fact = { fact: "Used the factory home file for cross-repo rules.", source: `${home!.path}@${home!.hash}` }
+      facts.push(fact)
+      send("fact", fact)
+    }
     const out = await repoAgent({
       root,
       maxTurns: 6,
@@ -457,7 +465,7 @@ export const makeGoalPage = (d: GoalPageDeps) => {
         if (type === "fact") facts.push(data as { fact: string; source: string })
         send(type, data)
       },
-      task: P("discover", { seed: JSON.stringify(seed) }),
+      task: P("discover", { seed: JSON.stringify(seed) }) + (homeText ? `\n\n${homeText}` : ""),
       finish: {
         schema: DiscoverOut,
         description: "Submit the first draft of the goal and the interview questions.",

@@ -1,6 +1,6 @@
 // Worker lifecycle: each worker is a separate agent process with its own home. A Claude model runs in the Claude
 // Agent SDK; any other model in the Copilot SDK (a runtime over TCP). A step may name its own harness.
-import { readOnlyViolation, subShellFeedback } from "./readonly.ts"
+import { deskShellFeedback, readOnlyViolation, subShellFeedback } from "./readonly.ts"
 import { isolatedLauncher, reapRuntimes, recordRuntime, spawnIsolated } from "./isolate.ts"
 import { factoryMcpServer, gateFromPermissions, MCP_SERVER, mcpToolNames } from "./claudetools.ts"
 import { imageTool } from "./images.ts"
@@ -1324,15 +1324,20 @@ export class Factory {
     return this.settingsPermissions(request, invocation)
   }
 
-  /** Global coordinator permission gate: the settings gate, and never merge, push, or delete; the human does that. */
-  readonly globalPermissions: PermissionHandler = (request, invocation) =>
-    request.kind === "shell" && forbiddenCommand(request.fullCommandText)
-      ? {
-          kind: "reject",
-          feedback:
-            "The global coordinator never merges, pushes, or deletes branches or worktrees. Ask the human with request_approval.",
-        }
-      : this.settingsPermissions(request, invocation)
+  /** Global coordinator permission gate: it runs in the projects folder beside the main checkouts, so it only reads.
+   *  Never merge, push, or delete; the human does that. Repo changes go through a conversation's worktree. */
+  readonly globalPermissions: PermissionHandler = (request, invocation) => {
+    if (request.kind === "shell" && forbiddenCommand(request.fullCommandText))
+      return {
+        kind: "reject",
+        feedback:
+          "The global coordinator never merges, pushes, or deletes branches or worktrees. Ask the human with request_approval.",
+      }
+    if (request.kind === "write") return { kind: "reject", feedback: deskShellFeedback() }
+    const why = request.kind === "shell" ? readOnlyViolation(request.fullCommandText) : null
+    if (why) return { kind: "reject", feedback: `Refused (${why}). ${deskShellFeedback()}` }
+    return this.settingsPermissions(request, invocation)
+  }
 }
 
 /** The human's factory config folder (config.toml, prompts/, INSTRUCTIONS.md). */

@@ -11,6 +11,7 @@ honor its STOP conditions, and update its status when done.
 | 001 | Enforce the Graph of Loops skill entry point | P1 | S | - | DONE |
 | 002 | [Replace named Native launchers with harness-based trx commands](002-unify-native-launchers.md) | P1 | L | - | IMPLEMENTED — host timing check fails; installed-host matrix needs updated trx |
 | 003 | [Drive the software factory from config files](003-factory-config-driven.md) | P1 | L | - | DONE |
+| 004 | [Goals that change more than one repo](004-factory-multi-repo-goals.md) | P2 | L | - | TODO |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason,
 or `REJECTED` with a one-line rationale.
