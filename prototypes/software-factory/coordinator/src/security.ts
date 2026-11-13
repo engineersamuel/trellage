@@ -6,6 +6,8 @@ import { decisionsAvailable, systemOne } from "./decide.ts"
 import { now, type Auth, type Factory, type Worker } from "./factory.ts"
 import type { Scope } from "./tools.ts"
 import { loadPrompt } from "./prompt.ts"
+import { factoryConfig } from "./config.ts"
+import { awaitGateWorker } from "./gateWorker.ts"
 
 /** A security-audit findings.json record worth acting on (rejected records are dropped). */
 export type Finding = {
@@ -164,12 +166,8 @@ export const stopAll = async (ids: Iterable<string>, stop: (id: string) => Promi
   await Promise.all([...ids].map((id) => stop(id).catch(() => {})))
 }
 
-const timeoutMs = () => Number(process.env.SF_SECURITY_TIMEOUT_MS) || 20 * 60_000
-
-const idleOrThrow = async (w: Worker, what: string) => {
-  if (!(await w.waitIdle(timeoutMs()))) throw new Error(`${what} worker ${w.id} timed out`)
-  if (w.status === "error") throw new Error(`${what} worker ${w.id} failed: ${w.lastError}`)
-}
+/** Start a gate worker and wait for it; a stuck one is replaced (gateWorker.ts). */
+type Wait = (start: () => Promise<Worker>, what: string) => Promise<Worker>
 
 const list = (fs: TriagedFinding[]) =>
   fs.map((x) => `- [${x.severity}] ${x.title} (${x.file}, ${x.id}): ${x.summary}`).join("\n")
@@ -192,34 +190,39 @@ const target = (f: Factory, scope: Scope) => {
 }
 
 /** Reviewer worker: audit the diff, read its findings.json, stop it. */
-const audit = async (f: Factory, spawn: Spawn, set: Set, base: string): Promise<Finding[]> => {
+const audit = async (f: Factory, spawn: Spawn, set: Set, base: string, wait: Wait): Promise<Finding[]> => {
   const id = `w-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`
   const out = path.join(f.root, id, "security-audit")
   mkdirSync(out, { recursive: true })
-  const reviewer = await spawn("security-review", "security", loadPrompt("tasks/security-audit", { base, out }), id)
-  set({ workerId: reviewer.id })
-  await idleOrThrow(reviewer, "security review")
+  let n = 0
+  const reviewer = await wait(async () => {
+    // A fresh worker after a stuck one gets its own id; it writes to the same output folder.
+    const w = await spawn(
+      "security-review",
+      "security",
+      loadPrompt("tasks/security-audit", { base, out }),
+      n++ ? undefined : id,
+    )
+    set({ workerId: w.id })
+    return w
+  }, "security review")
   const found = parseFindings(readFileSync(path.join(out, "findings.json"), "utf8"))
   await f.stop(reviewer.id).catch(() => {})
   return found
 }
 
 /** Fix worker (implement) for the kept findings, then a verify worker. */
-const fixAndVerify = async (spawn: Spawn, set: Set, kept: TriagedFinding[], base: string) => {
-  const fixer = await spawn(
-    "security-fix",
-    "implement",
-    loadPrompt("tasks/security-fix", { base, findings: list(kept) }),
-  )
-  set({ status: "fixing", workerId: fixer.id })
-  await idleOrThrow(fixer, "security fix")
-  const verifier = await spawn(
-    "security-verify",
-    "verify",
-    loadPrompt("tasks/security-verify", { findings: list(kept) }),
-  )
-  set({ status: "verifying", workerId: verifier.id })
-  await idleOrThrow(verifier, "security verify")
+const fixAndVerify = async (spawn: Spawn, set: Set, kept: TriagedFinding[], base: string, wait: Wait) => {
+  await wait(async () => {
+    const w = await spawn("security-fix", "implement", loadPrompt("tasks/security-fix", { base, findings: list(kept) }))
+    set({ status: "fixing", workerId: w.id })
+    return w
+  }, "security fix")
+  await wait(async () => {
+    const w = await spawn("security-verify", "verify", loadPrompt("tasks/security-verify", { findings: list(kept) }))
+    set({ status: "verifying", workerId: w.id })
+    return w
+  }, "security verify")
 }
 
 /** Review workers run with the picked model. */
@@ -257,7 +260,8 @@ const run = async (f: Factory, scope: Scope, r: SecurityReview, set: Set, pinned
     return w
   }
   try {
-    const found = await audit(f, spawn, set, base)
+    const wait: Wait = (start, what) => awaitGateWorker(start, what, (id) => f.stop(id), factoryConfig())
+    const found = await audit(f, spawn, set, base, wait)
     set({
       status: "findings",
       findings: found.map((x) => withVerdict(x, { verdict: "keep", reason: "awaiting triage", confidence: 0 })),
@@ -266,7 +270,7 @@ const run = async (f: Factory, scope: Scope, r: SecurityReview, set: Set, pinned
     set({ status: "triaged", findings: triaged })
     for (const line of discardLines(r.id, triaged)) console.log(line)
     const kept = triaged.filter((t) => t.verdict === "keep")
-    if (kept.length) await fixAndVerify(spawn, set, kept, base)
+    if (kept.length) await fixAndVerify(spawn, set, kept, base, wait)
   } finally {
     await stopAll(started, (id) => f.stop(id))
   }

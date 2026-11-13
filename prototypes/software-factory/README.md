@@ -236,7 +236,12 @@ or times out.
 
 - `SF_SECURITY_MODEL`: reviewer model (blank counts as unset). Default: the copilot-proxy-rs routed model, else
   `SF_MODEL`.
-- `SF_SECURITY_TIMEOUT_MS`: wait per review, fix, or verify worker (default 1200000, 20 minutes).
+- Gate workers (code review, security review, evaluator, and their fix and verify workers) have **no short time
+  limit**: the goal's cost limit bounds spending. `src/gateWorker.ts` replaces a worker that is **stuck**: it ended in
+  error, `[workers] stuck_failed_tools` (5) tool calls failed in a row, or it was silent for `stuck_quiet_minutes` (10)
+  while no tool call was running (a long build or test is a running tool call, so it is never silent). A stuck worker
+  is stopped and a fresh one gets the same task, `retries` (1) times; then the gate fails with the reason. Backstop:
+  a worker still running after `wait_minutes` (90) counts as stuck. `SF_SECURITY_TIMEOUT_MS` overrides the backstop.
 
 ## Fan-out: research, decisions and optimizations
 

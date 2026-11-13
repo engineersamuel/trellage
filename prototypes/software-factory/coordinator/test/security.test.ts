@@ -1,5 +1,16 @@
 import { expect, test } from "bun:test"
-import { discardLines, reviewIn, fromAnswers, parseFindings, pendingReview, pickModel, stopAll, toVerdict, triage, type SecurityReview } from "../src/security.ts"
+import {
+  discardLines,
+  reviewIn,
+  fromAnswers,
+  parseFindings,
+  pendingReview,
+  pickModel,
+  stopAll,
+  toVerdict,
+  triage,
+  type SecurityReview,
+} from "../src/security.ts"
 
 const confirmed = {
   verdict: "confirmed",
@@ -22,8 +33,22 @@ const rejected = { ...confirmed, verdict: "rejected", fingerprint: "x", title: "
 
 test("parseFindings keeps confirmed and needs_validation, ignores rejected", () => {
   expect(parseFindings(JSON.stringify([confirmed, rejected, needsValidation]))).toEqual([
-    { id: "sqli:api/users.ts:42", title: "SQL injection in user lookup", severity: "high", file: "api/db.ts:42", summary: "The id parameter is concatenated into SQL.", verdict: "confirmed" },
-    { id: "ssrf:fetch.ts:7", title: "Possible SSRF", severity: "unknown", file: "fetch.ts:7", summary: "URL comes from the request.", verdict: "needs_validation" },
+    {
+      id: "sqli:api/users.ts:42",
+      title: "SQL injection in user lookup",
+      severity: "high",
+      file: "api/db.ts:42",
+      summary: "The id parameter is concatenated into SQL.",
+      verdict: "confirmed",
+    },
+    {
+      id: "ssrf:fetch.ts:7",
+      title: "Possible SSRF",
+      severity: "unknown",
+      file: "fetch.ts:7",
+      summary: "URL comes from the request.",
+      verdict: "needs_validation",
+    },
   ])
 })
 
@@ -31,27 +56,40 @@ test("parseFindings locates a finding by evidence, then trace, else unknown", ()
   const { evidence: _e, ...noEvidence } = needsValidation
   const { trace: _t, ...bare } = noEvidence
   const noLine = { ...bare, evidence: [{ file: "a.ts" }] }
-  expect(parseFindings(JSON.stringify([noEvidence, bare, noLine])).map((x) => x.file)).toEqual(["fetch.ts:7", "unknown", "a.ts"])
+  expect(parseFindings(JSON.stringify([noEvidence, bare, noLine])).map((x) => x.file)).toEqual([
+    "fetch.ts:7",
+    "unknown",
+    "a.ts",
+  ])
 })
 
 test("parseFindings returns [] for malformed input", () => {
   expect(parseFindings("not json")).toEqual([])
   expect(parseFindings('{"verdict":"confirmed"}')).toEqual([])
-  expect(parseFindings("[null, 3, {\"verdict\":\"confirmed\"}]")).toEqual([])
+  expect(parseFindings('[null, 3, {"verdict":"confirmed"}]')).toEqual([])
 })
 
 test("toVerdict maps Jev choices; unknown keys are kept", () => {
   expect(toVerdict("keep", 0.9)).toEqual({ verdict: "keep", reason: expect.stringContaining("real"), confidence: 0.9 })
-  expect(toVerdict("discard_false_positive", 0.8)).toEqual({ verdict: "discard", reason: expect.stringContaining("false positive"), confidence: 0.8 })
+  expect(toVerdict("discard_false_positive", 0.8)).toEqual({
+    verdict: "discard",
+    reason: expect.stringContaining("false positive"),
+    confidence: 0.8,
+  })
   expect(toVerdict("discard_out_of_scope", 0.7).reason).toContain("scope")
   expect(toVerdict("discard_low_risk", 0.6).reason).toContain("low risk")
   expect(toVerdict("discard_out_of_scope", 0.7).verdict).toBe("discard")
   expect(toVerdict("discard_low_risk", 0.6).verdict).toBe("discard")
-  expect(toVerdict("nonsense", 0.5)).toEqual({ verdict: "keep", reason: expect.stringContaining("fail safe"), confidence: 0.5 })
+  expect(toVerdict("nonsense", 0.5)).toEqual({
+    verdict: "keep",
+    reason: expect.stringContaining("fail safe"),
+    confidence: 0.5,
+  })
 })
 
 test("pendingReview finds an unfinished review for the scope only", () => {
-  const r = (scopeId: string, status: SecurityReview["status"]) => ({ id: `${scopeId}-${status}`, scopeId, status }) as SecurityReview
+  const r = (scopeId: string, status: SecurityReview["status"]) =>
+    ({ id: `${scopeId}-${status}`, scopeId, status }) as SecurityReview
   expect(pendingReview([r("a", "done"), r("a", "failed"), r("b", "fixing")], "a")).toBeUndefined()
   expect(pendingReview([r("a", "done"), r("a", "verifying")], "a")?.id).toBe("a-verifying")
 })
@@ -63,7 +101,19 @@ test("triage without a Jev key keeps every finding", async () => {
   try {
     const [f] = parseFindings(JSON.stringify([confirmed]))
     const out = await triage([f!])
-    expect(out).toEqual([{ id: f!.id, title: f!.title, severity: "high", file: f!.file, summary: f!.summary, audit: "confirmed", verdict: "keep", reason: "Jev unavailable; kept (fail safe)", confidence: 0 }])
+    expect(out).toEqual([
+      {
+        id: f!.id,
+        title: f!.title,
+        severity: "high",
+        file: f!.file,
+        summary: f!.summary,
+        audit: "confirmed",
+        verdict: "keep",
+        reason: "Jev unavailable; kept (fail safe)",
+        confidence: 0,
+      },
+    ])
   } finally {
     process.env = saved
   }
@@ -72,6 +122,7 @@ test("triage without a Jev key keeps every finding", async () => {
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import type { Factory } from "../src/factory.ts"
 import { securityReview } from "../src/security.ts"
 
 /** A Factory double: spawned workers finish at once; the reviewer writes `findings`. */
@@ -81,26 +132,38 @@ const fakeFactory = (findings: unknown[] | null, idle = true) => {
   const waits: number[] = []
   const events: { status: string; findings: unknown[] }[] = []
   const stopped: string[] = []
-  const f: any = {
+  type Spec = { id?: string; step: string; task: string; workdir: string; model: string; auth: string }
+  const f = {
     root,
     run: null,
     defaultModel: "default-model",
     workers: new Map([["sub-1", { auth: "proxy" }]]),
-    securityReviews: new Map(), codeReviews: new Map(), sdlc: new Map(),
-    publish: (_w: string, type: string, _a: null, _t: string, data: any) => type === "factory.security_review" && events.push(data),
-    routeModel: async () => ({ id: "routed-model" }),
+    securityReviews: new Map(),
+    codeReviews: new Map(),
+    sdlc: new Map(),
+    publish: (_w: string, type: string, _a: null, _t: string, data: { status: string; findings: unknown[] }) =>
+      type === "factory.security_review" && events.push(data),
+    routeModel: async (): Promise<{ id: string } | null> => ({ id: "routed-model" }),
     stop: async (id: string) => void stopped.push(id),
-    spawn: async (spec: any) => {
+    spawn: async (spec: Spec) => {
       spawned.push({ step: spec.step, task: spec.task, workdir: spec.workdir, model: spec.model, auth: spec.auth })
       const id = spec.id ?? `w-${spawned.length}`
       if (spec.step === "security" && findings) {
         mkdirSync(path.join(root, id, "security-audit"), { recursive: true })
         writeFileSync(path.join(root, id, "security-audit", "findings.json"), JSON.stringify(findings))
       }
-      return { id, status: "idle", lastError: null, waitIdle: async (ms: number) => (waits.push(ms), idle) }
+      return {
+        id,
+        status: idle ? "idle" : "running",
+        lastError: null,
+        lastActivity: Date.now(),
+        failedTools: 0,
+        toolsInFlight: 1,
+        waitIdle: async (ms: number) => (waits.push(ms), idle),
+      }
     },
   }
-  return { f, spawned, events, stopped, waits }
+  return { f: f as typeof f & Factory, spawned, events, stopped, waits }
 }
 const scope = { id: "sub-1", threadId: "t1", workdir: "/wt", base: "abc123" }
 
@@ -126,13 +189,23 @@ test("securityReview audits the diff, then fixes and verifies kept findings", ()
     expect(spawned[0]!.task).toContain("git diff abc123")
     expect(spawned[1]!.task).toContain("SQL injection in user lookup")
     expect(spawned.every((s) => s.workdir === "/wt" && s.model === "routed-model" && s.auth === "proxy")).toBe(true)
-    expect(waits).toEqual([1_200_000, 1_200_000, 1_200_000])
+    // No short limit: each wait is one 30 s poll of a worker that is never stuck (the backstop is 90 min).
+    expect(waits).toEqual([30_000, 30_000, 30_000])
     expect(events[3]!.findings).toMatchObject([{ verdict: "keep", reason: "awaiting triage", confidence: 0 }])
     expect(new Set(stopped)).toEqual(new Set([stopped[0]!, "w-2", "w-3"]))
     expect(stopped[0]).toStartWith("w-")
     expect(r.workerId).toBe("w-3")
     expect(r.workdir).toBe("/wt")
-    expect(events.map((e) => e.status)).toEqual(["started", "started", "started", "findings", "triaged", "fixing", "verifying", "done"])
+    expect(events.map((e) => e.status)).toEqual([
+      "started",
+      "started",
+      "started",
+      "findings",
+      "triaged",
+      "fixing",
+      "verifying",
+      "done",
+    ])
     expect(f.securityReviews.get(r.id)).toBe(r)
   }))
 
@@ -142,32 +215,52 @@ test("securityReview with no findings spawns no fix worker; with both workers go
     const { f, spawned, waits } = fakeFactory([])
     f.routeModel = async () => null
     f.workers = new Map()
-    expect(await securityReview(f, scope, "w", "proxy")).toMatchObject({ status: "done", model: "default-model", auth: "proxy" })
+    expect(await securityReview(f, scope, "w", "proxy")).toMatchObject({
+      status: "done",
+      model: "default-model",
+      auth: "proxy",
+    })
     expect(waits).toEqual([5000])
     expect(spawned[0]!.auth).toBe("proxy")
     expect(spawned.map((s) => s.step)).toEqual(["security"])
   }))
 
-test("securityReview fails visibly on timeout, missing output, or missing base", () =>
+test("securityReview fails visibly past the backstop (after one fresh worker), missing output, or missing base", () =>
   noJev(async () => {
     process.env.SF_SECURITY_MODEL = "pinned"
-    const slow = await securityReview(fakeFactory([confirmed], false).f, scope, "w")
-    expect(slow).toMatchObject({ status: "failed", model: "pinned", error: expect.stringContaining("timed out") })
+    process.env.SF_SECURITY_TIMEOUT_MS = "20"
+    const never = fakeFactory([confirmed], false)
+    const slow = await securityReview(never.f, scope, "w")
+    expect(slow.error).toMatch(/still running after .* \(after 2 tries\)/)
+    expect(slow).toMatchObject({ status: "failed", model: "pinned" })
+    expect(never.spawned.map((x) => x.step)).toEqual(["security", "security"])
+    delete process.env.SF_SECURITY_TIMEOUT_MS
     expect((await securityReview(fakeFactory(null).f, scope, "w")).error).toContain("findings.json")
-    expect((await securityReview(fakeFactory([]).f, { id: "coordinator", threadId: null }, "w")).error).toContain("base commit")
-    expect((await securityReview(fakeFactory([]).f, { id: "s", threadId: null, workdir: "/wt" }, "w")).error).toContain("base commit")
+    expect((await securityReview(fakeFactory([]).f, { id: "coordinator", threadId: null }, "w")).error).toContain(
+      "base commit",
+    )
+    expect((await securityReview(fakeFactory([]).f, { id: "s", threadId: null, workdir: "/wt" }, "w")).error).toContain(
+      "base commit",
+    )
   }))
 
 test("fromAnswers maps Jev answers per finding; a missing answer keeps it", () => {
   const fs = parseFindings(JSON.stringify([confirmed, needsValidation]))
   const out = fromAnswers(fs, { f0: { choice: "discard_low_risk", confidence: 0.7 } })
-  expect(out.map((x) => [x.id, x.verdict, x.confidence])).toEqual([["sqli:api/users.ts:42", "discard", 0.7], ["ssrf:fetch.ts:7", "keep", 0]])
+  expect(out.map((x) => [x.id, x.verdict, x.confidence])).toEqual([
+    ["sqli:api/users.ts:42", "discard", 0.7],
+    ["ssrf:fetch.ts:7", "keep", 0],
+  ])
   expect(out[1]!.audit).toBe("needs_validation")
 })
 
 test("discardLines logs each discarded finding with its reason", () => {
-  const out = fromAnswers(parseFindings(JSON.stringify([confirmed, needsValidation])), { f0: { choice: "discard_false_positive", confidence: 0.9 } })
-  expect(discardLines("sr-1", out)).toEqual(['[security] sr-1 discarded sqli:api/users.ts:42 "SQL injection in user lookup": false positive (0.9)'])
+  const out = fromAnswers(parseFindings(JSON.stringify([confirmed, needsValidation])), {
+    f0: { choice: "discard_false_positive", confidence: 0.9 },
+  })
+  expect(discardLines("sr-1", out)).toEqual([
+    '[security] sr-1 discarded sqli:api/users.ts:42 "SQL injection in user lookup": false positive (0.9)',
+  ])
 })
 
 test("pickModel: a blank SF_SECURITY_MODEL counts as unset", () => {
@@ -186,7 +279,8 @@ test("stopAll stops every worker and swallows failures", async () => {
 })
 
 test("reviewIn finds an unfinished review in that worktree only, comparing resolved paths", () => {
-  const r = (id: string, status: SecurityReview["status"], workdir: string) => ({ id, status, workdir }) as SecurityReview
+  const r = (id: string, status: SecurityReview["status"], workdir: string) =>
+    ({ id, status, workdir }) as SecurityReview
   const reviews = [r("a", "done", "/wt"), r("b", "fixing", "/other"), r("c", "verifying", "/wt/")]
   expect(reviewIn(reviews, "/wt")?.id).toBe("c")
   expect(reviewIn(reviews.slice(0, 2), "/wt")).toBeUndefined()
@@ -203,14 +297,17 @@ test("securityReview records its worktree in the first, synchronous update", () 
     expect(events[0]).toMatchObject({ status: "started", workdir: "/wt" })
   }))
 
-test("securityReview stops the timed-out worker and uses the implement worker's auth", () =>
+test("securityReview stops each stuck worker and uses the implement worker's auth", () =>
   noJev(async () => {
     process.env.SF_SECURITY_MODEL = " "
+    process.env.SF_SECURITY_TIMEOUT_MS = "20"
     const { f, spawned, stopped } = fakeFactory([confirmed], false)
     f.workers.set("w-impl", { auth: "native" })
     const r = await securityReview(f, scope, "w-impl")
     expect(r).toMatchObject({ status: "failed", model: "routed-model" })
-    expect(stopped).toEqual([r.workerId!])
+    // The stuck first worker and its fresh replacement are both stopped (the final cleanup may stop them again).
+    expect(new Set(stopped).size).toBe(2)
+    expect(stopped).toContain(r.workerId!)
     expect(spawned[0]!.auth).toBe("native")
   }))
 

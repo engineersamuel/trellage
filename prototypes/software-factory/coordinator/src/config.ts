@@ -61,7 +61,13 @@ const FactoryConfigSchema = Schema.Struct({
     enabled: Schema.Boolean,
     contract_rounds: Count,
     max_rounds: Count,
-    timeout_minutes: Count,
+  }),
+  /** Gate workers (gateWorker.ts): when one counts as stuck, how often it is replaced, and the backstop wait. */
+  workers: Schema.Struct({
+    wait_minutes: Count,
+    stuck_quiet_minutes: Count,
+    stuck_failed_tools: Count,
+    retries: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   }),
 })
 export type FactoryConfig = typeof FactoryConfigSchema.Type

@@ -12,6 +12,7 @@ import { approveAll, type PermissionHandler } from "@github/copilot-sdk"
 import type { FactoryConfig } from "./config.ts"
 import { now, type Auth, type Factory, type Worker } from "./factory.ts"
 import { forbiddenCommand } from "./guard.ts"
+import { awaitGateWorker } from "./gateWorker.ts"
 import { loadPrompt } from "./prompt.ts"
 import { geminiReachable, reviewModelFor, reviewerRoute } from "./review.ts"
 import {
@@ -153,8 +154,25 @@ const work = async (
   started?: (w: Worker) => void,
 ): Promise<Worker> => {
   const route = p.model ? reviewerRoute(p.model, r.f.settings.workers.harness) : {}
-  const w = await r.f.spawn({
-    ...(p.id ? { id: p.id } : {}),
+  let n = 0
+  const start = async () => {
+    const w = await spawnOne(r, p, route, n++ ? undefined : p.id)
+    started?.(w)
+    return w
+  }
+  const w = await awaitGateWorker(start, p.name, (id) => r.f.stop(id), r.c)
+  if (p.evaluator) await r.f.stop(w.id).catch(() => {})
+  return w
+}
+
+const spawnOne = (
+  r: Run,
+  p: { name: string; step: string; task: string; model?: string; evaluator?: string },
+  route: ReturnType<typeof reviewerRoute>,
+  id: string | undefined,
+): Promise<Worker> =>
+  r.f.spawn({
+    ...(id ? { id } : {}),
     name: p.name,
     role: "worker",
     ...(r.auth ? { auth: r.auth } : {}),
@@ -166,16 +184,6 @@ const work = async (
     ...(p.evaluator ? { permissions: evaluatorPermissions(p.evaluator) } : {}),
     ...route,
   })
-  started?.(w)
-  try {
-    if (!(await w.waitIdle(r.c.evaluate.timeout_minutes * 60_000)))
-      throw new Error(`${p.name} worker ${w.id} timed out`)
-    if (w.status === "error") throw new Error(`${p.name} worker ${w.id} failed: ${w.lastError}`)
-    return w
-  } finally {
-    if (p.evaluator) await r.f.stop(w.id).catch(() => {})
-  }
-}
 
 const outDir = (f: Factory) => {
   const id = `w-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`

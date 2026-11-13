@@ -190,6 +190,8 @@ export class Worker {
   lastActivity = Date.now()
   readonly startedAt = Date.now()
   failedTools = 0
+  /** Tool calls started and not finished (top level): a long build or test run, so the worker is not silent. */
+  toolsInFlight = 0
   lastError: string | null = null
   collected = false
   owner = "coordinator"
@@ -283,7 +285,11 @@ export class Worker {
   }
 
   private observeToolResult(type: string, agentId: string | null, data: Record<string, unknown>): void {
-    if (type !== "tool.execution_complete" || agentId !== null) return
+    if (agentId !== null) return
+    if (type === "tool.execution_start") this.toolsInFlight++
+    if (type === "session.idle" || type === "session.error") this.toolsInFlight = 0
+    if (type !== "tool.execution_complete") return
+    this.toolsInFlight = Math.max(0, this.toolsInFlight - 1)
     this.failedTools = data.success === false ? this.failedTools + 1 : 0
     if (data.success === false)
       this.lastError = String((data.error as { message?: unknown } | null | undefined)?.message ?? "tool failed").slice(
