@@ -419,6 +419,16 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   }
 
   // ---------- detail ----------
+  /** Context window fill of the selected agent. It changes on each model call, so it updates in place, not by a redraw. */
+  const ctxEl = el("span", "p3-why")
+  const fillCtx = (a?: { contextTokens?: number | null; contextLimit?: number | null }) => {
+    const used = a?.contextTokens ?? 0
+    const limit = a?.contextLimit ?? 0
+    ctxEl.textContent = limit
+      ? `◔ ctx ${Math.round(used / 1000)}k / ${Math.round(limit / 1000)}k · ${Math.round((100 * used) / limit)}%`
+      : "◔ ctx –"
+    ctxEl.title = limit ? `${used} of ${limit} context tokens` : "No context reading yet"
+  }
   const renderHead = (n: Node) => {
     const crumbs = el("div", "p3-crumbs")
     for (const a of ancestors(m, n.id))
@@ -445,6 +455,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const costable = n.kind === "sub" || n.kind === "desk"
     const cost = costable ? costSummary(n.kind === "sub" ? n.thread!.id : null, render) : null
     if (cost) st.append(el("span", "p3-why", `💲 ${n.kind === "desk" ? "global " : "run "}${cost}`))
+    if (n.agent) st.append(ctxEl)
+    fillCtx(n.agent)
     const acts = el("div", "p3-acts")
     for (const d of n.pending) acts.append(btn(`⚑ ${d.title}`, () => openDecision(d.id), "warn"))
     if (n.agent) acts.append(btn("⚙ Spec", () => openSpec(n.id)))
@@ -793,6 +805,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   let ready = false
   const unsub = subscribe((st) => {
     s = st
+    const selected = cur ? m.nodes.get(cur)?.agent : undefined
+    if (selected) fillCtx(st.agents.find((a) => a.id === selected.id))
     // The stream draws every agent's events, so it checks each update itself (it skips unchanged ones).
     stream?.render(st)
     // Wait for the first thread list; an empty one (a new factory) still draws the Inbox.

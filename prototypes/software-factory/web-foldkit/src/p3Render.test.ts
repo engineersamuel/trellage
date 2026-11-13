@@ -5,6 +5,8 @@ import type { FeedEvent } from "../../shared/feed"
 const feed = vi.hoisted(() => ({
   subs: new Set<(event: FeedEvent) => void>(),
   workerStatus: "running",
+  /** Context tokens of w1; 0 = no reading yet. */
+  workerContext: 0,
   posts: new Array<{ url: string; body: unknown }>(),
 }))
 vi.mock("../../shared/feed", async (original) => ({
@@ -54,7 +56,11 @@ const responses = (url: string): unknown =>
         agent("coordinator", "coordinator", "idle"),
         agent("gen-aaaaaaaa", "coordinator", "idle"),
         agent("sub-bbbbbbbb", "coordinator", "running", "gen-aaaaaaaa", "claude"),
-        agent("w1", "worker", feed.workerStatus, "sub-bbbbbbbb", "pi"),
+        {
+          ...agent("w1", "worker", feed.workerStatus, "sub-bbbbbbbb", "pi"),
+          contextTokens: feed.workerContext || null,
+          contextLimit: feed.workerContext ? 200_000 : null,
+        },
       ]
     : url === "/api/threads/get"
       ? {
@@ -198,5 +204,18 @@ test("the Canvas switch draws the selected conversation as a chart, and a card c
   root.querySelector<HTMLElement>("[data-testid=view-tree]")!.click()
   expect(root.classList.contains("canvas")).toBe(false)
   expect(root.querySelector(".p3-cv")).toBeNull()
+  stop()
+})
+
+// Context fill changes on each model call; the header shows it for workers and sub-coordinators without a redraw.
+test("the detail header shows the selected agent's context fill and updates it", async () => {
+  const { root, stop } = await mountInbox()
+  root.querySelector<HTMLElement>("[data-testid=tree-row]")!.click()
+  const ctx = () => [...root.querySelectorAll(".p3-head .p3-why")].find((e) => e.textContent?.startsWith("◔"))
+  await vi.waitFor(() => expect(ctx()?.textContent).toBe("◔ ctx –"))
+  feed.workerContext = 50_000
+  push("factory.worker_updated")
+  await vi.waitFor(() => expect(ctx()?.textContent).toBe("◔ ctx 50k / 200k · 25%"))
+  feed.workerContext = 0
   stop()
 })

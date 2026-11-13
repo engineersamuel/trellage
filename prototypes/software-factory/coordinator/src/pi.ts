@@ -158,6 +158,18 @@ export const piEvents = (
   }
 }
 
+/** Context fill after each model call, as the Copilot runtime's `session.usage_info`. */
+export const piContext = (
+  e: AgentSessionEvent,
+  usage: () => { tokens: number | null; contextWindow: number } | undefined,
+  at = new Date().toISOString(),
+): HarnessEvent[] => {
+  const u = e.type === "message_end" && e.message.role === "assistant" ? usage() : undefined
+  return u && u.tokens !== null
+    ? [{ type: "session.usage_info", timestamp: at, data: { currentTokens: u.tokens, tokenLimit: u.contextWindow } }]
+    : []
+}
+
 /** A live Pi SDK session. It is both the worker's session and its client. */
 export class PiSession {
   private readonly skills: PiSkill[]
@@ -171,6 +183,7 @@ export class PiSession {
     this.skills = s.resourceLoader.getSkills().skills.map(({ name, filePath }) => ({ name, filePath }))
     s.subscribe((e) => {
       for (const ev of piEvents(e, undefined, this.skills, cwd)) emit(ev)
+      for (const ev of piContext(e, () => s.getContextUsage())) emit(ev)
     })
   }
 
