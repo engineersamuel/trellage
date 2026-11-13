@@ -21,3 +21,11 @@
 .sfp-p3 .p3-tl-doc { margin: 10px 0; overflow-wrap: anywhere; }
 .sfp-p3 .p3-tl-doc table { display: block; overflow-x: auto; }
 @media (max-width: 900px) { .sfp-p3 .p3-tl { grid-template-columns: 1fr; grid-template-rows: 40% 1fr; } .sfp-p3 .p3-tl-list { border-right: 0; border-bottom: 1px solid var(--sf-border); } }
+/* Pinned prompt and plan of a sub-coordinator (shared/protos/pins-view.ts), at the top of its detail. */
+.sfp-p3 .p3-pins { display: flex; flex-direction: column; gap: 4px; }
+.sfp-p3 .p3-pins:empty { display: none; }
+.sfp-p3 .p3-pin { border: 1px solid var(--sf-border); border-radius: 8px; background: var(--p3-raised); }
+.sfp-p3 .p3-pin > summary { padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.sfp-p3 .p3-pin[open] > summary { border-bottom: 1px solid var(--sf-border); }
+.sfp-p3 .p3-pin-doc { max-height: 40vh; overflow: auto; padding: 6px 12px; overflow-wrap: anywhere; }
+.sfp-p3 .p3-pin-doc table { display: block; overflow-x: auto; }
