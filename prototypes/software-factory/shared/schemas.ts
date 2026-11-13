@@ -41,7 +41,7 @@ export const Worker = Schema.Struct({
 })
 export type Worker = typeof Worker.Type
 
-const DraftAction = Schema.Literals(["council", "debate", "research", "hyperresearch"])
+const DraftAction = Schema.Literals(["council", "debate", "research", "hyperresearch", "deep-research"])
 export const Draft = Schema.Struct({
   versions: Schema.Array(
     Schema.Struct({

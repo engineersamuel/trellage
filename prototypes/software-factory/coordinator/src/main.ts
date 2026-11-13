@@ -1170,10 +1170,10 @@ const goalPage = makeGoalPage({
   folders: () => threads.folders().filter((f) => f.path),
   knownSteps: () => steps().map((step) => step.id),
   goals,
-  startResearch: async (folderId, brief) => {
+  startResearch: async (folderId, brief, action = "research") => {
     const t = drafts.create(folderId, brief)
-    const d = await drafts.act(t.id, "research")
-    const r = d.reports.find((x) => x.action === "research")!
+    const d = await drafts.act(t.id, action)
+    const r = d.reports.find((x) => x.action === action)!
     return { threadId: t.id, workerId: r.workerId, worktree: t.worktree!, report: r.path }
   },
   workerState: (id) => factory.workers.get(id)?.summary(),
@@ -1836,7 +1836,7 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/api\/drafts\/([^/]+)\/dismiss$/, (_req, _url, [id]) => draftReply(async () => drafts.dismiss(id!))],
   [
     "POST",
-    /^\/api\/drafts\/([^/]+)\/(council|debate|research|hyperresearch)$/,
+    /^\/api\/drafts\/([^/]+)\/(council|debate|research|hyperresearch|deep-research)$/,
     (_req, _url, [id, action]) => draftReply(() => drafts.act(id!, action as DraftAction)),
   ],
   ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => draftReply(() => drafts.run(id!))],

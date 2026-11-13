@@ -12,6 +12,7 @@ const ACTIONS = [
   ["debate", "⚖", "Debate"],
   ["research", "🔎", "Research"],
   ["hyperresearch", "📚", "Hyperresearch"],
+  ["deep-research", "🌐", "Deep research"],
   ["run", "▶", "Run"],
 ] as const
 type Action = (typeof ACTIONS)[number][0]

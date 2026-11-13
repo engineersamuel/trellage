@@ -568,7 +568,7 @@ details.reads summary{cursor:pointer;color:var(--muted)}
 .pvhead .lv{display:flex;align-items:center;gap:6px}
 .pvhead .lv i{width:6px;height:6px;border-radius:50%;background:var(--add)}
 
-/* deep research (Jev decides if, when and how deep) */
+/* RPI research (Jev decides if, when and how deep) */
 .dstrip{position:sticky;top:-16px;box-shadow:0 -16px 0 #0c0b0a;z-index:5;padding:10px 14px;border-radius:16px 16px 0 0;background:#15120f;border-bottom:1px solid #2c2722;display:flex;flex-direction:column;gap:7px}
 .dsrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 .dlab{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
@@ -1610,7 +1610,7 @@ function pReady(){
   ${r.map((x,i) => { const mv = S.moved?.dim===x.dim ? S.moved : null, grow = mv?.fresh && mv.from != null;
     const d = mv && mv.from != null && mv.to != null ? mv.to - mv.from : null;
     return `<div class="rd" data-rd="${esc(x.dim)}"><div class="t"><b>${x.dim}</b><span class="mono" style="color:${passes(x)?"var(--add)":"var(--warn)"}">${S.rescoring?.dim===x.dim?`<span class="spin"></span> re-scoring… `:""}${x.p==null?(S.rdy?"Jev unavailable":"scoring…"):p2(x.p)} ${x.p==null?(S.rdy?"· counts as below bar":""):passes(x)?"✓":"· below bar"}${d!=null?`<span class="mv ${d>0.004?"":d<-0.004?"down":"flat"}">${d>0.004?"▲":d<-0.004?"▼":"="} from ${p2(mv.from)}</span>`:""}</span></div><div class="bar"><i style="width:${((grow?mv.from:x.p)??0)*100}%;background:${DIMC[i]}" ${grow?`data-grow="${(x.p??0)*100}"`:""}></i><span class="th" title="threshold ${T}" style="left:${T*100}%"></span></div><div class="note">${noteOf(x)}</div>${passes(x) ? "" : fixArea(x)}</div>`; }).join("")}
-  ${S.deep.result ? `<div class="rd rpi"><div class="t"><b>Plan-ready (RPI)</b><span class="mono ${READINESS_CLS[S.deep.result.readiness]||""}">${esc(S.deep.result.readiness)}</span></div><div class="note">Planning Readiness from the deep research artifact. A 4th signal: it is not part of the ${T} gauge.${deepStale()?" Researched an older version.":""}</div></div>` : ""}
+  ${S.deep.result ? `<div class="rd rpi"><div class="t"><b>Plan-ready (RPI)</b><span class="mono ${READINESS_CLS[S.deep.result.readiness]||""}">${esc(S.deep.result.readiness)}</span></div><div class="note">Planning Readiness from the RPI research artifact. A 4th signal: it is not part of the ${T} gauge.${deepStale()?" Researched an older version.":""}</div></div>` : ""}
   ${nj?.state==="err" ? errBox(`Notes failed: ${nj.err}`, "renotes") : ""}
   ${weak.length ? `<div class="warnbox">⚠ ${weakTxt(weak)} ${weak.every(x=>x.p==null)?`${weak.length>1?"have":"has"} no Jev score, so ${weak.length>1?"they count":"it counts"} as below`:"below"} ${T}. This is a warning, not a block. Launch asks for one line on why.</div>
     <div class="lock">Raise it: accept more criteria or constraints, or sharpen the task. Jev re-scores after every change.</div>` : `<div class="okbox">✓ All three clear the bar.</div>`}
@@ -1643,9 +1643,9 @@ function fixArea(x){
 }
 function deepLaunchInfo(){
   const D = S.deep;
-  if(deepActive()) return `<div class="warnbox">🔬 Deep research is still running (${D.run.state==="mapping"?"mapping the result":`<span data-deepel>${mmss(deepEl())}</span>`}). The run can only read it if you wait: the server cannot hand it over later. Pick one.</div>`;
-  if(D.result?.artifactPath) return `<div class="okbox">🔬 The run reads the deep research before planning: <span class="mono">${esc(D.result.artifactPath)}</span>${deepStale()?` <span class="no">(researched an older version)</span>`:""}</div>`;
-  return `<div class="lock" style="margin:6px 0">🔬 No deep research for this run · ${esc(deepState().text)}</div>`;
+  if(deepActive()) return `<div class="warnbox">🔬 RPI research is still running (${D.run.state==="mapping"?"mapping the result":`<span data-deepel>${mmss(deepEl())}</span>`}). The run can only read it if you wait: the server cannot hand it over later. Pick one.</div>`;
+  if(D.result?.artifactPath) return `<div class="okbox">🔬 The run reads the RPI research before planning: <span class="mono">${esc(D.result.artifactPath)}</span>${deepStale()?` <span class="no">(researched an older version)</span>`:""}</div>`;
+  return `<div class="lock" style="margin:6px 0">🔬 No RPI research for this run · ${esc(deepState().text)}</div>`;
 }
 function pLaunch(){
   const r = scores(), weak = r.filter(x => !passes(x)), x = S.exp, ex = J.expectations;
@@ -1656,7 +1656,7 @@ function pLaunch(){
     <div class="res"><div class="kv"><span class="k">Saved</span><span class="v">${esc(R.savedPath)}</span><button class="btn sm ghost" data-act="copy" data-v="${esc(R.savedPath)}">Copy</button></div>
     <div class="kv"><span class="k">Command</span><span class="v">${esc(R.command)}</span><button class="btn sm ghost" data-act="copy" data-v="${esc(R.command)}">Copy</button></div>
     ${R.threadId ? `<div class="kv"><span class="k">Thread</span><span class="v">${esc(R.threadId)}</span><a class="btn sm ghost" href="/?thread=${encodeURIComponent(R.threadId)}">Open in Inbox</a></div>` : `<div class="kv"><span class="k">Thread</span><span class="v" style="font-family:inherit;color:var(--dim)">none (no run started)</span></div>`}
-    <div class="kv"><span class="k">Research</span><span class="v"${S.launchedRes?"":` style="font-family:inherit;color:var(--dim)"`}>${S.launchedRes ? esc(S.launchedRes) : "none (launched without deep research)"}</span></div>
+    <div class="kv"><span class="k">Research</span><span class="v"${S.launchedRes?"":` style="font-family:inherit;color:var(--dim)"`}>${S.launchedRes ? esc(S.launchedRes) : "none (launched without RPI research)"}</span></div>
     ${S.override ? `<div class="kv"><span class="k">Override</span><span class="v" style="font-family:inherit">“${esc(S.override)}”</span></div>`:""}</div>
     <div class="lock" style="margin-top:8px">Spec id <span class="mono">${esc(R.spec?.id)}</span> · ${S.doc.criteria.length} locked AC · ${x.gates.filter(g=>g.run).length} gates run · tier ${esc(x.tier.value)}</div>
     <div class="foot nav">${backBtn()}<span class="lock">Use Reset to start a new goal.</span></div>`;
@@ -1701,7 +1701,7 @@ function renderCard(){
       <div class="gmeta"><span>${repo?`${esc(repo.name)} · ${esc(repo.base)}`:"no repo yet"}</span>${S.started?`<span class="mono">${esc(S.docId)}</span>`:""}${x?`<span>${esc(x.tier.value)} · ${x.limits.runs} runs × ${x.limits.minutesPerRun} min</span>`:""}</div>
       ${S.proposals.length?`<button class="pendchip" data-act="go" data-v="3">● ${S.proposals.length} proposal${S.proposals.length>1?"s":""} waiting</button>`:""}
     </div>
-    <div class="gauge">${gaugeSVG(r)}<div class="legend">${r.map((x,i)=>`<div><span class="sw" style="background:${DIMHEX[i]}"></span>${x.dim}<span class="v ${passes(x)?"":"low"}">${p2(x.p)}</span><span class="ok">${passes(x)?"✓":""}</span></div>`).join("")}${S.deep.result ? `<div class="rpi" title="Planning Readiness from the deep research artifact. Not part of the readiness gauge."><span class="sw" style="background:transparent;border:1px solid var(--muted)"></span>Plan-ready (RPI)<span class="rv ${READINESS_CLS[S.deep.result.readiness]||""}">${esc(S.deep.result.readiness)}</span></div>` : ""}<div class="lock" style="margin-top:2px">bar ${T} ┃ · Jev</div></div></div></div>`;
+    <div class="gauge">${gaugeSVG(r)}<div class="legend">${r.map((x,i)=>`<div><span class="sw" style="background:${DIMHEX[i]}"></span>${x.dim}<span class="v ${passes(x)?"":"low"}">${p2(x.p)}</span><span class="ok">${passes(x)?"✓":""}</span></div>`).join("")}${S.deep.result ? `<div class="rpi" title="Planning Readiness from the RPI research artifact. Not part of the readiness gauge."><span class="sw" style="background:transparent;border:1px solid var(--muted)"></span>Plan-ready (RPI)<span class="rv ${READINESS_CLS[S.deep.result.readiness]||""}">${esc(S.deep.result.readiness)}</span></div>` : ""}<div class="lock" style="margin-top:2px">bar ${T} ┃ · Jev</div></div></div></div>`;
   let body;
   if(!S.started){
     body = S.discRunning
@@ -1855,10 +1855,10 @@ function runResearch(id){
 }
 function proposed(ok, line, idea){ if(ok){ if(idea) S.ideaN++; render(); say(line, "happy", 1000); } }
 
-/* ---------- deep research: a REAL hve-core rpi-research worker; Jev decides if, when and how deep ---------- */
+/* ---------- RPI research: a REAL hve-core rpi-research worker; Jev decides if, when and how deep ---------- */
 // Jev's questions, copied from server.ts DEEP (shown in the "Why?" popover).
 const DEEPQ = {
-  need: "Would deep research (web sources, alternatives, counter-evidence) likely change this goal or how it should be planned? Small, well-known changes do not need it.",
+  need: "Would RPI research (more context from the repository and docs, alternatives, counter-evidence) likely change this goal or how it should be planned? Small, well-known changes do not need it.",
   stable: "Is the scope of this goal stable enough to research now: task, criteria and constraints are settled and unlikely to change much?",
   depth: "How deep should research go for this goal?",
   depthOpts: {focused:"a bounded change with known files; research deeply but narrowly", balanced:"a normal change with some open alternatives", expansive:"a broad or novel change; the decision space is largely unknown"},
@@ -1913,17 +1913,17 @@ function deepSpeak(force){
   D.said = sig;
   let text = null, conf = null;
   const dep = d ? `Depth: ${deepDepth()}${D.depthYou ? " (your choice)" : ` (${pct(d.depth.p)})`}.` : "";
-  if(st.key==="no"){ conf = sureOf(d.need.p); text = `Deep research: not needed. Only ${pct(d.need.p)} < ${pct(d.need.threshold)} that it would change the plan. Click “Research anyway” if you disagree.`; }
-  else if(st.key==="wait"){ conf = sureOf(d.stable.p); text = `Deep research is needed (${pct(d.need.p)} ≥ ${pct(d.need.threshold)}), but the scope is not stable yet (${pct(d.stable.p)} < ${pct(d.stable.threshold)}). I'll start it by myself when it is.`; }
-  else if(st.key==="later"){ conf = sureOf(d.need.p); text = `Deep research is needed (${pct(d.need.p)} ≥ ${pct(d.need.threshold)}) and the scope looks stable (${pct(d.stable.p)}). I'll start it when you finish Review, so the interview can still change the scope.`; }
-  else if(st.key==="off") text = "I could not decide on deep research: Jev is not reachable. Start it yourself if you want it.";
-  else if(st.key==="run" && D.run.by==="jev"){ conf = Math.min(sureOf(d.need.p), sureOf(d.stable.p)); text = `I'm starting deep research: ${pct(d.need.p)} ≥ ${pct(d.need.threshold)} that it changes the plan; scope looks stable (${pct(d.stable.p)}). ${dep} It takes minutes; keep working.`; }
-  else if(st.key==="run") text = d?.available ? `You chose to research. I had ${pct(d.need.p)} ${d.need.yes?"≥":"<"} ${pct(d.need.threshold)} for “needed”. Starting at ${D.run.depth} depth; it takes minutes.` : `You started deep research at ${D.run.depth} depth. It takes minutes; keep working.`;
-  else if(st.key==="skip") text = "You skipped deep research. I won't start it unless you click “Research anyway” or “Let Jev decide”.";
+  if(st.key==="no"){ conf = sureOf(d.need.p); text = `RPI research: not needed. Only ${pct(d.need.p)} < ${pct(d.need.threshold)} that it would change the plan. Click “Research anyway” if you disagree.`; }
+  else if(st.key==="wait"){ conf = sureOf(d.stable.p); text = `RPI research is needed (${pct(d.need.p)} ≥ ${pct(d.need.threshold)}), but the scope is not stable yet (${pct(d.stable.p)} < ${pct(d.stable.threshold)}). I'll start it by myself when it is.`; }
+  else if(st.key==="later"){ conf = sureOf(d.need.p); text = `RPI research is needed (${pct(d.need.p)} ≥ ${pct(d.need.threshold)}) and the scope looks stable (${pct(d.stable.p)}). I'll start it when you finish Review, so the interview can still change the scope.`; }
+  else if(st.key==="off") text = "I could not decide on RPI research: Jev is not reachable. Start it yourself if you want it.";
+  else if(st.key==="run" && D.run.by==="jev"){ conf = Math.min(sureOf(d.need.p), sureOf(d.stable.p)); text = `I'm starting RPI research: ${pct(d.need.p)} ≥ ${pct(d.need.threshold)} that it changes the plan; scope looks stable (${pct(d.stable.p)}). ${dep} It takes minutes; keep working.`; }
+  else if(st.key==="run") text = d?.available ? `You chose to research. I had ${pct(d.need.p)} ${d.need.yes?"≥":"<"} ${pct(d.need.threshold)} for “needed”. Starting at ${D.run.depth} depth; it takes minutes.` : `You started RPI research at ${D.run.depth} depth. It takes minutes; keep working.`;
+  else if(st.key==="skip") text = "You skipped RPI research. I won't start it unless you click “Research anyway” or “Let Jev decide”.";
   else if(st.key==="map") text = "The research worker is done. Turning the research into edits…";
   else if(st.key==="done"){ const R = D.result, e = R.findings.filter(f=>f.jev.change).length, c = R.findings.length - e;
-    text = `Deep research is done: ${e} edit${e===1?"":"s"} to review, ${c} saved as context, ${R.decisions.length} decision${R.decisions.length===1?"":"s"}. Plan-ready: ${R.readiness}.${S.stage!==7?" See them in Ready.":""}`; }
-  else if(st.key==="fail") text = `Deep research failed: ${D.run.err}`;
+    text = `RPI research is done: ${e} edit${e===1?"":"s"} to review, ${c} saved as context, ${R.decisions.length} decision${R.decisions.length===1?"":"s"}. Plan-ready: ${R.readiness}.${S.stage!==7?" See them in Ready.":""}`; }
+  else if(st.key==="fail") text = `RPI research failed: ${D.run.err}`;
   if(!text) return;
   const low = st.key==="fail" || st.key==="off" || (conf != null && isLow(conf));
   const p = low ? "worried" : st.key==="done" ? "happy" : "neutral";
@@ -2012,19 +2012,19 @@ function deepStrip(){
   else if(r?.state==="failed") bt += btn("deepany", "↻ Retry", "", "Start the research again") + btn("deepskip", "✕ Skip research", "ghost");
   else if(D.result){ if(deepStale()) bt += btn("deeprerun", "↻ Re-run", "", "Jev re-decides on the current card"); if(S.stage!==7) bt += btn("deepgo", "See results"); }
   else if(D.mode==="skipped") bt += btn("deepany", "Research anyway") + btn("deepauto", "Let Jev decide", "ghost");
-  else if(d && !d.available) bt += btn("deepany", "▶ Start deep research", "primary") + btn("deepskip", "✕ Skip research", "ghost");
+  else if(d && !d.available) bt += btn("deepany", "▶ Start RPI research", "primary") + btn("deepskip", "✕ Skip research", "ghost");
   else if(d && !d.need.yes) bt += btn("deepany", "Research anyway", "", "Start a real research worker now") + btn("deepskip", "✕ Skip research", "ghost", "Never auto-start for this goal");
   else if(d) bt += btn("deepany", "Start now", "", "Don't wait for Jev's conditions") + btn("deepskip", "✕ Skip research", "ghost", "Never auto-start for this goal");
   const jd = d?.available ? d.depth.value : null;
   const seg = `<span class="lock">Depth</span><span class="seg" role="group" aria-label="Change depth">${DEPTHS.map(x => `<button class="${deepDepth()===x?"on":""}" data-act="deepdepth" data-v="${x}" title="${esc(DEEPQ.depthOpts[x])}${x===jd?" · Jev's pick":""}">${x===jd?`<span class="minijev"></span>`:""}${x}</button>`).join("")}</span>${D.depthYou?`<span class="dby you" title="You chose the depth">You chose ${esc(D.depthYou)}</span>`:jd?`<span class="lock">Jev's pick</span>`:""}`;
   const prog = act || r?.state==="done" && r.threadId ? `<div class="dprog">${r.state==="running"?`<span><span class="mono" data-deepel>${mmss(deepEl())}</span> elapsed</span><span>${r.events} events</span>${r.artifact?`<span class="yes">✓ artifact written</span>`:""}`:r.state==="mapping"?`<span>Turning the research into edits…</span>`:r.state==="starting"?`<span>Starting the worker…</span>`:""}${r.threadId?`<a href="/?thread=${encodeURIComponent(r.threadId)}" target="_blank" rel="noopener">Open in Inbox ↗</a>`:""}</div>` : "";
   const err = r?.state==="failed" ? `<div class="lerr">⚠ ${esc(r.err)}</div>` : "";
-  return `<div class="dstrip" aria-label="Deep research status"><div class="dsrow"><span class="dlab">Deep research</span>${deepChip()}<button class="dwhy" data-act="deepwhy" aria-expanded="${D.whyOpen}">Why?</button></div>${prog}${err}${D.whyOpen ? deepWhy() : ""}<div class="dbtns">${bt}${seg}</div></div>`;
+  return `<div class="dstrip" aria-label="RPI research status"><div class="dsrow"><span class="dlab">RPI research</span>${deepChip()}<button class="dwhy" data-act="deepwhy" aria-expanded="${D.whyOpen}">Why?</button></div>${prog}${err}${D.whyOpen ? deepWhy() : ""}<div class="dbtns">${bt}${seg}</div></div>`;
 }
 function deepWhy(){
   const d = S.deep.dec;
   if(!d) return `<div class="dpop">Jev has not decided yet.</div>`;
-  if(!d.available) return `<div class="dpop"><h5>Jev's decision</h5>Jev did not answer${d.err?`: ${esc(d.err)}`:""}. Nothing starts by itself; use “Start deep research”.</div>`;
+  if(!d.available) return `<div class="dpop"><h5>Jev's decision</h5>Jev did not answer${d.err?`: ${esc(d.err)}`:""}. Nothing starts by itself; use “Start RPI research”.</div>`;
   const yn = (x, thr) => `<div class="dqh"><span>${x.yes?`<span class="yes">yes</span>`:`<span class="no">no</span>`}</span><span class="mono">${pct(x.p)} ${x.yes?"≥":"<"} ${pct(thr)}</span></div><div class="dbar"><i style="width:${(x.p??0)*100}%"></i><s style="left:${thr*100}%"></s></div>`;
   const pr = d.depth.probabilities || {};
   return `<div class="dpop" role="region" aria-label="Why Jev decided this"><h5>Jev's 3 questions (live, ~0.1 s)</h5>
@@ -2037,13 +2037,13 @@ function deepRail(){
   if(!S.started) return "";
   const R = S.deep.result;   // still to handle: edits not proposed/skipped yet + unanswered decisions
   const n = R ? R.findings.filter(f => { if(!f.jev.change) return false; const c = patchCand(f.proposal.section, f.proposal.add); return c && !dismissed(c.id); }).length + R.decisions.filter(q => !S.deep.answers[q.id]).length : 0;
-  return `<button class="drail" data-act="deepgo" title="Open the research results (Ready stage)"><span class="dlab">🔬 Deep research${n?`<span class="pill">${n} to review</span>`:""}</span><span class="dsrow">${deepChip()}</span></button>`;
+  return `<button class="drail" data-act="deepgo" title="Open the research results (Ready stage)"><span class="dlab">🔬 RPI research${n?`<span class="pill">${n} to review</span>`:""}</span><span class="dsrow">${deepChip()}</span></button>`;
 }
 // Ready stage: everything the research produced.
 function deepPanel(){
   if(!S.started) return "";
   const D = S.deep, R = D.result, st = deepState();
-  const head = `<h3>🔬 Deep research ${deepChip()}</h3>`;
+  const head = `<h3>🔬 RPI research ${deepChip()}</h3>`;
   if(!R){
     const body = deepActive() ? `<div class="dsay">A real <span class="mono">rpi-research</span> worker is running (minutes). Results land here: edits to review, context, decisions.</div>`
       : `<div class="dsay">No research result yet. Controls are on the card header (Research anyway / Skip / Depth).</div>`;
@@ -2208,7 +2208,7 @@ const ACT = {
   },
   deepwhy(){ S.deep.whyOpen = !S.deep.whyOpen; render(); },
   deepgo(){ if(S.started) go(7); setTimeout(() => document.querySelector(".dsec")?.scrollIntoView({block:"start", behavior:"smooth"}), 50); },
-  deepprop(v){ const f = S.deep.result?.findings[+v]; if(!f) return; if(propose(f.proposal.section, f.proposal.add, `Deep research${f.contrarian?" (counter-evidence)":""}`)){ S.proposals.at(-1).deep = true; render(); say("Proposed. Accept it in the card.", "happy", 1000); } },
+  deepprop(v){ const f = S.deep.result?.findings[+v]; if(!f) return; if(propose(f.proposal.section, f.proposal.add, `RPI research${f.contrarian?" (counter-evidence)":""}`)){ S.proposals.at(-1).deep = true; render(); say("Proposed. Accept it in the card.", "happy", 1000); } },
   deepans(v){ const i = v.lastIndexOf("|"); deepAnswer(v.slice(0,i), +v.slice(i+1)); },
   deepother(v){ S.deep.otherOpen = v; render(); $("#deepotherin")?.focus(); },
   deepothersave(v){ const t = ($("#deepotherin")?.value || S.deep.answers[v]?.other || "").trim(); if(!t){ $("#deepotherin")?.focus(); return; } deepAnswer(v, -1, t); },

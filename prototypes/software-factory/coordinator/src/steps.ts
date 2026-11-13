@@ -1,13 +1,13 @@
 // SDLC step catalog. Jev picks the next step from these descriptions; code holds the hard rules.
 import { execFileSync } from "node:child_process"
-import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
 import path from "node:path"
-import { parseEnv } from "node:util"
 import { choice, noul } from "@typesafe-ai/sdk"
 import { decisionsAvailable, systemOne } from "./decide.ts"
 import { guideOptimizeSkills } from "../../../../packages/trellage-launcher/src/guide-optimize-catalog.ts"
 import { catalogNames, loadPrompt, promptFile } from "./prompt.ts"
 import { recordCase } from "./promptEval.ts"
+import { userEnv } from "./mcp.ts"
 
 export type Step = {
   id: string
@@ -28,6 +28,8 @@ export type Step = {
   subagentRoute?: string
   /** Run in the Claude Agent SDK or Pi SDK with these trx profiles, for skills and plugins built for that harness. Default: Copilot SDK. */
   harness?: HarnessSpec
+  /** MCP servers the worker gets, in every SDK (names from src/mcp.ts). */
+  mcp?: string[]
 }
 
 /** A non-Copilot harness: trx profiles composed for it, and an optional command that starts the profile's workflow. */
@@ -56,6 +58,7 @@ const stepMeta = (id: string, meta: Record<string, unknown>) => {
     ...(typeof meta.gate_tools === "boolean" ? { gateTools: meta.gate_tools } : {}),
     ...(meta.factory_only === true ? { factoryOnly: true } : {}),
     ...(typeof meta.subagent_route === "string" ? { subagentRoute: meta.subagent_route } : {}),
+    ...(meta.mcp !== undefined ? { mcp: strings("mcp") } : {}),
     ...(h
       ? {
           harness: {
@@ -146,6 +149,10 @@ export const ensureClones = (dir: string, repos: Record<string, Repo>): void => 
   }
 }
 
+/** Skills shipped with the factory (coordinator/skills). A step names this folder as `$factory` in skill_dirs. */
+export const FACTORY_SKILLS = path.join(import.meta.dir, "..", "skills")
+const skillDir = (skillRoot: string, d: string) => (d === "$factory" ? FACTORY_SKILLS : path.join(skillRoot, d))
+
 export type StepSetup = { skillDirectories: string[]; extraPath: string[]; prefix: string }
 
 /** What a worker on this step loads: skill directories, PATH additions, and the task's prefix. */
@@ -154,7 +161,7 @@ export const stepSetup = (step: Step | null, skillRoot: string, toolRoot: string
   const gate = step.gateTools ?? true
   const tools = Object.keys(TOOL_REPOS)
   return {
-    skillDirectories: step.skillDirs ? step.skillDirs.map((d) => path.join(skillRoot, d)) : [skillRoot],
+    skillDirectories: step.skillDirs ? step.skillDirs.map((d) => skillDir(skillRoot, d)) : [skillRoot],
     extraPath: gate ? tools.map((t) => path.join(toolRoot, t)) : [],
     prefix: [
       ...step.skills.map((k) => `Use the ${k} skill.`),
@@ -231,22 +238,7 @@ export const stepById = (id: string): Step => {
 }
 
 /** TypeSafe key: process env, then the private Trellage user environment file. */
-export const jevKey = (env = process.env): string | undefined => {
-  if (env.TYPESAFE_API_KEY?.trim()) return env.TYPESAFE_API_KEY.trim()
-  const dir = env.XDG_CONFIG_HOME
-    ? path.join(env.XDG_CONFIG_HOME, "trellage")
-    : path.join(env.HOME ?? "", ".config", "trellage")
-  for (const name of [".env.local", ".env"]) {
-    const file = path.join(dir, name)
-    try {
-      const st = lstatSync(file)
-      if (!st.isFile() || (st.mode & 0o077) !== 0) continue
-      const v = parseEnv(readFileSync(file, "utf8")).TYPESAFE_API_KEY?.trim()
-      if (v) return v
-    } catch {}
-  }
-  return undefined
-}
+export const jevKey = (env = process.env): string | undefined => userEnv("TYPESAFE_API_KEY", env)
 
 export type Decision = {
   moreWork: number

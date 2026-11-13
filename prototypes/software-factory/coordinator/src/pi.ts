@@ -2,14 +2,19 @@
 // Its events are mapped to the Copilot event names the factory, feed and UIs already use.
 import {
   createAgentSession,
+  createMcpExtension,
   DefaultResourceLoader,
+  type McpServerEntry,
   parseSkillBlock,
   SessionManager,
   type AgentSession,
   type AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent"
 import path from "node:path"
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import * as fs from "node:fs"
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { registerRequiredChildExtensions } from "pi-subagents/required-child-extensions"
+import { takeFromFile } from "./pi-budget.ts"
 import { prepareRun } from "../../../../packages/trellage-runtime/src/native-run/run.ts"
 import type { HarnessEvent } from "./claude.ts"
 import { forbiddenCommand } from "./guard.ts"
@@ -21,6 +26,53 @@ export type PiLaunch = {
   provider: string
   model: string
   thinking: string
+}
+
+/**
+ * pi-subagents (pinned in package.json): gives every Pi worker a `subagent` tool, as Claude (Task) and Copilot (task)
+ * have built in. Its entry is the package's `pi.extensions` manifest.
+ */
+export const piSubagentsExtension = (): string => {
+  const root = path.dirname(require.resolve("pi-subagents/package.json"))
+  const entry = (JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as { pi: { extensions: string[] } })
+    .pi.extensions[0]!
+  return path.join(root, entry)
+}
+
+const PI_ANGLE_AGENT = path.join(import.meta.dir, "..", "skills", "deep-research", "pi-agents", "research-angle.md")
+
+/**
+ * Pi's MCP extension and pi-subagents find mcp.json and agents through the process-wide agent dir
+ * (PI_CODING_AGENT_DIR), not the session's. So the factory owns one: a copy of the composed Pi agent dir (provider,
+ * models) plus the step's servers in mcp.json (0600) and the deep-research angle agent. Subagent children, in this
+ * process or in pi-subagents' detached runner, load them from there. Parent sessions keep their explicit agent dir.
+ */
+export const usePiSubagentDir = (launch: PiLaunch, servers: McpServerEntry[], dest: string): void => {
+  if (!servers.length) return
+  mkdirSync(dest, { recursive: true, mode: 0o700 })
+  cpSync(launch.agentDir, dest, { recursive: true, dereference: false })
+  const file = path.join(dest, "mcp.json")
+  writeFileSync(
+    file,
+    JSON.stringify({ mcpServers: Object.fromEntries(servers.map((s) => [s.name, s.config])) }, null, 2),
+    {
+      mode: 0o600,
+    },
+  )
+  chmodSync(file, 0o600)
+  mkdirSync(path.join(dest, "agents"), { recursive: true })
+  cpSync(PI_ANGLE_AGENT, path.join(dest, "agents", path.basename(PI_ANGLE_AGENT)))
+  process.env.PI_CODING_AGENT_DIR = dest
+}
+
+const PI_BUDGET_EXTENSION = path.join(import.meta.dir, "pi-budget-ext.ts")
+
+/** A worker's Perplexity budget file, fresh. Children find it through SF_PERPLEXITY_BUDGET_FILE. */
+export const piBudgetFile = (file: string, limits: { max: number; maxResearch: number }): string => {
+  mkdirSync(path.dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify({ ...limits, calls: 0, research: 0 }))
+  process.env.SF_PERPLEXITY_BUDGET_FILE = file
+  return file
 }
 
 /** Values of each repeated `--flag value` in a trx launch command. */
@@ -139,7 +191,11 @@ export const piEvents = (
       const file = e.toolName === "read" && typeof e.args?.path === "string" ? path.resolve(cwd, e.args.path) : null
       const skill = file && skills.find((s) => path.resolve(s.filePath) === file)
       return [
-        ev("tool.execution_start", { toolCallId: e.toolCallId, toolName: e.toolName, arguments: e.args }),
+        ev("tool.execution_start", {
+          toolCallId: e.toolCallId,
+          toolName: e.toolName,
+          arguments: e.args,
+        }),
         ...(skill ? [ev("skill.invoked", { name: skill.name })] : []),
       ]
     }
@@ -179,6 +235,7 @@ export class PiSession {
     private readonly s: AgentSession,
     private readonly emit: (ev: HarnessEvent) => void,
     cwd: string,
+    private readonly mcp: McpServerEntry[] = [],
   ) {
     this.skills = s.resourceLoader.getSkills().skills.map(({ name, filePath }) => ({ name, filePath }))
     s.subscribe((e) => {
@@ -187,27 +244,46 @@ export class PiSession {
     })
   }
 
-  static async start(launch: PiLaunch, cwd: string, emit: (ev: HarnessEvent) => void): Promise<PiSession> {
+  /** `mcp`: the step's servers. Pi's MCP extension loads only these, never an mcp.json from the agent dir or repo. */
+  static async start(
+    launch: PiLaunch,
+    cwd: string,
+    emit: (ev: HarnessEvent) => void,
+    mcp: McpServerEntry[] = [],
+    budget?: string,
+  ): Promise<PiSession> {
+    const toolGuard = budget ? (name: string) => takeFromFile(budget, name, fs) : undefined
     const resourceLoader = new DefaultResourceLoader({
       cwd,
       agentDir: launch.agentDir,
       noSkills: true,
       additionalSkillPaths: launch.skills,
       noExtensions: true,
-      additionalExtensionPaths: launch.extensions,
+      additionalExtensionPaths: [
+        ...launch.extensions.filter((e) => e !== "builtin:mcp"),
+        ...(mcp.length ? ["builtin:mcp"] : []),
+        piSubagentsExtension(),
+      ],
       noPromptTemplates: true,
       // The factory gate: never merge, push, or delete branches or worktrees.
       extensionFactories: [
         (pi) => {
-          pi.on("tool_call", (e) =>
-            e.toolName === "bash" && forbiddenCommand(String((e.input as { command?: unknown }).command ?? ""))
-              ? {
-                  block: true,
-                  reason: "Workers never merge, push, or delete branches or worktrees. Report it to the coordinator.",
-                }
-              : undefined,
-          )
+          pi.on("tool_call", (e) => {
+            if (e.toolName === "bash" && forbiddenCommand(String((e.input as { command?: unknown }).command ?? "")))
+              return {
+                block: true,
+                reason: "Workers never merge, push, or delete branches or worktrees. Report it to the coordinator.",
+              }
+            const reason = toolGuard?.(e.toolName)
+            return reason ? { block: true, reason } : undefined
+          })
         },
+        // Reads mcp.json from the factory-owned agent dir (usePiSubagentDir): pi-subagents hands only servers
+        // configured there to its children.
+        // As the pi CLI registers it: pi-subagents only hands built-in MCP tools to children from `builtin:mcp`.
+        ...(mcp.length
+          ? [{ name: "mcp", builtin: true as const, replaceable: true, factory: createMcpExtension() }]
+          : []),
       ],
     })
     await resourceLoader.reload()
@@ -221,7 +297,16 @@ export class PiSession {
     const model = session.modelRuntime.getModel(launch.provider, launch.model)
     if (!model) throw new Error(`Pi model ${launch.provider}/${launch.model} not found`)
     await session.setModel(model)
-    return new PiSession(session, emit, cwd)
+    // The MCP extension connects its servers on session_start, which only bindExtensions sends (as the pi CLI does).
+    // Only for steps with MCP servers: other Pi workers keep today's behaviour.
+    if (mcp.length) await session.bindExtensions({ mode: "print" })
+    // Every pi-subagents child of this session loads the budget extension and counts in the same file.
+    if (budget)
+      registerRequiredChildExtensions({
+        sessionId: session.sessionId,
+        extensions: [{ id: "sf-perplexity-budget", path: PI_BUDGET_EXTENSION }],
+      })
+    return new PiSession(session, emit, cwd, mcp)
   }
 
   get model(): string {
@@ -239,13 +324,30 @@ export class PiSession {
         timestamp: at,
         data: { skills: this.skills.map((s) => ({ name: s.name, source: "pi", enabled: true, path: s.filePath })) },
       })
+      // Pi sends no such event; Copilot and Claude do. Pi connects in the background, so "configured", not "connected".
+      if (this.mcp.length)
+        this.emit({
+          type: "session.mcp_servers_loaded",
+          timestamp: at,
+          data: {
+            servers: this.mcp.map((m) => ({
+              name: m.name,
+              status: "configured",
+              source: "factory",
+            })),
+          },
+        })
     }
     this.emit({ type: "user.message", timestamp: at, data: { content: prompt } })
     this.emit({ type: "assistant.turn_start", timestamp: at, data: {} })
     const run = this.s.isStreaming ? this.s.followUp(prompt) : this.s.prompt(prompt)
     void Promise.resolve(run).catch((e) => {
       const t = new Date().toISOString()
-      this.emit({ type: "session.error", timestamp: t, data: { message: e instanceof Error ? e.message : String(e) } })
+      this.emit({
+        type: "session.error",
+        timestamp: t,
+        data: { message: e instanceof Error ? e.message : String(e) },
+      })
       this.emit({ type: "session.idle", timestamp: t, data: {} })
     })
   }

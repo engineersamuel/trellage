@@ -5,6 +5,7 @@ import { isolatedLauncher, reapRuntimes, recordRuntime, spawnIsolated } from "./
 import { factoryMcpServer, gateFromPermissions, MCP_SERVER, mcpToolNames } from "./claudetools.ts"
 import { imageTool } from "./images.ts"
 import { loadPrompt } from "./prompt.ts"
+import { claudeMcp, copilotMcp, mcpNote, perplexityBudget, piMcp, stepMcp, type McpServer } from "./mcp.ts"
 import type { CodeReview } from "./review.ts"
 import type { Sdlc } from "./sdlc.ts"
 import { type ChildProcess, execFileSync } from "node:child_process"
@@ -41,7 +42,8 @@ import {
   type Step,
 } from "./steps.ts"
 import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./claude.ts"
-import { composePi, withProxyModel, PiSession } from "./pi.ts"
+import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
+import { composePi, piBudgetFile, PiSession, usePiSubagentDir, withProxyModel } from "./pi.ts"
 import { configStore, factoryConfig, missingProfiles, userConfigPath, type FactoryConfig } from "./config.ts"
 import { setDecisionEngine } from "./decide.ts"
 import { acquireStateLock, migrateLegacyState, stateDir } from "./statedir.ts"
@@ -131,6 +133,10 @@ export type SpawnSpec = {
   shareRuntimeOf?: string
   /** The one conversation this agent serves; its answers are tagged with it. */
   threadId?: string
+  /** Refuses a tool call with a reason (e.g. the Perplexity budget), in every SDK; null allows it. */
+  toolGuard?: (toolName: string) => string | null
+  /** The Perplexity limits behind toolGuard; Pi shares them with its subagent children through a file. */
+  perplexityLimits?: { max: number; maxResearch: number }
 }
 
 export type WorkerSpec = {
@@ -145,7 +151,14 @@ export type WorkerSpec = {
 }
 
 /** One factory run: a git worktree of the target repo where every code worker writes. */
-export type Run = { id: string; repo: string; worktree: string; branch: string; base: string; dirty: boolean }
+export type Run = {
+  id: string
+  repo: string
+  worktree: string
+  branch: string
+  base: string
+  dirty: boolean
+}
 
 type Listener<T> = (value: T) => void
 
@@ -578,6 +591,14 @@ export class Factory {
     const step = spec.step ? stepById(spec.step) : null
     const missing = step ? missingProfiles(step.id, step.harness) : []
     if (missing.length) throw new Error(`refused: ${missing.join("; ")}`)
+    const mcp = stepMcp(step?.mcp ?? [])
+    const note = mcpNote(mcp)
+    if (note && spec.task) spec = { ...spec, task: `${spec.task}\n\n${note}` }
+    if (mcp.servers.perplexity) {
+      const limits = factoryConfig().mcp
+      const [max, maxResearch] = [limits.perplexity_max_calls, limits.perplexity_research_max_calls]
+      spec = { ...spec, toolGuard: perplexityBudget(max, maxResearch), perplexityLimits: { max, maxResearch } }
+    }
     // Skill preflight runs first, so a worker with an unusable skill fails before any model call.
     const { workdir, setup, skills } = this.prepareSpawn(spec, id, home, step)
     const setting = this.settings.workers.harness
@@ -594,7 +615,7 @@ export class Factory {
     )
     if (harness) {
       const pinned = routed ? { ...spec, model: routed.model } : spec
-      return this.spawnHarness(pinned, id, home, workdir, harness, skills, routed?.source)
+      return this.spawnHarness(pinned, id, home, workdir, harness, skills, routed?.source, mcp.servers)
     }
     const { model, source } = routed ?? (await this.spawnModel(spec))
     // A worker model the native Copilot runtime does not serve goes through copilot-proxy-rs (BYOK).
@@ -616,7 +637,11 @@ export class Factory {
       systemPrompt: spec.system ? `${spec.system.length} chars appended` : null,
       sessionId: spec.sessionId ?? null,
     }
-    worker.session = await this.openSession(client, spec, this.sessionConfig(spec, worker, model, workdir, setup, auth))
+    worker.session = await this.openSession(
+      client,
+      spec,
+      this.sessionConfig(spec, worker, model, workdir, setup, auth, mcp.servers),
+    )
     const prefix = setup.prefix
     return this.register(worker, spec.task && (prefix ? `${prefix}\n\n${spec.task}` : spec.task))
   }
@@ -630,6 +655,7 @@ export class Factory {
     harness: HarnessSpec,
     skills: SkillCheck[] = [],
     source?: ModelSource,
+    mcp: Record<string, McpServer> = {},
   ): Promise<Worker> {
     let worker: Worker | undefined
     const emit = (ev: HarnessEvent) => {
@@ -647,8 +673,9 @@ export class Factory {
             stepSkills,
             home,
             await this.subagentModel(spec, spec.step ? stepById(spec.step) : null),
+            mcp,
           )
-        : await this.piSession(spec, workdir, harness, emit, stepSkills)
+        : await this.piSession(spec, workdir, harness, emit, stepSkills, mcp)
     worker = new Worker(
       id,
       spec.name,
@@ -691,10 +718,12 @@ export class Factory {
     stepSkills: { name: string; dir: string }[] = [],
     home = workdir,
     subagent: string | null = null,
+    mcp: Record<string, McpServer> = {},
   ) {
     const launch = await composeClaude(harness.profiles, workdir)
     // Skills ask for `model: "sonnet"` subagents; the alias resolves to this model.
     if (subagent) launch.env.ANTHROPIC_DEFAULT_SONNET_MODEL = subagent
+    const claudeServers = claudeMcp(mcp)
     // The step's skills (ub-mode, security-audit, ...) load under their own names, as in a Copilot worker:
     // a .claude/skills folder in the worker's home, added as a working directory (a plugin would prefix them).
     const skillRoot = stepSkills.length ? stepSkillDir(path.join(home, "step-skills"), stepSkills) : null
@@ -708,21 +737,36 @@ export class Factory {
     const session = new ClaudeSession(
       {
         cwd: workdir,
-        env: launch.env,
+        env: { ...launch.env, ...claudeServers.env },
         plugins: launch.plugins.map((p) => ({ type: "local" as const, path: p })),
         ...(skillRoot ? { additionalDirectories: [skillRoot] } : {}),
         model,
         ...(launch.effort ? { effort: launch.effort as never } : {}),
         // default mode, so every permission prompt goes through the factory gate; bypassPermissions skips canUseTool.
         permissionMode: "default",
-        canUseTool: spec.permissions ? gateFromPermissions(spec.permissions) : claudeGate,
+        canUseTool: withToolGuard(
+          spec.toolGuard,
+          spec.permissions ? gateFromPermissions(spec.permissions) : claudeGate,
+        ),
         disallowedTools: ["AskUserQuestion"],
-        // Its tools (above) and its role prompt after Claude Code's.
-        ...(tools.length
-          ? { mcpServers: { [MCP_SERVER]: factoryMcpServer(tools) }, allowedTools: mcpToolNames(tools) }
+        // Its tools (above) and its role prompt after Claude Code's. A step's MCP servers (src/mcp.ts) join them.
+        ...(tools.length || Object.keys(mcp).length
+          ? {
+              mcpServers: {
+                ...claudeServers.config,
+                ...(tools.length ? { [MCP_SERVER]: factoryMcpServer(tools) } : {}),
+              },
+              ...(tools.length ? { allowedTools: mcpToolNames(tools) } : {}),
+            }
           : {}),
         ...(spec.system
-          ? { systemPrompt: { type: "preset" as const, preset: "claude_code" as const, append: spec.system } }
+          ? {
+              systemPrompt: {
+                type: "preset" as const,
+                preset: "claude_code" as const,
+                append: spec.system,
+              },
+            }
           : {}),
         // A coordinator keeps its memory across restarts (Claude session ids are UUIDs).
         ...(spec.sessionId
@@ -740,7 +784,11 @@ export class Factory {
         onExit: (message) => this.runtimeExited(session, `claude process exited (${message})`),
       },
     )
-    return { session, model, loaded: `plugins ${launch.plugins.map((p) => path.basename(p)).join(", ")}` }
+    return {
+      session,
+      model,
+      loaded: `plugins ${launch.plugins.map((p) => path.basename(p)).join(", ")}`,
+    }
   }
 
   private async piSession(
@@ -749,6 +797,7 @@ export class Factory {
     harness: HarnessSpec,
     emit: (ev: HarnessEvent) => void,
     stepSkills: { name: string; dir: string }[] = [],
+    mcp: Record<string, McpServer> = {},
   ) {
     const launch = await composePi(harness.profiles, workdir)
     launch.skills.push(...stepSkills.map((s) => s.dir))
@@ -756,8 +805,21 @@ export class Factory {
     const ready = spec.model
       ? withProxyModel(launch, spec.model, path.join(this.root, "pi-agents", crypto.randomUUID().slice(0, 8)))
       : launch
-    const session = await PiSession.start(ready, workdir, emit)
-    return { session, model: session.model, loaded: `skills ${launch.skills.map((p) => path.basename(p)).join(", ")}` }
+    const servers = piMcp(mcp)
+    usePiSubagentDir(ready, servers, path.join(this.root, "pi-subagent-dir"))
+    // Pi children run outside this process's guard, so the parent and every child count in one budget file.
+    const budget = spec.perplexityLimits
+      ? piBudgetFile(
+          path.join(this.root, "pi-budgets", `${crypto.randomUUID().slice(0, 8)}.json`),
+          spec.perplexityLimits,
+        )
+      : undefined
+    const session = await PiSession.start(ready, workdir, emit, servers, budget)
+    return {
+      session,
+      model: session.model,
+      loaded: `skills ${launch.skills.map((p) => path.basename(p)).join(", ")}`,
+    }
   }
 
   private async spawnModel(spec: SpawnSpec): Promise<{ model: string; source: ModelSource }> {
@@ -765,8 +827,14 @@ export class Factory {
     if (spec.role !== "worker" || !spec.task) return { model: this.defaultModel, source: { kind: "default" } }
     const routed = await this.routeModel(spec.task)
     if (!routed) return { model: this.defaultModel, source: { kind: "fallback" } }
-    this.publish("coordinator", "factory.model_routed", null, now(), { worker: spec.name, ...routed })
-    return { model: routed.id, source: { kind: "routed", by: routed.routedBy, confidence: routed.confidence } }
+    this.publish("coordinator", "factory.model_routed", null, now(), {
+      worker: spec.name,
+      ...routed,
+    })
+    return {
+      model: routed.id,
+      source: { kind: "routed", by: routed.routedBy, confidence: routed.confidence },
+    }
   }
 
   /** The step's subagent model: Jev's pick for the step's short subagent text (a whole task hides it), or null. */
@@ -817,7 +885,8 @@ export class Factory {
     const skillRoot = path.join(this.root, "skills")
     const toolRoot = path.join(this.root, "tools")
     const setup = stepSetup(step, skillRoot, toolRoot)
-    if (setup.skillDirectories.length) ensureClones(skillRoot, SKILL_REPOS)
+    // Skills shipped with the factory need no clone.
+    if (setup.skillDirectories.some((d) => d.startsWith(skillRoot))) ensureClones(skillRoot, SKILL_REPOS)
     if (setup.extraPath.length) ensureClones(toolRoot, TOOL_REPOS)
     if (!step || !setup.skillDirectories.length) return { workdir, setup, skills: [] as SkillCheck[] }
     // Only the step's own skills load: link them into the worker's home, healed copies first.
@@ -860,7 +929,11 @@ export class Factory {
   runtimeExited(client: unknown, message: string): void {
     const dead = [...this.workers.values()].filter((w) => w.client === client)
     for (const w of dead) {
-      const ev = { type: "session.error", timestamp: new Date().toISOString(), data: { message } } as SessionEvent
+      const ev = {
+        type: "session.error",
+        timestamp: new Date().toISOString(),
+        data: { message },
+      } as SessionEvent
       w.observe(this, ev)
       w.events.send(ev)
       this.workers.delete(w.id)
@@ -891,14 +964,17 @@ export class Factory {
     workdir: string,
     setup: ReturnType<typeof stepSetup>,
     auth: Auth,
+    mcp: Record<string, McpServer> = {},
   ): SessionConfig {
     return {
       onPermissionRequest: spec.permissions ?? workerPermissions,
+      ...(spec.toolGuard ? { hooks: { onPreToolUse: copilotToolGuard(spec.toolGuard) } } : {}),
       streaming: true,
       model,
       workingDirectory: workdir,
       tools: this.sessionTools(spec, workdir),
       ...(setup.skillDirectories.length ? { skillDirectories: setup.skillDirectories } : {}),
+      ...(Object.keys(mcp).length ? { mcpServers: copilotMcp(mcp) } : {}),
       // Registered before session.create so no startup event is lost.
       onEvent: (ev) => {
         worker.observe(this, ev)
@@ -906,7 +982,13 @@ export class Factory {
       },
       ...(spec.system ? { systemMessage: { mode: "append" as const, content: spec.system } } : {}),
       ...(auth === "proxy"
-        ? { provider: { type: "openai" as const, baseUrl: this.proxyUrl, apiKey: "copilot-proxy-rs" } }
+        ? {
+            provider: {
+              type: "openai" as const,
+              baseUrl: this.proxyUrl,
+              apiKey: "copilot-proxy-rs",
+            },
+          }
         : {}),
     } satisfies SessionConfig
   }
@@ -1066,7 +1148,10 @@ export class Factory {
   /** Tell every open UI the settings changed (also after a config change moved a coordinator model). */
   publishSettings(): void {
     const s = this.settings
-    this.publish("coordinator", "factory.settings_updated", null, now(), { settings: s, css: S.css(s) })
+    this.publish("coordinator", "factory.settings_updated", null, now(), {
+      settings: s,
+      css: S.css(s),
+    })
   }
 
   private validateRepoChange(prev: S.Settings, next: S.Settings): void {
@@ -1310,6 +1395,20 @@ export const finishPermissions =
   }
 
 /** Default gate for Copilot workers: never merge, push, or delete branches or worktrees; approve the rest. */
+/** A Claude permission gate with the worker's tool guard in front (it also sees subagent calls). */
+const withToolGuard =
+  (guard: SpawnSpec["toolGuard"], gate: CanUseTool): CanUseTool =>
+  async (toolName, input, options) => {
+    const reason = guard?.(toolName)
+    return reason ? { behavior: "deny", message: reason } : gate(toolName, input, options)
+  }
+
+/** The tool guard as a Copilot pre-tool hook. */
+const copilotToolGuard = (guard: NonNullable<SpawnSpec["toolGuard"]>) => (input: { toolName: string }) => {
+  const reason = guard(input.toolName)
+  return reason ? { permissionDecision: "deny" as const, permissionDecisionReason: reason } : undefined
+}
+
 export const workerPermissions: PermissionHandler = (request, invocation) =>
   request.kind === "shell" && forbiddenCommand(request.fullCommandText)
     ? {
