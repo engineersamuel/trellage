@@ -298,6 +298,9 @@ coordinator; a failed delivery returns an error and can be retried. The report b
 coordinator, which proposes the next step with `request_approval` (`reportThreadId` set) and relays the human's answer
 with `message_conversation`. A repeat for the same commit and status is dropped; each publishes `factory.report_up`.
 
+A `done` report is refused while an acceptance criterion has no PASS line in `.factory/evidence.md`; the error names
+those criteria, so the sub-coordinator fixes and verifies them or reports `blocked` or `needs-decision`.
+
 When a sub-coordinator goes idle without reporting, and Jev's last `moreWork` was below 0.3, a worker or review failed,
 or its session errored, the factory nudges it once per turn to call `report_up`. Never while workers run, a review is
 pending, or a decision is open. Merges and deletes stay human decisions.
