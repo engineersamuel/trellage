@@ -473,3 +473,28 @@ test("UI tools tell every open UI what to show, and confirm_action opens a yes/n
   ])
   expect(f.published[0].data).toEqual({ path: "reports/synthesis.md", agent: "gen-1", threadId: "t1" })
 })
+
+test("report_up refuses done while an SDLC criterion lacks a PASS line in evidence.md", async () => {
+  const send = async (evidence: string | null, status: string, criteria = ["first", "second"]) => {
+    const { repo } = gitRepo()
+    const f = fakeFactory()
+    if (criteria.length) f.sdlc.set("sub-1", { ...newSdlc("sub-1", "t"), criteria })
+    if (evidence !== null) {
+      ensureFactoryDir(repo)
+      writeFileSync(artifact(repo, "evidence.md"), evidence)
+    }
+    const report = tool(coordinatorTools(f, { id: "sub-1", threadId: "t", workdir: repo }), "report_up")
+    const res = JSON.parse(await report({ status, summary: "s" }))
+    return { res, published: f.published.filter((e: { type: string }) => e.type === "factory.report_up").length }
+  }
+  const fail = await send("AC-1: PASS\nAC-2: FAIL\n", "done")
+  expect(fail.res.error).toContain("AC-2")
+  expect(fail.res.error).not.toContain("AC-1")
+  expect(fail.published).toBe(0)
+  const missing = await send("AC-1: PASS\n", "done")
+  expect(missing.res.error).toContain("AC-2")
+  expect(missing.published).toBe(0)
+  expect(await send("AC-1: PASS\nAC-2: PASS\n", "done")).toEqual({ res: { sent: true }, published: 1 })
+  expect(await send("AC-1: PASS\nAC-2: FAIL\n", "blocked")).toEqual({ res: { sent: true }, published: 1 })
+  expect(await send(null, "done", [])).toEqual({ res: { sent: true }, published: 1 })
+})
