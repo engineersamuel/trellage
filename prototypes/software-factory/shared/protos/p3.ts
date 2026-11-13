@@ -494,8 +494,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       acts.append(...d.acts)
       draftEls = d.body
     }
+    // A sub-coordinator's workers already show in the tree on the left.
     const kids = el("div", "p3-kids")
-    for (const id of n.children) {
+    for (const id of n.kind === "sub" ? [] : n.children) {
       const k = m.nodes.get(id)!
       const b = btn(
         `${ICON[k.kind]} ${k.kind === "worker" ? (k.agent?.name ?? k.title) : k.title.slice(0, 28)}`,
@@ -505,7 +506,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       b.prepend(el("i", "p3-dot"))
       kids.append(b)
     }
-    head.replaceChildren(crumbs, el("h2", "p3-ell", n.title), st, acts, ...(n.children.length ? [kids] : []))
+    head.replaceChildren(crumbs, el("h2", "p3-ell", n.title), st, acts, ...(kids.childElementCount ? [kids] : []))
   }
   /** Worker: its live transcript and a composer to the worker or to the coordinator it reports to. */
   const workerBody = (n: Node): (() => void) => {
