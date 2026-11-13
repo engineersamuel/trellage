@@ -102,6 +102,42 @@ const detail = (m: SDKMessage) => {
   return d === undefined ? {} : { detailedContent: d }
 }
 
+/**
+ * A subagent (Agent tool) task as the Copilot runtime's subagent.started / completed / failed, keyed by the Agent
+ * tool call. Shell and other background tasks are left out.
+ */
+const subagentEvents = (
+  m: SDKMessage & { type: "system" },
+  ev: (type: string, data: Record<string, unknown>) => HarnessEvent,
+): HarnessEvent[] => {
+  const t = m as {
+    subtype: string
+    tool_use_id?: string
+    task_type?: string
+    subagent_type?: string
+    description?: string
+    status?: string
+    summary?: string
+  }
+  if (!t.tool_use_id) return []
+  if (t.subtype === "task_started")
+    return t.task_type === "local_agent" || t.subagent_type
+      ? [
+          ev("subagent.started", {
+            toolCallId: t.tool_use_id,
+            agentName: t.subagent_type ?? "subagent",
+            agentDisplayName: t.subagent_type ?? "subagent",
+            agentDescription: t.description ?? "",
+          }),
+        ]
+      : []
+  return [
+    t.status === "completed"
+      ? ev("subagent.completed", { toolCallId: t.tool_use_id })
+      : ev("subagent.failed", { toolCallId: t.tool_use_id, error: t.summary || `subagent ${t.status}` }),
+  ]
+}
+
 /** One SDK message as factory events. Subagent messages carry their parent tool call as agentId. */
 export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessEvent[] => {
   const agentId = "parent_tool_use_id" in m && m.parent_tool_use_id ? { agentId: m.parent_tool_use_id } : {}
@@ -149,6 +185,7 @@ export const toEvents = (m: SDKMessage, at = new Date().toISOString()): HarnessE
           )
         : []
     case "system":
+      if (m.subtype === "task_started" || m.subtype === "task_notification") return subagentEvents(m, ev)
       // The init message lists what the Claude session loaded; map it to the Copilot runtime's events for the spec view.
       if (m.subtype !== "init") return []
       return [

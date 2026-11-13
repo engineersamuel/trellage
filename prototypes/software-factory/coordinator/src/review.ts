@@ -280,6 +280,8 @@ export const codeReview = async (
     implementerModel?: string | null
     config?: FactoryConfig
     onFindings?: (kept: number, dropped: number) => void
+    /** The implement worker whose finish started this review; the tree shows the review under it. */
+    after?: string | null
   },
 ): Promise<CodeReview> => {
   const c = opts.config ?? factoryConfig()
@@ -312,6 +314,7 @@ export const codeReview = async (
       step,
       task,
       owner: scope.id,
+      group: { id: r.id, title: "Code review", after: opts.after ?? null },
       workdir: opts.workdir,
       ...(model ? { model } : {}),
       ...route,

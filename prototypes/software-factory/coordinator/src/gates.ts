@@ -316,6 +316,7 @@ const afterImplementIn = async (
         tier: risk.tier,
         implementerModel: s0.implementerModel,
         config: c,
+        after: implementWorkerId,
         // A re-review is one reviewer (the first configured lens, correctness by default) on the new lines, no synthesis.
         ...(rereview ? { lenses: [lenses(c)[0]!.id] } : {}),
         onFindings: (kept, dropped) => {

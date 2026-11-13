@@ -2,6 +2,8 @@
 // the branch's PR. Scoring against a goal spec lives in shared/goal.ts.
 import { execFile } from "node:child_process"
 import type { ChecksState, RunPr, RunWorker } from "../../shared/goal.ts"
+import type { SubagentInfo } from "./factory.ts"
+import { trackSubagent } from "./subagents.ts"
 
 export { goalUnmet, stopReason, type Run, type RunPr, type RunWorker } from "../../shared/goal.ts"
 
@@ -17,6 +19,28 @@ export const pastWorkers = <W extends { id: string; role: string; startedAt?: nu
     byId.set(data.id, { ...data, status: "stopped", startedAt: byId.get(data.id)?.startedAt ?? data.startedAt ?? ts })
   }
   return [...byId.values()]
+}
+
+type SubagentEvent = { worker: string; type: string; agent: string | null; data: Record<string, unknown> }
+
+/** Stopped agents' subagent lists, rebuilt from their stored events (the start event has none yet). */
+export const withSubagents = <W extends { id: string; harness?: string }>(
+  past: W[],
+  events: SubagentEvent[],
+): (W & { subagents: SubagentInfo[] })[] => {
+  const lists = new Map<string, SubagentInfo[]>()
+  const harness = new Map(past.map((w) => [w.id, w.harness ?? "copilot"]))
+  for (const e of events) {
+    const h = harness.get(e.worker)
+    if (!h) continue
+    const next = trackSubagent(lists.get(e.worker) ?? [], e.type, e.agent, e.data, h)
+    if (next) lists.set(e.worker, next)
+  }
+  // A subagent still "running" in a stopped agent ended with it.
+  return past.map((w) => ({
+    ...w,
+    subagents: (lists.get(w.id) ?? []).map((x) => (x.status === "running" ? { ...x, status: "failed" as const } : x)),
+  }))
 }
 
 type Started = { id: string; name: string; step?: string | null; harness?: string; owner: string }

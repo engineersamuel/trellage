@@ -38,6 +38,19 @@ export const Worker = Schema.Struct({
   startedAt: Schema.optionalKey(Schema.Number),
   /** SDLC step the agent runs (research, plan, implement, ...); its critter shows it. */
   step: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** The gate (code review, security review, evaluation) this worker runs in; the tree groups it there. */
+  group: Schema.optionalKey(
+    Schema.NullOr(Schema.Struct({ id: Schema.String, title: Schema.String, after: Schema.NullOr(Schema.String) })),
+  ),
+  /** Subagents the agent started inside its own harness; the tree shows them as leaves. */
+  subagents: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      description: Schema.String,
+      status: Schema.Literals(["running", "done", "failed"]),
+    }),
+  ).pipe(withDefault([])),
 })
 export type Worker = typeof Worker.Type
 
