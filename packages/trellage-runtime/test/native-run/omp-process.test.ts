@@ -7,16 +7,12 @@ import path from "node:path"
 import { ompAdapter } from "../../src/native-run/adapters.ts"
 import { acquireProfileGuard } from "../../src/native-run/lifecycle-guard.ts"
 import { prepareRun } from "../../src/native-run/run.ts"
-import { cleanupFixtures, fixturePaths, git, tempRoot } from "./fixtures.ts"
+import { cleanupFixtures, fixturePaths, git, tempRoot, waitForFile as waitForPublished } from "./fixtures.ts"
 
 afterEach(cleanupFixtures)
 
 const waitForFile = async (file: string): Promise<void> => {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    if (await Bun.file(file).exists()) return
-    await Bun.sleep(10)
-  }
-  throw new Error(`fixture did not publish ${file}`)
+  if (!(await waitForPublished(file))) throw new Error(`fixture did not publish ${file}`)
 }
 
 const waitForLeafExit = async (ready: string): Promise<void> => {

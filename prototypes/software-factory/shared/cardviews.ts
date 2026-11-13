@@ -6,8 +6,22 @@ export type TagVariant = "neutral" | "info" | "success" | "warning" | "danger"
 
 // ---------- worker board ----------
 
-type W = { id: string; name: string; role: string; status: string; model: string; rssKb: number | null; contextTokens?: number | null; contextLimit?: number | null }
-const STATUS: Record<string, TagVariant> = { running: "info", idle: "success", error: "danger", stopped: "neutral" }
+type W = {
+  id: string
+  name: string
+  role: string
+  status: string
+  model: string
+  rssKb: number | null
+  contextTokens?: number | null
+  contextLimit?: number | null
+}
+const STATUS: Record<string, TagVariant> = {
+  running: "info",
+  idle: "success",
+  error: "danger",
+  stopped: "neutral",
+}
 
 /** Role tag and display name (same rule as shared/tree.ts agentLabel, kept here so this file has no imports). */
 const label = (w: W): { tag: string; name: string } => {
@@ -20,12 +34,23 @@ const label = (w: W): { tag: string; name: string } => {
   return { tag: "Worker", name: w.name }
 }
 
-export type BoardRow = { id: string; name: string; kind: string; status: string; variant: TagVariant; model: string; memory: string; context: string }
+export type BoardRow = {
+  id: string
+  name: string
+  kind: string
+  status: string
+  variant: TagVariant
+  model: string
+  memory: string
+  context: string
+}
 export type Board = { total: number; running: number; errors: number; rows: BoardRow[] }
 
 /** Workers → board. Coordinator first, then by name. */
 export const toBoard = (workers: readonly W[]): Board => {
-  const sorted = [...workers].sort((a, b) => (a.role === "coordinator" && a.id === "coordinator" ? -1 : b.id === "coordinator" ? 1 : a.name.localeCompare(b.name)))
+  const sorted = [...workers].sort((a, b) =>
+    a.role === "coordinator" && a.id === "coordinator" ? -1 : b.id === "coordinator" ? 1 : a.name.localeCompare(b.name),
+  )
   return {
     total: sorted.length,
     running: sorted.filter((w) => w.status === "running").length,
@@ -46,7 +71,12 @@ export const toBoard = (workers: readonly W[]): Board => {
 // ---------- security review ----------
 
 type F = { title: string; severity: string; file: string; verdict: string; reason: string }
-const SEVERITY: Record<string, TagVariant> = { critical: "danger", high: "danger", medium: "warning", low: "info" }
+const SEVERITY: Record<string, TagVariant> = {
+  critical: "danger",
+  high: "danger",
+  medium: "warning",
+  low: "info",
+}
 
 export type ReviewView = {
   status: string
@@ -54,7 +84,14 @@ export type ReviewView = {
   total: number
   kept: number
   discarded: number
-  rows: { title: string; severity: string; variant: TagVariant; file: string; verdict: string; reason: string }[]
+  rows: {
+    title: string
+    severity: string
+    variant: TagVariant
+    file: string
+    verdict: string
+    reason: string
+  }[]
 }
 
 /** Review → card. Kept findings first, then by severity. */
@@ -65,7 +102,14 @@ export const toReview = (r: { status: string; findings: readonly F[] }): ReviewV
     return i < 0 ? order.length : i
   }
   const rows = r.findings
-    .map((f) => ({ title: f.title, severity: f.severity || "unknown", variant: SEVERITY[(f.severity || "").toLowerCase()] ?? "neutral", file: f.file, verdict: f.verdict || "pending", reason: f.reason }))
+    .map((f) => ({
+      title: f.title,
+      severity: f.severity || "unknown",
+      variant: SEVERITY[(f.severity || "").toLowerCase()] ?? "neutral",
+      file: f.file,
+      verdict: f.verdict || "pending",
+      reason: f.reason,
+    }))
     .sort((a, b) => Number(b.verdict === "keep") - Number(a.verdict === "keep") || rank(a.severity) - rank(b.severity))
   return {
     status: r.status,
@@ -79,8 +123,20 @@ export const toReview = (r: { status: string; findings: readonly F[] }): ReviewV
 
 // ---------- delivery run ----------
 
-type Step = { step?: string; confidence?: number; moreWork?: number; request?: string; scopeId?: string }
-export type RunView = { branch: string | null; done: string; current: string; percent: number | null; steps: { title: string; details: string }[] }
+type Step = {
+  step?: string
+  confidence?: number
+  moreWork?: number
+  request?: string
+  scopeId?: string
+}
+export type RunView = {
+  branch: string | null
+  done: string
+  current: string
+  percent: number | null
+  steps: { title: string; details: string }[]
+}
 
 /** Only one coordinator's decisions. Untagged (older) ones belong to the Factory desk. */
 export const ownSteps = <S extends Step>(all: readonly S[], scopeId: string | undefined): S[] =>
@@ -96,26 +152,53 @@ export const toRun = (branch: string | null, decisions: readonly Step[]): RunVie
     percent,
     done: percent === null ? "–" : `${percent}%`,
     current: steps.at(-1)?.step ?? "–",
-    steps: steps.map((s) => ({ title: `${s.step} · ${Math.round((s.confidence ?? 0) * 100)}%`, details: (s.request ?? "").slice(0, 160) })),
+    steps: steps.map((s) => ({
+      title: `${s.step} · ${Math.round((s.confidence ?? 0) * 100)}%`,
+      details: (s.request ?? "").slice(0, 160),
+    })),
   }
 }
 
 // ---------- decisions ----------
 
-type D = { id: string; title: string; kind: string; context: string; options: readonly string[]; createdAt?: number }
-export type DecisionRow = { id: string; title: string; kind: string; variant: TagVariant; context: string; options: string[] }
+type D = {
+  id: string
+  title: string
+  kind: string
+  context: string
+  options: readonly string[]
+  createdAt?: number
+}
+export type DecisionRow = {
+  id: string
+  title: string
+  kind: string
+  variant: TagVariant
+  context: string
+  options: string[]
+}
 
 /** Pending decisions → rows, oldest first. */
 export const toDecisions = (pending: readonly D[]): DecisionRow[] =>
   [...pending]
     .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
-    .map((d) => ({ id: d.id, title: d.title, kind: d.kind, variant: d.kind === "question" ? "warning" : "info", context: d.context, options: [...d.options] }))
+    .map((d) => ({
+      id: d.id,
+      title: d.title,
+      kind: d.kind,
+      variant: d.kind === "question" ? "warning" : "info",
+      context: d.context,
+      options: [...d.options],
+    }))
 
 // ---------- report findings ----------
 
 /** The first prose line of a finding, markdown and `File:line` lists removed, for a one-line subtitle. */
 export const plainLine = (body: string, max = 140): string => {
-  const lines = body.split("\n").map((l) => l.replace(/[*_`>#-]/g, "").trim()).filter(Boolean)
+  const lines = body
+    .split("\n")
+    .map((l) => l.replace(/[*_`>#-]/g, "").trim())
+    .filter(Boolean)
   const prose = lines.find((l) => !/^(file:?line|files?|evidence|risk|impact)\s*:/i.test(l)) ?? lines[0] ?? ""
   return prose.length > max ? `${prose.slice(0, max - 1)}…` : prose
 }
@@ -136,7 +219,14 @@ export type CardView = {
   path?: string
 }
 
-const view = (title: string, subtitle: string, metrics: Metric[], rows: Record<string, unknown>[], note: string | null = null, noteVariant: CardView["noteVariant"] = "neutral"): CardView => ({
+const view = (
+  title: string,
+  subtitle: string,
+  metrics: Metric[],
+  rows: Record<string, unknown>[],
+  note: string | null = null,
+  noteVariant: CardView["noteVariant"] = "neutral",
+): CardView => ({
   title,
   subtitle,
   metrics,
@@ -149,44 +239,165 @@ const view = (title: string, subtitle: string, metrics: Metric[], rows: Record<s
 
 // ---------- SDLC gates ----------
 
-type G = { id: string; chosen: boolean; probability: number | null; threshold: number; reason: string; status: string; detail?: string }
-const GATE_STATUS: Record<string, TagVariant> = { done: "success", running: "info", pending: "warning", failed: "danger", skipped: "neutral" }
+type G = {
+  id: string
+  chosen: boolean
+  probability: number | null
+  threshold: number
+  reason: string
+  status: string
+  detail?: string
+}
+const GATE_STATUS: Record<string, TagVariant> = {
+  done: "success",
+  running: "info",
+  pending: "warning",
+  failed: "danger",
+  skipped: "neutral",
+}
 
 export type SdlcRow = { gate: string; status: string; variant: TagVariant; why: string }
 
 /** Gates → rows: floors (security, verify) first, then each gate with Jev's probability against its threshold. */
 export const toSdlc = (d: { gates?: G[]; security?: string | null; verified?: boolean }): SdlcRow[] => [
-  { gate: "verify", status: d.verified ? "done" : "pending", variant: d.verified ? "success" : "warning", why: "floor: after every implement" },
-  { gate: "security", status: d.security ?? "pending", variant: GATE_STATUS[d.security ?? "pending"] ?? "info", why: "floor: every code change" },
+  {
+    gate: "verify",
+    status: d.verified ? "done" : "pending",
+    variant: d.verified ? "success" : "warning",
+    why: "floor: after every implement",
+  },
+  {
+    gate: "security",
+    status: d.security ?? "pending",
+    variant: GATE_STATUS[d.security ?? "pending"] ?? "info",
+    why: "floor: every code change",
+  },
   ...(d.gates ?? []).map((g) => {
     const status = g.chosen ? g.status : "skipped"
-    return { gate: g.id, status, variant: GATE_STATUS[status] ?? "neutral", why: `${g.reason}${g.detail ? ` · ${g.detail}` : ""}` }
+    return {
+      gate: g.id,
+      status,
+      variant: GATE_STATUS[status] ?? "neutral",
+      why: `${g.reason}${g.detail ? ` · ${g.detail}` : ""}`,
+    }
   }),
 ]
 
+type CodeFinding = {
+  title: string
+  severity: string
+  file: string
+  keep: boolean
+  real: number | null
+  worth: number | null
+  problem: string
+  fix?: string
+}
+type Verdict = { id: string; verdict: string; command: string; note: string }
+
+/** Every field a show_* tool's data may carry; each card reads its own. */
+type CardData = {
+  workers?: W[]
+  branch?: string | null
+  decisions?: Step[]
+  note?: string
+  status?: string
+  model?: string
+  error?: string
+  findings?: unknown[]
+  criteria?: string[]
+  unproven?: string[]
+  tier?: string | null
+  reasons?: string[]
+  kept?: number
+  dropped?: number
+  blockers?: string[]
+  gates?: G[]
+  security?: string | null
+  verified?: boolean
+  lenses?: string[]
+  lensProbabilities?: Record<string, number>
+  base?: string
+  files?: unknown[]
+  truncated?: boolean
+  added?: number
+  removed?: number
+  path?: string
+  pending?: D[]
+  round?: number
+  verdicts?: Verdict[]
+  notes?: string[]
+}
+
 /** A show_* tool's data → the card's view. */
-export const cardView = (name: string, data: any): CardView => {
-  const d = data ?? {}
+export const cardView = (name: string, data: unknown): CardView => {
+  const d = (data ?? {}) as CardData
   switch (name) {
     case "show_worker_board": {
       const b = toBoard(d.workers ?? [])
-      return view("Worker board", "Live", [{ value: String(b.total), label: "agents" }, { value: String(b.running), label: "running" }, { value: String(b.errors), label: "errors" }], b.rows, b.rows.length ? null : "No agents are running.")
+      return view(
+        "Worker board",
+        "Live",
+        [
+          { value: String(b.total), label: "agents" },
+          { value: String(b.running), label: "running" },
+          { value: String(b.errors), label: "errors" },
+        ],
+        b.rows,
+        b.rows.length ? null : "No agents are running.",
+      )
     }
     case "show_delivery_run": {
       const r = toRun(d.branch ?? null, d.decisions ?? [])
       const rows = r.steps
-      return view("Delivery run", r.branch ? `⎇ ${r.branch}` : "", [{ value: r.done, label: "done (Jev)" }, { value: r.current, label: "current step" }], rows, rows.length ? null : (d.note ?? "No delivery run in this conversation yet."))
+      return view(
+        "Delivery run",
+        r.branch ? `⎇ ${r.branch}` : "",
+        [
+          { value: r.done, label: "done (Jev)" },
+          { value: r.current, label: "current step" },
+        ],
+        rows,
+        rows.length ? null : (d.note ?? "No delivery run in this conversation yet."),
+      )
     }
     case "show_security_review": {
       if (!d.status) return view("Security review", "", [], [], d.note ?? "No security review yet.")
-      const v = toReview({ status: d.status, findings: d.findings ?? [] })
+      const v = toReview({ status: d.status, findings: (d.findings ?? []) as F[] })
       return view(
         "Security review",
         `${v.status}${d.model ? ` · ${d.model}` : ""}`,
-        [{ value: String(v.total), label: "findings" }, { value: String(v.kept), label: "kept (fixed)" }, { value: String(v.discarded), label: "discarded" }],
+        [
+          { value: String(v.total), label: "findings" },
+          { value: String(v.kept), label: "kept (fixed)" },
+          { value: String(v.discarded), label: "discarded" },
+        ],
         v.rows,
         d.error ?? (v.rows.length ? null : "No findings."),
         d.error ? "error" : "success",
+      )
+    }
+    case "show_evaluation": {
+      if (!d.status) return view("Acceptance evaluation", "", [], [], d.note ?? "No acceptance evaluation yet.")
+      const rows = (d.verdicts ?? []).map((v) => ({
+        id: v.id,
+        verdict: v.verdict,
+        variant: (v.verdict === "pass" ? "success" : "danger") as TagVariant,
+        command: v.command,
+        note: v.note,
+      }))
+      const pass = rows.filter((r) => r.verdict === "pass").length
+      const fail = rows.length - pass
+      return view(
+        "Acceptance evaluation",
+        `${d.status} · round ${d.round}${d.model ? ` · ${d.model}` : ""}`,
+        [
+          { value: String(pass), label: "pass" },
+          { value: String(fail), label: "fail" },
+        ],
+        rows,
+        d.error ?? ((d.notes ?? []).join("; ") || (rows.length ? null : "No verdicts yet.")),
+        d.error ? "error" : fail > 0 ? "warning" : "success",
       )
     }
     case "show_sdlc": {
@@ -199,7 +410,10 @@ export const cardView = (name: string, data: any): CardView => {
         [
           { value: `${proven}/${d.criteria.length}`, label: "criteria proven" },
           { value: String(rows.filter((r) => r.status !== "skipped").length), label: "gates on" },
-          { value: `${d.kept ?? 0}/${(d.kept ?? 0) + (d.dropped ?? 0)}`, label: "review findings kept" },
+          {
+            value: `${d.kept ?? 0}/${(d.kept ?? 0) + (d.dropped ?? 0)}`,
+            label: "review findings kept",
+          },
         ],
         rows,
         d.blockers?.length ? `Not ready to ship: ${d.blockers.join("; ")}` : "Ready to ship.",
@@ -208,7 +422,7 @@ export const cardView = (name: string, data: any): CardView => {
     }
     case "show_code_review": {
       if (!d.status) return view("Code review", "", [], [], d.note ?? "No code review yet.")
-      const findings = (d.findings ?? []).map((f: any) => ({
+      const findings = ((d.findings ?? []) as CodeFinding[]).map((f) => ({
         title: f.title,
         severity: f.severity,
         file: f.file,
@@ -216,11 +430,21 @@ export const cardView = (name: string, data: any): CardView => {
         reason: `${f.real === null ? "" : `real ${Number(f.real).toFixed(2)} · worth ${Number(f.worth).toFixed(2)} · `}${f.problem}${f.fix ? ` → ${f.fix}` : ""}`,
       }))
       const v = toReview({ status: d.status, findings })
-      const lenses = (d.lenses ?? []).map((l: string) => `${l}${d.lensProbabilities?.[l] !== undefined ? ` ${Number(d.lensProbabilities[l]).toFixed(2)}` : ""}`).join(", ")
+      const lenses = (d.lenses ?? [])
+        .map(
+          (l: string) =>
+            `${l}${d.lensProbabilities?.[l] !== undefined ? ` ${Number(d.lensProbabilities[l]).toFixed(2)}` : ""}`,
+        )
+        .join(", ")
       return view(
         "Code review",
         `${v.status}${lenses ? ` · lenses ${lenses}` : ""}`,
-        [{ value: String(d.lenses?.length ?? 0), label: "reviewers" }, { value: String(v.total), label: "findings" }, { value: String(v.kept), label: "kept (fixed)" }, { value: String(v.discarded), label: "dropped by Jev" }],
+        [
+          { value: String(d.lenses?.length ?? 0), label: "reviewers" },
+          { value: String(v.total), label: "findings" },
+          { value: String(v.kept), label: "kept (fixed)" },
+          { value: String(v.discarded), label: "dropped by Jev" },
+        ],
         v.rows,
         d.error ?? (v.rows.length ? null : "No findings."),
         d.error ? "error" : "success",
@@ -228,25 +452,56 @@ export const cardView = (name: string, data: any): CardView => {
     }
     case "show_diff_summary": {
       if (d.error) return view("Changes", "", [], [], d.error, "warning")
-      const files = (d.files ?? []) as { path: string; added: number; removed: number; binary: boolean }[]
+      const files = (d.files ?? []) as {
+        path: string
+        added: number
+        removed: number
+        binary: boolean
+      }[]
       return view(
         "Changes",
         d.base ? `against ${String(d.base).slice(0, 8)}` : "",
-        [{ value: `${files.length}${d.truncated ? "+" : ""}`, label: "files" }, { value: `+${d.added ?? 0}`, label: "added" }, { value: `−${d.removed ?? 0}`, label: "removed" }],
-        files.map((f) => ({ path: f.path, added: f.binary ? "binary" : `+${f.added}`, removed: f.binary ? "" : `−${f.removed}` })),
+        [
+          { value: `${files.length}${d.truncated ? "+" : ""}`, label: "files" },
+          { value: `+${d.added ?? 0}`, label: "added" },
+          { value: `−${d.removed ?? 0}`, label: "removed" },
+        ],
+        files.map((f) => ({
+          path: f.path,
+          added: f.binary ? "binary" : `+${f.added}`,
+          removed: f.binary ? "" : `−${f.removed}`,
+        })),
         files.length ? null : "No changes yet.",
       )
     }
     case "show_report_findings": {
       const fs = (d.findings ?? []) as { rank: number; title: string; body: string }[]
       return {
-        ...view("Report findings", d.path ?? "", [], fs.map((f) => ({ rank: f.rank, title: `#${f.rank} · ${f.title}`, subtitle: plainLine(f.body, 90) })), d.error ?? (fs.length ? null : "No ranked findings in this report."), d.error ? "warning" : "neutral"),
+        ...view(
+          "Report findings",
+          d.path ?? "",
+          [],
+          fs.map((f) => ({
+            rank: f.rank,
+            title: `#${f.rank} · ${f.title}`,
+            subtitle: plainLine(f.body, 90),
+          })),
+          d.error ?? (fs.length ? null : "No ranked findings in this report."),
+          d.error ? "warning" : "neutral",
+        ),
         path: d.path ?? "",
       }
     }
     case "show_decisions": {
       const rows = toDecisions(d.pending ?? [])
-      return view("Waiting for you", `${rows.length} decision${rows.length === 1 ? "" : "s"}`, [], rows, rows.length ? null : "Nothing is waiting.", "success")
+      return view(
+        "Waiting for you",
+        `${rows.length} decision${rows.length === 1 ? "" : "s"}`,
+        [],
+        rows,
+        rows.length ? null : "Nothing is waiting.",
+        "success",
+      )
     }
     default:
       return view(name, "", [], [], `Unknown card ${name}`, "warning")

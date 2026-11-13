@@ -152,8 +152,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
             ? Array.dedupe([...draft.gatesSkipped, gate])
             : Array.filter(draft.gatesSkipped, (g) => g !== gate),
       })),
-    UpdatedRuns: ({ value }) => field(model, "runs", value),
-    UpdatedMinutes: ({ value }) => field(model, "minutesPerRun", value),
+    UpdatedUsd: ({ value }) => field(model, "usd", value),
     ClickedEditGoal: ({ id }) => editGoal(model, id),
     SubmittedGoal: () => submit(model),
     SucceededSaveGoal: ({ saved }) => ({

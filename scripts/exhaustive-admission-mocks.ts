@@ -8,7 +8,7 @@ const shellWord = (value: string): string => `'${value.replaceAll("'", "'\\''")}
 export type AdmissionRules = {
   payloads: Record<string, unknown>
   executable: string
-  profiles: { claude: string[]; copilot: string[] }
+  profiles: { claude: readonly string[]; copilot: readonly string[] }
 }
 export type AdmissionResult = { status: number; stdout: string; stderr: string }
 

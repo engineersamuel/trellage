@@ -56,6 +56,19 @@ const FactoryConfigSchema = Schema.Struct({
     finding_change: Probability,
   }),
   costs: Schema.Struct({ usd_per_ai_credit: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)) }),
+  /** Independent acceptance evaluator (src/evaluate.ts): contract at sdlc_plan, verdicts before the security review. */
+  evaluate: Schema.Struct({
+    enabled: Schema.Boolean,
+    contract_rounds: Count,
+    max_rounds: Count,
+  }),
+  /** Gate workers (gateWorker.ts): when one counts as stuck, how often it is replaced, and the backstop wait. */
+  workers: Schema.Struct({
+    wait_minutes: Count,
+    stuck_quiet_minutes: Count,
+    stuck_failed_tools: Count,
+    retries: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  }),
 })
 export type FactoryConfig = typeof FactoryConfigSchema.Type
 
@@ -146,7 +159,7 @@ export type Scalar = string | number | boolean | readonly string[]
 export type ConfigValue = { key: string; value: Scalar; source: Source; reload: Reload }
 
 /** Keys a running delivery reads from its pinned snapshot. */
-const RUN_KEYS = /^(review\.|gates\.|sdlc\.|models\.review\.)/
+const RUN_KEYS = /^(review\.|gates\.|sdlc\.|evaluate\.|models\.review\.)/
 
 const isScalar = (v: unknown): v is Scalar =>
   ["string", "number", "boolean"].includes(typeof v) || (Array.isArray(v) && v.every((x) => typeof x === "string"))

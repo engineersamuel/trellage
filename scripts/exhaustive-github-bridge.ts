@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 
-const shellWord = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
+import { argsCases, prelude, requireEnv, shellWord } from "./sh-mock.ts"
 
 /** A fixture gh executable, never the host credential store or a network client. */
 export const createGithubBridge = async (root: string, home: string, bin: string) => {
@@ -10,25 +10,23 @@ export const createGithubBridge = async (root: string, home: string, bin: string
   assert(path.isAbsolute(root) && path.isAbsolute(home) && path.isAbsolute(bin))
   await mkdir(bin, { recursive: true })
   const callsFile = path.join(root, "github-bridge.jsonl")
-  const program = path.join(root, "github-bridge.ts")
   const executable = path.join(bin, "gh")
   const args = ["auth", "token", "--hostname", "github.com"]
   const required = { HOME: home, TRELLAGE_TEST_OFFLINE: "1", GH_PROMPT_DISABLED: "1" }
   await writeFile(
-    program,
-    `import { appendFileSync } from "node:fs"
-const args = process.argv.slice(2)
-const required = ${JSON.stringify(required)}
-if (JSON.stringify(args) !== ${JSON.stringify(JSON.stringify(args))} || Object.entries(required).some(([key, value]) => process.env[key] !== value)) {
-  process.stderr.write("Unexpected fixture GitHub lookup\\n"); process.exit(97)
-}
-appendFileSync(${JSON.stringify(callsFile)}, JSON.stringify({ args }) + "\\n")
-console.log("fixture-github-token")
+    executable,
+    `${prelude("Unexpected fixture GitHub lookup")}join_args "$@"
+ok=0
+case "$joined" in
+${argsCases([args])}
+esac
+[ "$ok" = 1 ] || fail
+${requireEnv(required)}
+printf '{"args":%s}\\n' "$(args_json "$@")" >> ${shellWord(callsFile)}
+echo fixture-github-token
 `,
+    { mode: 0o700 },
   )
-  await writeFile(executable, `#!/bin/sh\nexec ${shellWord(process.execPath)} ${shellWord(program)} "$@"\n`, {
-    mode: 0o700,
-  })
   return {
     executable,
     args,

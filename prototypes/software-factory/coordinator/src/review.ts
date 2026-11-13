@@ -1,6 +1,7 @@
 // Code review gate: Jev picks the review lenses for the diff, one read-only reviewer per lens writes findings,
 // a synthesis worker merges them, Jev scores each merged finding, and only the high-value ones go to a fix worker
 // and a verify worker. Same shape as security.ts; review workers are started here, so a fix never re-triggers it.
+import { awaitGateWorker } from "./gateWorker.ts"
 import { mkdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { noul } from "@typesafe-ai/sdk"
@@ -239,12 +240,6 @@ export const codeReviewIn = (reviews: Iterable<CodeReview>, workdir: string): Co
 export const codeReviewDoneSince = (reviews: Iterable<CodeReview>, scopeId: string, since: number): boolean =>
   [...reviews].some((r) => r.scopeId === scopeId && r.status === "done" && r.at >= since)
 
-const timeoutMs = () => Number(process.env.SF_SECURITY_TIMEOUT_MS) || 20 * 60_000
-const idleOrThrow = async (w: Worker, what: string) => {
-  if (!(await w.waitIdle(timeoutMs()))) throw new Error(`${what} worker ${w.id} timed out`)
-  if (w.status === "error") throw new Error(`${what} worker ${w.id} failed: ${w.lastError}`)
-}
-
 const FINDING_SCHEMA = `a JSON array; each item {"title","file":"path:line","severity":"low|medium|high|critical","problem","fix"}; [] when there is nothing material`
 
 export const lensTask = (lens: Lens, base: string, criteria: string[], out: string) =>
@@ -331,29 +326,36 @@ export const codeReview = async (
     set({ status: "reviewing", lenses: chosen, lensProbabilities: probabilities })
     const dir = path.join(f.root, r.id)
     mkdirSync(dir, { recursive: true })
-    const reviewers = await Promise.all(
+    const wait = (start: () => Promise<Worker>, what: string) => awaitGateWorker(start, what, (id) => f.stop(id), c)
+    await Promise.all(
       chosen.map((id, i) => {
         const lens = lenses(c).find((l) => l.id === id)!
-        return spawn(
-          `review-${id}`,
-          "review",
-          lensTask(lens, opts.base, opts.criteria, path.join(dir, `${id}.json`)),
-          lensModel(opts.implementerModel, i, gemini, undefined, c),
+        return wait(
+          () =>
+            spawn(
+              `review-${id}`,
+              "review",
+              lensTask(lens, opts.base, opts.criteria, path.join(dir, `${id}.json`)),
+              lensModel(opts.implementerModel, i, gemini, undefined, c),
+            ),
+          "code review",
         )
       }),
     )
-    await Promise.all(reviewers.map((w) => idleOrThrow(w, "code review")))
     const inputs = chosen.map((id) => path.join(dir, `${id}.json`))
     let merged: ReviewFinding[]
     if (inputs.length > 1) {
       set({ status: "synthesizing" })
-      const synth = await spawn(
-        "review-synthesis",
-        "synthesis",
-        synthesisTask(inputs, path.join(dir, "merged.json")),
-        reviewModelFor(opts.implementerModel, undefined, gemini, c),
+      await wait(
+        () =>
+          spawn(
+            "review-synthesis",
+            "synthesis",
+            synthesisTask(inputs, path.join(dir, "merged.json")),
+            reviewModelFor(opts.implementerModel, undefined, gemini, c),
+          ),
+        "review synthesis",
       )
-      await idleOrThrow(synth, "review synthesis")
       merged = parseReviewFindings(readFileSync(path.join(dir, "merged.json"), "utf8"))
     } else merged = parseReviewFindings(readFileSync(inputs[0]!, "utf8")).map((x) => ({ ...x, lenses: chosen }))
     const scored = await scoreFindings(merged, opts.request, c)
@@ -363,20 +365,17 @@ export const codeReview = async (
     for (const x of scored.filter((y) => !y.keep))
       console.log(`[code-review] ${r.id} dropped ${x.id} "${x.title}": ${x.reason}`)
     if (kept.length) {
-      const fixer = await spawn(
-        "review-fix",
-        "implement",
-        loadPrompt("tasks/review-fix", { base: opts.base, findings: list(kept) }),
-      )
       set({ status: "fixing" })
-      await idleOrThrow(fixer, "review fix")
-      const verifier = await spawn(
-        "review-verify",
-        "verify",
-        loadPrompt("tasks/review-verify", { findings: list(kept) }),
+      await wait(
+        () =>
+          spawn("review-fix", "implement", loadPrompt("tasks/review-fix", { base: opts.base, findings: list(kept) })),
+        "review fix",
       )
       set({ status: "verifying" })
-      await idleOrThrow(verifier, "review verify")
+      await wait(
+        () => spawn("review-verify", "verify", loadPrompt("tasks/review-verify", { findings: list(kept) })),
+        "review verify",
+      )
     }
     set({ status: "done" })
   } catch (e) {

@@ -936,7 +936,7 @@ export const makeGoalPage = (d: GoalPageDeps) => {
           floor: true,
         },
         { id: "security", min: 1, max: null, on: true, reason: "Floor: security review runs last.", p: 1, floor: true },
-        { id: "finish", min: 1, max: 1, on: true, reason: "One PR.", p: null, floor: false },
+        { id: "finish", min: 1, max: null, on: true, reason: "One PR, updated by every loop.", p: null, floor: false },
       ],
       gates: gates.map((g) => ({
         ...g,
@@ -947,7 +947,7 @@ export const makeGoalPage = (d: GoalPageDeps) => {
       tier: { ...tier, reason: r.tier },
       pr: { state: "OPEN", checks: "SUCCESS", bodyIncludes: r.bodyIncludes, untouched: r.untouched },
       approvals: { plan: "auto", findings: "auto", ship: "auto", other: "human" },
-      limits: { runs: 5, minutesPerRun: 720 },
+      limits: { usd: 250 },
     }
   }
 

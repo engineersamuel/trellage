@@ -4,7 +4,7 @@ import path from "node:path"
 import { nativePresetProfiles } from "@trellage/runtime/native-run"
 import { PRIME_PROFILE_MARKER, primeRuntimePaths } from "../packages/trellage-runtime/src/native-run/prime-runtime.ts"
 
-const shellWord = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
+import { prelude, shellWord, writeExact } from "./sh-mock.ts"
 
 /** External lifecycle/version boundaries only; production admission and runtime validation still execute. */
 export const createRuntimeAdmission = async (root: string, home: string, executable: string) => {
@@ -33,45 +33,55 @@ fi
 printf '{"role":"prime-version","args":["--version"]}\\n' >> ${JSON.stringify(callsFile)}
 echo 0.10.0 >&2
 `
-  const program = path.join(directory, "admit.ts")
   const ompProfiles = nativePresetProfiles("omp")
   assert.deepEqual([...ompProfiles].sort(), ["default", "local"], "audit new OMP profile admission")
-  await writeFile(
-    program,
-    `import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
-const role = process.argv[2]
-const args = process.argv.slice(3)
-const fail = () => { process.stderr.write("Unexpected runtime admission request\\n"); process.exit(97) }
-if (process.env.TRELLAGE_TEST_OFFLINE !== "1" || process.env.HOME !== ${JSON.stringify(home)}) fail()
-if (role === "omp") {
-  if (process.env.TRELLAGE_TRX_OMP_ADAPTER !== "1" || args.length !== 2 || args[0] !== "_trx-admit" || !${JSON.stringify(ompProfiles)}.includes(args[1])) fail()
-  const isDefault = args[1] === "default"
-  if (isDefault) writeFileSync(${JSON.stringify(credential)}, "fixture-copilot-token\\n", { mode: 0o600, flag: "wx" })
-  appendFileSync(${JSON.stringify(callsFile)}, JSON.stringify({ role, args }) + "\\n")
-  console.log(JSON.stringify({ schemaVersion: 1, executable: ${JSON.stringify(executable)}, ompProfile: isDefault ? "trellage-copilot-native" : "trellage-qwen-local", piConfigFiles: ${JSON.stringify(overlay)}, version: "18.8.5", copilotCredentialFile: isDefault ? ${JSON.stringify(credential)} : null }))
-} else if (role === "prime") {
-  const installed = existsSync(${JSON.stringify(prime.receiptFile)})
-  if (JSON.stringify(args) !== JSON.stringify([installed ? "repair" : "setup", "default"])) fail()
-  appendFileSync(${JSON.stringify(callsFile)}, JSON.stringify({ role, args }) + "\\n")
-  for (const directory of ${JSON.stringify([path.dirname(cli), payloadRoot, path.join(prime.profileHome, "extensions"), path.dirname(prime.kernelPython)])}) mkdirSync(directory, { recursive: true })
-  writeFileSync(${JSON.stringify(path.join(payloadRoot, "package.json"))}, ${JSON.stringify(JSON.stringify({ name: "prime-agent", version: "0.10.0" }) + String.fromCharCode(10))})
-  writeFileSync(${JSON.stringify(cli)}, ${JSON.stringify(versionProgram)}, { mode: 0o755 })
-  writeFileSync(${JSON.stringify(prime.receiptFile)}, "0.10.0\\n")
-  writeFileSync(${JSON.stringify(prime.runtimeIdentityFile)}, ${JSON.stringify(JSON.stringify(identity) + String.fromCharCode(10))})
-  writeFileSync(${JSON.stringify(prime.profileMarker)}, ${JSON.stringify(PRIME_PROFILE_MARKER + String.fromCharCode(10))})
-  writeFileSync(${JSON.stringify(prime.kernelPython)}, "#!/bin/sh\\nexit 97\\n", { mode: 0o700 })
-  writeFileSync(${JSON.stringify(prime.kernelIdentityStamp)}, ${JSON.stringify(JSON.stringify(identity) + String.fromCharCode(10))})
-} else fail()
-`,
-  )
+  const reply = (isDefault: boolean) =>
+    JSON.stringify({
+      schemaVersion: 1,
+      executable,
+      ompProfile: isDefault ? "trellage-copilot-native" : "trellage-qwen-local",
+      piConfigFiles: overlay,
+      version: "18.8.5",
+      copilotCredentialFile: isDefault ? credential : null,
+    })
+  const identityJson = `${JSON.stringify(identity)}\n`
+  const log = `printf '{"role":"%s","args":%s}\\n' "$role" "$(args_json "$@")" >> ${shellWord(callsFile)}`
+  // One /bin/sh program per role (no interpreter start per call); same checks, calls log and files as before.
+  const program = `${prelude("Unexpected runtime admission request")}role=$1; shift
+[ "\${TRELLAGE_TEST_OFFLINE:-}" = 1 ] && [ "\${HOME:-}" = ${shellWord(home)} ] || fail
+if [ "$role" = omp ]; then
+  [ "\${TRELLAGE_TRX_OMP_ADAPTER:-}" = 1 ] && [ $# = 2 ] && [ "$1" = _trx-admit ] || fail
+  case "$2" in
+${ompProfiles.map((profile) => `    ${shellWord(profile)}) ;;`).join("\n")}
+    *) fail ;;
+  esac
+  if [ "$2" = default ]; then
+    # Like writeFileSync(..., { flag: "wx", mode: 0o600 }): fail when the credential already exists.
+    (umask 077; set -C; printf 'fixture-copilot-token\\n' > ${shellWord(credential)}) || exit 1
+  fi
+  ${log}
+  if [ "$2" = default ]; then printf '%s\\n' ${shellWord(reply(true))}; else printf '%s\\n' ${shellWord(reply(false))}; fi
+elif [ "$role" = prime ]; then
+  if [ -e ${shellWord(prime.receiptFile)} ]; then want=repair; else want=setup; fi
+  [ $# = 2 ] && [ "$1" = "$want" ] && [ "$2" = default ] || fail
+  ${log}
+  mkdir -p ${[path.dirname(cli), payloadRoot, path.join(prime.profileHome, "extensions"), path.dirname(prime.kernelPython)].map(shellWord).join(" ")}
+  ${writeExact(path.join(payloadRoot, "package.json"), `${JSON.stringify({ name: "prime-agent", version: "0.10.0" })}\n`)}
+  ${writeExact(cli, versionProgram)}
+  chmod 755 ${shellWord(cli)}
+  ${writeExact(prime.receiptFile, "0.10.0\n")}
+  ${writeExact(prime.runtimeIdentityFile, identityJson)}
+  ${writeExact(prime.profileMarker, `${PRIME_PROFILE_MARKER}\n`)}
+  ${writeExact(prime.kernelPython, "#!/bin/sh\nexit 97\n")}
+  chmod 700 ${shellWord(prime.kernelPython)}
+  ${writeExact(prime.kernelIdentityStamp, identityJson)}
+else fail
+fi
+`
   const binaries: Record<string, string> = {}
   for (const role of ["omp", "prime"]) {
     const binary = path.join(directory, role)
-    await writeFile(
-      binary,
-      `#!/bin/sh\nexec ${shellWord(process.execPath)} ${shellWord(program)} ${shellWord(role)} "$@"\n`,
-      { mode: 0o700 },
-    )
+    await writeFile(binary, program.replace("role=$1; shift", `role=${role}`), { mode: 0o700 })
     binaries[role] = binary
   }
   const canonicalHome = await realpath(home)

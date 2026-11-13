@@ -4,6 +4,7 @@
 import { Database } from "bun:sqlite"
 import { existsSync, readFileSync, renameSync } from "node:fs"
 import path from "node:path"
+import { Exit } from "effect"
 import { decodeDecision } from "../../shared/approvals.ts"
 import type { Shadow } from "./shadow.ts"
 
@@ -33,7 +34,7 @@ export type Approval = {
   /** Conversation whose report this decision answers; the answer is relayed to it. */
   reportThreadId?: string
   /** What is decided; goal runs answer by topic. */
-  topic?: "plan" | "findings" | "ship" | "other"
+  topic?: "plan" | "findings" | "ship" | "other" | "budget" | "goal"
   /** Shadow mode: what Jev predicted the human would answer. */
   shadow?: Shadow | null
 }
@@ -47,8 +48,11 @@ export const decodeStored = (rows: unknown): Approval[] => {
   const out: Approval[] = []
   for (const row of rows) {
     const exit = decodeDecision(row)
-    if (exit._tag === "Success") out.push(exit.value as Approval)
-    else console.warn(`approvals: dropped a stored row that does not match the schema: ${JSON.stringify(row).slice(0, 200)}`)
+    if (Exit.isSuccess(exit)) out.push(exit.value as Approval)
+    else
+      console.warn(
+        `approvals: dropped a stored row that does not match the schema: ${JSON.stringify(row).slice(0, 200)}`,
+      )
   }
   return out
 }
@@ -66,7 +70,9 @@ export class Approvals {
   constructor(root: string) {
     this.db = new Database(path.join(root, "approvals.db"), { create: true })
     this.db.run("PRAGMA journal_mode = WAL")
-    this.db.run("CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, data TEXT NOT NULL)")
+    this.db.run(
+      "CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, data TEXT NOT NULL)",
+    )
     this.db.run(
       "CREATE TABLE IF NOT EXISTS ship_grants (id TEXT PRIMARY KEY, scope_id TEXT NOT NULL, branch TEXT NOT NULL, pushes INTEGER NOT NULL DEFAULT 0)",
     )
@@ -89,7 +95,11 @@ export class Approvals {
   }
 
   private save(a: Approval) {
-    this.db.run("INSERT OR REPLACE INTO approvals (id, created_at, data) VALUES (?, ?, ?)", [a.id, a.createdAt, JSON.stringify(a)])
+    this.db.run("INSERT OR REPLACE INTO approvals (id, created_at, data) VALUES (?, ?, ?)", [
+      a.id,
+      a.createdAt,
+      JSON.stringify(a),
+    ])
   }
 
   /** Keep the newest KEEP decisions; an older one's ship grant goes with it. */
@@ -109,7 +119,9 @@ export class Approvals {
   /** Ship grants whose approval the human answered with the first option, oldest first. */
   acceptedShips(scopeId: string, branch: string): ShipGrant[] {
     const rows = this.db
-      .query("SELECT id, scope_id AS scopeId, branch, pushes FROM ship_grants WHERE scope_id = ? AND branch = ? ORDER BY rowid")
+      .query(
+        "SELECT id, scope_id AS scopeId, branch, pushes FROM ship_grants WHERE scope_id = ? AND branch = ? ORDER BY rowid",
+      )
       .all(scopeId, branch) as ShipGrant[]
     return rows.filter((g) => {
       const a = this.get(g.id)
@@ -134,11 +146,27 @@ export class Approvals {
     return this.items.find((x) => x.id === id)
   }
 
-  open(a: Pick<Approval, "threadId" | "title" | "summary" | "options"> & Partial<Pick<Approval, "kind" | "allowText" | "context" | "optionDetails" | "reportThreadId" | "topic">>): Approval {
+  open(
+    a: Pick<Approval, "threadId" | "title" | "summary" | "options"> &
+      Partial<Pick<Approval, "kind" | "allowText" | "context" | "optionDetails" | "reportThreadId" | "topic">>,
+  ): Approval {
     const kind = a.kind ?? "approval"
     if (a.optionDetails && a.optionDetails.length && a.optionDetails.length !== a.options.length)
       throw new Error("optionDetails must have one entry per option")
-    const item: Approval = { kind, allowText: kind === "question" || (a.allowText ?? false), context: a.context ?? "coordinator", ...a, optionDetails: a.optionDetails ?? [], id: crypto.randomUUID().slice(0, 8), status: "pending", answer: null, note: null, createdAt: Date.now(), answeredAt: null, answeredBy: null }
+    const item: Approval = {
+      kind,
+      allowText: kind === "question" || (a.allowText ?? false),
+      context: a.context ?? "coordinator",
+      ...a,
+      optionDetails: a.optionDetails ?? [],
+      id: crypto.randomUUID().slice(0, 8),
+      status: "pending",
+      answer: null,
+      note: null,
+      createdAt: Date.now(),
+      answeredAt: null,
+      answeredBy: null,
+    }
     this.items.push(item)
     this.save(item)
     this.prune()
@@ -147,7 +175,10 @@ export class Approvals {
 
   setShadow(id: string, shadow: Shadow | null): Approval | undefined {
     const a = this.get(id)
-    if (a) (a.shadow = shadow), this.save(a)
+    if (a) {
+      a.shadow = shadow
+      this.save(a)
+    }
     return a
   }
 
@@ -157,7 +188,8 @@ export class Approvals {
     if (!a) throw new Error(`unknown approval ${id}`)
     if (a.status !== "pending") throw new Error(`approval ${id} is already answered: ${a.answer}`)
     if (!answer.trim()) throw new Error("answer is empty")
-    if (!a.allowText && !a.options.includes(answer)) throw new Error(`answer must be one of ${JSON.stringify(a.options)}`)
+    if (!a.allowText && !a.options.includes(answer))
+      throw new Error(`answer must be one of ${JSON.stringify(a.options)}`)
     Object.assign(a, { status: "answered", answer, note, answeredAt: Date.now(), answeredBy: by })
     this.save(a)
     return a

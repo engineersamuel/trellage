@@ -3,9 +3,10 @@
 //   sf goal show ID                    the spec
 //   sf goal new                        guided questions in the terminal; saves the spec
 //   sf goal save FILE.json             validate and save a spec from a file
-//   sf goal run ID [--thread T]        start a run (or watch thread T), answer decisions the policy allows,
-//                                      score it, append the result to the run log.
-//                                      Exit 0 pass, 1 fail or timeout, 2 a decision waits for the human, 3 blocked
+//   sf goal run ID [--thread T]        start the goal (or attach to its conversation), answer decisions the policy
+//                                      allows, and wait until the goal is done; the coordinator runs its loops.
+//                                      Exit 0 pass, 2 a decision (or the cost-limit pause) waits for the human,
+//                                      3 blocked or stopped at the cost limit. No time limit.
 //   sf goal check ID THREAD            score one thread once, no waiting, no log
 //   sf goal history ID                 the run log: factory commit per run, so fixes show as commit changes
 import { Console, Duration, Effect } from "effect"
@@ -24,15 +25,19 @@ import {
 /** A parsed JSON response; `A` is the shape the endpoint returns. */
 type Json = <A = unknown>(path: string, init?: RequestInit) => Effect.Effect<A, Error>
 /** `GET /api/goals`: every spec with its runner-line count and last runner line. */
-type GoalList = { dir: string; factoryCommit: string; goals: { spec: GoalSpec; runs: number; last: GoalRun | null }[] }
+type GoalList = {
+  dir: string
+  factoryCommit: string
+  goals: { spec: GoalSpec; runs: number; last: GoalRun | null; state?: { status: string; loop: number } | null }[]
+}
 type Ask = (prompt: string, folderId: string, base: string, goalId: string) => Effect.Effect<string, Error>
 
 const POLL = Duration.seconds(15)
 const STALE_GRACE = 3 * 60_000
 const enc = encodeURIComponent
 
-const gradeNote = ({ criteria: c, gradingVersion }: NonNullable<GoalRun["grade"]>) =>
-  `  AC ${c.passed}/${c.evaluated} ${gradingVersion}`
+const gradeNote = ({ criteria: c, gradingVersion, cost }: NonNullable<GoalRun["grade"]>) =>
+  `  AC ${c.passed}/${c.evaluated} ${gradingVersion}${cost ? `  $${cost.total.usd.toFixed(2)}` : ""}`
 
 /** One line per run: when, factory commit, outcome, thread, PR, unmet count. Grade lines say `grade`, the criteria rate and grading version. */
 export const runLine = (r: GoalRun) =>
@@ -144,8 +149,7 @@ const guided = (json: Json) =>
               Promise.resolve([] as string[][]),
             ),
           )
-          const runs = Number(await question(rl, "max runs", "5"))
-          const minutesPerRun = Number(await question(rl, "minutes per run", "720"))
+          const usd = Number(await question(rl, "cost limit per run in $ (the run pauses there and asks you)", "250"))
           return {
             id,
             repo,
@@ -160,7 +164,7 @@ const guided = (json: Json) =>
               sdlc: { criteriaProven: true, gatesRun, gatesSkipped },
             },
             approvals,
-            limits: { runs, minutesPerRun },
+            limits: { usd },
           }
         } finally {
           rl.close()
@@ -172,21 +176,45 @@ const guided = (json: Json) =>
     yield* Console.log(`saved ${saved.id}\nnext: /factory-loop ${saved.id}   (or: sf goal run ${saved.id})`)
   })
 
-/** Watch a thread until the goal is met, a human decision or a block stops it, or the time runs out. Returns the exit code. */
+/** An error worth polling through: the coordinator is down or restarting (no HTTP answer, or a 5xx). */
+const transient = (e: Error) => !/^4\d\d /.test(e.message)
+
+/** `eff`, tried again after `wait` while it fails with a transient error and the deadline has not passed. */
+export const retryTransient = <A>(
+  eff: Effect.Effect<A, Error>,
+  deadline: number,
+  wait: Duration.Input = POLL,
+): Effect.Effect<A, Error> =>
+  eff.pipe(
+    Effect.catchIf(
+      (e) => transient(e) && Date.now() < deadline,
+      (e) =>
+        Console.error(`coordinator unreachable (${e.message.split("\n")[0]}); polling again`).pipe(
+          Effect.andThen(Effect.sleep(wait)),
+          Effect.andThen(Effect.suspend(() => retryTransient(eff, deadline, wait))),
+        ),
+    ),
+  )
+
+/**
+ * Watch a thread until the goal is met, or a human decision (a cost-limit pause too) or a block stops it. No time
+ * limit: the cost limit (`limits.usd`, enforced by the coordinator) bounds a run. Returns the exit code.
+ */
 const watch = (json: Json, spec: GoalSpec, threadId: string) =>
   Effect.gen(function* () {
-    const deadline = Date.now() + spec.limits.minutesPerRun * 60_000
     const answered = new Set<string>()
     // A resumed thread may still show the block it reported before the human's answer or message. Ignore that
     // report until the thread has run again, or STALE_GRACE passed with no activity (then the block is real).
     const started = Date.now()
     let staleBlock: string | null | undefined
     while (true) {
-      const run = yield* json<Run>(`/api/runs/${enc(threadId)}`)
+      // A coordinator restart must not end the run: it resumes interrupted conversations (src/resume.ts).
+      const run = yield* retryTransient(json<Run>(`/api/runs/${enc(threadId)}`), Number.POSITIVE_INFINITY)
       if (staleBlock === undefined) staleBlock = run.report?.status === "blocked" ? run.report.summary : null
       if (run.status === "running" || Date.now() - started > STALE_GRACE) staleBlock = null
       const unmet = goalUnmet(run, spec.expect, spec.base)
-      if (!unmet.length) return { run, unmet, outcome: "pass" as const, code: 0 }
+      // ADR 0007: the goal is done when the factory says so (every AC passes, the PR is green), not per loop.
+      if (run.goal?.status === "done") return { run, unmet, outcome: "pass" as const, code: 0 }
       for (const a of splitPending(run, spec.approvals).auto.filter((x) => !answered.has(x.id))) {
         answered.add(a.id)
         yield* json(`/api/approvals/${enc(a.id)}`, {
@@ -202,26 +230,26 @@ const watch = (json: Json, spec: GoalSpec, threadId: string) =>
       const stop = stopReason(run, spec.approvals, staleBlock)
       if (stop?.code === 2) return { run, unmet, outcome: "waiting" as const, code: 2, reason: stop.reason }
       if (stop?.code === 3) return { run, unmet, outcome: "blocked" as const, code: 3, reason: stop.reason }
-      if (Date.now() >= deadline) return { run, unmet, outcome: "timeout" as const, code: 1 }
       yield* Effect.sleep(POLL)
     }
   })
 
-const runGoal = (json: Json, ask: Ask, id: string, thread?: string) =>
+/** Start the goal (or attach to its running conversation) and watch it until it is done, waits, or stops. */
+const runGoal = (json: Json, _ask: Ask, id: string, thread?: string) =>
   Effect.gen(function* () {
     const spec = yield* json<GoalSpec>(`/api/goals/${enc(id)}`)
-    const before = yield* json<GoalRun[]>(`/api/goals/${enc(id)}/runs`)
-    yield* Console.error(
-      `goal ${spec.id}: run ${before.filter((r) => !r.grade).length + 1} (limit ${spec.limits.runs} per loop)`,
-    )
     let threadId = thread
     if (!threadId) {
-      const folder = yield* json<{ id: string }>("/api/folders", {
-        method: "POST",
-        body: JSON.stringify({ path: spec.repo }),
-      })
-      threadId = yield* ask(spec.prompt, folder.id, spec.base, spec.id)
+      const started = yield* json<{ threadId: string; loop: number; status: string; resumed: boolean }>(
+        `/api/goals/${enc(id)}/start`,
+        { method: "POST", body: "{}" },
+      )
+      threadId = started.threadId
+      yield* Console.error(
+        `goal ${spec.id}: ${started.resumed ? "attached to" : "started"} loop ${started.loop} (${started.status})`,
+      )
     }
+    yield* Console.error(`thread ${threadId}`)
     const r = yield* watch(json, spec, threadId)
     yield* Console.log(scoreCard(r.run, spec, r.unmet))
     if (r.outcome === "waiting") {
@@ -259,7 +287,7 @@ export const goalCommand = (json: Json, ask: Ask, args: string[]): Effect.Effect
               `goals in ${v.dir} (factory ${v.factoryCommit})`,
               ...v.goals.map(
                 (g) =>
-                  `${g.spec.id.padEnd(28)} runs ${String(g.runs).padStart(3)}  last ${g.last?.outcome ?? "-"}  ${g.spec.repo}`,
+                  `${g.spec.id.padEnd(28)} ${(g.state ? `${g.state.status} loop ${g.state.loop}` : "not started").padEnd(20)}  ${g.spec.repo}`,
               ),
             ].join("\n"),
           ),

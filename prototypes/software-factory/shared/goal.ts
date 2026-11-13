@@ -82,10 +82,61 @@ export const ImprovePolicy = Schema.Struct({
 export type ImprovePolicy = typeof ImprovePolicy.Type
 export const DEFAULT_IMPROVE: ImprovePolicy = Schema.decodeUnknownSync(ImprovePolicy)({})
 
+/** Cost limit of a goal (all its runs together) when the spec sets none, in US dollars. */
+export const DEFAULT_RUN_USD = 250
+
+/**
+ * No time limit and no loop count: a goal may loop for days. When all its loops together reach `usd`, the factory
+ * pauses it and asks the human (ADR 0007). Old specs' `runs` and `minutesPerRun` are ignored.
+ */
 export const Limits = Schema.Struct({
-  runs: Schema.Number.pipe(withDefault(5)),
-  minutesPerRun: Schema.Number.pipe(withDefault(720)),
+  usd: Schema.Number.pipe(withDefault(DEFAULT_RUN_USD)),
 })
+
+/** One loop of a goal: a fresh sub-coordinator session that ended with report_up (ADR 0007). */
+export type GoalLoop = {
+  n: number
+  at: number
+  status: string
+  summary: string
+  gaps: string[]
+  commit: string
+  acPassed: number
+  acTotal: number
+  /** The goal's spend when this loop reported (all loops so far). */
+  usd: number
+  /** More ACs pass than in any earlier loop, or a new commit. */
+  progress: boolean
+}
+
+/** The central state of a goal: every loop reads it (its handoff) and the factory updates it after each loop. */
+export type GoalState = {
+  goalId: string
+  /** The goal's one conversation: one worktree, branch and PR for every loop. */
+  threadId: string
+  status: "running" | "checking" | "paused" | "waiting-child" | "done" | "stopped"
+  /** The current (or last) loop, from 1. */
+  loop: number
+  /** True when the next loop should start once the conversation is idle. */
+  next: boolean
+  acs: Record<string, Verdict>
+  acSource: "evaluator" | "evidence" | null
+  pr: { url: string; checks: ChecksState } | null
+  loops: GoalLoop[]
+  /** Loops in a row without progress. */
+  noProgress: number
+  /** `noProgress` before the current loop first reported; a repeated report of one loop recounts from it. */
+  noProgressBefore?: number
+  /** Why the goal is paused, stopped or waiting. */
+  reason?: string
+  /** Open human decision (no progress, factory defect, child done). */
+  approvalId?: string
+  /** The human's typed direction for the next loop. */
+  note?: string
+  childGoalId?: string
+  parentGoalId?: string
+  updatedAt: number
+}
 
 /** Optional gates a goal can require to run or to be skipped (coordinator/src/sdlc.ts GATES). */
 export const SDLC_GATES = ["design", "testFirst", "codeReview", "supplyChain", "docs", "postMerge"] as const
@@ -120,7 +171,7 @@ export const goalProblems = (g: GoalSpec, knownSteps?: readonly string[]): strin
     if (knownSteps && !knownSteps.includes(s)) out.push(`unknown step ${s}`)
     if (c.min < 0 || (c.max !== undefined && c.max < c.min)) out.push(`step ${s}: need 0 <= min <= max`)
   }
-  if (g.limits.runs < 1 || g.limits.minutesPerRun < 1) out.push("limits must be at least 1")
+  if (!(g.limits.usd > 0)) out.push("limits: usd above 0")
   if (!Number.isInteger(g.improve.maxRetries) || g.improve.maxRetries < 0)
     out.push("improve.maxRetries must be a whole number >= 0")
   return out
@@ -130,6 +181,8 @@ export const goalProblems = (g: GoalSpec, knownSteps?: readonly string[]): strin
 
 /** Bump when the rubric changes; grades of different versions are never compared. */
 export const GRADING_VERSION = "g1"
+/** g2: criteria verdicts come from the independent evaluator, not from the run's own evidence.md. */
+export const EVALUATOR_GRADING_VERSION = "g2"
 export const Verdict = Schema.Literals(["pass", "fail", "missing"])
 export type Verdict = typeof Verdict.Type
 export const GradeStatus = Schema.Literals(["pass", "fail", "unknown", "error"])
@@ -142,6 +195,23 @@ export const QualityScore = Schema.Struct({
   judge: Schema.Struct({ model: Schema.String, harness: Schema.String }),
   evidence: Schema.String,
 })
+
+/** Spend of a run or of one step: USD, GitHub AI Credits (AIC) and tokens (coordinator/src/costs.ts). */
+export const CostTotals = Schema.Struct({
+  usd: Schema.Number,
+  aic: Schema.Number,
+  /** Part of `aic` estimated from tokens (Claude/Pi workers, proxy calls). */
+  aicEstimated: Schema.Number,
+  totalTokens: Schema.Number,
+  outputTokens: Schema.Number,
+  calls: Schema.Number,
+  /** Calls with no known rate: left out of `usd` and `aic`. */
+  unpricedCalls: Schema.Number,
+})
+export type CostTotals = typeof CostTotals.Type
+/** A run's spend when it was graded: the whole run and each step (agents without a step count as `coordinator`). */
+export const GradeCost = Schema.Struct({ total: CostTotals, byStep: Schema.Record(Schema.String, CostTotals) })
+export type GradeCost = typeof GradeCost.Type
 
 export const Grade = Schema.Struct({
   /** threadId|reportCommit|reportStatus|gradingVersion: a replayed report has the same key. */
@@ -184,6 +254,12 @@ export const Grade = Schema.Struct({
   errors: Schema.Array(Schema.String).pipe(withDefault([])),
   /** Approval id of the improvement proposal a failed grade opened. */
   proposalId: Schema.NullOr(Schema.String).pipe(withDefault(null)),
+  /** g2 only: the run's own evidence.md verdicts, kept beside the evaluator's. Never part of `status`. */
+  selfCriteria: Schema.optionalKey(Schema.Record(Schema.String, Verdict)),
+  /** g2 only: criteria the run marked PASS and the evaluator failed. */
+  disagreements: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** The run's spend at grading time. Recorded only; never part of `status`. Absent on older grades. */
+  cost: Schema.optionalKey(GradeCost),
 })
 export type Grade = typeof Grade.Type
 
@@ -238,7 +314,8 @@ export type RunPr = {
 export type RunApproval = {
   id: string
   title: string
-  topic: ApprovalTopic
+  /** `budget` (cost-limit pause) and `goal` (goal-loop decisions): always the human's, whatever the policy. */
+  topic: ApprovalTopic | "budget" | "goal"
   status: string
   answer: string | null
   options: string[]
@@ -270,7 +347,13 @@ export type Run = {
   improvement?: ImprovementProposal | null
   /** Source thread when this conversation is a Factory improvement run. */
   improvementOf?: string
+  /** Runs of a goal: the goal's cost limit, what all its runs spent, what this run spent, and the goal's status. */
+  budget?: RunBudget | null
+  /** The goal state when this conversation is a goal's (ADR 0007). */
+  goal?: GoalState | null
 }
+
+export type RunBudget = { limitUsd: number; spentUsd: number; runUsd: number; status: "ok" | "paused" | "stopped" }
 
 export type RunGate = {
   id: string
@@ -378,6 +461,10 @@ export type GradeInputs = {
   evidence: Grade["evidence"]
   quality: Grade["quality"]
   errors: string[]
+  /** The run's spend; null when it could not be read. */
+  cost?: GradeCost | null
+  /** Set when `criteria` are the independent evaluator's verdicts (g2); then these are evidence.md's. */
+  selfCriteria?: Record<string, Verdict>
 }
 
 const regressed = (b: Benchmark, value: number | null): boolean | null =>
@@ -410,13 +497,14 @@ export const buildGrade = (run: GradedRun, i: GradeInputs, spec?: GoalSpec | nul
   const prChecks = prChecksOf(run.pr, spec)
   const benchmarks = benchmarkResults(spec, i.benchmarks)
   const errors = [...i.errors, ...(run.prError ? [`PR lookup failed: ${run.prError}`] : [])]
+  const version = i.selfCriteria ? EVALUATOR_GRADING_VERSION : GRADING_VERSION
   return {
-    key: `${run.threadId}|${i.report.commit}|${i.report.status}|${GRADING_VERSION}`,
+    key: `${run.threadId}|${i.report.commit}|${i.report.status}|${version}`,
     at: i.at,
     subject: i.subject,
     threadId: run.threadId,
     factoryCommit: i.factoryCommit,
-    gradingVersion: GRADING_VERSION,
+    gradingVersion: version,
     report: i.report,
     status: gradeStatus({ criteria: i.criteria, prChecks, benchmarks, errors, prRequired, prFound: !!run.pr }),
     criteria: criteriaSummary(i.criteria),
@@ -430,6 +518,15 @@ export const buildGrade = (run: GradedRun, i: GradeInputs, spec?: GoalSpec | nul
     quality: i.quality,
     errors,
     proposalId: null,
+    ...(i.selfCriteria
+      ? {
+          selfCriteria: i.selfCriteria,
+          disagreements: Object.keys(i.criteria).filter(
+            (id) => i.selfCriteria![id] === "pass" && i.criteria[id] === "fail",
+          ),
+        }
+      : {}),
+    ...(i.cost ? { cost: i.cost } : {}),
   }
 }
 
@@ -515,11 +612,17 @@ export const nextImprovementAction = (
 }
 
 /** Pending decisions of the run that the policy leaves to the runner, and those it leaves to the human. */
+const humanOnly = (topic: string) => topic === "budget" || topic === "goal"
+
 export const splitPending = (run: Run, policy: Approvals): { auto: RunApproval[]; human: RunApproval[] } => {
   const pending = run.approvals.filter((a) => a.status === "pending")
   return {
-    auto: pending.filter((a) => policy[a.topic] === "auto" && a.options.length > 0),
-    human: pending.filter((a) => policy[a.topic] !== "auto" || a.options.length === 0),
+    auto: pending.filter(
+      (a) => !humanOnly(a.topic) && policy[a.topic as ApprovalTopic] === "auto" && a.options.length > 0,
+    ),
+    human: pending.filter(
+      (a) => humanOnly(a.topic) || policy[a.topic as ApprovalTopic] !== "auto" || a.options.length === 0,
+    ),
   }
 }
 
@@ -530,12 +633,21 @@ export const stopReason = (
   policy?: Approvals,
   staleBlock?: string | null,
 ): { code: 2 | 3; reason: string } | null => {
+  // A stopped goal is over, whatever questions are still open in its conversation.
+  if (run.goal?.status === "stopped") return { code: 3, reason: `goal stopped: ${run.goal.reason ?? "by the human"}` }
   const waiting = policy ? splitPending(run, policy).human : run.approvals.filter((a) => a.status === "pending")
   if (waiting.length)
     return {
       code: 2,
       reason: `waiting for an answer: ${waiting.map((a) => `${a.id} [${a.topic}] ${a.title}`).join("; ")}`,
     }
+  if (run.budget?.status === "stopped")
+    return {
+      code: 3,
+      reason: `goal stopped by the human at its cost limit ($${run.budget.spentUsd.toFixed(2)} spent by all its runs)`,
+    }
+  // A goal's blocked loop is not the end: the next loop gets the block in its handoff.
+  if (run.goal) return null
   if (run.report?.status === "blocked" && run.status !== "running" && run.report.summary !== staleBlock)
     return { code: 3, reason: `reported blocked: ${run.report.summary}` }
   return null
@@ -561,8 +673,7 @@ export type GoalDraft = {
   gatesRun: readonly string[]
   gatesSkipped: readonly string[]
   approvals: Approvals
-  runs: string
-  minutesPerRun: string
+  usd: string
   benchmarks: readonly Benchmark[]
   improve: ImprovePolicy
 }
@@ -571,7 +682,7 @@ const DEFAULT_STEPS: Record<string, StepRow> = {
   implement: { on: true, min: "1", max: "" },
   verify: { on: true, min: "1", max: "" },
   security: { on: true, min: "1", max: "" },
-  finish: { on: true, min: "1", max: "1" },
+  finish: { on: true, min: "1", max: "" },
 }
 
 export const emptyDraft = (): GoalDraft => ({
@@ -590,8 +701,7 @@ export const emptyDraft = (): GoalDraft => ({
   gatesRun: [],
   gatesSkipped: [],
   approvals: { plan: "auto", findings: "auto", ship: "auto", other: "human" },
-  runs: "5",
-  minutesPerRun: "720",
+  usd: String(DEFAULT_RUN_USD),
   benchmarks: [],
   improve: DEFAULT_IMPROVE,
 })
@@ -618,9 +728,8 @@ export const draftToSpec = (
       problems.push(`step ${id}: counts must be whole numbers`)
     else steps[id] = max === undefined ? { min } : { min, max }
   }
-  const runs = int(d.runs)
-  const minutesPerRun = int(d.minutesPerRun)
-  if (runs === undefined || minutesPerRun === undefined) problems.push("limits must be whole numbers")
+  const usd = Number(d.usd.trim().replace(/^\$/, ""))
+  if (!d.usd.trim() || !(usd > 0)) problems.push("cost limit must be a number of dollars above 0")
   const raw = {
     id: d.id.trim(),
     title: d.title.trim(),
@@ -645,7 +754,7 @@ export const draftToSpec = (
     },
     approvals: d.approvals,
     improve: d.improve,
-    limits: { runs: runs ?? 5, minutesPerRun: minutesPerRun ?? 720 },
+    limits: { usd: usd > 0 ? usd : DEFAULT_RUN_USD },
   }
   const exit = decodeGoal(raw)
   if (!Exit.isSuccess(exit)) return { ok: false, problems: [...problems, "the form does not make a valid goal"] }
@@ -675,8 +784,7 @@ export const specToDraft = (s: GoalSpec): GoalDraft => ({
   gatesRun: [...(s.expect.sdlc?.gatesRun ?? [])],
   gatesSkipped: [...(s.expect.sdlc?.gatesSkipped ?? [])],
   approvals: s.approvals,
-  runs: String(s.limits.runs),
-  minutesPerRun: String(s.limits.minutesPerRun),
+  usd: String(s.limits.usd),
   benchmarks: s.expect.benchmarks,
   improve: s.improve,
 })

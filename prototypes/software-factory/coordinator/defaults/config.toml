@@ -79,4 +79,24 @@ finding_change = 0.6
 # US dollars per GitHub AI Credit (docs.github.com: 1 AI Credit = $0.01).
 usd_per_ai_credit = 0.01
 
+# Independent acceptance evaluator (a model family other than the builder's). It never blocks shipping.
+[evaluate]
+enabled = true
+# sdlc_plan rounds in which the evaluator may send untestable criteria back.
+contract_rounds = 2
+# Evaluations per ship; a fix and a verify worker run between two of them when a criterion fails.
+max_rounds = 2
+
 # Steps, research workflows and review lenses are prompt files: prompts/steps/, prompts/research/, prompts/lenses/.
+
+# Gate workers (code review, security review, evaluator, and their fix and verify workers). There is no short time
+# limit: the goal's cost limit bounds spending. A stuck worker is stopped and a fresh one starts with the same task.
+[workers]
+# Stuck: silent this long (no model or tool event) while no tool call is running. A long build is a running tool call.
+stuck_quiet_minutes = 10
+# Stuck: this many tool calls failed in a row.
+stuck_failed_tools = 5
+# Fresh workers to try after a stuck one.
+retries = 1
+# Backstop: a worker still running after this long is treated as stuck. SF_SECURITY_TIMEOUT_MS overrides it.
+wait_minutes = 90

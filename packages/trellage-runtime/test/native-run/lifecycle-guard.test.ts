@@ -9,7 +9,7 @@ import {
   acquireProfileGuard,
   profileGuardProfiles,
 } from "../../src/native-run/lifecycle-guard.ts"
-import { cleanupFixtures, tempRoot } from "./fixtures.ts"
+import { cleanupFixtures, tempRoot, waitForFile } from "./fixtures.ts"
 
 afterEach(cleanupFixtures)
 
@@ -447,15 +447,13 @@ setTimeout(() => process.exit(0), 30_000);
   let leaf: { pid: number; started: string } | undefined
   try {
     await once(child, "spawn")
-    for (let attempt = 0; attempt < 100 && !existsSync(leafFile); attempt += 1) await Bun.sleep(10)
-    expect(existsSync(leafFile)).toBe(true)
+    expect(await waitForFile(leafFile)).toBe(true)
     const leafPid = Number(readFileSync(leafFile, "utf8"))
     leaf = { pid: leafPid, started: processStarted(leafPid) }
     guard.attachChild(child.pid!)
 
     guard.signalTree(child.pid!, "SIGTERM")
-    for (let attempt = 0; attempt < 100 && !existsSync(intermediateExit); attempt += 1) await Bun.sleep(10)
-    expect(existsSync(intermediateExit)).toBe(true)
+    expect(await waitForFile(intermediateExit)).toBe(true)
     expect(child.signalCode).toBeNull()
     expect(processStarted(leaf.pid)).toBe(leaf.started)
     expect(await guard.waitForTree(child.pid!, 0)).toBe(false)

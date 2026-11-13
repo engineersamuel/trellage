@@ -120,6 +120,17 @@ const body = (name: string, c: string, x: string): { children: string[]; lines: 
           ]),
         ],
       }
+    case "show_evaluation":
+      return {
+        lines: L,
+        children: [
+          table("t", [
+            col("c", "Criterion", `@Each(${c}.rows, "r", Text("text", r.id, r.note))`),
+            col("v", "Verdict", `@Each(${c}.rows, "r", Tag(r.verdict, null, "sm", r.variant))`),
+            col("x", "Command", `${c}.rows.command`),
+          ]),
+        ],
+      }
     case "show_sdlc":
       return {
         lines: L,
@@ -225,6 +236,7 @@ export const CARD_TOOLS = new Set([
   "show_delivery_run",
   "show_security_review",
   "show_code_review",
+  "show_evaluation",
   "show_sdlc",
   "show_diff_summary",
   "show_report_findings",

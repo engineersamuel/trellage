@@ -58,6 +58,70 @@ describe("cards", () => {
     const r = JSON.parse(String(await (tool.handler as (args: object, invocation: object) => unknown)({}, {})))
     expect([r.decisions.length, typeof r.note]).toEqual([0, "string"])
   })
+  describe("show_evaluation", () => {
+    const ev = (id: string, scopeId: string, at: number, extra: object = {}) => ({
+      id,
+      scopeId,
+      threadId: "t",
+      workdir: "/wt",
+      status: "done",
+      round: 2,
+      model: `model-${id}`,
+      verdicts: [
+        { id: "AC-1", verdict: "pass", command: "bun test a", output: "ok", note: "a passes" },
+        { id: "AC-2", verdict: "fail", command: "bun test b", output: "no", note: "b fails" },
+      ],
+      workerIds: [],
+      notes: [`note-${id}`],
+      at,
+      ...extra,
+    })
+    const evaluation = async (evaluations: [string, unknown][]) => {
+      const f = {
+        summaries: () => [],
+        securityReviews: new Map(),
+        codeReviews: new Map(),
+        evaluations: new Map(evaluations),
+        sdlc: new Map(),
+        decisions: [],
+        run: null,
+      } as never
+      const tools = coordinatorTools(f, { id: "sub-1", threadId: "t", workdir: "/wt" })
+      const tool = tools.find((t) => t.name === "show_evaluation")
+      expect(tool).toBeDefined()
+      return JSON.parse(String(await (tool!.handler as (args: object, invocation: object) => unknown)({}, {})))
+    }
+    test("returns the scope's newest evaluation, not insertion order or another scope's", async () => {
+      const r = await evaluation([
+        ["e-new", ev("e-new", "sub-1", 20, { status: "fixing", round: 3 })],
+        ["e-old", ev("e-old", "sub-1", 10)],
+        ["e-foreign", ev("e-foreign", "sub-2", 99)],
+      ])
+      expect(r).toEqual({
+        evaluationId: "e-new",
+        status: "fixing",
+        round: 3,
+        model: "model-e-new",
+        verdicts: [
+          { id: "AC-1", verdict: "pass", command: "bun test a", note: "a passes" },
+          { id: "AC-2", verdict: "fail", command: "bun test b", note: "b fails" },
+        ],
+        notes: ["note-e-new"],
+      })
+    })
+    test("keeps the evaluation error", async () => {
+      const r = await evaluation([["e", ev("e", "sub-1", 1, { status: "failed", error: "boom" })]])
+      expect([r.status, r.error]).toEqual(["failed", "boom"])
+    })
+    test("no evaluation in the scope: a note and no status", async () => {
+      for (const evaluations of [[], [["e", ev("e", "sub-2", 1)]]] as [string, unknown][][]) {
+        const r = await evaluation(evaluations)
+        expect(typeof r.note).toBe("string")
+        expect(r.note.length).toBeGreaterThan(0)
+        expect("status" in r).toBe(false)
+      }
+    })
+  })
   test("the prompt asks for a plain sentence next to every card", () => {
     expect(cardsPrompt()).toContain("Foldkit")
     expect(cardsPrompt()).toContain("never show_delivery_run there")

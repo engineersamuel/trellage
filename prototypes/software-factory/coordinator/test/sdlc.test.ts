@@ -11,6 +11,7 @@ import {
   decide,
   ensureFactoryDir,
   implementAddendum,
+  isTestPath,
   newSdlc,
   parseCriteria,
   prBody,
@@ -42,12 +43,19 @@ describe("gate decisions", () => {
   test("Jev probability against thresholds; floors; no Jev runs every gate", () => {
     const t1 = classify([f("src/a.ts")])
     const d = decide("diff", { codeReview: 0.3, supplyChain: 0.9, docs: 0.1, postMerge: 0.5 }, t1)
-    expect(d.map((g) => [g.id, g.chosen])).toEqual([["codeReview", false], ["supplyChain", true], ["docs", false], ["postMerge", true]])
+    expect(d.map((g) => [g.id, g.chosen])).toEqual([
+      ["codeReview", false],
+      ["supplyChain", true],
+      ["docs", false],
+      ["postMerge", true],
+    ])
     const t2 = classify([f("Cargo.lock")])
     const floored = decide("diff", { codeReview: 0.1, supplyChain: 0.1, docs: 0.1, postMerge: 0.1 }, t2)
     expect(floored.filter((g) => g.chosen).map((g) => g.id)).toEqual(["codeReview", "supplyChain"])
     expect(floored[0]!.reason).toStartWith("floor: tier T2")
-    expect(decide("plan", null, null, "down").every((g) => g.chosen && g.reason.includes("Jev unavailable (down)"))).toBe(true)
+    expect(
+      decide("plan", null, null, "down").every((g) => g.chosen && g.reason.includes("Jev unavailable (down)")),
+    ).toBe(true)
   })
 })
 
@@ -55,7 +63,9 @@ describe("criteria and evidence", () => {
   test("markdown round-trip and unproven list", () => {
     const md = criteriaMarkdown(["one", " two "])
     expect(parseCriteria(md)).toEqual(["one", "two"])
-    expect(unprovenCriteria(["one", "two", "three"], "AC-1: PASS — x\\nAC-2: FAIL — y\\n".replace(/\\\\n/g, "\n"))).toEqual(["AC-2", "AC-3"])
+    expect(
+      unprovenCriteria(["one", "two", "three"], "AC-1: PASS — x\\nAC-2: FAIL — y\\n".replace(/\\\\n/g, "\n")),
+    ).toEqual(["AC-2", "AC-3"])
     expect(unprovenCriteria(["one"], null)).toEqual(["AC-1"])
   })
 })
@@ -65,12 +75,33 @@ describe("test-first", () => {
     expect(testsCameFirst([{ files: ["tests/a.rs"] }, { files: ["src/a.rs", "tests/a.rs"] }])).toBe(true)
     expect(testsCameFirst([{ files: ["src/a.rs"] }, { files: ["tests/a.rs"] }])).toBe(false)
     expect(testsCameFirst([{ files: ["src/a.test.ts", "src/a.ts"] }])).toBe(false)
+    expect(testsCameFirst([{ files: ["test.sh"] }, { files: ["hello.txt"] }])).toBe(true)
   })
+
+  test.each([
+    "test.sh",
+    "scripts/test.sh",
+    "tests.sh",
+    "test_api.py",
+    "pkg/test_util.py",
+    "cli_test.ts",
+    "tests/a.rs",
+    "src/a.test.ts",
+    "a_test.go",
+    "__tests__/x.js",
+    "spec/x.rb",
+  ])("isTestPath true for %s", (p) => expect(isTestPath(p)).toBe(true))
+
+  test.each(["src/testing.ts", "src/latest.ts", "contest.py", "src/attest.rs", "README.md"])(
+    "isTestPath false for %s",
+    (p) => expect(isTestPath(p)).toBe(false),
+  )
 })
 
 const repo = () => {
   const r = mkdtempSync(path.join(tmpdir(), "sf-sdlc-"))
-  const git = (...a: string[]) => execFileSync("git", ["-C", r, "-c", "user.email=t@t", "-c", "user.name=t", ...a], { encoding: "utf8" }).trim()
+  const git = (...a: string[]) =>
+    execFileSync("git", ["-C", r, "-c", "user.email=t@t", "-c", "user.name=t", ...a], { encoding: "utf8" }).trim()
   git("init", "-q")
   git("commit", "-q", "--allow-empty", "-m", "base")
   return { r, git, base: git("rev-parse", "HEAD") }
@@ -83,18 +114,31 @@ describe("worktree artifacts", () => {
     writeFileSync(artifact(r, "x.md"), "x")
     expect(git("status", "--porcelain")).toBe("")
     mkdirSync(path.join(r, ".github", "workflows"), { recursive: true })
-    writeFileSync(path.join(r, ".github/workflows/ci.yml"), "jobs:\n  a:\n    steps:\n      - run: cargo fmt --check\n      - run: |\n          cargo clippy --all-targets -- -D warnings\n          echo done\n      - run: cargo test --locked\n")
+    writeFileSync(
+      path.join(r, ".github/workflows/ci.yml"),
+      "jobs:\n  a:\n    steps:\n      - run: cargo fmt --check\n      - run: |\n          cargo clippy --all-targets -- -D warnings\n          echo done\n      - run: cargo test --locked\n",
+    )
     writeFileSync(path.join(r, "AGENTS.md"), "Run `npm run lint` and `cargo test --locked`.")
-    expect(repoChecks(r)).toEqual(["cargo fmt --check", "cargo clippy --all-targets -- -D warnings", "cargo test --locked", "npm run lint"])
+    expect(repoChecks(r)).toEqual([
+      "cargo fmt --check",
+      "cargo clippy --all-targets -- -D warnings",
+      "cargo test --locked",
+      "npm run lint",
+    ])
   })
 
   test("ship blockers: criteria, evidence, verify after implement, security, chosen gates", () => {
     const { r, git, base } = repo()
     ensureFactoryDir(r)
-    expect(shipBlockers(undefined, r, base, true, true)).toEqual(["no SDLC plan: call sdlc_plan with the acceptance criteria first"])
+    expect(shipBlockers(undefined, r, base, true, true)).toEqual([
+      "no SDLC plan: call sdlc_plan with the acceptance criteria first",
+    ])
     let s: Sdlc = { ...newSdlc("sub", "t"), criteria: ["works"], implementDoneAt: 2, verifyDoneAt: 1 }
     s = withGates(s, decide("plan", { design: 0.9, testFirst: 0.9 }, null))
-    s = withGates(s, decide("diff", { codeReview: 0.9, supplyChain: 0.1, docs: 0.9, postMerge: 0.1 }, classify([f("src/a.ts")])))
+    s = withGates(
+      s,
+      decide("diff", { codeReview: 0.9, supplyChain: 0.1, docs: 0.9, postMerge: 0.1 }, classify([f("src/a.ts")])),
+    )
     expect(shipBlockers(s, r, base, false, false)).toEqual([
       "no PASS evidence in .factory/evidence.md for AC-1",
       "no verify step after the last implement",
@@ -122,7 +166,10 @@ describe("worktree artifacts", () => {
   })
 
   test("implement rules follow the chosen gates", () => {
-    const s = withGates({ ...newSdlc("sub", null), criteria: ["c"] }, decide("plan", { design: 0.1, testFirst: 0.9 }, null))
+    const s = withGates(
+      { ...newSdlc("sub", null), criteria: ["c"] },
+      decide("plan", { design: 0.1, testFirst: 0.9 }, null),
+    )
     const t = implementAddendum(s)
     expect(t).toContain("AC-1: c")
     expect(t).toContain("Tests first")
@@ -146,15 +193,27 @@ describe("lessons", () => {
 describe("code review", () => {
   test("lens pick: threshold, cap, at least one, default without Jev", () => {
     expect(pickLenses(null)).toEqual(["correctness", "tests"])
-    expect(pickLenses({ correctness: 0.9, tests: 0.7, design: 0.65, performance: 0.8, operability: 0.1 })).toEqual(["correctness", "performance", "tests"])
-    expect(pickLenses({ correctness: 0.1, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.3 })).toEqual(["operability"])
+    expect(pickLenses({ correctness: 0.9, tests: 0.7, design: 0.65, performance: 0.8, operability: 0.1 })).toEqual([
+      "correctness",
+      "performance",
+      "tests",
+    ])
+    expect(pickLenses({ correctness: 0.1, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.3 })).toEqual([
+      "operability",
+    ])
     // T2 always gets at least 2 reviewers; the bar is 0.6.
-    expect(pickLenses({ correctness: 0.7, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.4 }, "T2")).toEqual(["correctness", "operability"])
-    expect(pickLenses({ correctness: 0.7, tests: 0.55, design: 0.1, performance: 0.1, operability: 0.4 }, "T1")).toEqual(["correctness"])
+    expect(pickLenses({ correctness: 0.7, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.4 }, "T2")).toEqual(
+      ["correctness", "operability"],
+    )
+    expect(
+      pickLenses({ correctness: 0.7, tests: 0.55, design: 0.1, performance: 0.1, operability: 0.4 }, "T1"),
+    ).toEqual(["correctness"])
   })
   test("findings parse and score", () => {
     const fs = parseReviewFindings(JSON.stringify([{ title: "t", problem: "p", severity: "high" }, { nope: 1 }]))
-    expect(fs).toEqual([{ id: "cr1", title: "t", file: "unknown", severity: "high", problem: "p", fix: "", lenses: [] }])
+    expect(fs).toEqual([
+      { id: "cr1", title: "t", file: "unknown", severity: "high", problem: "p", fix: "", lenses: [] },
+    ])
     expect(parseReviewFindings("not json")).toEqual([])
     expect(score(fs[0]!, 0.8, 0.7).keep).toBe(true)
     expect(score(fs[0]!, 0.8, 0.65).keep).toBe(false)
@@ -167,13 +226,27 @@ describe("code review", () => {
 
 describe("gate settling", () => {
   test("unblocked on-diff gates become done; postMerge waits for the merge; blocked ones stay", () => {
-    const s = withGates(withGates(newSdlc("sub", null), decide("plan", { design: 0.9, testFirst: 0.9 }, null)), decide("diff", { codeReview: 0.1, supplyChain: 0.1, docs: 0.9, postMerge: 0.9 }, classify([f("src/a.ts")])))
+    const s = withGates(
+      withGates(newSdlc("sub", null), decide("plan", { design: 0.9, testFirst: 0.9 }, null)),
+      decide("diff", { codeReview: 0.1, supplyChain: 0.1, docs: 0.9, postMerge: 0.9 }, classify([f("src/a.ts")])),
+    )
     const settled = settleGates(s, ["test-first gate: no tests-only commit before the first code commit"])
-    expect(Object.fromEntries(settled.gates.map((g) => [g.id, g.status]))).toEqual({ design: "done", testFirst: "pending", codeReview: "skipped", supplyChain: "skipped", docs: "done", postMerge: "pending" })
+    expect(Object.fromEntries(settled.gates.map((g) => [g.id, g.status]))).toEqual({
+      design: "done",
+      testFirst: "pending",
+      codeReview: "skipped",
+      supplyChain: "skipped",
+      docs: "done",
+      postMerge: "pending",
+    })
     expect(settled.gates.find((g) => g.id === "postMerge")?.detail).toBe("runs after the human merges")
   })
   test("implement rules carry the minimal-change rule and a scope warning", () => {
-    const t = implementAddendum({ ...newSdlc("sub", null), criteria: ["c"], scopeWarning: "diff grew from 100 to 600 lines" })
+    const t = implementAddendum({
+      ...newSdlc("sub", null),
+      criteria: ["c"],
+      scopeWarning: "diff grew from 100 to 600 lines",
+    })
     expect(t).toContain("smallest change")
     expect(t).toContain("Scope warning: diff grew from 100 to 600 lines")
   })
@@ -188,8 +261,14 @@ describe("reviewer model", () => {
     expect(reviewModels("gemini-4-argon")).toEqual(["gpt-6-astra", "claude-opus-5.5"])
     expect(reviewModels("claude-opus-5.5", false)).toEqual(["gpt-6-astra"])
     // Two lenses read with two different models; a third wraps around.
-    expect([0, 1, 2].map((i) => lensModel("claude-opus-5.5", i, true, ""))).toEqual(["gpt-6-astra", "gemini-4-argon", "gpt-6-astra"])
-    expect(geminiReachable("auto") && geminiReachable("claude") && geminiReachable("copilot") && geminiReachable("pi")).toBe(true)
+    expect([0, 1, 2].map((i) => lensModel("claude-opus-5.5", i, true, ""))).toEqual([
+      "gpt-6-astra",
+      "gemini-4-argon",
+      "gpt-6-astra",
+    ])
+    expect(
+      geminiReachable("auto") && geminiReachable("claude") && geminiReachable("copilot") && geminiReachable("pi"),
+    ).toBe(true)
     const { reviewerRoute } = await import("../src/review.ts")
     expect(reviewerRoute("gemini-4-argon", "copilot")).toEqual({ auth: "proxy" })
     expect(reviewerRoute("gemini-4-argon", "auto")).toEqual({ auth: "proxy" })
@@ -206,10 +285,20 @@ describe("reviewer model", () => {
 
 test("osv flags: advisories and license violations per package", () => {
   const { osvFlagsFrom } = require("../src/sdlc.ts")
-  const report = { results: [{ packages: [
-    { package: { name: "tokio", version: "1.0.0" }, vulnerabilities: [{ id: "RUSTSEC-1" }], license_violations: [] },
-    { package: { name: "subtle", version: "2.6.1" }, vulnerabilities: [], license_violations: ["BSD-3-Clause"] },
-    { package: { name: "toml", version: "1.2.1" } },
-  ] }] }
+  const report = {
+    results: [
+      {
+        packages: [
+          {
+            package: { name: "tokio", version: "1.0.0" },
+            vulnerabilities: [{ id: "RUSTSEC-1" }],
+            license_violations: [],
+          },
+          { package: { name: "subtle", version: "2.6.1" }, vulnerabilities: [], license_violations: ["BSD-3-Clause"] },
+          { package: { name: "toml", version: "1.2.1" } },
+        ],
+      },
+    ],
+  }
   expect([...osvFlagsFrom(report)]).toEqual(["tokio@1.0.0: RUSTSEC-1", "subtle@2.6.1: license BSD-3-Clause"])
 })

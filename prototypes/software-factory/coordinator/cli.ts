@@ -17,8 +17,11 @@
 //   sf run THREAD                       delivery record: workers and steps, approvals, security reviews, PR
 //   sf cost [THREAD] [--json]          cost: global and per sub-coordinator run, or one run by agent (USD, AIC, tokens)
 //   sf goal ...                         goal specs: create, run, score, history (see goal-cli.ts)
+//   sf config sync [--dry-run]          add the shipped config's missing sections and keys to your config, commented
+//                                       out (works with the factory down; never changes a value)
 import { Console, Effect, Stream } from "effect"
 import { goalCommand } from "./goal-cli.ts"
+import { syncUserConfig } from "./src/configSync.ts"
 import { reportText, runText, type CostReport, type RunCost } from "./src/costs.ts"
 import type { Draft, Thread } from "./src/threads.ts"
 
@@ -161,7 +164,7 @@ const program = (() => {
     case "-h":
     case "--help":
       return Console.log(
-        'usage: sf "prompt" | sf -t THREAD "prompt" | sf -f FOLDER [-b BASE] "prompt" | sf folders [PATH] | sf status | sf workers | sf threads | sf settings [PATCH_JSON] | sf run THREAD | sf cost [THREAD] [--json] | sf goal [list|show ID|new|save FILE|run ID [--thread T]|check ID THREAD|history ID] | sf approvals | sf approve ID "Option" [note] | sf draft FOLDER "prompt" | sf draft ID [enhance|council|debate|research|hyperresearch|dismiss|run|pick N|use VERSION|edit "prompt"|rm]',
+        'usage: sf "prompt" | sf -t THREAD "prompt" | sf -f FOLDER [-b BASE] "prompt" | sf folders [PATH] | sf status | sf workers | sf threads | sf settings [PATCH_JSON] | sf run THREAD | sf cost [THREAD] [--json] | sf config sync [--dry-run] | sf goal [list|show ID|new|save FILE|run ID [--thread T]|check ID THREAD|history ID] | sf approvals | sf approve ID "Option" [note] | sf draft FOLDER "prompt" | sf draft ID [enhance|council|debate|research|hyperresearch|dismiss|run|pick N|use VERSION|edit "prompt"|rm]',
       )
     case "run":
       return json(`/api/runs/${encodeURIComponent(rest[0] ?? "")}`).pipe(Effect.flatMap(print))
@@ -173,6 +176,20 @@ const program = (() => {
             Effect.flatMap((r) => (asJson ? print(r) : Console.log(runText(r)))),
           )
         : json<CostReport>("/api/costs").pipe(Effect.flatMap((r) => (asJson ? print(r) : Console.log(reportText(r)))))
+    }
+    case "config": {
+      if (rest[0] !== "sync") return Effect.fail(new Error("usage: sf config sync [--dry-run]"))
+      const dry = rest.includes("--dry-run")
+      return Effect.try({ try: () => syncUserConfig(dry), catch: keep }).pipe(
+        Effect.flatMap((r) =>
+          Console.log(
+            !r.sections.length && !r.keys.length
+              ? `${r.file}: up to date`
+              : `${r.file}: ${dry ? "would add" : "added"} (commented out, defaults unchanged)\n` +
+                  [...r.sections.map((x) => `  [${x}]`), ...r.keys.map((k) => `  ${k}`)].join("\n"),
+          ),
+        ),
+      )
     }
     case "goal":
       return goalCommand(
