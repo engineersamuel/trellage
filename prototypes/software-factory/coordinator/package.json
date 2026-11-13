@@ -13,7 +13,7 @@
     "@github/copilot-sdk": "1.0.29-preview.5",
     "@typesafe-ai/sdk": "0.6.0",
     "effect": "4.1.2",
-    "pi-subagents": "0.88.0"
+    "pi-subagents": "0.86.0"
   },
   "devDependencies": {
     "@openuidev/lang-core": "1.0.1",

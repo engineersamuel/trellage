@@ -187,7 +187,7 @@ typos = "1.52.0"
 hadolint = "2.15.1"
 "github:google/osv-scanner" = "2.7.1"
 lychee = "0.24.2"
-"npm:syncpack" = "15.3.3"
+"npm:syncpack" = "15.3.0"
 rust = "1.96.0"
 
 [tasks."quality:setup"]

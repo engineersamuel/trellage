@@ -70,6 +70,11 @@ type PackageManifest = {
   bin: Record<string, string>
 }
 
+export enum DependencyScope {
+  Runtime = "runtime",
+  Development = "development",
+}
+
 function inside(root: string, candidate: string): boolean {
   return candidate === root || candidate.startsWith(`${root}${path.sep}`)
 }
@@ -365,13 +370,17 @@ function dependencyManifest(root: string, importer: string, name: string): strin
   throw new Error(`missing source dependency: ${name}; run scripts/install-source-runtime.sh --prepare explicitly`)
 }
 
-function dependencyManifests(root: string): string[] {
+function dependencyManifests(root: string, scope: DependencyScope): string[] {
   safePath(path.join(root, "node_modules"), "directory")
   const result = new Set<string>()
   for (const relative of manifests(root)) {
     const manifestPath = path.join(root, relative)
     const manifest = packageManifest(manifestPath)
-    for (const name of Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })) {
+    const dependencies =
+      scope === DependencyScope.Development
+        ? { ...manifest.dependencies, ...manifest.devDependencies }
+        : manifest.dependencies
+    for (const name of Object.keys(dependencies)) {
       result.add(dependencyManifest(root, manifestPath, name))
     }
   }
@@ -712,19 +721,32 @@ function readinessRecord(root: string): Record<string, unknown> {
   return JSON.parse(readFileSync(path.join(root, readyFile), "utf8")) as Record<string, unknown>
 }
 
+function dependencyScope(value: Record<string, unknown>): DependencyScope {
+  // Receipts written before the runtime/development split always included dev dependencies.
+  if (value.scope === undefined || value.scope === DependencyScope.Development) return DependencyScope.Development
+  if (value.scope === DependencyScope.Runtime) return DependencyScope.Runtime
+  throw new Error("invalid source dependency scope; prepare dependencies explicitly")
+}
+
+export function readinessDependencyScope(root: string): DependencyScope {
+  safePath(path.join(root, readyFile), "file")
+  return dependencyScope(readinessRecord(root))
+}
+
 function persistReadiness(root: string, value: Record<string, unknown>): void {
   const temporary = path.join(root, `${readyFile}.${process.pid}`)
   writeFileSync(temporary, `${JSON.stringify(value)}\n`, { flag: "wx", mode: 0o644 })
   renameSync(temporary, path.join(root, readyFile))
 }
 
-export function writeReadiness(root: string): void {
+export function writeReadiness(root: string, scope = DependencyScope.Development): void {
   const inventory = validateOwnedTree(root, !existsSync(path.join(root, sourceMarker)))
   const value = {
     schema: 1,
     bun: "1.4.4",
+    scope,
     sources: sourceFingerprint(root),
-    dependencies: digestFiles(root, dependencyManifests(root)),
+    dependencies: digestFiles(root, dependencyManifests(root, scope)),
     inventory,
   }
   persistReadiness(root, value)
@@ -733,9 +755,9 @@ export function writeReadiness(root: string): void {
 // Fast path for launches: source and manifest digests are still verified, but
 // the full inventory walk is skipped while the top-level signature matches.
 // Any mismatch falls back to the full check, which then refreshes the signature.
-export async function requireReadyQuickAsync(root: string): Promise<void> {
+export async function requireReadyQuickAsync(root: string, scope = DependencyScope.Runtime): Promise<void> {
   const development = !existsSync(path.join(root, sourceMarker))
-  const expected = readinessInventory(root)
+  const expected = readinessInventory(root, scope)
   const recorded = readinessRecord(root).quick
   const current = await quickSignature(root, development)
   if (recorded === current) return
@@ -743,7 +765,7 @@ export async function requireReadyQuickAsync(root: string): Promise<void> {
   persistReadiness(root, { ...readinessRecord(root), quick: current })
 }
 
-function readinessInventory(root: string): string {
+function readinessInventory(root: string, scope: DependencyScope): string {
   safeDirectory(root)
   safePath(path.join(root, readyFile), "file")
   const value: unknown = JSON.parse(readFileSync(path.join(root, readyFile), "utf8"))
@@ -757,9 +779,12 @@ function readinessInventory(root: string): string {
     !("sources" in value) ||
     value.sources !== sourceFingerprint(root, true) ||
     !("dependencies" in value) ||
-    value.dependencies !== digestFiles(root, dependencyManifests(root), true)
+    value.dependencies !== digestFiles(root, dependencyManifests(root, dependencyScope(value)), true)
   ) {
     throw new Error("source runtime is stale; run scripts/install-source-runtime.sh --prepare explicitly")
+  }
+  if (scope === DependencyScope.Development && dependencyScope(value) !== DependencyScope.Development) {
+    throw new Error("development dependencies are not prepared; run scripts/install-source-runtime.sh --prepare")
   }
   if (!("inventory" in value) || typeof value.inventory !== "string") {
     throw new Error(`refusing changed or unrelated source runtime contents: ${root}; prepare dependencies explicitly`)
@@ -780,7 +805,7 @@ function publishedReadiness(root: string): Record<string, unknown> | undefined {
     !("sources" in value) ||
     value.sources !== sourceFingerprint(root) ||
     !("dependencies" in value) ||
-    value.dependencies !== digestFiles(root, dependencyManifests(root))
+    value.dependencies !== digestFiles(root, dependencyManifests(root, dependencyScope(value)))
   ) {
     throw new Error("source runtime is stale; run scripts/install-source-runtime.sh --prepare explicitly")
   }
@@ -801,13 +826,13 @@ function requireInventory(root: string, expected: string, actual: string): void 
   }
 }
 
-export function requireReady(root: string): void {
-  const expected = readinessInventory(root)
+export function requireReady(root: string, scope = DependencyScope.Runtime): void {
+  const expected = readinessInventory(root, scope)
   requireInventory(root, expected, validateOwnedTree(root, !existsSync(path.join(root, sourceMarker))))
 }
 
-export async function requireReadyAsync(root: string): Promise<void> {
-  const expected = readinessInventory(root)
+export async function requireReadyAsync(root: string, scope = DependencyScope.Runtime): Promise<void> {
+  const expected = readinessInventory(root, scope)
   requireInventory(root, expected, await validateOwnedTreeAsync(root, !existsSync(path.join(root, sourceMarker))))
 }
 

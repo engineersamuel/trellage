@@ -20,9 +20,11 @@ import { swapPaths } from "./swap.ts"
 import { withRegistryTransport } from "./lock-transport.ts"
 import {
   copySources,
+  DependencyScope,
   dependencyDirectory,
   normalizeDependencyPermissions,
   preparationLockName,
+  readinessDependencyScope,
   requireOwnedWorkspace,
   requireReplaceableOwnedWorkspace,
   requireReadyAsync,
@@ -85,7 +87,7 @@ async function sharedBunCache(owner: string): Promise<string | undefined> {
   }
 }
 
-async function installDependencies(root: string, cacheOwner: string = root): Promise<void> {
+async function installDependencies(root: string, scope: DependencyScope, cacheOwner: string = root): Promise<void> {
   cancellation.signal.throwIfAborted()
   validateWorkspaceBinaries(root)
   const sharedCache = process.env.BUN_INSTALL_CACHE_DIR ?? (await sharedBunCache(cacheOwner))
@@ -93,37 +95,44 @@ async function installDependencies(root: string, cacheOwner: string = root): Pro
   const installHome = path.join(cache, "home")
   mkdirSync(installHome, { mode: 0o700 })
   try {
-    await installFrozenDependencies(root, {
-      ...process.env,
-      BUN_INSTALL_CACHE_DIR: sharedCache ?? path.join(cache, "bun"),
-      npm_config_cache: process.env.npm_config_cache ?? process.env.NPM_CONFIG_CACHE ?? path.join(cache, "npm"),
-      XDG_CACHE_HOME: process.env.XDG_CACHE_HOME ?? path.join(cache, "xdg"),
-    }, installHome)
+    await installFrozenDependencies(
+      root,
+      {
+        ...process.env,
+        BUN_INSTALL_CACHE_DIR: sharedCache ?? path.join(cache, "bun"),
+        npm_config_cache: process.env.npm_config_cache ?? process.env.NPM_CONFIG_CACHE ?? path.join(cache, "npm"),
+        XDG_CACHE_HOME: process.env.XDG_CACHE_HOME ?? path.join(cache, "xdg"),
+      },
+      installHome,
+      scope,
+    )
   } finally {
     rmSync(cache, { recursive: true, force: true })
   }
   cancellation.signal.throwIfAborted()
   normalizeDependencyPermissions(root)
-  writeReadiness(root)
+  writeReadiness(root, scope)
 }
 
-async function preparationIsReady(root: string, explicit: boolean): Promise<boolean> {
+async function preparationIsReady(root: string, explicit: boolean, scope: DependencyScope): Promise<boolean> {
   try {
-    if (explicit) await requireReadyAsync(root)
-    else await requireReadyQuickAsync(root)
+    if (explicit) await requireReadyAsync(root, scope)
+    else await requireReadyQuickAsync(root, scope)
     return true
   } catch (error) {
-    if (!explicit || await present(path.join(root, ".trellage-source-ready.json"))) {
+    if (!explicit || (await present(path.join(root, ".trellage-source-ready.json")))) {
       process.stderr.write(`trellage source runtime: ${error instanceof Error ? error.message : String(error)}\n`)
     }
     return false
   }
 }
 
-async function prepareDependencies(root: string, explicit: boolean): Promise<void> {
-  const preparation = await acquirePreparationLock(path.join(root, preparationLockName), { signal: cancellation.signal })
+async function prepareDependencies(root: string, explicit: boolean, scope: DependencyScope): Promise<void> {
+  const preparation = await acquirePreparationLock(path.join(root, preparationLockName), {
+    signal: cancellation.signal,
+  })
   try {
-    if (await preparationIsReady(root, explicit)) return
+    if (await preparationIsReady(root, explicit, scope)) return
     if (!explicit) {
       const readiness = path.join(root, ".trellage-source-ready.json")
       if (await present(readiness)) safePath(readiness, "file")
@@ -136,14 +145,19 @@ async function prepareDependencies(root: string, explicit: boolean): Promise<voi
       }
       process.stderr.write("trellage source runtime: preparing worktree dependencies automatically\n")
     }
-    await installDependencies(root)
-    await requireReadyAsync(root)
+    await installDependencies(root, scope)
+    await requireReadyAsync(root, scope)
   } finally {
     await preparation.release()
   }
 }
 
-async function installFrozenDependencies(root: string, env: NodeJS.ProcessEnv, installHome: string): Promise<void> {
+async function installFrozenDependencies(
+  root: string,
+  env: NodeJS.ProcessEnv,
+  installHome: string,
+  scope: DependencyScope,
+): Promise<void> {
   // An empty setting or empty npm output means "no override"; keep the lockfile's registry URLs.
   const configured = (value: string | undefined): string | undefined => value?.trim() || undefined
   let registry = configured(env.npm_config_registry) ?? configured(env.NPM_CONFIG_REGISTRY)
@@ -177,6 +191,7 @@ async function installFrozenDependencies(root: string, env: NodeJS.ProcessEnv, i
           "--frozen-lockfile",
           "--ignore-scripts",
           "--no-progress",
+          ...(scope === DependencyScope.Runtime ? ["--production"] : []),
           `--backend=${backend}`,
           `--config=${path.join(root, "bunfig.toml")}`,
         ],
@@ -205,7 +220,9 @@ async function installFrozenDependencies(root: string, env: NodeJS.ProcessEnv, i
         const unsupported = /^(?:ENOTSUP|EXDEV):[^\n]*failed to link package:[^\n]*\(clonefile\)/mu
         if (backend !== "clonefile" || !normalFailure || !unsupported.test(stripVTControlCharacters(diagnostics)))
           throw cause
-        process.stderr.write("trellage source runtime: cloning unsupported; retrying frozen install with independent copies\n")
+        process.stderr.write(
+          "trellage source runtime: cloning unsupported; retrying frozen install with independent copies\n",
+        )
         backend = "copyfile"
       }
     }
@@ -219,7 +236,7 @@ async function stage(root: string, destination: string): Promise<void> {
   let ready = false
   try {
     await requireReadyAsync(root)
-    ready = true
+    ready = readinessDependencyScope(root) === DependencyScope.Runtime
   } catch (error) {
     process.stderr.write(
       `trellage source runtime: cannot reuse workspace dependencies: ${error instanceof Error ? error.message : String(error)}\n`,
@@ -246,9 +263,9 @@ async function stage(root: string, destination: string): Promise<void> {
       })
     }
     await requireReadyAsync(root)
-    writeReadiness(destination)
+    writeReadiness(destination, DependencyScope.Runtime)
   } else {
-    await installDependencies(destination, root)
+    await installDependencies(destination, DependencyScope.Runtime, root)
   }
   requireOwnedWorkspace(destination)
 }
@@ -367,6 +384,7 @@ async function install(root: string, destination: string, legacy?: LegacyRuntime
         throw new AggregateError(
           [error, rollbackError],
           `source rollback failed; retain recovery directory: ${publication.temporary}`,
+          { cause: rollbackError },
         )
       }
     }
@@ -382,7 +400,7 @@ try {
   bunExecutable()
   if (suppliedRoot === undefined || !path.isAbsolute(suppliedRoot) || extra.length !== 0) {
     throw new Error(
-      "usage: workspace-cli.ts check|fingerprint|prepare|ensure|validate-owned|validate-replaceable-owned ROOT; stage|install ROOT DESTINATION",
+      "usage: workspace-cli.ts check|fingerprint|prepare|prepare-runtime|ensure|validate-owned|validate-replaceable-owned ROOT; stage|install ROOT DESTINATION",
     )
   }
   const root = safeDirectory(suppliedRoot)
@@ -397,10 +415,13 @@ try {
       break
     }
     case "prepare":
-      await prepareDependencies(root, true)
+      await prepareDependencies(root, true, DependencyScope.Development)
+      break
+    case "prepare-runtime":
+      await prepareDependencies(root, true, DependencyScope.Runtime)
       break
     case "ensure":
-      await prepareDependencies(root, false)
+      await prepareDependencies(root, false, DependencyScope.Runtime)
       break
     case "validate-owned":
       requireOwnedWorkspace(root)

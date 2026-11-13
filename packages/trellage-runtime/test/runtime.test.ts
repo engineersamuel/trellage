@@ -24,6 +24,7 @@ import * as fsPromises from "node:fs/promises"
 import { bunArguments, bunExecutable, sourceEnvironment, sourceWorkspaceRoot } from "../src/index.ts"
 import {
   copySources,
+  DependencyScope,
   requireOwnedWorkspace,
   requireReplaceableOwnedWorkspace,
   requireReady,
@@ -521,11 +522,11 @@ test("repeated explicit preparation reuses validated dependencies", () => {
 
 test("staging reuses ready dependencies with independent files and relative workspace links", () => {
   const { root, parent } = sourceFixture()
-  expect(run("prepare", root).status).toBe(0)
+  expect(run("prepare-runtime", root).status).toBe(0)
   mkdirSync(path.join(root, "node_modules/.bin"), { recursive: true })
   symlinkSync("../../packages/application/src/cli.ts", path.join(root, "node_modules/.bin/fixture-tool"))
   write(root, "node_modules/reuse-probe", "original")
-  writeReadiness(root)
+  writeReadiness(root, DependencyScope.Runtime)
   for (const name of ["environment", "floating", "router"]) {
     const destination = path.join(parent, name)
     const staged = run("stage", root, destination)
@@ -544,6 +545,100 @@ test("staging reuses ready dependencies with independent files and relative work
     expect(readFileSync(original, "utf8")).toBe("original")
   }
   expect(() => requireReady(root)).not.toThrow()
+})
+
+function developmentFixture() {
+  const f = sourceFixture()
+  const tool = path.join(f.parent, "dev-tool")
+  write(tool, "package.json", '{"name":"fixture-dev-tool","version":"1.0.0"}')
+  write(tool, "index.js", "module.exports = true;\n")
+  const archive = path.join(f.parent, "dev-tool.tgz")
+  const packed = spawnSync("tar", ["-czf", archive, "-C", f.parent, "dev-tool"], { encoding: "utf8" })
+  expect(packed.status, packed.stderr).toBe(0)
+  const manifestPath = path.join(f.root, "package.json")
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({ ...manifest, devDependencies: { "fixture-dev-tool": "file:../dev-tool.tgz" } }),
+  )
+  const locked = spawnSync(
+    bunExecutable(),
+    ["--no-env-file", "install", "--lockfile-only", "--ignore-scripts", `--config=${path.join(f.root, "bunfig.toml")}`],
+    { cwd: f.root, encoding: "utf8", env: { ...process.env, HOME: f.home } },
+  )
+  expect(locked.status, locked.stderr).toBe(0)
+  return { ...f, archive }
+}
+
+test.each(["ensure", "prepare-runtime", "install"])(
+  "%s works without an available development package and preserves the shared lock",
+  (action) => {
+    const { root, destination, archive } = developmentFixture()
+    const lock = readFileSync(path.join(root, "bun.lock"), "utf8")
+    rmSync(archive)
+    const result = run(action, root, action === "install" ? destination : undefined, {
+      BUN_INSTALL_CACHE_DIR: path.join(fixture(), "empty-cache"),
+    })
+    expect(result.status, result.stderr).toBe(0)
+    const prepared = action === "install" ? destination : root
+    expect(existsSync(path.join(prepared, "node_modules/fixture-dev-tool"))).toBe(false)
+    expect(readFileSync(path.join(prepared, "bun.lock"), "utf8")).toBe(lock)
+    expect(() => requireReady(prepared)).not.toThrow()
+    expect(() => requireReady(prepared, DependencyScope.Development)).toThrow("development dependencies")
+    write(prepared, "packages/library/package.json", '{"name":"@fixture/library","dependencies":{"missing":"1.0.0"}}')
+    expect(() => requireReady(prepared)).toThrow()
+  },
+)
+
+test("development prepare upgrades a runtime-only receipt instead of treating it as ready", () => {
+  const { root, home } = developmentFixture()
+  const runtime = run("prepare-runtime", root)
+  expect(runtime.status, runtime.stderr).toBe(0)
+  const prepared = run("prepare", root, undefined, { HOME: home })
+  expect(prepared.status, prepared.stderr).toBe(0)
+  expect(existsSync(path.join(root, "node_modules/fixture-dev-tool/package.json"))).toBe(true)
+  expect(() => requireReady(root, DependencyScope.Development)).not.toThrow()
+})
+
+test("unavailable development tools do not invalidate an installed runtime", () => {
+  const { root, destination, archive } = developmentFixture()
+  rmSync(archive)
+  const environment = { BUN_INSTALL_CACHE_DIR: path.join(fixture(), "empty-cache") }
+  const runtime = run("install", root, destination, environment)
+  expect(runtime.status, runtime.stderr).toBe(0)
+  const receipt = readFileSync(path.join(destination, ".trellage-source-ready.json"), "utf8")
+  const development = run("prepare", root, undefined, environment)
+  expect(development.status).toBe(1)
+  expect(development.stderr).toContain("frozen source dependency installation failed")
+  expect(readFileSync(path.join(destination, ".trellage-source-ready.json"), "utf8")).toBe(receipt)
+  const launched = run("ensure", destination, undefined, environment)
+  expect(launched.status, launched.stderr).toBe(0)
+  expect(launched.stderr).not.toContain("bun install v")
+})
+
+test("staging from a development workspace excludes tools without changing the source workspace", () => {
+  const { root, destination, home } = developmentFixture()
+  const prepared = run("prepare", root, undefined, { HOME: home })
+  expect(prepared.status, prepared.stderr).toBe(0)
+  const receipt = readFileSync(path.join(root, ".trellage-source-ready.json"), "utf8")
+  const staged = run("stage", root, destination)
+  expect(staged.status, staged.stderr).toBe(0)
+  expect(existsSync(path.join(destination, "node_modules/fixture-dev-tool"))).toBe(false)
+  expect(existsSync(path.join(root, "node_modules/fixture-dev-tool/package.json"))).toBe(true)
+  expect(readFileSync(path.join(root, ".trellage-source-ready.json"), "utf8")).toBe(receipt)
+  expect(() => requireOwnedWorkspace(destination)).not.toThrow()
+  expect(() => requireReady(root, DependencyScope.Development)).not.toThrow()
+})
+
+test("legacy full-dependency receipts remain valid and invalid scopes fail closed", () => {
+  const { root } = sourceFixture()
+  expect(run("prepare", root).status).toBe(0)
+  const receiptPath = path.join(root, ".trellage-source-ready.json")
+  const { scope: _scope, ...legacy } = JSON.parse(readFileSync(receiptPath, "utf8"))
+  writeFileSync(receiptPath, JSON.stringify(legacy))
+  expect(() => requireReady(root, DependencyScope.Development)).not.toThrow()
+  writeFileSync(receiptPath, JSON.stringify({ ...legacy, scope: "unknown" }))
+  expect(() => requireReady(root)).toThrow("invalid source dependency scope")
 })
 
 test("staging installs dependencies when workspace readiness cannot be reused", () => {

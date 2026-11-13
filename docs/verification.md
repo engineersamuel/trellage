@@ -36,6 +36,36 @@ preparation deletes after the install.
 `mise run rebuild-profiles` reinstalls the retained Native backends and `trx`;
 their installers manage separate installed runtimes.
 
+## Corporate and personal package feeds
+
+Keep registry settings in each host's user configuration. Trellage reads
+`npm_config_registry`, `NPM_CONFIG_REGISTRY`, or `npm config get registry`.
+The shared lockfile has no machine-specific feed URLs. Installation changes
+only the download locations temporarily and restores the exact lockfile bytes,
+including on failure. Package versions and integrity checks stay fixed.
+
+To run Trellage without installing development tools:
+
+```bash
+mise install bun
+mise exec -- scripts/install-source-runtime.sh --prepare-runtime
+mise run rebuild-profiles
+```
+
+Automatic launch preparation and installed profile runtimes use production
+dependencies only. They do not require Knip, Vite, Vitest, Syncpack, or the
+other development tools. Staging from a development checkout installs a
+production dependency tree instead of copying its development tools.
+Readiness records distinguish runtime-only and full development installations.
+An existing full installation is sufficient for launch.
+
+For development, use `--prepare` or `mise run quality:setup` as above.
+Full preparation upgrades a runtime-only installation and still requires the
+pinned development tools. Missing runtime packages remain errors: Trellage
+does not bypass feed policy, suppress trust failures, or silently change versions.
+Update shared pins and the lockfile together to versions available on both
+hosts, then test them. Separate dependency sets are not selected automatically.
+
 The OMP contract runs under a 600-second supervisor. Child stdout and stderr go
 to a private log file, so a paused caller cannot block skill setup by leaving
 its output pipe unread. Log replay waits at most two seconds; failed or
@@ -94,19 +124,19 @@ six-minute macOS critical path. These are targets, not claimed measurements.
 
 ## Local gate selection
 
-| Command | Scope |
-|---|---|
-| `mise run quality:staged` | Index contents only; no typecheck or tests |
-| `mise run quality:plan` | Explain the selected checks |
-| `mise run quality:changed` or `make test-pr` | Affected checks, including unstaged and untracked source |
-| `mise run quality:all` | All maintained static checks, dependency analysis, full offline Native tests, and host-supported prototypes |
-| `mise run quality:static` | Oxc, Ruff, ShellCheck, workflow, agent/config, spelling, Markdown, Docker, and syntax checks |
-| `mise run quality:analysis` | Knip, dependency-cruiser, and Syncpack |
-| `mise run quality:network` | Dependency advisories and public documentation links |
-| `mise run quality:coverage` | Offline source coverage and the measured coverage floor |
-| `mise run quality:test` | Gate behavior contracts |
-| `make quality-static` | Maintained static checks and dependency analysis |
-| `make factory-test` | Coordinator type checks, coordinator tests, and shared factory tests, with offline guards |
+| Command                                      | Scope                                                                                                       |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `mise run quality:staged`                    | Index contents only; no typecheck or tests                                                                  |
+| `mise run quality:plan`                      | Explain the selected checks                                                                                 |
+| `mise run quality:changed` or `make test-pr` | Affected checks, including unstaged and untracked source                                                    |
+| `mise run quality:all`                       | All maintained static checks, dependency analysis, full offline Native tests, and host-supported prototypes |
+| `mise run quality:static`                    | Oxc, Ruff, ShellCheck, workflow, agent/config, spelling, Markdown, Docker, and syntax checks                |
+| `mise run quality:analysis`                  | Knip, dependency-cruiser, and Syncpack                                                                      |
+| `mise run quality:network`                   | Dependency advisories and public documentation links                                                        |
+| `mise run quality:coverage`                  | Offline source coverage and the measured coverage floor                                                     |
+| `mise run quality:test`                      | Gate behavior contracts                                                                                     |
+| `make quality-static`                        | Maintained static checks and dependency analysis                                                            |
+| `make factory-test`                          | Coordinator type checks, coordinator tests, and shared factory tests, with offline guards                   |
 
 The existing `check:changed-quality`, `check:architecture`, and `check:unused`
 package commands use these shared gates. Dependency analysis runs its three tools

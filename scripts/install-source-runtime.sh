@@ -5,15 +5,16 @@ repo_root="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 . "$repo_root/scripts/bun-runtime.sh"
 trellage_bun_runtime "$repo_root"
 
+# shellcheck disable=SC2154 # Populated by trellage_bun_runtime.
 case "${1-}" in
   --package)
     [[ "$#" == 1 ]] || exit 2
     exec "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
       install "$repo_root" "$repo_root/.trellage-runtime"
     ;;
-  --prepare)
+  --prepare|--prepare-runtime)
     [[ "$#" == 1 ]] || exit 2
-    exec "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" prepare "$repo_root"
+    exec "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" "${1#--}" "$repo_root"
     ;;
   --stage|--install|--install-floating|--install-environment)
     [[ "$#" == 2 && "$2" == /* ]] || {
@@ -24,7 +25,7 @@ case "${1-}" in
       "${1#--}" "$repo_root" "$2"
     ;;
   *)
-    printf 'Usage: install-source-runtime.sh --package|--prepare|--stage PATH|--install PATH\n' >&2
+    printf 'Usage: install-source-runtime.sh --package|--prepare|--prepare-runtime|--stage PATH|--install PATH\n' >&2
     exit 2
     ;;
 esac
