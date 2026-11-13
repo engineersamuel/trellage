@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -76,6 +76,7 @@ describe("test-first", () => {
     expect(testsCameFirst([{ files: ["src/a.rs"] }, { files: ["tests/a.rs"] }])).toBe(false)
     expect(testsCameFirst([{ files: ["src/a.test.ts", "src/a.ts"] }])).toBe(false)
     expect(testsCameFirst([{ files: ["test.sh"] }, { files: ["hello.txt"] }])).toBe(true)
+    expect(testsCameFirst([{ files: ["tests/a.rs", "README.md"] }])).toBe(false)
   })
 
   test.each([
@@ -98,8 +99,14 @@ describe("test-first", () => {
   )
 })
 
+const repositories: string[] = []
+afterAll(() => {
+  for (const directory of repositories) rmSync(directory, { recursive: true, force: true })
+})
+
 const repo = () => {
   const r = mkdtempSync(path.join(tmpdir(), "sf-sdlc-"))
+  repositories.push(r)
   const git = (...a: string[]) =>
     execFileSync("git", ["-C", r, "-c", "user.email=t@t", "-c", "user.name=t", ...a], {
       encoding: "utf8",
@@ -279,14 +286,26 @@ describe("test-first rust", () => {
     [
       "no column-0 closing brace",
       ["pub fn f() {}", "", "#[cfg(test)]", "mod tests {", "  #[test]", "  fn t() {}", "  }", ""].join("\n"),
+      "src/lib.rs:3: test module has no column-0 closing brace",
     ],
     [
       "non-blank column-0 interior line",
       ["pub fn f() {}", "", "#[cfg(test)]", "mod tests {", "  #[test]", "  fn t() {}", "fn sneaky() {}", "}", ""].join(
         "\n",
       ),
+      "src/lib.rs:7: non-indented test module interior",
     ],
-  ])("AC-4: malformed test module (%s) fails closed as could not be classified", (_label, content) => {
+    [
+      "missing module declaration",
+      "pub fn f() {}\n\n#[cfg(test)]\n",
+      "src/lib.rs:3: expected a column-0 inline test module",
+    ],
+    [
+      "module text inside a multiline string",
+      'pub fn f() {}\nconst TEXT: &str = "\n#[cfg(test)]\nmod tests {\n  fn fake() {}\n}\n";\n',
+      "src/lib.rs:2: unsupported multiline comment or string",
+    ],
+  ])("AC-4: malformed test module (%s) fails closed as could not be classified", (_label, content, explanation) => {
     const { r, git } = repo()
     ensureFactoryDir(r)
     writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
@@ -303,8 +322,57 @@ describe("test-first rust", () => {
     const blockers = shipBlockers(rustPlan(), r, base, true, true)
     const gate = blockers.find((b) => b.startsWith("test-first gate:"))
     expect(gate).toBeDefined()
-    expect(gate).toContain("src/lib.rs")
+    expect(gate).toContain(explanation)
+    expect(gate).toContain(git("rev-parse", "--short", "HEAD"))
     expect(gate).toContain("could not be classified")
+  })
+
+  test.each([
+    ["production removal", "fn obsolete() {}\n", "", "src/lib.rs:1"],
+    [
+      "production removal preserving tests",
+      "fn obsolete() {}\n#[cfg(test)]\nmod tests {\n  fn t() {}\n}\n",
+      "#[cfg(test)]\nmod tests {\n  fn t() {}\n}\n",
+      "src/lib.rs:1",
+    ],
+    ["blank-only edit", "fn f() {}\n", "fn f() {}\n\n", undefined],
+    ["comment-only module", "", "// No tests here.\n", "src/lib.rs:1"],
+  ])("%s does not establish a tests-only commit", (_label, before, after, location) => {
+    const { r, git } = repo()
+    mkdirSync(path.join(r, "src"))
+    if (before) writeFileSync(path.join(r, "src/lib.rs"), before)
+    git("add", "src")
+    git("commit", "-q", "--allow-empty", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+    writeFileSync(path.join(r, "src/lib.rs"), after)
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: candidate")
+    const sha = git("rev-parse", "--short", "HEAD")
+    const gate = shipBlockers(rustPlan(), r, base, true, true).find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    if (location) {
+      expect(gate).toContain(sha)
+      expect(gate).toContain(location)
+    }
+  })
+
+  test("removing a complete inline-test-only file counts as tests-only", () => {
+    const { r, git } = repo()
+    mkdirSync(path.join(r, "src"))
+    writeFileSync(path.join(r, "src/lib.rs"), "#[cfg(test)]\nmod tests {\n  fn t() {}\n}\n")
+    git("add", "src")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+    git("rm", "src/lib.rs")
+    git("commit", "-q", "-m", "test: remove obsolete tests")
+    expect(shipBlockers(rustPlan(), r, base, true, true).some((b) => b.startsWith("test-first gate:"))).toBe(false)
+  })
+
+  test("unreadable history fails closed with a classification explanation", () => {
+    const { r } = repo()
+    const gate = shipBlockers(rustPlan(), r, "missing-base", true, true).find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toContain("commit history could not be classified")
+    expect(gate).toContain("missing-base")
   })
 
   test("AC-5: commit removing non-blank lines inside an existing Rust test module counts as tests-only", () => {
@@ -375,19 +443,23 @@ describe("test-first rust", () => {
     expect(blockers.some((b) => b.startsWith("test-first gate"))).toBe(false)
   })
 
-  test("AC-6: plain mod history; with new test-only src/history.rs passes test-first gate", () => {
+  test.each([
+    ["src/main.rs", "src/history.rs"],
+    ["src/feature.rs", "src/feature/history.rs"],
+  ])("AC-6: plain mod history; in %s with new test-only %s passes test-first gate", (parent, module) => {
     const { r, git } = repo()
     ensureFactoryDir(r)
     writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
     mkdirSync(path.join(r, "src"), { recursive: true })
-    writeFileSync(path.join(r, "src/main.rs"), "fn main() {}\n")
-    git("add", "src/main.rs")
+    writeFileSync(path.join(r, parent), "fn main() {}\n")
+    git("add", parent)
     git("commit", "-q", "-m", "chore: base")
     const base = git("rev-parse", "HEAD")
 
-    writeFileSync(path.join(r, "src/main.rs"), "mod history;\nfn main() {}\n")
+    writeFileSync(path.join(r, parent), "mod history;\nfn main() {}\n")
+    mkdirSync(path.dirname(path.join(r, module)), { recursive: true })
     writeFileSync(
-      path.join(r, "src/history.rs"),
+      path.join(r, module),
       [
         "//! History module tests.",
         "// Plain comment.",
@@ -402,11 +474,11 @@ describe("test-first rust", () => {
         "",
       ].join("\n"),
     )
-    git("add", "src/main.rs", "src/history.rs")
+    git("add", parent, module)
     git("commit", "-q", "-m", "test: add history test module")
 
     writeFileSync(
-      path.join(r, "src/history.rs"),
+      path.join(r, module),
       [
         "//! History module tests.",
         "pub fn entries() -> usize {",
@@ -423,7 +495,7 @@ describe("test-first rust", () => {
         "",
       ].join("\n"),
     )
-    git("add", "src/history.rs")
+    git("add", module)
     git("commit", "-q", "-m", "feat: implement entries")
 
     const blockers = shipBlockers(rustPlan(), r, base, true, true)

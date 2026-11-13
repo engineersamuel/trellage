@@ -10,6 +10,7 @@ import { decisionLabel, decisionsAvailable, systemOne } from "./decide.ts"
 import { loadPrompt } from "./prompt.ts"
 import { factoryConfig, type FactoryConfig } from "./config.ts"
 import { recordCase } from "./promptEval.ts"
+import { committedTestFirstFailure, testFirstFailure, type PathKind } from "./testFirst.ts"
 import type { Verdict } from "../../shared/goal.ts"
 
 // ---------- Artifacts ----------
@@ -375,33 +376,18 @@ export const withGates = (s: Sdlc, gates: Gate[]): Sdlc => ({
 export const gate = (s: Sdlc, id: GateId): Gate | undefined => s.gates.find((g) => g.id === id)
 export const isOn = (s: Sdlc, id: GateId) => !!gate(s, id)?.chosen
 
-/** Commits in base..HEAD, oldest first, with the files each changed. */
-const commits = (workdir: string, base: string): { files: string[] }[] => {
-  try {
-    const out = execFileSync(
-      "git",
-      ["-C", workdir, "log", "--reverse", "--format=@@%H", "--name-only", `${base}..HEAD`],
-      { encoding: "utf8", maxBuffer: 8 << 20 },
-    )
-    return out
-      .split("@@")
-      .filter((c) => c.trim())
-      .map((c) => ({ files: c.split("\n").slice(1).filter(Boolean) }))
-  } catch {
-    return []
-  }
-}
-
 const TEST = /(^|\/)(tests?|__tests__|spec)\/|(^|\/)(tests?\.sh|test_[^/]+\.[a-z0-9]+)$|[._-](test|spec)\.[a-z0-9]+$/i
 export const isTestPath = (p: string): boolean => TEST.test(p)
+const pathKind = (file: string): PathKind => (isTestPath(file) ? "test" : DOC.test(file) ? "docs" : "code")
 
 /** Test-first: a commit that changes only tests comes before the first commit that changes other code. */
-export const testsCameFirst = (history: { files: string[] }[]): boolean => {
-  const code = (f: string) => !TEST.test(f) && !DOC.test(f)
-  const firstCode = history.findIndex((c) => c.files.some(code))
-  const firstTest = history.findIndex((c) => c.files.length > 0 && c.files.every((f) => TEST.test(f)))
-  return firstTest !== -1 && (firstCode === -1 || firstTest < firstCode)
-}
+export const testsCameFirst = (history: { files: string[] }[]): boolean =>
+  testFirstFailure(
+    history.map((commit) => ({
+      sha: "",
+      changes: commit.files.map((file) => ({ kind: pathKind(file) })),
+    })),
+  ) === null
 
 /**
  * Why the branch may not ship yet. Floors: criteria exist and each has PASS evidence; a verify ran after the last
@@ -426,8 +412,10 @@ export const shipBlockers = (
   if (!securityDone) out.push("security review not done (it runs last, when everything else is ready)")
   if (isOn(s, "design") && !existsSync(artifact(workdir, "design.md")))
     out.push("design gate: .factory/design.md missing")
-  if (isOn(s, "testFirst") && base && !testsCameFirst(commits(workdir, base)))
-    out.push("test-first gate: no tests-only commit before the first code commit")
+  if (isOn(s, "testFirst") && base) {
+    const failure = committedTestFirstFailure(workdir, base, pathKind)
+    if (failure) out.push(`test-first gate: ${failure}`)
+  }
   if (isOn(s, "codeReview") && !codeReviewDone) out.push("code review gate not done")
   const sc = gate(s, "supplyChain")
   if (sc?.chosen && sc.status !== "done") out.push(`supply-chain gate ${sc.status}${sc.detail ? `: ${sc.detail}` : ""}`)
