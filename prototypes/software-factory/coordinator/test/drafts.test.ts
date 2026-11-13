@@ -22,7 +22,11 @@ const setup = (over: Partial<DraftDeps> = {}) => {
     threads,
     // The test Threads has only the General folder; "repo" gets a worktree, "general" does not.
     createThread: (prompt, folderId) =>
-      threads.create(prompt, "general", folderId === "general" ? undefined : () => ({ worktree: "/wt", branch: "b", base: "main" })),
+      threads.create(
+        prompt,
+        "general",
+        folderId === "general" ? undefined : () => ({ worktree: "/wt", branch: "b", base: "main" }),
+      ),
     spawn: async (spec) => {
       const id = `w${spawned.length + 1}`
       spawned.push({ ...spec, id })
@@ -57,7 +61,9 @@ test("empty prompt is refused", () => {
 
 test("General folder is refused and leaves no thread", async () => {
   const { drafts, threads, calls } = setup()
-  expect(() => drafts.create("general", "build x")).toThrow(expect.objectContaining({ status: 400, message: "drafts need a repo folder" }))
+  expect(() => drafts.create("general", "build x")).toThrow(
+    expect.objectContaining({ status: 400, message: "drafts need a repo folder" }),
+  )
   await Promise.resolve()
   expect(calls).toEqual([expect.stringMatching(/^discard /)])
   expect(threads.list()).toEqual([])
@@ -90,7 +96,11 @@ test("Council twice while the first runs spawns once", async () => {
   running.add(spawned[0]!.id)
   await expect(drafts.act(t.id, "council")).rejects.toMatchObject({ status: 409 })
   expect(spawned).toHaveLength(1)
-  expect(spawned[0]).toMatchObject({ step: "council", owner: draftNodeId(t.id), task: expect.stringContaining("reports/draft-council.md") })
+  expect(spawned[0]).toMatchObject({
+    step: "council",
+    owner: draftNodeId(t.id),
+    task: expect.stringContaining("reports/draft-council.md"),
+  })
 })
 
 test("a finished action runs again and replaces its report entry", async () => {
@@ -100,7 +110,9 @@ test("a finished action runs again and replaces its report entry", async () => {
   const d = await drafts.act(t.id, "research")
   expect(spawned).toHaveLength(2)
   expect(spawned[1]).toMatchObject({ name: "draft-research", step: "rpi-research", workdir: "/wt" })
-  expect(d.reports).toEqual([{ action: "research", workerId: "w2", path: "reports/draft-rpi-research.md", versionId: d.current }])
+  expect(d.reports).toEqual([
+    { action: "research", workerId: "w2", path: "reports/draft-rpi-research.md", versionId: d.current },
+  ])
 })
 
 test("Research runs hve-core RPI research in agent-owned mode", async () => {
@@ -121,7 +133,19 @@ test("Hyperresearch runs the hyperresearch step", async () => {
   expect(spawned[0]).toMatchObject({ name: "draft-hyperresearch", step: "hyperresearch" })
   expect(spawned[0]!.task).toContain("reports/draft-hyperresearch.md")
   expect(spawned[0]!.task).not.toContain("agent-owned")
-  expect(d.reports).toEqual([{ action: "hyperresearch", workerId: "w1", path: "reports/draft-hyperresearch.md", versionId: d.current }])
+  expect(d.reports).toEqual([
+    { action: "hyperresearch", workerId: "w1", path: "reports/draft-hyperresearch.md", versionId: d.current },
+  ])
+})
+
+test("Deep research runs the web deep-research step, not RPI", async () => {
+  const { drafts, spawned } = setup()
+  const t = drafts.create("repo", "pick a queue library")
+  const d = await drafts.act(t.id, "deep-research")
+  expect(spawned[0]).toMatchObject({ name: "draft-deep-research", step: "deep-research" })
+  expect(spawned[0]!.task).toContain("reports/draft-deep-research.md")
+  expect(spawned[0]!.task).not.toContain("agent-owned")
+  expect(d.reports[0]!.action).toBe("deep-research")
 })
 
 test("Enhance, Pick, then Research runs on the picked prompt", async () => {
@@ -185,7 +209,9 @@ test("Run waits for draft workers, then delivers the prompt with reports", async
   running.clear()
   const d = await drafts.run(t.id)
   expect(d.startedAt).toEqual(expect.any(Number))
-  expect(delivered[0]!.text).toBe("[from a guided draft] build x\n\nPre-work reports in this worktree (read before planning):\n- reports/draft-six-hats.md (Debate, on prompt version 1)")
+  expect(delivered[0]!.text).toBe(
+    "[from a guided draft] build x\n\nPre-work reports in this worktree (read before planning):\n- reports/draft-six-hats.md (Debate, on prompt version 1)",
+  )
 })
 
 test("Run without reports delivers only the prompt", async () => {

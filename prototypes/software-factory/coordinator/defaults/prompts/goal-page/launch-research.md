@@ -1,4 +1,4 @@
 +++
 inputs = ["path"]
 +++
-Deep research (hve-core rpi-research) for this goal; read it before planning: {{path}}
+RPI research (hve-core rpi-research): context for this goal; read it before planning: {{path}}

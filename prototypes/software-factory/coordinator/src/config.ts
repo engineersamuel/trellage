@@ -36,6 +36,8 @@ const FactoryConfigSchema = Schema.Struct({
   }),
   sdlc: Schema.Struct({ done_below: Probability, max_fix_rounds: Count }),
   fanout: Schema.Struct({ max_workers: Count, select_threshold: Probability }),
+  /** Hard limits per worker on paid MCP calls (src/mcp.ts); a call over the limit is refused. */
+  mcp: Schema.Struct({ perplexity_max_calls: Count, perplexity_research_max_calls: Count }),
   /** Jev probability at or above which each gate runs. The question is prompts/gates/<id>.md. */
   gates: Schema.Struct({
     design: Probability,

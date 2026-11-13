@@ -5,7 +5,7 @@ import path from "node:path"
 import { addFolder, GENERAL, type Folder, type Worktree } from "./folders.ts"
 import type { GoalSpec, Grade, ImprovementProposal } from "../../shared/goal.ts"
 
-export type DraftAction = "council" | "debate" | "research" | "hyperresearch"
+export type DraftAction = "council" | "debate" | "research" | "hyperresearch" | "deep-research"
 export type DraftVersion = {
   id: string
   prompt: string

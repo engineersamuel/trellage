@@ -34,6 +34,10 @@ must never be what enforces it.
   in the user folder).
   A `research/<id>.md` needs a `steps/<id>.md`. A step with `harness` needs profiles trx knows; otherwise its
   worker is refused at spawn, and the error names the fix.
+- A step's `mcp = [...]` names MCP servers from `src/mcp.ts` (perplexity, context7, exa); its workers get them in
+  every SDK. Keys come from the env or `~/.config/trellage/.env.local`. A server whose key is missing is left out
+  and the task says so, so the worker uses its fallback. `skill_dirs = ["$factory"]` loads skills shipped in
+  `coordinator/skills/` (e.g. `deep-research`).
 
 ## Your folder: ~/.config/trellage/factory/
 

@@ -123,6 +123,9 @@ const patchProps = {
 const patchObj = { type: "object", additionalProperties: false, required: ["section", "text"], properties: patchProps }
 const strArr = { type: "array", items: { type: "string" } }
 const asPatch = (p: { section: string; text: string }) => ({ section: p.section, add: p.text })
+/** How often the Goal page checks a deep research worker, and when it stops waiting. */
+const WEB_POLL_MS = 5000
+const WEB_MAX_MS = 30 * 60_000
 
 export type GoalPageDeps = {
   proxyUrl: () => string
@@ -130,10 +133,11 @@ export type GoalPageDeps = {
   folders: () => readonly { id: string; name: string; path: string }[]
   knownSteps: () => readonly string[]
   goals: Goals
-  /** Deep research: a draft in the folder with an rpi-research worker. */
+  /** A draft in the folder with a research worker: rpi-research (repo context, default) or deep-research (web). */
   startResearch: (
     folderId: string,
     brief: string,
+    action?: "research" | "deep-research",
   ) => Promise<{ threadId: string; workerId: string; worktree: string; report: string }>
   workerState: (id: string) => { status: string; lastMessage: string | null; eventCount: number } | undefined
   removeDraft: (threadId: string) => Promise<void>
@@ -638,8 +642,17 @@ export const makeGoalPage = (d: GoalPageDeps) => {
   const RESEARCH = [
     { id: "council", label: "Council", desc: "3 advisers argue the goal; one summary." },
     { id: "debate", label: "Debate", desc: "Six-hats debate on the draft." },
-    { id: "research", label: "Research", desc: "Reads the repo for risks and prior art." },
-    { id: "hyperresearch", label: "Hyperresearch", desc: "Deeper repo research, more rounds." },
+    { id: "research", label: "Research", desc: "Adds context to the goal: repo code paths, risks, prior art (RPI)." },
+    {
+      id: "hyperresearch",
+      label: "Hyperresearch",
+      desc: "More repo context, more rounds (repo agent).",
+    },
+    {
+      id: "deep-research",
+      label: "Deep research",
+      desc: "Web research on the goal's open question; cited report (minutes).",
+    },
   ]
 
   const InspireOut = Schema.Struct({
@@ -761,11 +774,43 @@ export const makeGoalPage = (d: GoalPageDeps) => {
   }
 
   const ResearchOut = Schema.Struct({ summary: Schema.String, suggestion: Patch })
+
+  /** Deep research: a real deep-research worker (web, cited) in a draft; its report becomes summary + suggestion. */
+  const webResearch = async (repo: string, goal: string, send: (type: string, data: unknown) => void) => {
+    const folder = d.folders().find((f) => f.path === repo)
+    if (!folder) throw new PageError(400, "repo is not a factory folder")
+    const r = await d.startResearch(folder.id, P("web-brief", { goal }), "deep-research")
+    send("status", { text: "Deep research worker started (web search, cited sources). It takes minutes." })
+    const t0 = Date.now()
+    for (;;) {
+      await new Promise((ok) => setTimeout(ok, WEB_POLL_MS))
+      const w = d.workerState(r.workerId)
+      if (w?.status === "error" || w?.status === "failed")
+        throw new PageError(502, `deep research failed: ${(w.lastMessage ?? "worker failed").slice(0, 300)}`)
+      if (!w || ["idle", "stopped", "done"].includes(w.status)) break
+      if (Date.now() - t0 > WEB_MAX_MS)
+        throw new PageError(504, "deep research took over 30 min; see its draft in the Inbox")
+      send("status", {
+        text: `Deep research is working (${Math.round((Date.now() - t0) / 1000)} s, ${w.eventCount} events)…`,
+      })
+    }
+    const file = path.join(r.worktree, r.report)
+    if (!existsSync(file)) throw new PageError(502, `deep research finished without a report (${file})`)
+    send("status", { text: "Reading the cited report…" })
+    return ask(
+      P("system"),
+      P("web-map", { goal, report: cap(readFileSync(file, "utf8"), 30_000), path: file }),
+      "deepresearch",
+      ResearchOut,
+      researchProps,
+      ["summary", "suggestion"],
+    )
+  }
   const researchProps = { summary: { type: "string", description: "2-3 sentences" }, suggestion: patchObj }
   const research = async (body: unknown, send: (type: string, data: unknown) => void) => {
     const { action, repo, doc } = decode(
       Schema.Struct({
-        action: Schema.Literals(["council", "debate", "research", "hyperresearch"]),
+        action: Schema.Literals(["council", "debate", "research", "hyperresearch", "deep-research"]),
         repo: Schema.String,
         doc: Doc,
       }),
@@ -805,6 +850,8 @@ export const makeGoalPage = (d: GoalPageDeps) => {
         "summary",
         "suggestion",
       ])
+    } else if (action === "deep-research") {
+      out = await webResearch(repo, goal, send)
     } else {
       out = await repoAgent({
         root: repoRoot(repo),
@@ -1044,7 +1091,7 @@ export const makeGoalPage = (d: GoalPageDeps) => {
     }
   }
 
-  // ---------- Deep research: hve-core rpi-research as a real factory draft worker; Jev decides if and how deep ----------
+  // ---------- RPI research: hve-core rpi-research adds context to the goal (not web deep research); Jev decides if and how deep ----------
 
   const deepDecide = async (body: unknown) => {
     const { doc } = decode(Schema.Struct({ doc: Doc }), body, "deep decide request")
@@ -1204,7 +1251,7 @@ export const makeGoalPage = (d: GoalPageDeps) => {
   const deepStatus = async (body: unknown) => {
     const { threadId, doc } = decode(Schema.Struct({ threadId: Schema.String, doc: Doc }), body, "deep status request")
     const r = deepRuns.get(threadId)
-    if (!r) throw new PageError(404, "no deep research run with that id (the coordinator restarted?)")
+    if (!r) throw new PageError(404, "no RPI research run with that id (the coordinator restarted?)")
     const w = d.workerState(r.workerId)
     const elapsed = Math.round((Date.now() - r.startedAt) / 1000)
     const artifact = findArtifact(r.worktree)

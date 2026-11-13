@@ -39,6 +39,7 @@ const OTHER_COLOR = "#c4bcac"
 const STEP_STATES: Readonly<Record<string, CritterState>> = {
   research: "research",
   hyperresearch: "research",
+  "deep-research": "research",
   plan: "plan",
   council: "plan",
   "six-hats": "plan",

@@ -1,21 +1,33 @@
 import { expect, test } from "bun:test"
-import { selectableSteps, stepById, stepSetup } from "../src/steps.ts"
+import path from "node:path"
+import { checkStepSkills, FACTORY_SKILLS, selectableSteps, stepById, stepSetup } from "../src/steps.ts"
 import { fanoutCatalog, OPTIMIZE_SKILLS, optimizeTask, researchTask, selectWorkflows } from "../src/workflows.ts"
 
 test("independent probabilities allow multiple workflows or no match", () => {
-  expect(selectWorkflows({ council: 0.9, "six-hats": 0.65, hyperresearch: 0.95 }).selected).toEqual([
-    "council",
-    "six-hats",
-    "hyperresearch",
-  ])
-  expect(selectWorkflows({ council: 0.2, "six-hats": 0.1, hyperresearch: 0.3 }).selected).toEqual([])
+  expect(
+    selectWorkflows({ council: 0.9, "six-hats": 0.65, hyperresearch: 0.95, "deep-research": 0.7 }).selected,
+  ).toEqual(["council", "six-hats", "hyperresearch", "deep-research"])
+  expect(selectWorkflows({ council: 0.2, "six-hats": 0.1, hyperresearch: 0.3, "deep-research": 0.1 }).selected).toEqual(
+    [],
+  )
   for (const invalid of [NaN, Infinity, -0.1, 1.1])
-    expect(() => selectWorkflows({ council: invalid, "six-hats": 0.5, hyperresearch: 0.9 })).toThrow("Invalid Jev")
+    expect(() =>
+      selectWorkflows({
+        council: invalid,
+        "six-hats": 0.5,
+        hyperresearch: 0.9,
+        "deep-research": 0.5,
+      }),
+    ).toThrow("Invalid Jev")
   expect(() => selectWorkflows({ council: 0.9 })).toThrow("six-hats")
 })
 
 test("Claude-built workflows run in the Claude harness with their trx profile and entry command", () => {
-  expect(stepById("council").harness).toEqual({ kind: "claude", profiles: ["council"], entry: "/council" })
+  expect(stepById("council").harness).toEqual({
+    kind: "claude",
+    profiles: ["council"],
+    entry: "/council",
+  })
   expect(stepById("six-hats").harness?.entry).toBe("/six-hats:decide")
   expect(stepById("hyperresearch").harness).toEqual({
     kind: "claude",
@@ -30,6 +42,7 @@ test("one fan-out catalog holds research workflows and optimize lenses, each bou
     ["council", "research", "council"],
     ["six-hats", "research", "six-hats"],
     ["hyperresearch", "research", "hyperresearch"],
+    ["deep-research", "research", "deep-research"],
     ...OPTIMIZE_SKILLS.map((s) => [s.id, "optimize", `optimize-${s.id}`]),
   ])
   for (const e of fanoutCatalog()) expect(() => stepById(e.step)).not.toThrow()
@@ -85,4 +98,23 @@ test("each Optimize skill is a factory-only step that loads its managed skills",
   })
   expect(stepById("optimize-first-principles").skills).toEqual([])
   expect(selectableSteps().some((s) => s.id.startsWith("optimize-"))).toBe(false)
+})
+
+test("deep-research runs in every SDK: no harness, the shipped skill, and its MCP servers", () => {
+  const s = stepById("deep-research")
+  expect(s.harness).toBeUndefined()
+  expect(s.mcp).toEqual(["perplexity", "context7", "exa"])
+  expect(s.instructions).toContain("not in a subfolder")
+  expect(selectableSteps().some((x) => x.id === "deep-research")).toBe(true)
+  const setup = stepSetup(s, "/s", "/t")
+  expect(setup.skillDirectories).toEqual([FACTORY_SKILLS])
+  expect(setup.extraPath).toEqual([])
+  expect(checkStepSkills(setup.skillDirectories, "/nowhere", s)).toEqual([
+    {
+      name: "deep-research",
+      dir: path.join(FACTORY_SKILLS, "deep-research"),
+      healed: false,
+      problem: null,
+    },
+  ])
 })

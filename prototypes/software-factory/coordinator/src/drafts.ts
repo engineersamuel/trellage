@@ -21,11 +21,15 @@ export const isUnstartedDraft = (t: Pick<Thread, "draft"> | undefined): boolean 
 /** Note for coordinators that list an unstarted draft. */
 export const DRAFT_NOTE = "draft: do not message; the human runs it from the Inbox"
 
-export const ACTION_WORKFLOW: Record<DraftAction, "council" | "six-hats" | "rpi-research" | "hyperresearch"> = {
+export const ACTION_WORKFLOW: Record<
+  DraftAction,
+  "council" | "six-hats" | "rpi-research" | "hyperresearch" | "deep-research"
+> = {
   council: "council",
   debate: "six-hats",
   research: "rpi-research",
   hyperresearch: "hyperresearch",
+  "deep-research": "deep-research",
 }
 
 const LABEL: Record<DraftAction, string> = {
@@ -33,6 +37,7 @@ const LABEL: Record<DraftAction, string> = {
   debate: "Debate",
   research: "Research",
   hyperresearch: "Hyperresearch",
+  "deep-research": "Deep research",
 }
 
 /** Extra task text per action (a prompt name), after the shared research instructions. */

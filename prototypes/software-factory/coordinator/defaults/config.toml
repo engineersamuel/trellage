@@ -47,6 +47,12 @@ max_workers = 4
 # Jev probability at or above which a fan-out worker runs.
 select_threshold = 0.65
 
+# Most Perplexity MCP calls per worker, and of those, most perplexity_research calls (slow, paid).
+# A call over a limit is refused; the worker then uses its fallback search.
+[mcp]
+perplexity_max_calls = 15
+perplexity_research_max_calls = 2
+
 # SDLC gates: Jev probability at or above which each gate runs.
 # The Jev question of each gate is prompts/gates/<id>.md; gate ids and phases are fixed in code.
 [gates]
@@ -62,7 +68,7 @@ postMerge = 0.5
 effort = "medium"
 # Jev readiness (Clear, Testable, In scope) below this warns; Launch then needs a one-line reason.
 ready_threshold = 0.6
-# Deep research starts when Jev's "needed" is at or above deep_need and "scope stable" at or above deep_stable.
+# RPI research (repo context for the goal; keys keep the old "deep" name) starts when Jev's "needed" is at or above deep_need and "scope stable" at or above deep_stable.
 deep_need = 0.5
 deep_stable = 0.7
 # A research finding is proposed as a change at or above this.
