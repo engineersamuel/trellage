@@ -37,14 +37,17 @@ Prepare the locked source workspace once from the repository root:
 
 ```bash
 mise trust
-mise install
-scripts/install-source-runtime.sh --prepare
+mise install bun
+mise exec -- scripts/install-source-runtime.sh --prepare-runtime
 ```
 
 Trellage runs TypeScript and TSX source through Bun. It does not need a generated
 harness bundle, guide-core output, or a profile-compiler build. Type checking
 remains separate. Preparation installs frozen dependencies and records runtime
 readiness; a raw `bun install` alone does not prepare a usable runtime.
+Launches and installed profiles need only runtime dependencies. For development
+tools and tests, run `mise run quality:setup` instead. Each host keeps its own
+package registry settings; both use the same locked application versions.
 See the [source-runtime decision](docs/adr/0005-bun-source-runtime.md).
 
 First run in a repo worktree with a Native route:
@@ -136,12 +139,12 @@ not the upstream plugin, hooks, or extensions. It does not add this skill to
 automatic instructions. Use your harness's explicit skill interface; command
 syntax differs between harnesses.
 
-| Harness | Command in the harness conversation |
-| --- | --- |
-| Codex | `$i-have-adhd` |
-| Claude Code, Grok | `/i-have-adhd` |
-| Copilot, Agency | `/i-have-adhd`, subject to the compatibility note below |
-| Oh My Pi, Pi, Prime | `/skill:i-have-adhd` |
+| Harness             | Command in the harness conversation                     |
+| ------------------- | ------------------------------------------------------- |
+| Codex               | `$i-have-adhd`                                          |
+| Claude Code, Grok   | `/i-have-adhd`                                          |
+| Copilot, Agency     | `/i-have-adhd`, subject to the compatibility note below |
+| Oh My Pi, Pi, Prime | `/skill:i-have-adhd`                                    |
 
 On Copilot versions affected by
 [github/copilot-cli#4438](https://github.com/github/copilot-cli/issues/4438),
@@ -609,13 +612,13 @@ Install the dependencies for the harnesses you use. On a brand-new machine:
    - Codex needs the `codex` CLI (`npm install -g @openai/codex`),
      Node.js 22+, npm, and `python3`.
    - GitHub Copilot needs `copilot` (`gh extension install
-     github/gh-copilot` or the standalone Copilot CLI) already authenticated,
+github/gh-copilot` or the standalone Copilot CLI) already authenticated,
      plus `jq` and `python3`.
    - Agency needs Microsoft Agency on `PATH` or at
      `~/.config/agency/CurrentVersion/agency`, Node.js, npm, npx, and either
      complete Azure environment credentials or an existing `az login`.
    - Claude Code needs the `claude` CLI (`npm install -g
-     @anthropic-ai/claude-code`) and `python3`.
+@anthropic-ai/claude-code`) and `python3`.
    - composed Grok needs the `grok` CLI. `trx run grok` uses
      `copilot-proxy-rs`, generated API-key-only configuration, and Grok's
      native workspace sandbox; it does not require or copy an xAI login.
@@ -634,7 +637,7 @@ Install the dependencies for the harnesses you use. On a brand-new machine:
    the keyless `copilot-proxy-rs` service at `http://127.0.0.1:8080`. Start
    that proxy and make sure it has a valid GitHub Copilot device-flow login
    before using those harnesses. A `401` or `GitHub OAuth device flow is not
-   available in this non-interactive process` error means the proxy has no
+available in this non-interactive process` error means the proxy has no
    usable cached token (it only prompts for the device flow when its stdin is
    a terminal, so a detached `docker compose up -d`/`restart` never shows the
    prompt). Re-authenticate it once, from the proxy's own repository:
@@ -651,7 +654,7 @@ Install the dependencies for the harnesses you use. On a brand-new machine:
    code, and approve GitHub Copilot access. The token persists to
    `~/.config/copilot-proxy-rs/github_token`; once authorization completes,
    stop that temporary container and restart the real service (`docker
-   compose restart` in the proxy's project directory) so it picks up the
+compose restart` in the proxy's project directory) so it picks up the
    fresh token. A plain `gh auth token` value is **not** sufficient — the
    Copilot API rejects it with "Copilot token request denied" because it
    lacks the Copilot OAuth app's scope.
@@ -1011,7 +1014,7 @@ review, or approve findings.
    - **Agent harness in this terminal**, **a new Herdr tab**, or **a new Herdr
      worktree**: choose Copilot, Codex, or Claude. Guide composes the harness
      with only the selected skills' managed skills (`trx run HARNESS
-     --no-always --skill OWNER/REPO:NAME ...`), not a configured profile. The
+--no-always --skill OWNER/REPO:NAME ...`), not a configured profile. The
      harness keeps its own permission settings.
 
 `trx run HARNESS --skill OWNER/REPO:NAME` adds a single skill from a GitHub
@@ -1356,15 +1359,15 @@ fits the evidence already available. Do not restart discovery when approved
 requirements already exist, and do not treat a successful demo as validated
 customer value.
 
-| Situation | Native HVE workflow and agent |
-| --- | --- |
-| The customer problem or proposed solution is not validated | `d` **Discover with the customer** — `customer-discovery`, DT Coach |
-| A specific assumption needs evidence before investment | `e` **Test an assumption** — `test-assumption`, Experiment Designer |
-| The problem is understood; business requirements need agreement | `business-requirements`, BRD Builder |
-| Product behavior and acceptance criteria need definition | `product-requirements`, PRD Builder |
-| One UX framing, critique, or stakeholder question needs help | `focused-ux-coaching`, UX UI Designer |
-| Architecture choices need review against agreed needs | `review-architecture`, System Architecture Reviewer |
-| Mature requirements need a reviewed work hierarchy | `functional-planning`, Functional Planner |
+| Situation                                                       | Native HVE workflow and agent                                       |
+| --------------------------------------------------------------- | ------------------------------------------------------------------- |
+| The customer problem or proposed solution is not validated      | `d` **Discover with the customer** — `customer-discovery`, DT Coach |
+| A specific assumption needs evidence before investment          | `e` **Test an assumption** — `test-assumption`, Experiment Designer |
+| The problem is understood; business requirements need agreement | `business-requirements`, BRD Builder                                |
+| Product behavior and acceptance criteria need definition        | `product-requirements`, PRD Builder                                 |
+| One UX framing, critique, or stakeholder question needs help    | `focused-ux-coaching`, UX UI Designer                               |
+| Architecture choices need review against agreed needs           | `review-architecture`, System Architecture Reviewer                 |
+| Mature requirements need a reviewed work hierarchy              | `functional-planning`, Functional Planner                           |
 
 Discovery can move backward and reuse evidence. Its formal exits from problem,
 solution, or implementation space go to scoped `rpi-research`, not directly to
@@ -1425,12 +1428,12 @@ it does not fill empty places with ordinary prompt workflows.
 
 The profile's declared policy selects one controller:
 
-| Supported profile | Controller and delivery |
-| --- | --- |
-| Native Codex, including Superpowers | Native `/goal`; start the interactive profile, then use its command input as described below |
-| Supported Native Claude (`trx run claude default`) in this terminal | Native `/goal` through the harness's documented `-p` prompt mode |
-| Supported Native Claude in prompt mode | Native `/goal` through the runtime's Claude `-p` path |
-| Native Claude in interactive Herdr | Native `/goal` with explicit manual command input; the session stays interactive |
+| Supported profile                                                   | Controller and delivery                                                                      |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Native Codex, including Superpowers                                 | Native `/goal`; start the interactive profile, then use its command input as described below |
+| Supported Native Claude (`trx run claude default`) in this terminal | Native `/goal` through the harness's documented `-p` prompt mode                             |
+| Supported Native Claude in prompt mode                              | Native `/goal` through the runtime's Claude `-p` path                                        |
+| Native Claude in interactive Herdr                                  | Native `/goal` with explicit manual command input; the session stays interactive             |
 
 Workflow discipline such as Superpowers TDD does not replace a declared goal
 controller. Every native-goal candidate has one explicit `/goal` frame.
@@ -1970,9 +1973,9 @@ Each package entry contains:
 
 Current adapter capabilities:
 
-| Runtime | Package source | Plugin selection | Agents and skills | Hooks |
-|---|---|---|---|---|
-| Codex | `wshobson/agents` | Exactly one plugin per contestant | Generated Codex agents and skills bundled by that plugin | Direct hooks unsupported |
+| Runtime | Package source           | Plugin selection                   | Agents and skills                                                     | Hooks                                     |
+| ------- | ------------------------ | ---------------------------------- | --------------------------------------------------------------------- | ----------------------------------------- |
+| Codex   | `wshobson/agents`        | Exactly one plugin per contestant  | Generated Codex agents and skills bundled by that plugin              | Direct hooks unsupported                  |
 | Copilot | `github/awesome-copilot` | One or more plugins per contestant | Native plugin agents and skills are materialized with their manifests | Plugin hooks and direct hooks unsupported |
 
 The Awesome Copilot adapter also rejects plugin manifests that require MCP servers, commands, extensions, unsafe paths,
