@@ -770,7 +770,7 @@ describe("test-first rust", () => {
       "pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {\n    let _ = 'ab';\n  }\n}\n",
       "unterminated or unsupported character literal",
     ],
-  ])(
+  ] as [string, string, string, string?][])(
     "AC-7: %s fails closed as could not be classified",
     (_label, baseContent, nextContent, detail = "src/app.rs:2") => {
       const { r, git } = repo()
