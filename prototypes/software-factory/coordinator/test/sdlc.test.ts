@@ -795,6 +795,54 @@ describe("test-first rust", () => {
       expect(gate).toContain(detail)
     },
   )
+
+  const gateFor = (files: Record<string, string>, next: Record<string, string>) => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    const commit = (content: Record<string, string>, message: string) => {
+      for (const [file, text] of Object.entries(content)) writeFileSync(path.join(r, file), text)
+      git("add", "src")
+      git("commit", "-q", "-m", message)
+    }
+    commit(files, "chore: base")
+    const base = git("rev-parse", "HEAD")
+    commit(next, "test: attempt")
+    const sha = git("rev-parse", "--short", "HEAD")
+    const gate = shipBlockers(rustPlan(), r, base, true, true).find((b) => b.startsWith("test-first gate:"))
+    return { gate, sha }
+  }
+
+  const leaked = "#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n  }\n  pub fn leaked() {\n}\n"
+
+  test("AC-2/AC-4: indented module close followed by a production fn is not a test module", () => {
+    const { gate, sha } = gateFor(
+      { "src/lib.rs": "pub fn base() {}\n" },
+      { "src/lib.rs": `pub fn base() {}\n\n${leaked}` },
+    )
+    expect(gate).toContain(sha)
+    expect(gate).toContain("could not be classified")
+  })
+
+  test("AC-6: wiring a new module whose test module closes early is blocked", () => {
+    const { gate, sha } = gateFor(
+      { "src/main.rs": "fn main() {}\n" },
+      { "src/main.rs": "mod history;\nfn main() {}\n", "src/history.rs": `// tests\n\n${leaked}` },
+    )
+    expect(gate).toContain(sha)
+  })
+
+  test.each([
+    ["string", 'const TEXT: &str = "one\\\ntwo";\n', "two"],
+    ["comment", "/*\nold\n*/\n", "old"],
+  ])("AC-7: production change before a changed multiline %s fails closed", (_label, middle, word) => {
+    const mod = "#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n"
+    const before = `pub fn base() {}\n${middle}\n${mod}`
+    const after = before.replace("pub fn base() {}", "pub fn base() { let _ = 1; }").replace(word, "changed")
+    const { gate } = gateFor({ "src/lib.rs": before }, { "src/lib.rs": after })
+    expect(gate).toContain("could not be classified")
+  })
 })
 
 describe("worktree artifacts", () => {
