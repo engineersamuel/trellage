@@ -9,7 +9,24 @@ import { factoryConfig } from "./config.ts"
 import type { Evaluation } from "./evaluate.ts"
 import { checksState, type Check } from "./run.ts"
 
-export type RuleId = "r1" | "r3" | "r14" | "r15" | "r17" | "r21" | "r24" | "r25" | "r26" | "r27" | "r28" | "r29"
+export type RuleId =
+  | "r1"
+  | "r3"
+  | "r6"
+  | "r7"
+  | "r8"
+  | "r11"
+  | "r12"
+  | "r14"
+  | "r15"
+  | "r17"
+  | "r21"
+  | "r24"
+  | "r25"
+  | "r26"
+  | "r27"
+  | "r28"
+  | "r29"
 
 export const ruleOn = (id: RuleId): boolean => factoryConfig().cos.rules[id]
 
@@ -215,14 +232,29 @@ export type RepoHold = {
   waiting?: string[]
 }
 
+/** Merge holds per repo, saved in cos.db so a restart keeps them (with `root`; in memory without). */
 export class RepoGates {
   private readonly holds = new Map<string, RepoHold>()
+  private readonly db: Database | null
+  constructor(root?: string) {
+    this.db = root ? new Database(path.join(root, "cos.db"), { create: true }) : null
+    if (!this.db) return
+    this.db.run("PRAGMA journal_mode = WAL")
+    this.db.run("CREATE TABLE IF NOT EXISTS repo_holds (repo TEXT PRIMARY KEY, data TEXT NOT NULL)")
+    const rows = this.db.query("SELECT repo, data FROM repo_holds").all() as { repo: string; data: string }[]
+    for (const r of rows) this.holds.set(r.repo, JSON.parse(r.data) as RepoHold)
+  }
   get(repo: string): RepoHold {
     return this.holds.get(repo) ?? {}
   }
   set(repo: string, h: RepoHold): void {
-    if (!h.red && !h.settling) this.holds.delete(repo)
-    else this.holds.set(repo, h)
+    if (!h.red && !h.settling && !h.waiting?.length) {
+      this.holds.delete(repo)
+      this.db?.run("DELETE FROM repo_holds WHERE repo = ?", [repo])
+    } else {
+      this.holds.set(repo, h)
+      this.db?.run("INSERT OR REPLACE INTO repo_holds (repo, data) VALUES (?, ?)", [repo, JSON.stringify(h)])
+    }
   }
   /** Remember a conversation whose merge was held. */
   wait(repo: string, threadId: string): void {
@@ -321,3 +353,64 @@ export type IdleState = {
 
 export const r25Action = (s: IdleState, quietMs: number): "archive" | "report" | null =>
   !s.idle || s.quietMs < quietMs ? null : s.done ? "archive" : s.reported ? null : "report"
+
+// ---------- R6, R7, R8: worker issues the rules handle in code ----------
+
+export type IssueKind = "error" | "stalled" | "failing-tools" | "off-track" | "uncollected"
+export type IssueAction = "nudge" | "stop" | "to-owner" | "to-human" | "pause" | null
+
+/**
+ * What the rules do with one supervisor issue, given how often this worker had it before.
+ * R6 stalled: nudge once, then stop. R7 failing tools: errors to the owner, again to the human. R8 off-track: pause.
+ * Other kinds (error, uncollected) go to their owner as before (null).
+ */
+export const issueAction = (kind: IssueKind, seenBefore: number, on: (r: RuleId) => boolean): IssueAction => {
+  if (kind === "stalled" && on("r6")) return seenBefore === 0 ? "nudge" : "stop"
+  if (kind === "failing-tools" && on("r7")) return seenBefore === 0 ? "to-owner" : "to-human"
+  if (kind === "off-track" && on("r8")) return "pause"
+  return null
+}
+
+// ---------- R11: two conversations change the same files or PR ----------
+
+export type Changes = { threadId: string; repo: string; createdAt: number; files: string[]; pr: number | null }
+
+/** Pairs of open conversations in one repo with a shared file or the same PR; `newer` is the one R11 holds. */
+export const overlaps = (all: readonly Changes[]): { older: string; newer: string; files: string[] }[] => {
+  const out: { older: string; newer: string; files: string[] }[] = []
+  const sorted = [...all].sort((a, b) => a.createdAt - b.createdAt)
+  for (let i = 0; i < sorted.length; i++)
+    for (let j = i + 1; j < sorted.length; j++) {
+      const [a, b] = [sorted[i]!, sorted[j]!]
+      if (a.repo !== b.repo) continue
+      const set = new Set(a.files)
+      const files = b.files.filter((f) => set.has(f))
+      if (files.length || (a.pr !== null && a.pr === b.pr)) out.push({ older: a.threadId, newer: b.threadId, files })
+    }
+  return out
+}
+
+// ---------- R12: goal cost alert ----------
+
+/** R12: alert once when a goal's spend reaches `share` of its limit (100% is the existing goal pause). */
+export const costAlert = (spent: number, limit: number, share: number, alerted: boolean): boolean =>
+  !alerted && limit > 0 && spent >= limit * share && spent < limit
+
+// ---------- Typed PR events ----------
+
+export type PrState = "green" | "red" | "pending" | "merged" | "closed"
+
+export const prState = (state: string, checks: string): PrState =>
+  state === "MERGED"
+    ? "merged"
+    : state !== "OPEN"
+      ? "closed"
+      : checks === "SUCCESS" || checks === "NONE"
+        ? "green"
+        : checks === "FAILURE"
+          ? "red"
+          : "pending"
+
+/** The typed event for a change of PR state, or null when nothing worth an event changed. */
+export const prEvent = (before: PrState | undefined, now: PrState): "pr-green" | "pr-red" | "merged" | null =>
+  before === now ? null : now === "green" ? "pr-green" : now === "red" ? "pr-red" : now === "merged" ? "merged" : null

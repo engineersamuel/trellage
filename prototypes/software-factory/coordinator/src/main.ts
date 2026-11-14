@@ -21,7 +21,14 @@ import { configStore, type Scalar } from "./config.ts"
 import { isProposal, settleProposal } from "./configChanges.ts"
 import {
   blockerKey,
+  costAlert,
   isModelError,
+  issueAction,
+  overlaps,
+  prEvent,
+  prState,
+  type Changes,
+  type PrState,
   ledgerOf,
   mainChecks,
   modelErrorWorkers,
@@ -77,7 +84,7 @@ import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, withSubagents, type Run } from "./run.ts"
 import { costReport, GOAL_PAGE_AGENT, gradeCost, rollUp, runCost, type AgentInfo } from "./costs.ts"
 import { factoryConfig } from "./config.ts"
-import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
+import { artifact, diffFiles, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
 import { postMergeCheck } from "./postmerge.ts"
 import { ARTIFACTS_DIR, servableImage } from "./files.ts"
@@ -1104,9 +1111,14 @@ factory.feed.subscribe((ev) => {
  * event, the conversation's case file (its last ledger entries) and the board. One event at a time; the turn is
  * saved in the CoS thread, so the human sees it. The human's own chat with the CoS stays one session.
  */
-let cosQueue: Promise<void> = Promise.resolve()
+// Events run in parallel; events of one conversation run in order, so two turns never act on it at once.
+const cosChains = new Map<string, Promise<void>>()
 const cosEvent = (caseThread: string | null, event: string): void => {
-  cosQueue = cosQueue.then(() => runCosEvent(caseThread, event)).catch((e) => console.error(`CoS event failed: ${e}`))
+  const run = () => runCosEvent(caseThread, event).catch((e) => console.error(`CoS event failed: ${e}`))
+  if (!caseThread) return void run()
+  const next = (cosChains.get(caseThread) ?? Promise.resolve()).then(run)
+  cosChains.set(caseThread, next)
+  void next.finally(() => cosChains.get(caseThread) === next && cosChains.delete(caseThread))
 }
 
 const COS_EVENT_WAIT_MS = 30 * 60_000
@@ -1229,7 +1241,74 @@ const groupIssuesByOwner = (issues: Issue[], coordinator: Worker): Map<string, I
   return grouped
 }
 
-const sendSupervisionIssues = (issues: Issue[], coordinator: Worker): void => {
+/** How often each worker had each issue kind (R6, R7: the second time acts harder). */
+const issueSeen = new Map<string, number>()
+
+/** R6, R7, R8: act on an issue in code. Returns false when the issue goes to its owner as before. */
+const ruleIssue = async (issue: Issue, coordinator: Worker): Promise<boolean> => {
+  const key = `${issue.worker}|${issue.kind}`
+  const seen = issueSeen.get(key) ?? 0
+  const action = issueAction(issue.kind, seen, ruleOn)
+  if (!action) return false
+  issueSeen.set(key, seen + 1)
+  const w = factory.workers.get(issue.worker)
+  if (!w) return true
+  const ownerId = w.owner ?? coordinator.id
+  const owner = factory.workers.get(ownerId)
+  const threadOfOwner = threads.list().find((t) => subId(t.id) === ownerId)?.id ?? null
+  const rule = issue.kind === "stalled" ? "R6" : issue.kind === "failing-tools" ? "R7" : "R8"
+  const toOwner = (text: string) =>
+    owner && owner !== coordinator && threadOfOwner ? deliverAndLog(threadOfOwner, text) : cosEvent(null, text)
+  switch (action) {
+    case "nudge":
+      await w
+        .send(
+          `[Chief of Staff · rule R6] You have been silent for a while (${issue.detail}). Continue your task now, or finish with what you have and say what blocks you.`,
+        )
+        .catch(() => {})
+      break
+    case "stop":
+      await factory.stop(w.id).catch(() => {})
+      toOwner(
+        `[Chief of Staff · rule R6] Worker ${w.name} (${w.id}) stalled again after a nudge (${issue.detail}) and was stopped. Read it with read_worker, then spawn a replacement with a narrower task, or report blocked.`,
+      )
+      break
+    case "to-owner":
+      toOwner(
+        `[Chief of Staff · rule R7] Worker ${w.name} (${w.id}): ${issue.detail}. Read it with read_worker and send it a concrete correction with message_worker, or stop it and spawn a replacement.`,
+      )
+      break
+    case "to-human": {
+      const item = factory.approvals.open({
+        threadId: threadOfOwner,
+        title: `Worker ${w.name} keeps failing tool calls`,
+        summary: `Rule R7: ${issue.detail}\n\nIts owner already got the errors once.`,
+        options: ["Stop the worker", "Let it continue"],
+        optionDetails: ["Its owner spawns a replacement", "Nothing changes"],
+        context: "Chief of Staff · R7",
+        ...(threadOfOwner ? { reportThreadId: threadOfOwner } : {}),
+        topic: "other",
+      })
+      factory.publish("coordinator", "factory.approval_requested", null, now(), item)
+      break
+    }
+    case "pause":
+      await w.session.abort().catch(() => {})
+      toOwner(
+        `[Chief of Staff · rule R8] Worker ${w.name} (${w.id}) was paused: ${issue.detail}. Read what it did with read_worker; then message_worker with a correction to resume it on its task, or stop_worker.`,
+      )
+      break
+  }
+  cosLog(rule, threadOfOwner, `${action} ${w.name}`, "done", issue.detail)
+  return true
+}
+
+const sendSupervisionIssues = async (all: Issue[], coordinator: Worker): Promise<void> => {
+  const issues: Issue[] = []
+  for (const issue of all) {
+    if (await ruleIssue(issue, coordinator)) reported.set(`${issue.worker}|${issue.kind}`, issue.detail)
+    else issues.push(issue)
+  }
   for (const [owner, list] of groupIssuesByOwner(issues, coordinator)) {
     const recipient = factory.workers.get(owner) ?? coordinator
     if (recipient.status === "running") continue
@@ -1456,6 +1535,91 @@ const holdSweep = () => {
 }
 loop("cos-holds", "1 minute", holdSweep)
 
+/** Open repo conversations with a worktree (R11, PR events). */
+const openRepoThreads = () => threads.list().filter((t) => t.worktree && t.branch && !t.cleanedAt && !t.archivedAt)
+
+/** Typed PR events (ADR 0008 step 1): pr-green, pr-red, merged, from each conversation's PR state. */
+const prStates = new Map<string, PrState>()
+const prSweep = async () => {
+  for (const t of openRepoThreads()) {
+    const { pr } = await prOf(t)
+    if (!pr) continue
+    const state = prState(pr.state, pr.checks)
+    const ev = prEvent(prStates.get(t.id), state)
+    prStates.set(t.id, state)
+    if (!ev) continue
+    factory.publish(subId(t.id), `factory.${ev}`, null, new Date().toISOString(), {
+      threadId: t.id,
+      pr: pr.url,
+      checks: pr.checks,
+    })
+    cosLog("PR", t.id, ev, "done", pr.url)
+    // Green and not merged: the sub-coordinator merges it (R3). Red: its fix loop (R4) runs in the finish worker.
+    if (ev === "pr-green" && ruleOn("r3"))
+      deliverAndLog(t.id, `[Chief of Staff · rule R3] ${pr.url} is green. Call merge_pr now.`)
+  }
+}
+loop("cos-pr-events", "2 minutes", prSweep)
+
+/** R11: two open conversations in one repo change the same files or PR: hold the newer one and ask the human. */
+let lastOverlap = 0
+const overlapSweep = async () => {
+  if (!ruleOn("r11")) return
+  const changes: Changes[] = []
+  for (const t of openRepoThreads()) {
+    const repo = threads.folder(t.folderId)?.path
+    if (!repo || !t.base) continue
+    const { pr } = await prOf(t)
+    const files = diffFiles(t.worktree!, t.base)
+      .map((f) => f.path)
+      .filter((f) => !f.startsWith(".factory/"))
+    changes.push({
+      threadId: t.id,
+      repo,
+      createdAt: t.createdAt,
+      files,
+      pr: pr && pr.state === "OPEN" ? pr.number : null,
+    })
+  }
+  for (const o of overlaps(changes)) {
+    // Asked once per pair, also across restarts: the ledger remembers.
+    if (
+      ledgerOf(factory.root)
+        .list(200, o.newer)
+        .some((e) => e.rule === "R11" && e.action === `hold overlap with ${o.older}`)
+    )
+      continue
+    const [older, newer] = [threads.get(o.older)!, threads.get(o.newer)!]
+    for (const w of [...factory.workers.values()])
+      if (w.owner === subId(newer.id)) await factory.interrupt(w.id, "held by rule R11").catch(() => {})
+    const sub = factory.workers.get(subId(newer.id))
+    if (sub) await sub.session.abort().catch(() => {})
+    const item = factory.approvals.open({
+      threadId: newer.id,
+      title: `Overlap: "${newer.title.slice(0, 60)}" and "${older.title.slice(0, 60)}"`,
+      summary: `Rule R11 held the newer conversation: both change ${o.files.length ? `the same files:\n- ${o.files.slice(0, 20).join("\n- ")}` : "the same PR"}.`,
+      options: ["Continue both", "Stop the newer one", "Merge the newer one's work into the older one"],
+      optionDetails: [
+        "The newer one resumes",
+        "Nothing more runs in the newer one",
+        "The newer one reports its changes for the older one to take",
+      ],
+      allowText: true,
+      context: "Chief of Staff · R11",
+      reportThreadId: newer.id,
+      topic: "other",
+    })
+    factory.publish("coordinator", "factory.approval_requested", null, now(), item)
+    cosLog("R11", newer.id, `hold overlap with ${older.id}`, "done", o.files.slice(0, 5).join(", ") || "same PR")
+  }
+}
+loop("cos-overlap", "1 minute", () => {
+  const every = factoryConfig().cos.overlap_poll_seconds * 1000
+  if (Date.now() - lastOverlap < every) return
+  lastOverlap = Date.now()
+  return overlapSweep()
+})
+
 const supervise = async () => {
   const cfg = factory.settings.supervisor
   const coordinator = factory.workers.get("coordinator")
@@ -1465,7 +1629,7 @@ const supervise = async () => {
   const issues = await collectSupervisionIssues(workers, cfg)
   const fresh = freshSupervisionIssues(issues)
   factory.publish("coordinator", "factory.supervisor_check", null, now(), { issues, reported: fresh.length })
-  sendSupervisionIssues(fresh, coordinator)
+  await sendSupervisionIssues(fresh, coordinator)
 }
 loop("supervisor", "5 seconds", supervise)
 
@@ -2456,6 +2620,8 @@ const pauseGoal = async (goalId: string, b: Budget, spent: number) => {
   console.error(`goal ${goalId} paused at its cost limit: $${spent.toFixed(2)} of $${b.limitUsd}`)
 }
 
+/** R12: the limit each goal was last alerted at; a raised limit alerts again. */
+const costAlerted = new Map<string, number>()
 const checkBudgets = async () => {
   const costs = costTree().costs
   const ids = new Set(threads.list().flatMap((t) => (t.goalId && t.worktree && !t.cleanedAt ? [t.goalId] : [])))
@@ -2464,6 +2630,15 @@ const checkBudgets = async () => {
     const busy = goalRuns(goalId).some((t) => runAgents(t).some((w) => w.status === "running"))
     const spent = goalSpent(goalId, costs)
     if (shouldPause(b, spent, busy)) await pauseGoal(goalId, b, spent)
+    else if (
+      ruleOn("r12") &&
+      costAlert(spent, b.limitUsd, factoryConfig().cos.cost_alert_share, costAlerted.get(goalId) === b.limitUsd)
+    ) {
+      costAlerted.set(goalId, b.limitUsd)
+      const msg = `Goal ${goalId} has spent $${spent.toFixed(2)} of its $${b.limitUsd} cost limit (rule R12). At the limit it pauses.`
+      cosLog("R12", goalRuns(goalId)[0]?.id ?? null, "cost alert", "done", msg)
+      cosEvent(null, `[Chief of Staff rule R12] ${msg} Tell the human in one line.`)
+    }
   }
 }
 loop("goal-budgets", "30 seconds", checkBudgets)

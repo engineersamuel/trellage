@@ -107,12 +107,26 @@ main_ci_poll_seconds = 120
 # R28: this many workers with auth or rate-limit errors within the window stop new workers.
 model_error_workers = 3
 model_error_window_minutes = 5
+# R12: tell the human once when a goal's spend reaches this share of its limit (at 100% the goal pauses).
+cost_alert_share = 0.8
+# R11: how often open conversations are compared for shared files or PRs.
+overlap_poll_seconds = 300
 
 [cos.rules]
 # R1: answer a decision with Jev's pick (never ship, merge, delete, cost, goal or config decisions).
 r1 = true
 # R3: merge_pr squash-merges a green, ship-granted factory PR, then pulls the repo's main checkout.
 r3 = true
+# R6: a stalled worker is nudged once, then stopped and reported to its owner.
+r6 = true
+# R7: 3 failed tool calls in a row go to the owner; a second time to the human.
+r7 = true
+# R8: a worker Jev scores off-track (< 0.30) is paused and its owner asked.
+r8 = true
+# R11: two open conversations that change the same files or PR: the newer one is held and the human asked.
+r11 = true
+# R12: a goal at 80% of its cost limit is reported to the human (100% pauses it, as before).
+r12 = true
 # R14: grant a ship when every gate is done and the independent evaluator passed every criterion.
 r14 = true
 # R15, R16: CI on main is red: start a fix conversation (again until main is green); other merges wait.

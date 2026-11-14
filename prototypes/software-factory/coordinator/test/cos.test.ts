@@ -6,7 +6,12 @@ import path from "node:path"
 import type { Approval } from "../src/approvals.ts"
 import {
   blockerKey,
+  costAlert,
   isModelError,
+  issueAction,
+  overlaps,
+  prEvent,
+  prState,
   Ledger,
   mainCheckout,
   mergeHold,
@@ -237,4 +242,61 @@ test("R25: idle and done archives; idle, not done and not reported reports; busy
   expect(r25Action({ ...base, reported: true }, q)).toBeNull()
   expect(r25Action({ ...base, idle: false }, q)).toBeNull()
   expect(r25Action({ ...base, quietMs: q - 1 }, q)).toBeNull()
+})
+
+test("merge holds survive a restart (saved in cos.db)", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "gates-"))
+  const a = new RepoGates(root)
+  a.set("/r", { red: { fixThread: "fix", since: 1 } })
+  a.wait("/r", "t1")
+  expect(new RepoGates(root).get("/r")).toEqual({ red: { fixThread: "fix", since: 1 }, waiting: ["t1"] })
+  a.set("/r", {})
+  expect(new RepoGates(root).all()).toEqual([])
+})
+
+test("R6/R7/R8: first stall nudges, second stops; tool failures go to the owner, then the human; off-track pauses", () => {
+  const on = () => true
+  expect(issueAction("stalled", 0, on)).toBe("nudge")
+  expect(issueAction("stalled", 1, on)).toBe("stop")
+  expect(issueAction("failing-tools", 0, on)).toBe("to-owner")
+  expect(issueAction("failing-tools", 3, on)).toBe("to-human")
+  expect(issueAction("off-track", 0, on)).toBe("pause")
+  expect(issueAction("uncollected", 0, on)).toBeNull()
+  expect(issueAction("stalled", 0, () => false)).toBeNull()
+})
+
+test("R11: the newer of two conversations sharing a file or PR in one repo is held", () => {
+  const c = (threadId: string, createdAt: number, files: string[], prNo: number | null = null, repo = "/r") => ({
+    threadId,
+    repo,
+    createdAt,
+    files,
+    pr: prNo,
+  })
+  expect(overlaps([c("b", 2, ["x.ts", "y.ts"]), c("a", 1, ["y.ts"])])).toEqual([
+    { older: "a", newer: "b", files: ["y.ts"] },
+  ])
+  expect(overlaps([c("a", 1, ["x"], 7), c("b", 2, ["z"], 7)])).toEqual([{ older: "a", newer: "b", files: [] }])
+  expect(overlaps([c("a", 1, ["x"]), c("b", 2, ["x"], null, "/other")])).toEqual([])
+  expect(overlaps([c("a", 1, ["x"]), c("b", 2, ["y"])])).toEqual([])
+})
+
+test("R12: one alert between 80% and the limit", () => {
+  expect(costAlert(80, 100, 0.8, false)).toBe(true)
+  expect(costAlert(79, 100, 0.8, false)).toBe(false)
+  expect(costAlert(90, 100, 0.8, true)).toBe(false)
+  expect(costAlert(100, 100, 0.8, false)).toBe(false)
+})
+
+test("typed PR events fire on a change of state only", () => {
+  expect(prState("OPEN", "SUCCESS")).toBe("green")
+  expect(prState("OPEN", "NONE")).toBe("green")
+  expect(prState("OPEN", "FAILURE")).toBe("red")
+  expect(prState("OPEN", "PENDING")).toBe("pending")
+  expect(prState("MERGED", "SUCCESS")).toBe("merged")
+  expect(prEvent(undefined, "green")).toBe("pr-green")
+  expect(prEvent("green", "green")).toBeNull()
+  expect(prEvent("pending", "red")).toBe("pr-red")
+  expect(prEvent("green", "merged")).toBe("merged")
+  expect(prEvent("red", "pending")).toBeNull()
 })

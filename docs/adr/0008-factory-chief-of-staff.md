@@ -122,6 +122,10 @@ The pull worker after R3 gets only `git pull --rebase origin main` in that one d
 - **Event turns are stateless.** Each event that reaches the model gets a fresh short session: the rules, the case
   file of that conversation (its last ledger entries and report), and the board. Same event and state give the same
   action; nothing drifts; cost stays low.
+- **Events run in parallel.** Events of different conversations run at the same time, each in its own session;
+  events of one conversation run in order, so two turns never act on it at once.
+- **Rule state is in SQLite.** The ledger and the per-repo merge holds (red main, merge in progress, waiting PRs)
+  are in `cos.db`, so a restart keeps them.
 - **The human's chat with the CoS is stateful**, with auto-compaction. It reads the board and ledger with tools, so a
   compaction loses nothing that matters.
 - **The ledger is the memory.** Append-only table: time, event, rule id, mode, action, result, conversation. Code and

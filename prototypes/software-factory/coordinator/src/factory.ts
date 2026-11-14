@@ -541,7 +541,7 @@ export class Factory {
   /** Independent acceptance evaluations (src/evaluate.ts) by id. */
   readonly evaluations = new Map<string, Evaluation>()
   /** Chief of Staff merge holds per repo path (rules R15, R17). */
-  readonly repoGates = new RepoGates()
+  readonly repoGates: RepoGates
   /** Why no new worker or conversation may start now (rules R28, R29), or null. */
   spawnHold: string | null = null
   /** SDLC state per sub-coordinator id: criteria, risk tier, gates. */
@@ -563,6 +563,7 @@ export class Factory {
     mkdirSync(this.root, { recursive: true })
     this.store = new EventStore(path.join(this.root, "events.db"))
     this.store.importAll(this.root)
+    this.repoGates = new RepoGates(this.root)
     this.seq = Math.max(Date.now() * 1000, this.store.maxSeq() + 1)
     this.defaultAuth = env.SF_AUTH === "proxy" ? "proxy" : "native"
     this.proxyUrl = env.SF_PROXY_URL ?? "http://localhost:8080/v1"
