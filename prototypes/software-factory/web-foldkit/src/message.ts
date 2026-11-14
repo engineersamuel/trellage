@@ -24,6 +24,8 @@ export const Message = defineMessageUnion({
   ReceivedCardDataChange: {},
   // Window and shared-module events
   RequestedOpenThread: { threadId: Schema.String },
+  /** A pick in the Inbox (conversation list or tree): its conversation, and the worker when the pick is a worker. */
+  SelectedInboxNode: { maybeThreadId: Schema.Option(Schema.String), maybeWorkerId: Schema.Option(Schema.String) },
   RequestedNewThread: {},
   /** A click on a report path (reports/x.md) anywhere on the page, or the agent's open_report. */
   RequestedOpenReport: { ref: Schema.String, maybeAgent: Schema.Option(Schema.String) },

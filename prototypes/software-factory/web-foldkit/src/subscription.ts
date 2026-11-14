@@ -51,6 +51,19 @@ const eventDetail = (event: Event): string =>
 
 const windowEvents = (type: string): Stream.Stream<Event> => Stream.fromEventListener<Event>(window, type)
 
+const decodeInboxPick = Schema.decodeUnknownOption(
+  Schema.Struct({ threadId: Schema.NullOr(Schema.String), workerId: Schema.NullOr(Schema.String) }),
+)
+
+/** An Inbox pick ("sf:select-node", shared/protos/p3.ts): its conversation and worker. */
+export const inboxPickToMessage = (event: Event): Option.Option<Message> =>
+  Option.map(decodeInboxPick(event instanceof CustomEvent ? event.detail : null), ({ threadId, workerId }) =>
+    Message.SelectedInboxNode({
+      maybeThreadId: Option.fromNullishOr(threadId),
+      maybeWorkerId: Option.fromNullishOr(workerId),
+    }),
+  )
+
 /** Plain keys outside text fields and dialogs. update looks the key up in the hotkey settings. */
 const isHotkey = (event: KeyboardEvent): boolean =>
   !(event.metaKey || event.ctrlKey || event.altKey) &&
@@ -77,6 +90,10 @@ const appSubscriptions = Subscription.make<Model, Message>()(() => ({
     windowEvents("sf:open-thread").pipe(
       Stream.map((event) => Message.RequestedOpenThread({ threadId: eventDetail(event) })),
     ),
+  ),
+  // A pick in the Inbox list or tree: the URL follows it (?thread=, ?worker=).
+  inboxPick: Subscription.persistentEntry(
+    windowEvents("sf:select-node").pipe(Stream.filterMap(Filter.fromPredicateOption(inboxPickToMessage))),
   ),
   newThread: Subscription.persistentEntry(
     windowEvents("sf:new-thread").pipe(Stream.map(() => Message.RequestedNewThread())),

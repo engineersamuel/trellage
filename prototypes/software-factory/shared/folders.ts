@@ -21,10 +21,13 @@ let threads: ReadonlyArray<Thread> = []
 let pending = new Map<string, number>()
 let current: string | null = null
 
-export const syncThreadUrl = (threadId: string | null): void => {
+export const syncThreadUrl = (threadId: string | null, workerId?: string | null): void => {
   const url = new URL(window.location.href)
   if (threadId) url.searchParams.set("thread", threadId)
   else url.searchParams.delete("thread")
+  // ?worker= is the agent focused in the Inbox tree; undefined leaves it as it is (back and forward).
+  if (workerId) url.searchParams.set("worker", workerId)
+  else if (workerId === null) url.searchParams.delete("worker")
   if (url.href !== window.location.href) window.history.pushState(null, "", url)
   current = threadId
   const thread = threads.find((t) => t.id === threadId)

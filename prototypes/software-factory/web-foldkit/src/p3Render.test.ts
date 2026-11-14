@@ -260,3 +260,27 @@ test("the sub-coordinator header pins How to test with Open in herdr and Rewrite
   feed.guide = null
   stop()
 })
+
+// The host writes ?thread= and ?worker= from these picks (web-foldkit SelectedInboxNode).
+test("a pick in the tree tells the host its conversation, and the worker when it is a worker", async () => {
+  const picks: unknown[] = []
+  const listen = (e: Event) => picks.push(e instanceof CustomEvent ? e.detail : null)
+  window.addEventListener("sf:select-node", listen)
+  const { root, stop } = await mountInbox()
+  root.querySelector<HTMLElement>("[data-testid=tree-row]")!.click()
+  await vi.waitFor(() => expect(picks.at(-1)).toEqual({ threadId: "bbbbbbbb", workerId: "w1" }))
+  root.querySelector<HTMLElement>("[data-testid=tree-sub]")!.click()
+  await vi.waitFor(() => expect(picks.at(-1)).toEqual({ threadId: "bbbbbbbb", workerId: null }))
+  root.querySelector<HTMLElement>("[data-testid=tree-chat]")!.click()
+  await vi.waitFor(() => expect(picks.at(-1)).toEqual({ threadId: "aaaaaaaa", workerId: null }))
+  window.removeEventListener("sf:select-node", listen)
+  stop()
+})
+
+test("?worker= in the URL focuses that worker on load", async () => {
+  history.replaceState(null, "", "/?thread=bbbbbbbb&worker=w1")
+  const { root, stop } = await mountInbox()
+  await vi.waitFor(() => expect(root.querySelector("[data-testid=tree-row].on")?.textContent).toContain("w1"))
+  history.replaceState(null, "", "/")
+  stop()
+})
