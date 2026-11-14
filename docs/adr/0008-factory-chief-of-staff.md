@@ -128,8 +128,13 @@ The pull worker after R3 gets only `git pull --rebase origin main` in that one d
   with a short prompt (no live-card or OpenUI Lang reference). A decision an event turn opens is answered as a new
   event about the same conversation. Events of different conversations run at the same time;
   events of one conversation run in order, so two turns never act on it at once.
-- **Rule state is in SQLite.** The ledger and the per-repo merge holds (red main, merge in progress, waiting PRs)
-  are in `cos.db`, so a restart keeps them.
+- **Rule state is in SQLite.** The ledger, the per-repo merge holds (red main, merge in progress, waiting PRs),
+  PR states, last reports, R24 blockers and R12 alerts are in `cos.db`, so a restart keeps them.
+- **Rules first, the model only for the rest.** A done report, a report R24 handled, and R12/R28/R29 notices are
+  written into the CoS conversation by code, with no model turn. R1 never answers a human-only decision
+  (`humanOnly`: grader proposals, cost limits, goal decisions, `confirm_action`) or one a CoS event turn opened.
+- **Merges in one repo never overlap.** `merge_pr` takes the repo's merge slot before it starts; it pins the
+  checked commit (`--match-head-commit`), merges only into the default branch, and pulls with `--ff-only`.
 - **The human's chat with the CoS is stateful**, with auto-compaction. It reads the board and ledger with tools, so a
   compaction loses nothing that matters.
 - **The ledger is the memory.** Append-only table (kept 90 days): time, event, rule id, mode, action, result,

@@ -39,7 +39,10 @@ import {
   r25Action,
   relayText,
   ruleOn,
-  taskKey,
+  sameTask,
+  CosState,
+  repoPrs,
+  type BranchPr,
   type MergeResult,
 } from "./cos.ts"
 import { inRun, rerunInterruptedReview } from "./gates.ts"
@@ -165,7 +168,11 @@ for (const [k, s] of factory.sdlc) {
     ...(stopped
       ? {
           contractRounds: Math.max(0, (s.contractRounds ?? 1) - 1),
-          contractState: { ...s.contractState!, status: "failed" as const, error: "coordinator restarted" },
+          contractState: {
+            ...s.contractState!,
+            status: "failed" as const,
+            error: "coordinator restarted",
+          },
         }
       : {}),
   })
@@ -199,9 +206,13 @@ console.error(
   `global instructions: ${instructionsPath()} (${instructions ? `${instructions.length} chars` : "missing"})`,
 )
 /** Tools of a global-level coordinator: the desk, or one General chat (`chat` is its thread id). */
-const globalScopeTools = (id: string, chat: string | null, extra: Pick<Scope, "opened"> = {}) => [
+const globalScopeTools = (
+  id: string,
+  chat: string | null,
+  extra: Pick<Scope, "opened"> & { noWait?: boolean } = {},
+) => [
   ...coordinatorTools(factory, {
-    ...extra,
+    ...(extra.opened ? { opened: extra.opened } : {}),
     id,
     threadId: chat,
     knownThread: (tid) => !!threads.get(tid) && !threads.get(tid)!.cleanedAt,
@@ -223,7 +234,7 @@ const globalScopeTools = (id: string, chat: string | null, extra: Pick<Scope, "o
     message: async (tid, text) => logFailure(await deliverToThread(tid, `[from the global coordinator] ${text}`)),
     read: async (tid, wait) => {
       const w = factory.workers.get(subId(tid))
-      if (w && wait) await w.waitIdle(300_000)
+      if (w && wait && !extra.noWait) await w.waitIdle(300_000)
       const status = statusOf(tid)
       return {
         status,
@@ -353,7 +364,11 @@ const sse = (start: (send: (v: unknown) => boolean, close: () => void) => () => 
     },
   })
   return new Response(stream, {
-    headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" },
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    },
   })
 }
 
@@ -435,7 +450,14 @@ const subScope = (t: Thread): Scope => {
       // A done report gets a fresh manual test guide (src/testGuide.ts) for the header pin.
       if (r.status === "done") void writeGuide(factory, subScope(t), r.summary)
       return cosOnReport(t.id, r)
-        .finally(() => reportToGeneral(folder.name, threads.get(t.id) ?? t, r))
+        .catch(() => false)
+        .then((handled) =>
+          handled
+            ? cosNote(
+                `[report from ${folder.name} · ${t.title}] (conversation ${t.id}) **${r.status}**: ${r.summary.slice(0, 1500)}`,
+              )
+            : reportToGeneral(folder.name, threads.get(t.id) ?? t, r),
+        )
         .finally(
           () =>
             void gradeThread(t.id, r).finally(
@@ -536,7 +558,14 @@ const deliverToThread = async (threadId: string | null, text: string): Promise<D
   return delivery(sent)
 }
 
-/** Every sub-coordinator report goes to the Chief of Staff as one event (queued, never awaited by the sub). */
+/** A notice in the CoS conversation, written by code: no model turn (ADR 0008: rules first, the model only for the rest). */
+const cosNote = (text: string): void => {
+  const id = deskThread().id
+  threads.append(id, { id: crypto.randomUUID(), role: "assistant", content: text })
+  factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: id })
+}
+
+/** A report no rule handled goes to the Chief of Staff as one event (queued, never awaited by the sub). */
 const reportToGeneral = async (folder: string, t: Thread, r: Report): Promise<void> =>
   cosEvent(t.id, reportPrompt(folder, t.title, t.id, r))
 
@@ -592,7 +621,15 @@ const openConversation = async (
   const t = createThread(task, f.id)
   threads.setMeta(t.id, meta)
   const sent = await deliverToThread(t.id, `[from the global coordinator] ${task}`)
-  return { info: { threadId: t.id, folder: f.name, worktree: t.worktree ?? null, branch: t.branch ?? null }, sent }
+  return {
+    info: {
+      threadId: t.id,
+      folder: f.name,
+      worktree: t.worktree ?? null,
+      branch: t.branch ?? null,
+    },
+    sent,
+  }
 }
 
 /** Global coordinator tool: open a conversation and give its sub-coordinator a task. */
@@ -982,7 +1019,14 @@ const feed = (req: Request, url: URL): Response => {
     // Visible heartbeat (SSE comments are invisible to EventSource), so a browser can tell a dead feed.
     // The Vite dev proxy keeps a browser's stream open, silent, when the coordinator dies; only this reveals it.
     const ping = () =>
-      send({ seq: -1, workerId: "", type: "factory.ping", agentId: null, timestamp: String(Date.now()), data: null })
+      send({
+        seq: -1,
+        workerId: "",
+        type: "factory.ping",
+        agentId: null,
+        timestamp: String(Date.now()),
+        data: null,
+      })
     ping()
     const beat = setInterval(ping, 5_000)
     // Live events that arrive during the replay wait, so none is lost or sent twice.
@@ -1101,7 +1145,10 @@ factory.feed.subscribe((ev) => {
       if (a) factory.publish("coordinator", "factory.approval_shadowed", null, now(), a)
       // R1: Jev at or above the threshold answers for the human.
       const threshold = factoryConfig().cos.auto_answer_confidence
-      const pick = a && ruleOn("r1") ? r1Pick(a, threshold, isProposal(factory.root, a.id)) : null
+      const pick =
+        a && ruleOn("r1")
+          ? r1Pick(a, threshold, isProposal(factory.root, a.id), ledgerOf(factory.root).eventDecision(a.id) !== null)
+          : null
       if (a && pick) ruleAnswer(a.id, pick, "R1", `Jev confidence ${a.shadow!.confidence.toFixed(2)} >= ${threshold}`)
     })
 })
@@ -1134,7 +1181,8 @@ const cosEvent = (caseThread: string | null, event: string): void => {
   void next.finally(() => cosChains.get(caseThread) === next && cosChains.delete(caseThread))
 }
 
-const COS_EVENT_WAIT_MS = 30 * 60_000
+/** Backstop for one event turn; event sessions never wait on a conversation (read_conversation wait is off). */
+const COS_EVENT_WAIT_MS = 10 * 60_000
 
 const caseFile = (threadId: string | null): string => {
   if (!threadId) return ""
@@ -1160,6 +1208,7 @@ const runCosEvent = async (caseThread: string | null, event: string): Promise<vo
     tools: globalScopeTools(DESK_ID, cosThread.id, {
       opened: (approvalId) =>
         cosLog("CoS", caseThread, `event decision ${approvalId}`, "done", "opened by an event turn"),
+      noWait: true,
     }),
     permissions: factory.globalPermissions,
     workdir: DESK_DIR,
@@ -1208,7 +1257,10 @@ const latestWorkerActivity = (worker: Worker): string =>
             onNone: () => "",
             onSome: (d) => `${d.toolName} ${JSON.stringify(d.arguments ?? {}).slice(0, 200)}`,
           })
-        : Option.match(decodeContent(e.data), { onNone: () => "", onSome: (d) => d.content.slice(0, 300) }),
+        : Option.match(decodeContent(e.data), {
+            onNone: () => "",
+            onSome: (d) => d.content.slice(0, 300),
+          }),
     )
     .join("\n")
 
@@ -1260,6 +1312,10 @@ const collectSupervisionIssues = async (
 
 const freshSupervisionIssues = (issues: Issue[]): Issue[] => {
   for (const key of reported.keys()) if (!factory.workers.has(key.split("|")[0]!)) reported.delete(key)
+  // Rule state of workers that are gone (R6, R7) is dropped too.
+  for (const key of issueSeen.keys()) if (!factory.workers.has(key.split("|")[0]!)) issueSeen.delete(key)
+  for (const id of stallNudgedAt.keys()) if (!factory.workers.has(id)) stallNudgedAt.delete(id)
+  for (const id of r7Asked) if (!factory.workers.has(id)) r7Asked.delete(id)
   return issues.filter((issue) => reported.get(`${issue.worker}|${issue.kind}`) !== issue.detail)
 }
 
@@ -1373,14 +1429,10 @@ const startHold = (folder: string, task: string, fresh = false): string | null =
   if (factory.spawnHold) return factory.spawnHold
   if (fresh || !ruleOn("r26")) return null
   const f = threads.folder(folder)
-  const key = taskKey(task)
   const dup = f
     ? threads
         .list()
-        .find(
-          (t) =>
-            t.folderId === f.id && t.worktree && !t.cleanedAt && !t.archivedAt && taskKey(firstTask(t)).includes(key),
-        )
+        .find((t) => t.folderId === f.id && t.worktree && !t.cleanedAt && !t.archivedAt && sameTask(firstTask(t), task))
     : undefined
   if (!dup) return null
   cosLog("R26", dup.id, `hold duplicate task in ${f!.name}`, "refused", task.slice(0, 200))
@@ -1388,19 +1440,38 @@ const startHold = (folder: string, task: string, fresh = false): string | null =
 }
 
 /** R24: the same blocker twice stops the conversation's workers and asks the human. */
-const lastBlocker = new Map<string, string>()
+const cosState = new CosState(factory.root)
+const lastBlocker = cosState.map<string>("r24-blocker")
 /** When each conversation last reported (R25). */
-const lastReportAt = new Map<string, number>()
-const cosOnReport = async (threadId: string, r: Report): Promise<void> => {
-  lastReportAt.set(threadId, Date.now())
-  if (r.status !== "blocked") return void lastBlocker.delete(threadId)
+const lastReportAt = cosState.map<{ at: number; status: string }>("last-report")
+/** Every live agent below `owner` (children, their children, ...). */
+const descendants = (owner: string): string[] => {
+  const out: string[] = []
+  const walk = (id: string) => {
+    for (const w of factory.workers.values())
+      if (w.owner === id && !out.includes(w.id)) {
+        out.push(w.id)
+        walk(w.id)
+      }
+  }
+  walk(owner)
+  return out
+}
+
+/** Rules on a report. True when a rule handled it (done, or R24): no CoS model turn, only a note in the CoS thread. */
+const cosOnReport = async (threadId: string, r: Report): Promise<boolean> => {
+  lastReportAt.set(threadId, { at: Date.now(), status: r.status })
+  if (r.status !== "blocked") {
+    lastBlocker.delete(threadId)
+    return r.status === "done"
+  }
   const key = blockerKey(r.gaps, r.summary)
   const repeat = lastBlocker.get(threadId) === key
   lastBlocker.set(threadId, key)
-  if (!repeat || !ruleOn("r24")) return
+  if (!repeat || !ruleOn("r24")) return false
   const t = threads.get(threadId)
-  for (const w of [...factory.workers.values()])
-    if (w.owner === subId(threadId)) await factory.stop(w.id).catch(() => {})
+  // Every agent under the conversation, also workers its workers and gates started.
+  for (const id of descendants(subId(threadId))) await factory.stop(id).catch(() => {})
   const item = factory.approvals.open({
     threadId,
     title: `Same blocker twice: ${t?.title.slice(0, 80) ?? threadId}`,
@@ -1414,15 +1485,18 @@ const cosOnReport = async (threadId: string, r: Report): Promise<void> => {
   })
   factory.publish("coordinator", "factory.approval_requested", null, now(), item)
   cosLog("R24", threadId, "stop loop, ask the human", "done", key.slice(0, 200))
+  return true
 }
 
 /** R17 after merge_pr merged: hold the repo's merges until main CI is green. R21/R22 rebase on demand (merge_pr). */
 const afterMerge = (t: Thread, repo: string, m: MergeResult) => {
-  if (ruleOn("r17") && m.sha)
-    factory.repoGates.set(repo, {
-      ...factory.repoGates.get(repo),
-      settling: { pr: m.pr ?? "?", sha: m.sha, at: Date.now() },
-    })
+  const before = factory.repoGates.get(repo)
+  const waiting = (before.waiting ?? []).filter((id) => id !== t.id)
+  factory.repoGates.set(repo, {
+    ...before,
+    waiting,
+    settling: ruleOn("r17") && m.sha ? { pr: m.pr ?? "?", sha: m.sha, at: Date.now() } : undefined,
+  })
   const hold = factory.repoGates.get(repo)
   if (hold.red?.fixThread === t.id) factory.repoGates.set(repo, { ...hold, red: { ...hold.red, fixThread: null } })
 }
@@ -1430,7 +1504,7 @@ const afterMerge = (t: Thread, repo: string, m: MergeResult) => {
 /** R15, R16, R17: per repo, check CI on main. Red: one fix conversation, others hold; green: release the holds. */
 const lastMainPoll = new Map<string, number>()
 /** Repos whose main has had checks: there, no checks yet on a new commit means they have not started. */
-const reposWithChecks = new Set<string>()
+const reposWithChecks = cosState.map<true>("repos-with-checks")
 const watchMain = async () => {
   const every = factoryConfig().cos.main_ci_poll_seconds * 1000
   const repos = new Set(
@@ -1447,7 +1521,7 @@ const watchMain = async () => {
     const main = await mainChecks(repo)
     if (!main) continue
     const hold = factory.repoGates.get(repo)
-    if (main.state !== "NONE") reposWithChecks.add(repo)
+    if (main.state !== "NONE") reposWithChecks.set(repo, true)
     // R17: a merge hold whose main CI never finishes (skipped or path-filtered checks) ends after 30 min.
     const stale = !hold.red && hold.settling && settleDone(main.state, hold.settling.at, Date.now())
     if (stale && main.state !== "SUCCESS")
@@ -1458,22 +1532,36 @@ const watchMain = async () => {
         "done",
         `no green checks on main after 30 min (${main.state})`,
       )
-    if (!stale && (main.state === "PENDING" || (main.state === "NONE" && reposWithChecks.has(repo)))) continue
+    if (!stale && (main.state === "PENDING" || (main.state === "NONE" && reposWithChecks.get(repo)))) continue
     if (stale || main.state === "SUCCESS" || main.state === "NONE") {
+      // The conversation told to merge next has the slot until it merges (or 30 min pass: stale).
+      if (!stale && hold.settling?.reservedFor) continue
       if (hold.red)
         cosLog("R15", hold.red.fixThread, `main green in ${repo}`, "done", `merges resume at ${main.sha.slice(0, 10)}`)
-      factory.repoGates.set(repo, {})
-      // One waiting conversation at a time: its merge starts the next R17 hold.
-      const [next, ...rest] = hold.waiting ?? []
-      if (rest.length) factory.repoGates.set(repo, { waiting: rest, settling: { pr: "(next in line)", sha: main.sha } })
+      // One waiting conversation at a time: it gets a reserved slot; its merge starts the next R17 hold.
+      const cur = factory.repoGates.get(repo)
+      const [next, ...rest] = cur.waiting ?? []
+      factory.repoGates.set(repo, {
+        ...(cur.merging ? { merging: cur.merging } : {}),
+        waiting: rest,
+        ...(next ? { settling: { pr: "(next in line)", sha: main.sha, at: Date.now(), reservedFor: next } } : {}),
+      })
       if (next) deliverAndLog(next, `[Chief of Staff · rules R15/R17] CI on main is green. Call merge_pr again now.`)
       continue
     }
     // Red: the merge that just landed (R17) is now the cause; keep holding until a fix lands.
     if (!ruleOn("r15")) continue
     const fix = hold.red?.fixThread ? threads.get(hold.red.fixThread) : undefined
+    // Red replaces a settling hold; waiting conversations and a running merge are kept.
+    const keep = () => {
+      const cur = factory.repoGates.get(repo)
+      return {
+        ...(cur.merging ? { merging: cur.merging } : {}),
+        ...(cur.waiting ? { waiting: cur.waiting } : {}),
+      }
+    }
     if (fix && !fix.cleanedAt && !fix.archivedAt) {
-      factory.repoGates.set(repo, { red: hold.red! })
+      factory.repoGates.set(repo, { ...keep(), red: hold.red! })
       continue
     }
     // R16: no live fix conversation (none yet, or its fix merged and main is still red): start one.
@@ -1481,7 +1569,10 @@ const watchMain = async () => {
     if (!folder || factory.spawnHold) continue
     const task = `Fix CI on main (Chief of Staff rule R15). The newest commit on main, ${main.sha}, has failing checks. Diagnose with \`gh run list --branch main\` and \`gh run view <id> --log-failed\`, fix the cause in this worktree, verify, ship and merge with merge_pr. Keep the change to the CI failure only.`
     const info = await startConversation(folder.id, task, deskThread().id)
-    factory.repoGates.set(repo, { red: { fixThread: info.threadId, since: hold.red?.since ?? Date.now() } })
+    factory.repoGates.set(repo, {
+      ...keep(),
+      red: { fixThread: info.threadId, since: hold.red?.since ?? Date.now() },
+    })
     cosLog(
       "R15",
       info.threadId,
@@ -1512,10 +1603,12 @@ const idleSweep = async () => {
     const quiet = Date.now() - w.lastActivity
     if (!idle || quiet < quietMs) continue
     r25Told.set(t.id, Date.now())
-    const hasReported = (lastReportAt.get(t.id) ?? 0) >= factory.turn(w.id).start
-    // Done = its PR is merged (gh, async: the service never blocks on it).
+    const last = lastReportAt.get(t.id)
+    const hasReported = (last?.at ?? 0) >= factory.turn(w.id).start
+    // Done = its PR is merged; with no PR (research, plan only), its last report said done (gh is async).
     const { pr } = await prOf(t)
-    const action = r25Action({ idle, quietMs: quiet, done: pr?.state === "MERGED", reported: hasReported }, quietMs)
+    const done = pr ? pr.state === "MERGED" : last?.status === "done"
+    const action = r25Action({ idle, quietMs: quiet, done, reported: hasReported }, quietMs)
     if (action === "archive") {
       archiveDone(t)
       void cleanMergedThread(t)
@@ -1528,7 +1621,7 @@ const idleSweep = async () => {
 const archiveDone = (t: Thread) => {
   threads.update(t.id, { archivedAt: Date.now() })
   factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
-  cosLog("R25", t.id, "archive as successful", "done", "PR merged")
+  cosLog("R25", t.id, "archive as successful", "done", t.cleanedAt ? "PR merged" : "done")
 }
 loop("cos-idle", "1 minute", idleSweep)
 // The ledger keeps 90 days.
@@ -1565,7 +1658,7 @@ const holdSweep = () => {
   factory.spawnHold = hold
   const rule = hold?.startsWith("Rule R28") || was?.startsWith("Rule R28") ? "R28" : "R29"
   cosLog(rule, null, hold ? "hold new work" : "release hold", "done", hold ?? "cleared")
-  if (hold) cosEvent(null, `[Chief of Staff rule ${rule}] ${hold} Tell the human in one line.`)
+  if (hold) cosNote(`[Chief of Staff · rule ${rule}] ${hold}`)
 }
 loop("cos-holds", "1 minute", holdSweep)
 
@@ -1573,25 +1666,38 @@ loop("cos-holds", "1 minute", holdSweep)
 const openRepoThreads = () => threads.list().filter((t) => t.worktree && t.branch && !t.cleanedAt && !t.archivedAt)
 
 /** Typed PR events (ADR 0008 step 1): pr-green, pr-red, merged, from each conversation's PR state. */
-const prStates = new Map<string, PrState>()
+const prStates = cosState.map<PrState>("pr-state")
 const prSweep = async () => {
+  // One gh call per repo, not per conversation.
+  const byRepo = new Map<string, Thread[]>()
   for (const t of openRepoThreads()) {
-    const { pr } = await prOf(t)
-    if (!pr) continue
-    const state = prState(pr.state, pr.checks)
-    const ev = prEvent(prStates.get(t.id), state)
-    prStates.set(t.id, state)
-    if (!ev) continue
-    factory.publish(subId(t.id), `factory.${ev}`, null, new Date().toISOString(), {
-      threadId: t.id,
-      pr: pr.url,
-      checks: pr.checks,
-    })
-    cosLog("PR", t.id, ev, "done", pr.url)
-    // Green and not merged: the sub-coordinator merges it (R3). Red: its fix loop (R4) runs in the finish worker.
-    if (ev === "pr-green" && ruleOn("r3"))
-      deliverAndLog(t.id, `[Chief of Staff · rule R3] ${pr.url} is green. Call merge_pr now.`)
+    const repo = threads.folder(t.folderId)?.path
+    if (repo) byRepo.set(repo, [...(byRepo.get(repo) ?? []), t])
   }
+  for (const k of prStates.keys()) if (!threads.get(k) || threads.get(k)!.archivedAt) prStates.delete(k)
+  for (const [repo, list] of byRepo) {
+    const prs = await repoPrs(repo)
+    if (!prs) continue
+    for (const t of list) {
+      const pr: BranchPr | undefined = prs.get(t.branch!)
+      if (pr) prEventFor(t, pr)
+    }
+  }
+}
+const prEventFor = (t: Thread, pr: BranchPr) => {
+  const state = prState(pr.state, pr.checks)
+  const ev = prEvent(prStates.get(t.id), state)
+  prStates.set(t.id, state)
+  if (!ev) return
+  factory.publish(subId(t.id), `factory.${ev}`, null, new Date().toISOString(), {
+    threadId: t.id,
+    pr: pr.url,
+    checks: pr.checks,
+  })
+  cosLog("PR", t.id, ev, "done", pr.url)
+  // Green and not merged: the sub-coordinator merges it (R3). Red: its fix loop (R4) runs in the finish worker.
+  if (ev === "pr-green" && ruleOn("r3"))
+    deliverAndLog(t.id, `[Chief of Staff · rule R3] ${pr.url} is green. Call merge_pr now.`)
 }
 loop("cos-pr-events", "2 minutes", prSweep)
 
@@ -1603,7 +1709,10 @@ const supervise = async () => {
   const workers = [...factory.workers.values()]
   const issues = await collectSupervisionIssues(workers, cfg)
   const fresh = freshSupervisionIssues(issues)
-  factory.publish("coordinator", "factory.supervisor_check", null, now(), { issues, reported: fresh.length })
+  factory.publish("coordinator", "factory.supervisor_check", null, now(), {
+    issues,
+    reported: fresh.length,
+  })
   await sendSupervisionIssues(fresh, coordinator)
 }
 loop("supervisor", "5 seconds", supervise)
@@ -1787,7 +1896,10 @@ const runSdlc = (scopeId: string, workdir: string | undefined): Run["sdlc"] => {
 
 /** Newest report_up of a conversation, from the event store. */
 const latestReport = (threadId: string): Run["report"] => {
-  const all = factory.store.latest("factory.report_up", 500) as { threadId: string | null; report: Report }[]
+  const all = factory.store.latest("factory.report_up", 500) as {
+    threadId: string | null
+    report: Report
+  }[]
   const r = all.filter((e) => e.threadId === threadId).at(-1)?.report
   return r ? { status: r.status, summary: r.summary, gaps: r.gaps } : null
 }
@@ -1813,7 +1925,10 @@ const costTree = () => {
       harness: a.harness ?? "copilot",
     })
   const usd = factoryConfig().costs.usd_per_ai_credit
-  return { costs: rollUp(factory.store.usageRows(), [...byId.values()], factory.store.rates(), usd, DESK_ID), usd }
+  return {
+    costs: rollUp(factory.store.usageRows(), [...byId.values()], factory.store.rates(), usd, DESK_ID),
+    usd,
+  }
 }
 
 /** The delivery record of a repo conversation; null when the thread does not exist. */
@@ -2031,7 +2146,10 @@ const routes: [string, RegExp, Handler][] = [
     (_req, _url, [id]) => {
       const a = factory.approvals.get(id!)
       return a
-        ? json({ ...a, threadTitle: threads.list().find((t) => t.id === a.threadId)?.title ?? null })
+        ? json({
+            ...a,
+            threadTitle: threads.list().find((t) => t.id === a.threadId)?.title ?? null,
+          })
         : new Response("unknown decision", { status: 404 })
     },
   ],
@@ -2103,7 +2221,10 @@ const routes: [string, RegExp, Handler][] = [
       json(
         withSubagents(
           pastWorkers(
-            factory.store.latestTimed("factory.worker_started", 100_000) as { ts: number; data: WorkerSummary }[],
+            factory.store.latestTimed("factory.worker_started", 100_000) as {
+              ts: number
+              data: WorkerSummary
+            }[],
             (id) => factory.workers.has(id),
           ),
           factory.store.subagentEvents(),
@@ -2302,7 +2423,9 @@ const routes: [string, RegExp, Handler][] = [
       const r = servableImage(url.searchParams.get("path") ?? "", [factory.root, worktreeRoot(), ARTIFACTS_DIR])
       return "error" in r
         ? json({ error: r.error }, 404)
-        : new Response(Bun.file(r.path), { headers: { "content-type": r.type, "cache-control": "no-store" } })
+        : new Response(Bun.file(r.path), {
+            headers: { "content-type": r.type, "cache-control": "no-store" },
+          })
     },
   ],
   [
@@ -2375,7 +2498,9 @@ const routes: [string, RegExp, Handler][] = [
       try {
         return json({ pane: openInHerdr(g, `test: ${t.title}`.slice(0, 40)) })
       } catch (e) {
-        return new Response(`herdr failed: ${e instanceof Error ? e.message : String(e)}`, { status: 500 })
+        return new Response(`herdr failed: ${e instanceof Error ? e.message : String(e)}`, {
+          status: 500,
+        })
       }
     },
   ],
@@ -2394,7 +2519,9 @@ const routes: [string, RegExp, Handler][] = [
       try {
         return json(worktreeDiff(wt.worktree, wt.base))
       } catch (e) {
-        return new Response(`git diff failed: ${e instanceof Error ? e.message : String(e)}`, { status: 500 })
+        return new Response(`git diff failed: ${e instanceof Error ? e.message : String(e)}`, {
+          status: 500,
+        })
       }
     },
   ],
@@ -2555,9 +2682,16 @@ const openPause = (goalId: string, b: Budget, spent: number, paused: Budget["pau
     threadId: at,
     ...card,
     context: `cost limit · ${why ?? "human only"}`,
+    humanOnly: true,
     topic: "budget",
   })
-  goalBudgets.set(goalId, { ...b, status: "paused", approvalId: item.id, pausedAt: b.pausedAt ?? Date.now(), paused })
+  goalBudgets.set(goalId, {
+    ...b,
+    status: "paused",
+    approvalId: item.id,
+    pausedAt: b.pausedAt ?? Date.now(),
+    paused,
+  })
   factory.publish("coordinator", "factory.approval_requested", null, now(), item)
   return item
 }
@@ -2596,7 +2730,7 @@ const pauseGoal = async (goalId: string, b: Budget, spent: number) => {
 }
 
 /** R12: the limit each goal was last alerted at; a raised limit alerts again. */
-const costAlerted = new Map<string, number>()
+const costAlerted = cosState.map<number>("r12-alerted")
 const checkBudgets = async () => {
   const costs = costTree().costs
   const ids = new Set(threads.list().flatMap((t) => (t.goalId && t.worktree && !t.cleanedAt ? [t.goalId] : [])))
@@ -2612,7 +2746,7 @@ const checkBudgets = async () => {
       costAlerted.set(goalId, b.limitUsd)
       const msg = `Goal ${goalId} has spent $${spent.toFixed(2)} of its $${b.limitUsd} cost limit (rule R12). At the limit it pauses.`
       cosLog("R12", goalRuns(goalId)[0]?.id ?? null, "cost alert", "done", msg)
-      cosEvent(null, `[Chief of Staff rule R12] ${msg} Tell the human in one line.`)
+      cosNote(`[Chief of Staff · rule R12] ${msg}`)
     }
   }
 }
@@ -2622,7 +2756,9 @@ loop("goal-budgets", "30 seconds", checkBudgets)
 
 const repoRoot = (dir: string) => {
   try {
-    return execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim()
+    return execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], {
+      encoding: "utf8",
+    }).trim()
   } catch {
     return dir
   }
@@ -2680,13 +2816,20 @@ const goalPr = async (t: Thread): Promise<GoalState["pr"]> => {
 /** Open a human-only decision of the goal loop and remember it. */
 const askGoal = (
   s: GoalState,
-  card: { title: string; summary: string; options: string[]; optionDetails: string[]; allowText: boolean },
+  card: {
+    title: string
+    summary: string
+    options: string[]
+    optionDetails: string[]
+    allowText: boolean
+  },
   patch: Partial<GoalState>,
 ) => {
   const item = factory.approvals.open({
     threadId: s.threadId,
     ...card,
     context: `goal ${s.goalId} · human only`,
+    humanOnly: true,
     topic: "goal",
   })
   factory.publish("coordinator", "factory.approval_requested", null, now(), item)
@@ -2737,8 +2880,19 @@ const startNextLoop = async (s: GoalState) => {
   const t = threads.get(s.threadId)
   const spec = t?.goalSpec ?? goals.get(s.goalId)
   if (!t?.worktree || t.cleanedAt || !spec)
-    return void goalStates.set({ ...s, next: false, status: "stopped", reason: "the goal's conversation is gone" })
-  const next = goalStates.set({ ...s, loop: s.loop + 1, next: false, note: undefined, status: "running" })
+    return void goalStates.set({
+      ...s,
+      next: false,
+      status: "stopped",
+      reason: "the goal's conversation is gone",
+    })
+  const next = goalStates.set({
+    ...s,
+    loop: s.loop + 1,
+    next: false,
+    note: undefined,
+    status: "running",
+  })
   if (factory.workers.has(subId(t.id))) await factory.stop(subId(t.id))
   factory.publish("coordinator", "factory.goal_updated", null, now(), next)
   console.error(`goal ${s.goalId}: loop ${next.loop}`)
@@ -2856,7 +3010,10 @@ const resumeInterrupted = async () => {
     handoff(t, lost, shutdownRec.at)
     done.push(scopeId)
   }
-  factory.publish("coordinator", "factory.resumed", null, now(), { shutdownAt: shutdownRec.at, scopes: done })
+  factory.publish("coordinator", "factory.resumed", null, now(), {
+    shutdownAt: shutdownRec.at,
+    scopes: done,
+  })
   console.error(`resumed ${done.length} interrupted conversation(s): ${done.join(", ")}`)
 }
 void resumeInterrupted().catch((e) => console.error(`resume after restart failed: ${e}`))
@@ -2868,7 +3025,10 @@ const shutdown = async (signal: string) => {
     .summaries()
     .filter((w) => w.status === "running")
     .map((w) => ({ id: w.id, name: w.name, owner: w.owner, step: w.step, task: w.task }))
-  factory.publish("coordinator", "factory.shutdown", null, now(), { at: Date.now(), running } satisfies Shutdown)
+  factory.publish("coordinator", "factory.shutdown", null, now(), {
+    at: Date.now(),
+    running,
+  } satisfies Shutdown)
   await stopLoops()
   await factory.stopAll()
   process.exit(0)

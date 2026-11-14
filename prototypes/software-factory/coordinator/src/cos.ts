@@ -91,7 +91,9 @@ const R1_EXCLUDED_TOPICS = new Set<string>(["ship", "budget", "goal"])
 const R1_EXCLUDED_WORDS = /\b(merge|merging|delete|deleting|remove the branch)\b/i
 
 /** The option R1 picks for the human, or null when the human decides. Config proposals (Apply/Reject) stay with the human. */
-export const r1Pick = (a: Approval, threshold: number, isProposal: boolean): string | null => {
+export const r1Pick = (a: Approval, threshold: number, isProposal: boolean, cosOpened = false): string | null => {
+  // Decisions marked human-only, or opened by a CoS event turn (no CoS -> R1 -> CoS loop), are for the human.
+  if (a.humanOnly || cosOpened) return null
   const s = a.shadow
   // Decisions the rules themselves open (R24) are for the human.
   if (a.status !== "pending" || !s || isProposal || a.context.startsWith("Chief of Staff")) return null
@@ -127,12 +129,17 @@ export type PrView = {
   reviewDecision: string | null
   mergeable: string
   mergeStateStatus?: string
+  headRefOid?: string
+  baseRefName?: string
   statusCheckRollup: Check[] | null
 }
 
 /** Why R3 does not merge this PR, or [] when it may. A repo with no checks counts as green (ADR 0007). */
-export const r3Blockers = (pr: PrView, branch: string): string[] => {
+export const r3Blockers = (pr: PrView, branch: string, base?: string): string[] => {
   const out: string[] = []
+  // R3 merges into the default branch only; another base (a stacked PR) is the human's.
+  if (base && pr.baseRefName && pr.baseRefName !== base)
+    out.push(`PR targets ${pr.baseRefName}, not the default branch ${base}; the human merges it`)
   if (pr.headRefName !== branch) out.push(`PR #${pr.number} is for ${pr.headRefName}, not ${branch}`)
   if (pr.state !== "OPEN") out.push(`PR #${pr.number} is ${pr.state}`)
   if (pr.isDraft) out.push("PR is a draft")
@@ -193,7 +200,13 @@ export type MergeInput = {
   shipGranted: boolean
 }
 
-export type MergeResult = { merged: boolean; pr?: string; reason?: string; pull?: string; sha?: string | null }
+export type MergeResult = {
+  merged: boolean
+  pr?: string
+  reason?: string
+  pull?: string
+  sha?: string | null
+}
 
 /** R3: squash-merge the conversation's PR when every condition holds, then pull the main checkout (R3a). */
 export const mergePr = async (m: MergeInput): Promise<MergeResult> => {
@@ -201,14 +214,22 @@ export const mergePr = async (m: MergeInput): Promise<MergeResult> => {
   if (!m.branch.startsWith("factory/"))
     return { merged: false, reason: `only factory/* branches merge; on ${m.branch}` }
   if (!m.shipGranted) return { merged: false, reason: `no accepted ship approval for ${m.branch}` }
-  const fields = "number,url,state,isDraft,headRefName,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup"
+  const fields =
+    "number,url,state,isDraft,headRefName,headRefOid,baseRefName,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup"
   const view = await run("gh", ["pr", "view", m.branch, "--json", fields], m.worktree)
   if (!view.ok) return { merged: false, reason: `gh pr view failed: ${view.out.split("\n")[0]}` }
   const pr = JSON.parse(view.out) as PrView
-  const blockers = r3Blockers(pr, m.branch)
+  const blockers = r3Blockers(pr, m.branch, await defaultBranch(m.repo))
   if (blockers.length) return { merged: false, pr: pr.url, reason: blockers.join("; ") }
-  const merged = await run("gh", ["pr", "merge", String(pr.number), "--squash"], m.worktree, 120_000)
-  if (!merged.ok) return { merged: false, pr: pr.url, reason: `gh pr merge failed: ${merged.out.split("\n")[0]}` }
+  // Pin the checked commit: a push after the check makes the merge fail instead of merging unchecked code.
+  const pin = pr.headRefOid ? ["--match-head-commit", pr.headRefOid] : []
+  const merged = await run("gh", ["pr", "merge", String(pr.number), "--squash", ...pin], m.worktree, 120_000)
+  if (!merged.ok)
+    return {
+      merged: false,
+      pr: pr.url,
+      reason: `gh pr merge failed: ${merged.out.split("\n")[0]}`,
+    }
   return {
     merged: true,
     pr: pr.url,
@@ -224,7 +245,7 @@ export const pullMain = async (worktree: string, repo: string): Promise<string> 
   const main = await defaultBranch(checkout)
   const blocked = await r3aBlocker(checkout, main)
   if (blocked) return `not pulled: ${blocked}`
-  const pull = await run("git", ["-C", checkout, "pull", "--rebase", "origin", main], checkout, 120_000)
+  const pull = await run("git", ["-C", checkout, "pull", "--ff-only", "origin", main], checkout, 120_000)
   return pull.ok ? `pulled ${checkout}` : `pull failed in ${checkout}: ${pull.out.split("\n")[0]}`
 }
 
@@ -239,7 +260,10 @@ export const relayText = (a: Approval): string =>
 /** Per repo: main is red (R15; only its fix conversation may merge), or a merge waits for main CI (R17). */
 export type RepoHold = {
   red?: { fixThread: string | null; since: number }
-  settling?: { pr: string; sha: string; at?: number }
+  /** A merge is running now (set before it starts, so two never run at once). */
+  merging?: { threadId: string; at: number }
+  /** `reservedFor`: the waiting conversation told to merge next; only it passes the hold. */
+  settling?: { pr: string; sha: string; at?: number; reservedFor?: string }
   /** Conversations whose merge_pr was held; told to call it again when the hold ends. */
   waiting?: string[]
 }
@@ -253,14 +277,17 @@ export class RepoGates {
     if (!this.db) return
     this.db.run("PRAGMA journal_mode = WAL")
     this.db.run("CREATE TABLE IF NOT EXISTS repo_holds (repo TEXT PRIMARY KEY, data TEXT NOT NULL)")
-    const rows = this.db.query("SELECT repo, data FROM repo_holds").all() as { repo: string; data: string }[]
+    const rows = this.db.query("SELECT repo, data FROM repo_holds").all() as {
+      repo: string
+      data: string
+    }[]
     for (const r of rows) this.holds.set(r.repo, JSON.parse(r.data) as RepoHold)
   }
   get(repo: string): RepoHold {
     return this.holds.get(repo) ?? {}
   }
   set(repo: string, h: RepoHold): void {
-    if (!h.red && !h.settling && !h.waiting?.length) {
+    if (!h.red && !h.settling && !h.merging && !h.waiting?.length) {
       this.holds.delete(repo)
       this.db?.run("DELETE FROM repo_holds WHERE repo = ?", [repo])
     } else {
@@ -282,7 +309,9 @@ export class RepoGates {
 export const mergeHold = (h: RepoHold, threadId: string | null): string | null => {
   if (h.red && h.red.fixThread !== threadId)
     return "CI on main is red (rule R15); only its fix conversation merges until main is green. The factory tells you when to call merge_pr again; report nothing until then."
-  if (h.settling)
+  if (h.merging && h.merging.threadId !== threadId)
+    return "Another PR in this repo is merging now (rule R17). The factory tells you when to call merge_pr again; report nothing until then."
+  if (h.settling && h.settling.reservedFor !== threadId)
     return `PR ${h.settling.pr} was just merged; one merge at a time (rule R17). The factory tells you when CI on main is green; then call merge_pr again.`
   return null
 }
@@ -344,7 +373,15 @@ export const blockerKey = (gaps: readonly string[], summary: string): string =>
 
 // ---------- R26: duplicate task ----------
 
-export const taskKey = (task: string): string => task.toLowerCase().replace(/\s+/g, " ").trim()
+export const taskKey = (task: string): string =>
+  task
+    .replace(/^\[from the global coordinator\]\s*/i, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+
+/** R26: the same task, exactly (case and spacing aside). */
+export const sameTask = (a: string, b: string): boolean => taskKey(a) === taskKey(b)
 
 // ---------- R28: model errors across workers ----------
 
@@ -445,3 +482,74 @@ export const prState = (state: string, checks: string): PrState =>
 /** The typed event for a change of PR state, or null when nothing worth an event changed. */
 export const prEvent = (before: PrState | undefined, now: PrState): "pr-green" | "pr-red" | "merged" | null =>
   before === now ? null : now === "green" ? "pr-green" : now === "red" ? "pr-red" : now === "merged" ? "merged" : null
+
+// ---------- Persistent rule state ----------
+
+/** Small rule state that must survive a restart (PR states, report times, alerts), as JSON by namespace and key. */
+export class CosState {
+  private readonly db: Database
+  constructor(root: string) {
+    this.db = new Database(path.join(root, "cos.db"), { create: true })
+    this.db.run("PRAGMA journal_mode = WAL")
+    this.db.run(
+      "CREATE TABLE IF NOT EXISTS rule_state (ns TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (ns, key))",
+    )
+  }
+  /** A Map-like view of one namespace, written through to SQLite. */
+  map<V>(ns: string): {
+    get(k: string): V | undefined
+    set(k: string, v: V): void
+    delete(k: string): void
+    keys(): string[]
+  } {
+    const cache = new Map<string, V>()
+    const rows = this.db.query("SELECT key, value FROM rule_state WHERE ns = ?").all(ns) as {
+      key: string
+      value: string
+    }[]
+    for (const row of rows) cache.set(row.key, JSON.parse(row.value) as V)
+    return {
+      get: (k) => cache.get(k),
+      set: (k, v) => {
+        cache.set(k, v)
+        this.db.run("INSERT OR REPLACE INTO rule_state (ns, key, value) VALUES (?, ?, ?)", [ns, k, JSON.stringify(v)])
+      },
+      delete: (k) => {
+        cache.delete(k)
+        this.db.run("DELETE FROM rule_state WHERE ns = ? AND key = ?", [ns, k])
+      },
+      keys: () => [...cache.keys()],
+    }
+  }
+}
+
+// ---------- PR state per repo (one gh call per repo) ----------
+
+export type BranchPr = { number: number; url: string; state: string; checks: string }
+
+/** The newest PR of every branch in a repo, in one `gh pr list` call; null when gh fails. */
+export const repoPrs = async (repo: string): Promise<Map<string, BranchPr> | null> => {
+  const r = await run(
+    "gh",
+    ["pr", "list", "--state", "all", "--limit", "200", "--json", "number,url,state,headRefName,statusCheckRollup"],
+    repo,
+  )
+  if (!r.ok) return null
+  const out = new Map<string, BranchPr>()
+  const list = JSON.parse(r.out) as {
+    number: number
+    url: string
+    state: string
+    headRefName: string
+    statusCheckRollup: Check[] | null
+  }[]
+  for (const p of list)
+    if (!out.has(p.headRefName) || out.get(p.headRefName)!.number < p.number)
+      out.set(p.headRefName, {
+        number: p.number,
+        url: p.url,
+        state: p.state,
+        checks: checksState(p.statusCheckRollup ?? []),
+      })
+  return out
+}

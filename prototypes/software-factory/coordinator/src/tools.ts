@@ -100,7 +100,11 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       if (pending)
         return json({
           step: "wait_security_review",
-          securityReview: { id: pending.id, status: pending.status, workerId: pending.workerId ?? null },
+          securityReview: {
+            id: pending.id,
+            status: pending.status,
+            workerId: pending.workerId ?? null,
+          },
           note: "The automatic security review of the last implement step is still running. Wait for its current worker with read_worker wait=true, then call next_step again.",
         })
       if (f.sdlc.get(scope.id)?.contractState?.status === "running")
@@ -112,19 +116,33 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       if (ev)
         return json({
           step: "wait_evaluation",
-          evaluation: { id: ev.id, status: ev.status, round: ev.round, workerId: ev.workerId ?? null },
+          evaluation: {
+            id: ev.id,
+            status: ev.status,
+            round: ev.round,
+            workerId: ev.workerId ?? null,
+          },
           note: "The independent evaluator is checking the acceptance criteria (and fixing failed ones). Wait for its current worker with read_worker wait=true, then call next_step again.",
         })
       const cr = pendingCodeReview(f.codeReviews.values(), scope.id)
       if (cr)
         return json({
           step: "wait_code_review",
-          codeReview: { id: cr.id, status: cr.status, lenses: cr.lenses, workerId: cr.workerId ?? null },
+          codeReview: {
+            id: cr.id,
+            status: cr.status,
+            lenses: cr.lenses,
+            workerId: cr.workerId ?? null,
+          },
           note: "The code review gate is running (Jev-picked lenses, synthesis, Jev-scored fixes). Wait for its current worker with read_worker wait=true, then call next_step again.",
         })
       const busy = sdlcBusy(f, scope.id)
       if (busy) return json({ step: "wait_gates", note: `${busy}. Call next_step again in a moment.` })
-      const state = { request: str(a, "request"), progress: str(a, "progress"), lastOutput: str(a, "lastOutput") }
+      const state = {
+        request: str(a, "request"),
+        progress: str(a, "progress"),
+        lastOutput: str(a, "lastOutput"),
+      }
       try {
         const d = await inRun(f, f.sdlc.get(scope.id), () => decideNext(state))
         if (scope.workdir) f.turn(scope.id).moreWork = d.moreWork
@@ -137,9 +155,15 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
           threadId: scope.threadId,
         }
         f.publish("coordinator", "factory.step_decided", null, String(Date.now()), entry)
-        return json({ ...d, steps: selectableSteps().map(({ id, description }) => ({ id, description })) })
+        return json({
+          ...d,
+          steps: selectableSteps().map(({ id, description }) => ({ id, description })),
+        })
       } catch (e) {
-        return json({ error: e instanceof Error ? e.message : String(e), steps: selectableSteps() })
+        return json({
+          error: e instanceof Error ? e.message : String(e),
+          steps: selectableSteps(),
+        })
       }
     },
   }),
@@ -242,9 +266,13 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
   defineTool("render_ui", {
     description:
       "Show generative UI inline in the chat. `program` is an OpenUI Lang program (see the OpenUI Lang section of your instructions).",
-    parameters: obj({ title: { type: "string" }, program: { type: "string", description: "OpenUI Lang program." } }, [
-      "program",
-    ]),
+    parameters: obj(
+      {
+        title: { type: "string" },
+        program: { type: "string", description: "OpenUI Lang program." },
+      },
+      ["program"],
+    ),
     handler: () => json({ rendered: true }),
   }),
   ...browserTools(f, scope),
@@ -329,7 +357,10 @@ const sdlcStatusTool = (f: Factory, scope: Scope) =>
     description:
       "The conversation's SDLC state: risk tier, each gate (chosen by Jev or a floor, with probability and status), and what still blocks shipping. With summary set, also writes .factory/pr.md (criteria with checks, tier, gates, evidence, rollback) for the finish worker's `gh pr create --body-file`.",
     parameters: obj({
-      summary: { type: "string", description: "Optional PR summary in 1-3 sentences; writes .factory/pr.md." },
+      summary: {
+        type: "string",
+        description: "Optional PR summary in 1-3 sentences; writes .factory/pr.md.",
+      },
     }),
     handler: async (a: Args) => {
       const s = f.sdlc.get(scope.id)
@@ -508,7 +539,12 @@ export const fanout = async (
     reports: plans.map(({ report }) => `reports/${report}.md`),
     errors: results.flatMap((r, i) =>
       r.status === "rejected"
-        ? [{ workflow: selection.selected[i], error: r.reason instanceof Error ? r.reason.message : String(r.reason) }]
+        ? [
+            {
+              workflow: selection.selected[i],
+              error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+            },
+          ]
         : [],
     ),
     next: selection.selected.length
@@ -622,7 +658,12 @@ const spawnWorker = (f: Factory, scope: Scope) =>
             }
           : {}),
         ...(!ship && (a.harness === "claude" || a.harness === "pi")
-          ? { harness: { kind: a.harness, profiles: Array.isArray(a.profiles) ? a.profiles.map(String) : [] } }
+          ? {
+              harness: {
+                kind: a.harness,
+                profiles: Array.isArray(a.profiles) ? a.profiles.map(String) : [],
+              },
+            }
           : {}),
         owner: scope.id,
         ...(scope.workdir ? { workdir: scope.workdir } : {}),
@@ -634,7 +675,10 @@ const spawnWorker = (f: Factory, scope: Scope) =>
             : {}),
       })
       countWorker(f, scope.id)
-      return json({ ...w.summary(), ...(scope.workdir ? { worktree: scope.workdir } : { run: f.run }) })
+      return json({
+        ...w.summary(),
+        ...(scope.workdir ? { worktree: scope.workdir } : { run: f.run }),
+      })
     },
   })
 
@@ -667,7 +711,10 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
           items: { type: "string" },
           description: "Optional, one per option: what happens next if the human picks it, in under 12 words.",
         },
-        context: { type: "string", description: "Who asks and about what, e.g. 'coordinator · review of b39040eb'." },
+        context: {
+          type: "string",
+          description: "Who asks and about what, e.g. 'coordinator · review of b39040eb'.",
+        },
         topic: {
           type: "string",
           enum: ["plan", "findings", "other"],
@@ -738,7 +785,11 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
       if (shipBranch) f.approvals.addShip(item.id, scope.id, shipBranch)
       scope.opened?.(item.id)
       f.publish("coordinator", "factory.approval_requested", null, String(Date.now()), item)
-      return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
+      return json({
+        id: item.id,
+        status: "pending",
+        note: "Shown to the human. End your turn now.",
+      })
     },
   })
 }
@@ -756,11 +807,17 @@ const configTools = (f: Factory, scope: Scope): Tool<Args>[] => [
       "Propose a change to one factory config key (key + value) or to one prompt's full text (prompt + text). You cannot apply it: it opens a decision, and only the human's Apply writes it. Use it when the human asks to change factory behavior, thresholds, models or prompt wording. Keep every {{placeholder}} the prompt uses. End your turn after calling it.",
     parameters: obj(
       {
-        key: { type: "string", description: "Config key from get_factory_config, e.g. review.lens_threshold." },
+        key: {
+          type: "string",
+          description: "Config key from get_factory_config, e.g. review.lens_threshold.",
+        },
         value: {
           description: "New value, same type as the current one (number, string, boolean, or list of strings).",
         },
-        prompt: { type: "string", description: "Prompt name from get_factory_config, e.g. jev/lens." },
+        prompt: {
+          type: "string",
+          description: "Prompt name from get_factory_config, e.g. jev/lens.",
+        },
         text: { type: "string", description: "The prompt's complete new text." },
         reason: { type: "string", description: "Why, in one or two sentences, for the human." },
       },
@@ -790,7 +847,11 @@ const configTools = (f: Factory, scope: Scope): Tool<Args>[] => [
         })
         saveProposal(f.root, item.id, p)
         f.publish("coordinator", "factory.approval_requested", null, String(Date.now()), item)
-        return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
+        return json({
+          id: item.id,
+          status: "pending",
+          note: "Shown to the human. End your turn now.",
+        })
       } catch (e) {
         return json({ error: e instanceof Error ? e.message : String(e) })
       }
@@ -831,14 +892,24 @@ const browserTools = (f: Factory, scope: Scope): Tool<Args>[] => [
   defineTool("open_report", {
     description:
       "Open a saved report (e.g. reports/synthesis.md) in the human's report viewer. A relative path is read in this conversation's worktree.",
-    parameters: obj({ path: { type: "string", description: "reports/<name>.md, or an absolute path ending in .md" } }, [
-      "path",
-    ]),
+    parameters: obj(
+      {
+        path: {
+          type: "string",
+          description: "reports/<name>.md, or an absolute path ending in .md",
+        },
+      },
+      ["path"],
+    ),
     handler: (a: Args) => {
       const p = str(a, "path")
       if (!/^(?:\/[^\s`'"]+\/)?reports\/[\w.-]+\.mdx?$/.test(p))
         return json({ error: "path must look like reports/<name>.md" })
-      f.publish(scope.id, "factory.ui_open_report", null, now(), { path: p, agent: scope.id, threadId: scope.threadId })
+      f.publish(scope.id, "factory.ui_open_report", null, now(), {
+        path: p,
+        agent: scope.id,
+        threadId: scope.threadId,
+      })
       return json({ opened: p })
     },
   }),
@@ -863,9 +934,14 @@ const browserTools = (f: Factory, scope: Scope): Tool<Args>[] => [
         options: [confirm, "Cancel"],
         context: scope.label ?? "coordinator",
         topic: "other",
+        humanOnly: true,
       })
       f.publish("coordinator", "factory.approval_requested", null, now(), item)
-      return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
+      return json({
+        id: item.id,
+        status: "pending",
+        note: "Shown to the human. End your turn now.",
+      })
     },
   }),
 ]
@@ -880,7 +956,10 @@ const reportUp = (f: Factory, scope: Scope, workdir: string) =>
     parameters: obj(
       {
         status: { type: "string", enum: ["done", "blocked", "needs-decision"] },
-        summary: { type: "string", description: "What changed or what blocks you, in 1-3 sentences." },
+        summary: {
+          type: "string",
+          description: "What changed or what blocks you, in 1-3 sentences.",
+        },
         checks: {
           type: "array",
           items: obj({ name: { type: "string" }, result: { type: "string" }, evidence: { type: "string" } }, [
@@ -890,7 +969,10 @@ const reportUp = (f: Factory, scope: Scope, workdir: string) =>
           ]),
         },
         gaps: { ...list, description: "What is not done or not proven." },
-        nextSteps: { ...list, description: "Options for the human; the first is your recommendation." },
+        nextSteps: {
+          ...list,
+          description: "Options for the human; the first is your recommendation.",
+        },
         lessons: {
           ...list,
           description:
@@ -916,7 +998,11 @@ const reportUp = (f: Factory, scope: Scope, workdir: string) =>
         return json({
           error: `Not sent: ${brief}. Fix the brief (or spawn a synthesis worker to fix it), then call report_up again.`,
         })
-      const r: Report = { ...input, branch: gitOr(workdir, "--abbrev-ref", "HEAD"), commit: gitOr(workdir, "HEAD") }
+      const r: Report = {
+        ...input,
+        branch: gitOr(workdir, "--abbrev-ref", "HEAD"),
+        commit: gitOr(workdir, "HEAD"),
+      }
       const turn = f.turn(scope.id)
       const key = `${turn.start}|${r.commit}|${r.status}`
       if (f.lastReports.get(scope.id) === key)
@@ -933,7 +1019,10 @@ const reportUp = (f: Factory, scope: Scope, workdir: string) =>
       f.lastReports.set(scope.id, key)
       if (scope.folderId && Array.isArray(a.lessons) && a.lessons.length)
         addLessons(f.root, scope.folderId, a.lessons.map(String).slice(0, 3))
-      f.publish(scope.id, "factory.report_up", null, now(), { threadId: scope.threadId, report: r })
+      f.publish(scope.id, "factory.report_up", null, now(), {
+        threadId: scope.threadId,
+        report: r,
+      })
       return json({ sent: true, note: "The human decides the next step. End your turn now." })
     },
   })
@@ -946,18 +1035,33 @@ const mergePrTool = (f: Factory, scope: Scope) =>
     parameters: obj({}),
     handler: async (_a: Args) => {
       const branch = gitOr(scope.workdir!, "--abbrev-ref", "HEAD")
-      const hold = scope.repo ? mergeHold(f.repoGates.get(scope.repo), scope.threadId) : null
-      if (hold && scope.threadId) f.repoGates.wait(scope.repo!, scope.threadId)
-      const r = hold
-        ? { merged: false, reason: hold }
-        : scope.repo
-          ? await mergePr({
-              worktree: scope.workdir!,
-              repo: scope.repo,
-              branch,
-              shipGranted: f.approvals.acceptedShips(scope.id, branch).length > 0,
-            })
-          : { merged: false, reason: "this conversation has no registered repo folder" }
+      const repo = scope.repo
+      const hold = repo ? mergeHold(f.repoGates.get(repo), scope.threadId) : null
+      if (hold && scope.threadId) f.repoGates.wait(repo!, scope.threadId)
+      // R17: take the repo's merge slot before the first await, so two merges never run at once.
+      if (!hold && repo && scope.threadId)
+        f.repoGates.set(repo, {
+          ...f.repoGates.get(repo),
+          merging: { threadId: scope.threadId, at: Date.now() },
+        })
+      let r: MergeResult
+      try {
+        r = hold
+          ? { merged: false, reason: hold }
+          : repo
+            ? await mergePr({
+                worktree: scope.workdir!,
+                repo,
+                branch,
+                shipGranted: f.approvals.acceptedShips(scope.id, branch).length > 0,
+              })
+            : { merged: false, reason: "this conversation has no registered repo folder" }
+      } finally {
+        if (!hold && repo) {
+          const { merging: _done, ...rest } = f.repoGates.get(repo)
+          f.repoGates.set(repo, rest)
+        }
+      }
       const e = ledgerOf(f.root).add({
         rule: "R3",
         threadId: scope.threadId,
@@ -1034,7 +1138,10 @@ export const globalTools = (c: Conversations): Tool<Args>[] => [
       "Find and rank optimizations in a repo. Always starts a NEW conversation in that folder whose sub-coordinator fans out the `trx guide --optimize` skills (fanout) and fans in with a synthesis. Use it for every optimization request, even one asked before; never answer from an earlier conversation.",
     parameters: obj(
       {
-        folder: { type: "string", description: "Folder id from list_conversations, or an absolute repo path." },
+        folder: {
+          type: "string",
+          description: "Folder id from list_conversations, or an absolute repo path.",
+        },
         request: { type: "string", description: "The user's exact request." },
       },
       ["folder", "request"],
@@ -1061,7 +1168,12 @@ export const globalTools = (c: Conversations): Tool<Args>[] => [
 /** The checked-out branch of a worktree, or null when git cannot tell. */
 const currentBranch = (wt: string): string | null => {
   try {
-    return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: wt, encoding: "utf8" }).trim() || null
+    return (
+      execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+        cwd: wt,
+        encoding: "utf8",
+      }).trim() || null
+    )
   } catch {
     return null
   }
@@ -1106,7 +1218,13 @@ export const cardData = (f: Factory, scope: Scope, name: string, a: Record<strin
         verdict: x.verdict ?? "",
         reason: x.reason ?? "",
       }))
-      return { reviewId: r.id, status: r.status, model: r.model, ...(r.error ? { error: r.error } : {}), findings }
+      return {
+        reviewId: r.id,
+        status: r.status,
+        model: r.model,
+        ...(r.error ? { error: r.error } : {}),
+        findings,
+      }
     }
     case "show_code_review": {
       const r = [...f.codeReviews.values()].filter((x) => x.scopeId === scope.id).at(-1)
@@ -1128,7 +1246,12 @@ export const cardData = (f: Factory, scope: Scope, name: string, a: Record<strin
         status: e.status,
         round: e.round,
         model: e.model,
-        verdicts: e.verdicts.map((v) => ({ id: v.id, verdict: v.verdict, command: v.command, note: v.note })),
+        verdicts: e.verdicts.map((v) => ({
+          id: v.id,
+          verdict: v.verdict,
+          command: v.command,
+          note: v.note,
+        })),
         notes: e.notes,
         ...(e.error ? { error: e.error } : {}),
       }

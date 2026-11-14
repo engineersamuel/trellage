@@ -30,7 +30,8 @@ import {
   r3aBlocker,
   r3Blockers,
   RepoGates,
-  taskKey,
+  sameTask,
+  CosState,
   type PrView,
 } from "../src/cos.ts"
 import type { Evaluation } from "../src/evaluate.ts"
@@ -129,7 +130,10 @@ test("R3 merges only an open, green, non-draft PR of the branch", () => {
 
 test("merge_pr refuses without a ship grant or off a factory branch, before calling gh", async () => {
   const m = { worktree: "/nowhere", repo: "/nowhere", branch: "factory/x", shipGranted: false }
-  expect(await mergePr(m)).toEqual({ merged: false, reason: "no accepted ship approval for factory/x" })
+  expect(await mergePr(m)).toEqual({
+    merged: false,
+    reason: "no accepted ship approval for factory/x",
+  })
   expect(await mergePr({ ...m, branch: "main", shipGranted: true })).toEqual({
     merged: false,
     reason: "only factory/* branches merge; on main",
@@ -137,7 +141,11 @@ test("merge_pr refuses without a ship grant or off a factory branch, before call
 })
 
 const git = (cwd: string, ...args: string[]) =>
-  execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd, encoding: "utf8", stdio: "pipe" })
+  execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], {
+    cwd,
+    encoding: "utf8",
+    stdio: "pipe",
+  })
 
 /** origin (bare), a main checkout nested under projects/<subdir>/<repo>, and a factory worktree outside it. */
 const repoFixture = () => {
@@ -191,7 +199,13 @@ test("R3a: a dirty or non-main checkout is not pulled; a clean one pulls the mer
 test("the ledger keeps every action, newest first, filterable by conversation", () => {
   const l = new Ledger(mkdtempSync(path.join(tmpdir(), "ledger-")))
   l.add({ rule: "R1", threadId: "t1", action: "answer decision a", result: "done", detail: "x" })
-  l.add({ rule: "R3", threadId: "t2", action: "merge factory/x", result: "refused", detail: "checks are PENDING" })
+  l.add({
+    rule: "R3",
+    threadId: "t2",
+    action: "merge factory/x",
+    result: "refused",
+    detail: "checks are PENDING",
+  })
   expect(l.list().map((e) => e.rule)).toEqual(["R3", "R1"])
   expect(l.list(10, "t1").map((e) => e.action)).toEqual(["answer decision a"])
 })
@@ -222,8 +236,9 @@ test("R24: the same blocker matches across commits, numbers and spacing; another
   expect(blockerKey([], "Hook   failed")).toBe("hook failed")
 })
 
-test("R26: task keys ignore case and spacing", () => {
-  expect(taskKey("[from the global coordinator] Fix  the\nLogin bug")).toContain(taskKey("fix the login BUG"))
+test("R26: only the same task (case and spacing aside) is a duplicate", () => {
+  expect(sameTask("[from the global coordinator] Fix  the\nLogin bug", "fix the login BUG")).toBe(true)
+  expect(sameTask("fix tests", "fix tests in auth module")).toBe(false)
 })
 
 test("R28: auth and rate-limit errors count once per worker inside the window", () => {
@@ -256,7 +271,10 @@ test("merge holds survive a restart (saved in cos.db)", () => {
   const a = new RepoGates(root)
   a.set("/r", { red: { fixThread: "fix", since: 1 } })
   a.wait("/r", "t1")
-  expect(new RepoGates(root).get("/r")).toEqual({ red: { fixThread: "fix", since: 1 }, waiting: ["t1"] })
+  expect(new RepoGates(root).get("/r")).toEqual({
+    red: { fixThread: "fix", since: 1 },
+    waiting: ["t1"],
+  })
   a.set("/r", {})
   expect(new RepoGates(root).all()).toEqual([])
 })
@@ -360,4 +378,52 @@ test("the ledger prunes entries older than 90 days and remembers decisions an ev
   expect(l.list()).toHaveLength(2)
   l.prune(-1)
   expect(l.list()).toHaveLength(0)
+})
+
+test("R1 never answers a human-only decision or one a CoS event turn opened", () => {
+  expect(r1Pick(approval({ humanOnly: true }), 0.95, false)).toBeNull()
+  expect(r1Pick(approval(), 0.95, false, true)).toBeNull()
+  expect(r1Pick(approval(), 0.95, false, false)).toBe("Apply")
+})
+
+test("R17: a running merge holds every other one; a reserved slot lets only its conversation through", () => {
+  expect(mergeHold({ merging: { threadId: "a", at: 1 } }, "b")).toContain("merging now")
+  expect(mergeHold({ merging: { threadId: "a", at: 1 } }, "a")).toBeNull()
+  const reserved = { settling: { pr: "(next in line)", sha: "s", reservedFor: "b" } }
+  expect(mergeHold(reserved, "b")).toBeNull()
+  expect(mergeHold(reserved, "c")).toContain("rule R17")
+})
+
+test("R3 refuses a PR whose base is not the default branch", () => {
+  expect(r3Blockers(pr({ baseRefName: "release" }), "factory/x", "main")).toEqual([
+    "PR targets release, not the default branch main; the human merges it",
+  ])
+  expect(r3Blockers(pr({ baseRefName: "main" }), "factory/x", "main")).toEqual([])
+})
+
+test("rule state survives a restart (cos.db)", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "state-"))
+  const a = new CosState(root).map<string>("pr-state")
+  a.set("t1", "green")
+  a.set("t2", "red")
+  a.delete("t2")
+  const b = new CosState(root).map<string>("pr-state")
+  expect(b.get("t1")).toBe("green")
+  expect(b.keys()).toEqual(["t1"])
+  expect(new CosState(root).map<string>("other").keys()).toEqual([])
+})
+
+test("R3a: a pull that cannot fast-forward fails and leaves the checkout as it was (no half rebase)", async () => {
+  const { root, origin, checkout, worktree } = repoFixture()
+  const other = path.join(root, "other2")
+  git(root, "clone", "-q", origin, other)
+  writeFileSync(path.join(other, "a.txt"), "theirs\n")
+  git(other, "commit", "-qam", "theirs")
+  git(other, "push", "-q", "origin", "main")
+  writeFileSync(path.join(checkout, "a.txt"), "mine\n")
+  git(checkout, "commit", "-qam", "local commit")
+  const out = await pullMain(worktree, checkout)
+  expect(out).toStartWith("pull failed")
+  expect(git(checkout, "status", "--porcelain").trim()).toBe("")
+  expect(git(checkout, "log", "--format=%s", "-1").trim()).toBe("local commit")
 })

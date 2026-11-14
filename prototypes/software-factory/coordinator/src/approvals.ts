@@ -35,6 +35,8 @@ export type Approval = {
   reportThreadId?: string
   /** What is decided; goal runs answer by topic. */
   topic?: "plan" | "findings" | "ship" | "other" | "budget" | "goal"
+  /** Only the human answers it: no rule (Chief of Staff R1) may. */
+  humanOnly?: boolean
   /** Shadow mode: what Jev predicted the human would answer. */
   shadow?: Shadow | null
 }
@@ -156,7 +158,9 @@ export class Approvals {
 
   open(
     a: Pick<Approval, "threadId" | "title" | "summary" | "options"> &
-      Partial<Pick<Approval, "kind" | "allowText" | "context" | "optionDetails" | "reportThreadId" | "topic">>,
+      Partial<
+        Pick<Approval, "kind" | "allowText" | "context" | "optionDetails" | "reportThreadId" | "topic" | "humanOnly">
+      >,
   ): Approval {
     const kind = a.kind ?? "approval"
     if (a.optionDetails && a.optionDetails.length && a.optionDetails.length !== a.options.length)

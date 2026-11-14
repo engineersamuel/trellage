@@ -6,7 +6,8 @@ import { Effect, Fiber, Queue, Schema, Stream, SubscriptionRef } from "effect"
 import { onFeed, RESYNC } from "./feed"
 import { HttpError, json } from "./http"
 
-const withDefault = <S extends Schema.Top>(value: S["Encoded"]) => Schema.withDecodingDefaultKey<S>(Effect.succeed(value))
+const withDefault = <S extends Schema.Top>(value: S["Encoded"]) =>
+  Schema.withDecodingDefaultKey<S>(Effect.succeed(value))
 
 export const Shadow = Schema.Struct({
   pick: Schema.NullOr(Schema.String),
@@ -35,6 +36,8 @@ export const Decision = Schema.Struct({
   /** Who answered when it was not the human, e.g. "goal cpr-x (policy plan=auto)"; null for the human. */
   answeredBy: Schema.NullOr(Schema.String).pipe(withDefault(null)),
   reportThreadId: Schema.optionalKey(Schema.String),
+  /** Only the human answers it: no rule (Chief of Staff R1) may. */
+  humanOnly: Schema.optionalKey(Schema.Boolean),
   /** What is decided: a plan before implement, review findings, shipping the branch, or anything else. */
   topic: Schema.Literals(["plan", "findings", "ship", "other"]).pipe(withDefault("other")),
   /** Shadow mode: undefined while Jev predicts, null when no prediction is available. */
@@ -45,7 +48,10 @@ export type Decision = typeof Decision.Type
 export const decodeDecision = Schema.decodeUnknownExit(Decision)
 
 /** GET /api/approvals/:id also returns the title of the decision's conversation. */
-export const DecisionDetail = Schema.Struct({ ...Decision.fields, threadTitle: Schema.NullOr(Schema.String).pipe(withDefault(null)) })
+export const DecisionDetail = Schema.Struct({
+  ...Decision.fields,
+  threadTitle: Schema.NullOr(Schema.String).pipe(withDefault(null)),
+})
 export type DecisionDetail = typeof DecisionDetail.Type
 
 /** Errors of the approvals API are HTTP or decode errors. */
@@ -71,7 +77,10 @@ export const toApprovals = (all: ReadonlyArray<Decision>): Approvals => ({
 
 // ---------- HTTP ----------
 
-export const fetchAll: Effect.Effect<ReadonlyArray<Decision>, ApprovalsError> = json("/api/approvals", Schema.Array(Decision))
+export const fetchAll: Effect.Effect<ReadonlyArray<Decision>, ApprovalsError> = json(
+  "/api/approvals",
+  Schema.Array(Decision),
+)
 
 export const fetchOne = (id: string): Effect.Effect<DecisionDetail, ApprovalsError> =>
   json(`/api/approvals/${encodeURIComponent(id)}`, DecisionDetail)
@@ -95,11 +104,16 @@ export type Store = {
 }
 
 /** Build a store from a loader and a stream of reload triggers (tests pass their own). */
-export const makeStore = (load: Effect.Effect<ReadonlyArray<Decision>, ApprovalsError>, triggers: Stream.Stream<void>): Store => {
+export const makeStore = (
+  load: Effect.Effect<ReadonlyArray<Decision>, ApprovalsError>,
+  triggers: Stream.Stream<void>,
+): Store => {
   const ref = Effect.runSync(SubscriptionRef.make(EMPTY))
   const reload = load.pipe(
     Effect.flatMap((all) => SubscriptionRef.set(ref, toApprovals(all))),
-    Effect.catch((e: ApprovalsError) => Effect.logWarning(`approvals: reload failed, keeping the last list: ${e.reason}`)),
+    Effect.catch((e: ApprovalsError) =>
+      Effect.logWarning(`approvals: reload failed, keeping the last list: ${e.reason}`),
+    ),
   )
   const run = Stream.make(undefined).pipe(
     Stream.concat(triggers),
@@ -124,7 +138,9 @@ let running: Fiber.Fiber<void> | null = null
 const start = () => void (running ??= Effect.runFork(store.run))
 
 /** Current approvals, then every change. For Effect hosts (Foldkit Subscriptions). */
-export const changes: Stream.Stream<Approvals> = Stream.unwrap(Effect.sync(() => (start(), SubscriptionRef.changes(store.ref))))
+export const changes: Stream.Stream<Approvals> = Stream.unwrap(
+  Effect.sync(() => (start(), SubscriptionRef.changes(store.ref))),
+)
 
 /** Plain-DOM adapter: calls back with the current approvals and every change. Returns unsubscribe. */
 export const subscribeApprovals = (cb: (a: Approvals) => void): (() => void) => {
