@@ -333,7 +333,13 @@ const sdlcStatusTool = (f: Factory, scope: Scope) =>
         const ev = lastEvaluation(f.evaluations.values(), scope.id)
         await Bun.write(
           prFile,
-          prBody(s, scope.workdir, a.summary, ev && ev.verdicts.length ? evaluationMarkdown(ev) : undefined),
+          prBody(
+            s,
+            scope.workdir,
+            a.summary,
+            ev && ev.verdicts.length ? evaluationMarkdown(ev) : undefined,
+            scope.threadId,
+          ),
         )
       }
       return json({

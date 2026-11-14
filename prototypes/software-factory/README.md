@@ -57,7 +57,8 @@ per gate against its threshold, `GATES` in `coordinator/src/sdlc.ts`); a risk ti
 
 Risk tier (`classify`): T0 small docs-only, T2 > 400 lines, dependency manifests or sensitive paths (auth, secrets,
 bind, CI, scripts, Docker, mise), else T1. `.factory/` is git-excluded; `.factory/pr.md` (criteria ✓, tier, gates,
-evidence, rollback) is the PR body. `report_up` saves up to 3 lessons per repo (`$SF_STATE_DIR/lessons/<folder>.md`),
+evidence, rollback, `thread=<uuid>` and the Factory UI link `<SF_UI_URL>?thread=<uuid>`, default
+`http://localhost:5174/`) is the PR body. `report_up` saves up to 3 lessons per repo (`$SF_STATE_DIR/lessons/<folder>.md`),
 shown to the next sub-coordinator. The `show_sdlc` card shows it all live; `/api/runs/<thread>` has it under `sdlc` with
 metrics (minutes, workers, findings kept and dropped), and goal specs can require it (`expect.sdlc`: `criteriaProven`,
 `gatesRun`, `gatesSkipped`, `maxTier`).
