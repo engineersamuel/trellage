@@ -18,7 +18,7 @@ import { promptErrors, promptFile, promptNames, stalePrompts } from "./prompt.ts
 import { evaluatePrompt } from "./promptEval.ts"
 import type { ShipGrant } from "./approvals.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
-import { ledgerOf, mergePr } from "./cos.ts"
+import { ledgerOf, mergeHold, mergePr, type MergeResult } from "./cos.ts"
 import { briefProblem } from "./reports.ts"
 import { diffSummary, reportFindings } from "./cards.ts"
 import { pendingReview, reviewIn } from "./security.ts"
@@ -67,6 +67,7 @@ export type Scope = {
   /** Default decision context, e.g. the repo folder name. */ label?: string
   /** Repo folder id; its lessons file is read at start and appended by report_up. */ folderId?: string
   /** The repo's registered main checkout; merge_pr pulls it after a merge. */ repo?: string
+  /** After merge_pr merged (rules R17, R21). */ merged?: (r: MergeResult) => void
   /** Sends a sub-coordinator's report_up to the human. */ report?: (r: Report) => void | Promise<void>
   /** A conversation exists and is not cleaned up; checks request_approval's reportThreadId. */ knownThread?: (
     threadId: string,
@@ -594,6 +595,7 @@ const spawnWorker = (f: Factory, scope: Scope) =>
       ["name", "task"],
     ),
     handler: async (a: Args) => {
+      if (f.spawnHold) return json({ error: f.spawnHold })
       const blocked = spawnBlocked(f, scope) ?? (a.step === "synthesis" ? synthesisBlocked(f, scope) : null)
       if (blocked) return json({ error: blocked })
       const ship = a.step === "finish" ? shipGrant(f, scope) : null
@@ -941,14 +943,18 @@ const mergePrTool = (f: Factory, scope: Scope) =>
     parameters: obj({}),
     handler: async (_a: Args) => {
       const branch = gitOr(scope.workdir!, "--abbrev-ref", "HEAD")
-      const r = scope.repo
-        ? await mergePr({
-            worktree: scope.workdir!,
-            repo: scope.repo,
-            branch,
-            shipGranted: f.approvals.acceptedShips(scope.id, branch).length > 0,
-          })
-        : { merged: false, reason: "this conversation has no registered repo folder" }
+      const hold = scope.repo ? mergeHold(f.repoGates.get(scope.repo), scope.threadId) : null
+      if (hold && scope.threadId) f.repoGates.wait(scope.repo!, scope.threadId)
+      const r = hold
+        ? { merged: false, reason: hold }
+        : scope.repo
+          ? await mergePr({
+              worktree: scope.workdir!,
+              repo: scope.repo,
+              branch,
+              shipGranted: f.approvals.acceptedShips(scope.id, branch).length > 0,
+            })
+          : { merged: false, reason: "this conversation has no registered repo folder" }
       const e = ledgerOf(f.root).add({
         rule: "R3",
         threadId: scope.threadId,
@@ -957,6 +963,7 @@ const mergePrTool = (f: Factory, scope: Scope) =>
         detail: [r.pr, r.reason, r.pull].filter(Boolean).join("; "),
       })
       f.publish("coordinator", "factory.cos_action", null, now(), e)
+      if (r.merged && scope.repo) scope.merged?.(r)
       return json(r)
     },
   })

@@ -9,7 +9,7 @@ import { factoryConfig } from "./config.ts"
 import type { Evaluation } from "./evaluate.ts"
 import { checksState, type Check } from "./run.ts"
 
-export type RuleId = "r1" | "r3" | "r14" | "r27"
+export type RuleId = "r1" | "r3" | "r14" | "r15" | "r17" | "r21" | "r24" | "r25" | "r26" | "r27" | "r28" | "r29"
 
 export const ruleOn = (id: RuleId): boolean => factoryConfig().cos.rules[id]
 
@@ -67,7 +67,8 @@ const R1_EXCLUDED_WORDS = /\b(merge|merging|delete|deleting|remove the branch)\b
 /** The option R1 picks for the human, or null when the human decides. Config proposals (Apply/Reject) stay with the human. */
 export const r1Pick = (a: Approval, threshold: number, isProposal: boolean): string | null => {
   const s = a.shadow
-  if (a.status !== "pending" || !s || isProposal) return null
+  // Decisions the rules themselves open (R24) are for the human.
+  if (a.status !== "pending" || !s || isProposal || a.context.startsWith("Chief of Staff")) return null
   if (R1_EXCLUDED_TOPICS.has(a.topic ?? "other")) return null
   if (R1_EXCLUDED_WORDS.test([a.title, ...a.options].join(" "))) return null
   if (s.pick === null || s.confidence < threshold || !a.options.includes(s.pick)) return null
@@ -109,7 +110,10 @@ export const r3Blockers = (pr: PrView, branch: string): string[] => {
   if (pr.state !== "OPEN") out.push(`PR #${pr.number} is ${pr.state}`)
   if (pr.isDraft) out.push("PR is a draft")
   if (pr.reviewDecision === "CHANGES_REQUESTED") out.push("a reviewer requested changes")
-  if (pr.mergeable === "CONFLICTING") out.push("PR has merge conflicts")
+  if (pr.mergeable === "CONFLICTING")
+    out.push(
+      "PR has merge conflicts (rule R22: spawn step=finish to rebase on origin/main, resolve them, run the tests and push)",
+    )
   const checks = checksState(pr.statusCheckRollup ?? [])
   if (checks !== "SUCCESS" && checks !== "NONE") out.push(`checks are ${checks}`)
   return out
@@ -161,7 +165,7 @@ export type MergeInput = {
   shipGranted: boolean
 }
 
-export type MergeResult = { merged: boolean; pr?: string; reason?: string; pull?: string }
+export type MergeResult = { merged: boolean; pr?: string; reason?: string; pull?: string; sha?: string | null }
 
 /** R3: squash-merge the conversation's PR when every condition holds, then pull the main checkout (R3a). */
 export const mergePr = async (m: MergeInput): Promise<MergeResult> => {
@@ -177,7 +181,12 @@ export const mergePr = async (m: MergeInput): Promise<MergeResult> => {
   if (blockers.length) return { merged: false, pr: pr.url, reason: blockers.join("; ") }
   const merged = await run("gh", ["pr", "merge", String(pr.number), "--squash"], m.worktree, 120_000)
   if (!merged.ok) return { merged: false, pr: pr.url, reason: `gh pr merge failed: ${merged.out.split("\n")[0]}` }
-  return { merged: true, pr: pr.url, pull: await pullMain(m.worktree, m.repo) }
+  return {
+    merged: true,
+    pr: pr.url,
+    sha: await mergeCommit(m.worktree, String(pr.number)),
+    pull: await pullMain(m.worktree, m.repo),
+  }
 }
 
 /** After a merge: `git pull --rebase origin main` in the main checkout, or why it was not pulled. */
@@ -195,3 +204,120 @@ export const pullMain = async (worktree: string, repo: string): Promise<string> 
 /** The text a reporting conversation gets when its decision is answered; no global coordinator turn. */
 export const relayText = (a: Approval): string =>
   `[decision ${a.id} answered${a.answeredBy ? ` by ${a.answeredBy}` : ""}] "${a.title}": ${a.answer}${a.note ? `\nNote: ${a.note}` : ""}\nContinue accordingly.`
+
+// ---------- R15, R16, R17: CI on main and one merge at a time ----------
+
+/** Per repo: main is red (R15; only its fix conversation may merge), or a merge waits for main CI (R17). */
+export type RepoHold = {
+  red?: { fixThread: string | null; since: number }
+  settling?: { pr: string; sha: string }
+  /** Conversations whose merge_pr was held; told to call it again when the hold ends. */
+  waiting?: string[]
+}
+
+export class RepoGates {
+  private readonly holds = new Map<string, RepoHold>()
+  get(repo: string): RepoHold {
+    return this.holds.get(repo) ?? {}
+  }
+  set(repo: string, h: RepoHold): void {
+    if (!h.red && !h.settling) this.holds.delete(repo)
+    else this.holds.set(repo, h)
+  }
+  /** Remember a conversation whose merge was held. */
+  wait(repo: string, threadId: string): void {
+    const h = this.get(repo)
+    if (!h.waiting?.includes(threadId)) this.set(repo, { ...h, waiting: [...(h.waiting ?? []), threadId] })
+  }
+  all(): [string, RepoHold][] {
+    return [...this.holds]
+  }
+}
+
+/** Why merge_pr must wait in this repo, or null. The fix conversation of a red main may merge (R15). */
+export const mergeHold = (h: RepoHold, threadId: string | null): string | null => {
+  if (h.red && h.red.fixThread !== threadId)
+    return "CI on main is red (rule R15); only its fix conversation merges until main is green. The factory tells you when to call merge_pr again; report nothing until then."
+  if (h.settling)
+    return `PR ${h.settling.pr} was just merged; one merge at a time (rule R17). The factory tells you when CI on main is green; then call merge_pr again.`
+  return null
+}
+
+/** The check state of the newest commit on main, or null when gh cannot tell (no GitHub remote). */
+export const mainChecks = async (repo: string): Promise<{ sha: string; state: string } | null> => {
+  const sha = await run("git", ["-C", repo, "ls-remote", "origin", "refs/heads/main"], repo, 30_000)
+  const head = sha.ok ? sha.out.split(/\s/)[0] : ""
+  if (!head) return null
+  const runs = await run(
+    "gh",
+    [
+      "api",
+      `repos/{owner}/{repo}/commits/${head}/check-runs`,
+      "--jq",
+      '[.check_runs[] | {status: (.status|ascii_upcase), conclusion: ((.conclusion // "")|ascii_upcase)}]',
+    ],
+    repo,
+    30_000,
+  )
+  return runs.ok ? { sha: head, state: checksState(JSON.parse(runs.out) as Check[]) } : null
+}
+
+/** The merge commit of a merged PR, for R17's wait on main CI. */
+export const mergeCommit = async (worktree: string, pr: string): Promise<string | null> => {
+  const r = await run("gh", ["pr", "view", pr, "--json", "mergeCommit", "--jq", ".mergeCommit.oid"], worktree)
+  return r.ok && r.out ? r.out : null
+}
+
+/** Open PR branches of a repo (R21 tells them to rebase after a merge). */
+export const openPrBranches = async (repo: string): Promise<string[]> => {
+  const r = await run(
+    "gh",
+    ["pr", "list", "--state", "open", "--limit", "100", "--json", "headRefName", "--jq", ".[].headRefName"],
+    repo,
+  )
+  return r.ok ? r.out.split("\n").filter(Boolean) : []
+}
+
+// ---------- R24: same blocker twice ----------
+
+/** A blocked report as a comparable key: gaps (else summary), lower case, without numbers, hashes and spacing. */
+export const blockerKey = (gaps: readonly string[], summary: string): string =>
+  (gaps.length ? gaps.join(" | ") : summary)
+    .toLowerCase()
+    .replace(/\b[0-9a-f]{7,40}\b/g, "")
+    .replace(/\d+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 400)
+
+// ---------- R26: duplicate task ----------
+
+export const taskKey = (task: string): string => task.toLowerCase().replace(/\s+/g, " ").trim()
+
+// ---------- R28: model errors across workers ----------
+
+const MODEL_ERROR =
+  /\b(401|403|429|unauthori[sz]ed|forbidden|rate.?limit|too many requests|quota|auth(entication)? (failed|error|required)|token expired)\b/i
+export const isModelError = (message: string): boolean => MODEL_ERROR.test(message)
+
+/** Workers with a model error in the window; R28 holds new workers at `min` or more. */
+export const modelErrorWorkers = (
+  errors: readonly { worker: string; at: number }[],
+  now: number,
+  windowMs: number,
+): string[] => [...new Set(errors.filter((e) => now - e.at <= windowMs).map((e) => e.worker))]
+
+// ---------- R25: idle and not reported ----------
+
+export type IdleState = {
+  /** The sub-coordinator is idle, with no running worker of its own. */
+  idle: boolean
+  quietMs: number
+  /** The PR of its branch is merged (or, with no PR, its last report was done). */
+  done: boolean
+  /** It reported after its last turn started. */
+  reported: boolean
+}
+
+export const r25Action = (s: IdleState, quietMs: number): "archive" | "report" | null =>
+  !s.idle || s.quietMs < quietMs ? null : s.done ? "archive" : s.reported ? null : "report"

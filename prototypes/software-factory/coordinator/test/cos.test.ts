@@ -5,14 +5,21 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import type { Approval } from "../src/approvals.ts"
 import {
+  blockerKey,
+  isModelError,
   Ledger,
   mainCheckout,
+  mergeHold,
   mergePr,
+  modelErrorWorkers,
   pullMain,
   r14Blocker,
   r1Pick,
+  r25Action,
   r3aBlocker,
   r3Blockers,
+  RepoGates,
+  taskKey,
   type PrView,
 } from "../src/cos.ts"
 import type { Evaluation } from "../src/evaluate.ts"
@@ -103,7 +110,7 @@ test("R3 merges only an open, green, non-draft PR of the branch", () => {
   ])
   expect(r3Blockers(pr({ isDraft: true }), "factory/x")).toEqual(["PR is a draft"])
   expect(r3Blockers(pr({ reviewDecision: "CHANGES_REQUESTED" }), "factory/x")).toEqual(["a reviewer requested changes"])
-  expect(r3Blockers(pr({ mergeable: "CONFLICTING" }), "factory/x")).toEqual(["PR has merge conflicts"])
+  expect(r3Blockers(pr({ mergeable: "CONFLICTING" }), "factory/x")[0]).toStartWith("PR has merge conflicts (rule R22")
   expect(r3Blockers(pr({ state: "MERGED" }), "factory/x")).toEqual(["PR #7 is MERGED"])
   expect(r3Blockers(pr(), "factory/y")).toEqual(["PR #7 is for factory/x, not factory/y"])
 })
@@ -175,4 +182,59 @@ test("the ledger keeps every action, newest first, filterable by conversation", 
   l.add({ rule: "R3", threadId: "t2", action: "merge factory/x", result: "refused", detail: "checks are PENDING" })
   expect(l.list().map((e) => e.rule)).toEqual(["R3", "R1"])
   expect(l.list(10, "t1").map((e) => e.action)).toEqual(["answer decision a"])
+})
+
+test("R1 never answers a decision a rule opened for the human", () => {
+  expect(r1Pick(approval({ context: "Chief of Staff · R24" }), 0.95, false)).toBeNull()
+})
+
+test("R15/R17: a red main holds every merge but its fix; a fresh merge holds the next one; waiters are kept", () => {
+  const g = new RepoGates()
+  expect(mergeHold(g.get("/r"), "t1")).toBeNull()
+  g.set("/r", { red: { fixThread: "fix", since: 1 } })
+  expect(mergeHold(g.get("/r"), "t1")).toContain("rule R15")
+  expect(mergeHold(g.get("/r"), "fix")).toBeNull()
+  g.wait("/r", "t1")
+  g.wait("/r", "t1")
+  expect(g.get("/r").waiting).toEqual(["t1"])
+  g.set("/r", { settling: { pr: "u/7", sha: "abc" } })
+  expect(mergeHold(g.get("/r"), "fix")).toContain("rule R17")
+  g.set("/r", {})
+  expect(g.all()).toEqual([])
+})
+
+test("R24: the same blocker matches across commits, numbers and spacing; another does not", () => {
+  const a = blockerKey(["Test foo fails at 3f2a9c1d", "lint:  12 errors"], "x")
+  expect(blockerKey(["test foo fails at 9e8d7c6b", "lint: 7 errors"], "y")).toBe(a)
+  expect(blockerKey(["build fails"], "x")).not.toBe(a)
+  expect(blockerKey([], "Hook   failed")).toBe("hook failed")
+})
+
+test("R26: task keys ignore case and spacing", () => {
+  expect(taskKey("[from the global coordinator] Fix  the\nLogin bug")).toContain(taskKey("fix the login BUG"))
+})
+
+test("R28: auth and rate-limit errors count once per worker inside the window", () => {
+  expect(isModelError("HTTP 429 Too Many Requests")).toBe(true)
+  expect(isModelError("401 Unauthorized")).toBe(true)
+  expect(isModelError("rate limit exceeded")).toBe(true)
+  expect(isModelError("ENOENT: no such file")).toBe(false)
+  const errs = [
+    { worker: "a", at: 0 },
+    { worker: "a", at: 100 },
+    { worker: "b", at: 200 },
+    { worker: "c", at: 1000 },
+  ]
+  expect(modelErrorWorkers(errs, 1000, 900)).toEqual(["a", "b", "c"])
+  expect(modelErrorWorkers(errs, 1000, 850)).toEqual(["b", "c"])
+})
+
+test("R25: idle and done archives; idle, not done and not reported reports; busy or recent does nothing", () => {
+  const q = 15 * 60_000
+  const base = { idle: true, quietMs: q, done: false, reported: false }
+  expect(r25Action({ ...base, done: true }, q)).toBe("archive")
+  expect(r25Action(base, q)).toBe("report")
+  expect(r25Action({ ...base, reported: true }, q)).toBeNull()
+  expect(r25Action({ ...base, idle: false }, q)).toBeNull()
+  expect(r25Action({ ...base, quietMs: q - 1 }, q)).toBeNull()
 })

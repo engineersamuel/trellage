@@ -1,5 +1,6 @@
 // Worker lifecycle: each worker is a separate agent process with its own home. A Claude model runs in the Claude
 // Agent SDK; any other model in the Copilot SDK (a runtime over TCP). A step may name its own harness.
+import { RepoGates } from "./cos.ts"
 import type { Evaluation } from "./evaluate.ts"
 import { deskShellFeedback, readOnlyViolation, subShellFeedback } from "./readonly.ts"
 import { isolatedLauncher, reapRuntimes, recordRuntime, spawnIsolated } from "./isolate.ts"
@@ -539,6 +540,10 @@ export class Factory {
   readonly codeReviews = new Map<string, CodeReview>()
   /** Independent acceptance evaluations (src/evaluate.ts) by id. */
   readonly evaluations = new Map<string, Evaluation>()
+  /** Chief of Staff merge holds per repo path (rules R15, R17). */
+  readonly repoGates = new RepoGates()
+  /** Why no new worker or conversation may start now (rules R28, R29), or null. */
+  spawnHold: string | null = null
   /** SDLC state per sub-coordinator id: criteria, risk tier, gates. */
   readonly sdlc = new Map<string, Sdlc>()
   /** Sub-coordinator turns by worker id, for the report_up nudge. */

@@ -67,7 +67,25 @@ const FactoryConfigSchema = Schema.Struct({
   /** Chief of Staff rules (src/cos.ts, ADR 0008): each rule on or off, and R1's Jev threshold. */
   cos: Schema.Struct({
     auto_answer_confidence: Probability,
-    rules: Schema.Struct({ r1: Schema.Boolean, r3: Schema.Boolean, r14: Schema.Boolean, r27: Schema.Boolean }),
+    daily_usd_limit: Schema.Number.check(Schema.isGreaterThan(0)),
+    idle_report_minutes: Count,
+    main_ci_poll_seconds: Count,
+    model_error_workers: Count,
+    model_error_window_minutes: Count,
+    rules: Schema.Struct({
+      r1: Schema.Boolean,
+      r3: Schema.Boolean,
+      r14: Schema.Boolean,
+      r15: Schema.Boolean,
+      r17: Schema.Boolean,
+      r21: Schema.Boolean,
+      r24: Schema.Boolean,
+      r25: Schema.Boolean,
+      r26: Schema.Boolean,
+      r27: Schema.Boolean,
+      r28: Schema.Boolean,
+      r29: Schema.Boolean,
+    }),
   }),
   /** Gate workers (gateWorker.ts): when one counts as stuck, how often it is replaced, and the backstop wait. */
   workers: Schema.Struct({

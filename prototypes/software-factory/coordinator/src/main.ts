@@ -19,7 +19,21 @@ import { cardsPrompt, coordinatorPrompt, deskPrompt, globalPrompt, researchPromp
 import { loadPrompt } from "./prompt.ts"
 import { configStore, type Scalar } from "./config.ts"
 import { isProposal, settleProposal } from "./configChanges.ts"
-import { ledgerOf, r14Blocker, r1Pick, relayText, ruleOn } from "./cos.ts"
+import {
+  blockerKey,
+  isModelError,
+  ledgerOf,
+  mainChecks,
+  modelErrorWorkers,
+  openPrBranches,
+  r14Blocker,
+  r1Pick,
+  r25Action,
+  relayText,
+  ruleOn,
+  taskKey,
+  type MergeResult,
+} from "./cos.ts"
 import { inRun, rerunInterruptedReview } from "./gates.ts"
 import { interruptedScopes, resumePrompt, type Interrupted, type Resumed, type Shutdown } from "./resume.ts"
 import { GoalBudgets, pauseApproval, PAUSE_REASON, readAnswer, shouldPause, type Budget } from "./budget.ts"
@@ -184,7 +198,10 @@ const globalScopeTools = (id: string, chat: string | null) => [
         ...(isUnstartedDraft(t) ? { note: DRAFT_NOTE } : {}),
       })),
     folders: () => threads.folders(),
-    start: (folder, task) => startConversation(folder, task, chat),
+    start: (folder, task) => {
+      const held = startHold(folder, task)
+      return held ? Promise.resolve({ error: held }) : startConversation(folder, task, chat)
+    },
     message: async (tid, text) => logFailure(await deliverToThread(tid, `[from the global coordinator] ${text}`)),
     read: async (tid, wait) => {
       const w = factory.workers.get(subId(tid))
@@ -425,15 +442,18 @@ const subScope = (t: Thread): Scope => {
     label: folder.name,
     folderId: folder.id,
     repo: folder.path,
+    merged: (m) => afterMerge(t, folder.path, m),
     report: (r) => {
       // A done report gets a fresh manual test guide (src/testGuide.ts) for the header pin.
       if (r.status === "done") void writeGuide(factory, subScope(t), r.summary)
-      return reportToGeneral(folder.name, threads.get(t.id) ?? t, r).finally(
-        () =>
-          void gradeThread(t.id, r).finally(
-            () => void goalReported(t.id, r).catch((e) => console.error(`goal loop: ${e}`)),
-          ),
-      )
+      return cosOnReport(t.id, r)
+        .finally(() => reportToGeneral(folder.name, threads.get(t.id) ?? t, r))
+        .finally(
+          () =>
+            void gradeThread(t.id, r).finally(
+              () => void goalReported(t.id, r).catch((e) => console.error(`goal loop: ${e}`)),
+            ),
+        )
     },
   }
 }
@@ -1221,6 +1241,220 @@ const sendSupervisionIssues = (issues: Issue[], coordinator: Worker): void => {
         .catch((e) => console.error(`supervisor prompt failed: ${e}`))
   }
 }
+
+// ---------- Chief of Staff rules in the service (ADR 0008) ----------
+
+/** The task a conversation was started with: its first user message, else its title. */
+const firstTask = (t: Thread): string => {
+  const m = threads.messages(t.id).find((x) => x.role === "user")
+  return typeof m?.content === "string" ? m.content : t.title
+}
+
+/** R26, R29, R28: why start_conversation must not start this task now, or null. */
+const startHold = (folder: string, task: string): string | null => {
+  if (factory.spawnHold) return factory.spawnHold
+  if (!ruleOn("r26")) return null
+  const f = threads.folder(folder)
+  const key = taskKey(task)
+  const dup = f
+    ? threads
+        .list()
+        .find(
+          (t) =>
+            t.folderId === f.id && t.worktree && !t.cleanedAt && !t.archivedAt && taskKey(firstTask(t)).includes(key),
+        )
+    : undefined
+  if (!dup) return null
+  cosLog("R26", dup.id, `hold duplicate task in ${f!.name}`, "refused", task.slice(0, 200))
+  return `Rule R26: conversation ${dup.id} ("${dup.title}") in ${f!.name} already has this task. Message it, or ask the human with request_approval before starting a duplicate.`
+}
+
+/** R24: the same blocker twice stops the conversation's workers and asks the human. */
+const lastBlocker = new Map<string, string>()
+/** When each conversation last reported (R25). */
+const lastReportAt = new Map<string, number>()
+const cosOnReport = async (threadId: string, r: Report): Promise<void> => {
+  lastReportAt.set(threadId, Date.now())
+  if (r.status !== "blocked") return void lastBlocker.delete(threadId)
+  const key = blockerKey(r.gaps, r.summary)
+  const repeat = lastBlocker.get(threadId) === key
+  lastBlocker.set(threadId, key)
+  if (!repeat || !ruleOn("r24")) return
+  const t = threads.get(threadId)
+  for (const w of [...factory.workers.values()])
+    if (w.owner === subId(threadId)) await factory.stop(w.id).catch(() => {})
+  const item = factory.approvals.open({
+    threadId,
+    title: `Same blocker twice: ${t?.title.slice(0, 80) ?? threadId}`,
+    summary: `Rule R24 stopped this conversation's workers: it reported the same blocker twice.\n\n${r.summary.slice(0, 1500)}${r.gaps.length ? `\n\nGaps:\n- ${r.gaps.join("\n- ")}` : ""}`,
+    options: ["Retry with my note", "Stop this conversation"],
+    optionDetails: ["The sub-coordinator gets your note and continues", "Nothing more runs here"],
+    allowText: true,
+    context: "Chief of Staff · R24",
+    reportThreadId: threadId,
+    topic: "other",
+  })
+  factory.publish("coordinator", "factory.approval_requested", null, now(), item)
+  cosLog("R24", threadId, "stop loop, ask the human", "done", key.slice(0, 200))
+}
+
+/** R17, R21 after merge_pr merged: hold the repo's merges until main CI is green; tell other PRs to rebase. */
+const afterMerge = (t: Thread, repo: string, m: MergeResult) => {
+  if (ruleOn("r17") && m.sha)
+    factory.repoGates.set(repo, { ...factory.repoGates.get(repo), settling: { pr: m.pr ?? "?", sha: m.sha } })
+  const hold = factory.repoGates.get(repo)
+  if (hold.red?.fixThread === t.id) factory.repoGates.set(repo, { ...hold, red: { ...hold.red, fixThread: null } })
+  if (!ruleOn("r21")) return
+  void openPrBranches(repo).then((branches) => {
+    for (const other of threads.list())
+      if (
+        other.id !== t.id &&
+        other.branch &&
+        branches.includes(other.branch) &&
+        !other.cleanedAt &&
+        threads.folder(other.folderId)?.path === repo
+      ) {
+        cosLog("R21", other.id, `rebase ${other.branch} on main`, "done", `after ${m.pr ?? "a merge"}`)
+        deliverAndLog(
+          other.id,
+          `[Chief of Staff · rule R21] ${m.pr ?? "A PR"} was merged into main. Spawn step=finish to rebase ${other.branch} on origin/main, resolve any conflict (rule R22), run the tests and push with --force-with-lease; then continue.`,
+        )
+      }
+  })
+}
+
+/** R15, R16, R17: per repo, check CI on main. Red: one fix conversation, others hold; green: release the holds. */
+const lastMainPoll = new Map<string, number>()
+/** Repos whose main has had checks: there, no checks yet on a new commit means they have not started. */
+const reposWithChecks = new Set<string>()
+const watchMain = async () => {
+  const every = factoryConfig().cos.main_ci_poll_seconds * 1000
+  const repos = new Set(
+    threads
+      .list()
+      .filter((t) => t.worktree && !t.cleanedAt && !t.archivedAt)
+      .map((t) => threads.folder(t.folderId)?.path)
+      .filter((p): p is string => !!p),
+  )
+  for (const [repo] of factory.repoGates.all()) repos.add(repo)
+  for (const repo of repos) {
+    if (Date.now() - (lastMainPoll.get(repo) ?? 0) < every) continue
+    lastMainPoll.set(repo, Date.now())
+    const main = await mainChecks(repo)
+    if (!main) continue
+    const hold = factory.repoGates.get(repo)
+    if (main.state !== "NONE") reposWithChecks.add(repo)
+    if (main.state === "PENDING" || (main.state === "NONE" && reposWithChecks.has(repo))) continue
+    if (main.state === "SUCCESS" || main.state === "NONE") {
+      if (hold.red)
+        cosLog("R15", hold.red.fixThread, `main green in ${repo}`, "done", `merges resume at ${main.sha.slice(0, 10)}`)
+      factory.repoGates.set(repo, {})
+      // One waiting conversation at a time: its merge starts the next R17 hold.
+      const [next, ...rest] = hold.waiting ?? []
+      if (rest.length) factory.repoGates.set(repo, { waiting: rest, settling: { pr: "(next in line)", sha: main.sha } })
+      if (next) deliverAndLog(next, `[Chief of Staff · rules R15/R17] CI on main is green. Call merge_pr again now.`)
+      continue
+    }
+    // Red: the merge that just landed (R17) is now the cause; keep holding until a fix lands.
+    if (!ruleOn("r15")) continue
+    const fix = hold.red?.fixThread ? threads.get(hold.red.fixThread) : undefined
+    if (fix && !fix.cleanedAt && !fix.archivedAt) {
+      factory.repoGates.set(repo, { red: hold.red! })
+      continue
+    }
+    // R16: no live fix conversation (none yet, or its fix merged and main is still red): start one.
+    const folder = threads.folders().find((f) => f.path === repo)
+    if (!folder || factory.spawnHold) continue
+    const task = `Fix CI on main (Chief of Staff rule R15). The newest commit on main, ${main.sha}, has failing checks. Diagnose with \`gh run list --branch main\` and \`gh run view <id> --log-failed\`, fix the cause in this worktree, verify, ship and merge with merge_pr. Keep the change to the CI failure only.`
+    const info = await startConversation(folder.id, task, deskThread().id)
+    factory.repoGates.set(repo, { red: { fixThread: info.threadId, since: hold.red?.since ?? Date.now() } })
+    cosLog(
+      "R15",
+      info.threadId,
+      `fix red main in ${folder.name}`,
+      "done",
+      `main ${main.sha.slice(0, 10)} checks ${main.state}`,
+    )
+  }
+}
+loop("cos-main-ci", "30 seconds", watchMain)
+
+/** R25: a sub-coordinator idle without a report: done (PR merged) is archived; not done is told to report. */
+const r25Told = new Map<string, number>()
+const idleSweep = () => {
+  if (!ruleOn("r25")) return
+  const quietMs = factoryConfig().cos.idle_report_minutes * 60_000
+  for (const t of threads.list()) {
+    if (!t.worktree || t.archivedAt || t.goalId) continue
+    // Merged and cleaned up: its sub-coordinator is already stopped.
+    if (t.cleanedAt) {
+      archiveDone(t)
+      continue
+    }
+    const w = factory.workers.get(subId(t.id))
+    const repo = threads.folder(t.folderId)?.path
+    if (!w || !repo || (r25Told.get(t.id) ?? 0) >= w.lastActivity) continue
+    const idle =
+      w.status === "idle" && ![...factory.workers.values()].some((x) => x.owner === w.id && x.status === "running")
+    const quiet = Date.now() - w.lastActivity
+    if (!idle || quiet < quietMs) continue
+    r25Told.set(t.id, Date.now())
+    const hasReported = (lastReportAt.get(t.id) ?? 0) >= factory.turn(w.id).start
+    // Checked only now: it runs git and gh.
+    const action = r25Action(
+      { idle, quietMs: quiet, done: fullyMerged(repo, t as Worktree), reported: hasReported },
+      quietMs,
+    )
+    if (action === "archive") {
+      archiveDone(t)
+      void cleanMergedThread(t)
+    } else if (action === "report") {
+      cosLog("R25", t.id, "tell it to report up", "done", `idle ${Math.round(quiet / 60_000)} min, PR not merged`)
+      deliverAndLog(t.id, reportNudge())
+    }
+  }
+}
+const archiveDone = (t: Thread) => {
+  threads.update(t.id, { archivedAt: Date.now() })
+  factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
+  cosLog("R25", t.id, "archive as successful", "done", "PR merged")
+}
+loop("cos-idle", "1 minute", idleSweep)
+
+/** R28, R29: hold new workers and conversations on model errors across workers, or at the daily spend limit. */
+const modelErrors: { worker: string; at: number }[] = []
+factory.feed.subscribe((ev) => {
+  if (ev.type !== "session.error") return
+  const msg = String(fieldsOf(ev.data).message ?? "")
+  if (msg && isModelError(msg)) modelErrors.push({ worker: ev.workerId, at: Date.now() })
+})
+const spendToday = (): number => {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const usd = factoryConfig().costs.usd_per_ai_credit
+  const costs = rollUp(factory.store.usageRows(start.toISOString()), [], factory.store.rates(), usd, DESK_ID)
+  return [...costs.values()].reduce((sum, a) => sum + a.own.usd, 0)
+}
+const holdSweep = () => {
+  const c = factoryConfig().cos
+  const windowMs = c.model_error_window_minutes * 60_000
+  while (modelErrors.length && Date.now() - modelErrors[0]!.at > windowMs) modelErrors.shift()
+  const failing = ruleOn("r28") ? modelErrorWorkers(modelErrors, Date.now(), windowMs) : []
+  const spent = ruleOn("r29") ? spendToday() : 0
+  const hold =
+    failing.length >= c.model_error_workers
+      ? `Rule R28: ${failing.length} workers got auth or rate-limit errors in ${c.model_error_window_minutes} min; no new workers until it clears.`
+      : spent >= c.daily_usd_limit
+        ? `Rule R29: factory spend today is $${spent.toFixed(2)}, at the $${c.daily_usd_limit} daily limit; no new workers or conversations today.`
+        : null
+  if (hold === factory.spawnHold) return
+  const was = factory.spawnHold
+  factory.spawnHold = hold
+  const rule = hold?.startsWith("Rule R28") || was?.startsWith("Rule R28") ? "R28" : "R29"
+  cosLog(rule, null, hold ? "hold new work" : "release hold", "done", hold ?? "cleared")
+  if (hold) cosEvent(null, `[Chief of Staff rule ${rule}] ${hold} Tell the human in one line.`)
+}
+loop("cos-holds", "1 minute", holdSweep)
 
 const supervise = async () => {
   const cfg = factory.settings.supervisor

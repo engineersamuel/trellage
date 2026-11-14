@@ -98,6 +98,15 @@ max_rounds = 2
 [cos]
 # R1: Jev confidence at or above which the Chief of Staff answers a decision for the human.
 auto_answer_confidence = 0.95
+# R29: factory spend today (local time) at which no new worker or conversation starts.
+daily_usd_limit = 1000
+# R25: a sub-coordinator idle this long without reporting is told to report (or archived when done).
+idle_report_minutes = 15
+# R15, R17: how often CI on main is checked per repo.
+main_ci_poll_seconds = 120
+# R28: this many workers with auth or rate-limit errors within the window stop new workers.
+model_error_workers = 3
+model_error_window_minutes = 5
 
 [cos.rules]
 # R1: answer a decision with Jev's pick (never ship, merge, delete, cost, goal or config decisions).
@@ -106,8 +115,24 @@ r1 = true
 r3 = true
 # R14: grant a ship when every gate is done and the independent evaluator passed every criterion.
 r14 = true
+# R15, R16: CI on main is red: start a fix conversation (again until main is green); other merges wait.
+r15 = true
+# R17: one merge at a time per repo; the next waits until CI on main is green.
+r17 = true
+# R21: after a merge, every other open factory PR in that repo is told to rebase on main.
+r21 = true
+# R24: the same blocker reported twice stops the conversation's workers and asks the human.
+r24 = true
+# R25: idle without a report: done (PR merged) is archived, not done is told to report.
+r25 = true
+# R26: start_conversation refuses a task an open conversation in that repo already has.
+r26 = true
 # R27: code relays a decision answer to the reporting conversation, with no coordinator turn.
 r27 = true
+# R28: auth or rate-limit errors in several workers stop new workers until the window passes.
+r28 = true
+# R29: the daily spend limit stops new workers and conversations.
+r29 = true
 
 # Steps, research workflows and review lenses are prompt files: prompts/steps/, prompts/research/, prompts/lenses/.
 
