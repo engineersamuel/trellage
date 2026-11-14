@@ -26,15 +26,23 @@ export const markdown = (src: string): string => {
       .replace(/`([^`]+)`/g, "<code>$1</code>")
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
-      .replace(/(<code>.*?<\/code>)|\[([^\]]+)\]\((https?:[^)\s]+)\)|https?:\/\/[^\s<]*[^\s<.,;:!?)]/g, (m, code, text, href) =>
-        code ? code : `<a href="${href ?? m}" target="_blank" rel="noreferrer">${text ?? m}</a>`,
+      .replace(
+        /(<code>.*?<\/code>)|\[([^\]]+)\]\((https?:[^)\s]+)\)|https?:\/\/[^\s<]*[^\s<.,;:!?)]/g,
+        (m, code, text, href) =>
+          code ? code : `<a href="${href ?? m}" target="_blank" rel="noreferrer">${text ?? m}</a>`,
       )
   const out: string[] = []
   let list: "ul" | "ol" | null = null
   const close = () => list && (out.push(`</${list}>`), (list = null))
   const lines = src.split("\n")
-  const cells = (l: string) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim())
-  const isRule = (l: string | undefined) => !!l && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(l) && l.includes("-")
+  const cells = (l: string) =>
+    l
+      .trim()
+      .replace(/^\||\|$/g, "")
+      .split("|")
+      .map((c) => c.trim())
+  const isRule = (l: string | undefined) =>
+    !!l && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(l) && l.includes("-")
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!
     const fence = line.match(/^\s*(```+|~~~+)/)
@@ -47,17 +55,26 @@ export const markdown = (src: string): string => {
     }
     if (line.includes("|") && isRule(lines[i + 1])) {
       close()
-      const row = (l: string, tag: string) => `<tr>${cells(l).map((c) => `<${tag}>${inline(c)}</${tag}>`).join("")}</tr>`
+      const row = (l: string, tag: string) =>
+        `<tr>${cells(l)
+          .map((c) => `<${tag}>${inline(c)}</${tag}>`)
+          .join("")}</tr>`
       const rows: string[] = []
       for (i += 2; i < lines.length && lines[i]!.includes("|") && lines[i]!.trim(); i++) rows.push(row(lines[i]!, "td"))
       i--
       out.push(`<table><thead>${row(line, "th")}</thead><tbody>${rows.join("")}</tbody></table>`)
       continue
     }
-    const b = line.match(/^\s*[-*]\s+(.*)/), n = line.match(/^\s*\d+[.)]\s+(.*)/), h = line.match(/^#{1,4}\s+(.*)/)
+    const b = line.match(/^\s*[-*]\s+(.*)/),
+      n = line.match(/^\s*\d+[.)]\s+(.*)/),
+      h = line.match(/^#{1,4}\s+(.*)/)
     if (b || n) {
       const want = b ? "ul" : "ol"
-      if (list !== want) (close(), out.push(`<${want}>`), (list = want))
+      if (list !== want) {
+        close()
+        out.push(`<${want}>`)
+        list = want
+      }
       out.push(`<li>${inline((b ?? n)![1]!)}</li>`)
     } else {
       close()
@@ -74,7 +91,8 @@ const shadowLine = (d: Decision): string => {
   if (d.shadow === undefined) return d.status === "pending" ? "Jev is predicting your answer…" : ""
   if (!d.shadow?.pick) return d.shadow === null ? "Jev prediction unavailable." : ""
   const s = d.shadow
-  const verdict = d.status === "pending" ? "" : d.answer === s.pick ? " · matched your answer ✓" : " · you chose differently ✗"
+  const verdict =
+    d.status === "pending" ? "" : d.answer === s.pick ? " · matched your answer ✓" : " · you chose differently ✗"
   return `Shadow mode · Jev would pick “${s.pick}” (${Math.round(s.confidence * 100)}% sure; instructions cover this: ${Math.round(s.covered * 100)}%)${verdict}`
 }
 
@@ -113,18 +131,27 @@ const applyTitle = () => {
 /** Tab icon: a red badge with the waiting count, or the page's own icon when none waits. */
 let baseIcon: string | null = null
 const applyFavicon = () => {
-  let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']")
-  if (!link) (link = el("link")), (link.rel = "icon"), document.head.append(link)
-  baseIcon ??= link.href || ""
-  if (!pending.length) return void (link.href = baseIcon)
+  let favicon = document.querySelector<HTMLLinkElement>("link[rel~='icon']")
+  if (!favicon) {
+    favicon = el("link")
+    favicon.rel = "icon"
+    document.head.append(favicon)
+  }
+  baseIcon ??= favicon.href || ""
+  if (!pending.length) return void (favicon.href = baseIcon)
   const c = el("canvas")
   c.width = c.height = 64
   const g = c.getContext("2d")!
   g.fillStyle = Date.now() - Math.min(...pending.map((d) => d.createdAt)) > URGENT_MIN * 60_000 ? "#ef4444" : "#f59e0b"
-  g.beginPath(), g.arc(32, 32, 30, 0, Math.PI * 2), g.fill()
-  g.fillStyle = "#000", g.font = "bold 40px system-ui", g.textAlign = "center", g.textBaseline = "middle"
+  g.beginPath()
+  g.arc(32, 32, 30, 0, Math.PI * 2)
+  g.fill()
+  g.fillStyle = "#000"
+  g.font = "bold 40px system-ui"
+  g.textAlign = "center"
+  g.textBaseline = "middle"
   g.fillText(pending.length > 9 ? "9+" : String(pending.length), 32, 35)
-  link.href = c.toDataURL()
+  favicon.href = c.toDataURL()
 }
 
 const renderPill = () => {
@@ -137,7 +164,11 @@ const renderPill = () => {
   pill.innerHTML = ""
   const oldest = Math.min(...pending.map((d) => d.createdAt))
   pill.classList.toggle("sfd-urgent", Date.now() - oldest > URGENT_MIN * 60_000)
-  const main = el("button", "sfd-pill-main", `<span class="sfd-dot"></span><b>${pending.length}</b> decision${pending.length > 1 ? "s" : ""} waiting · ${ago(oldest)} <span class="sfd-pill-go">Review →</span>`)
+  const main = el(
+    "button",
+    "sfd-pill-main",
+    `<span class="sfd-dot"></span><b>${pending.length}</b> decision${pending.length > 1 ? "s" : ""} waiting · ${ago(oldest)} <span class="sfd-pill-go">Review →</span>`,
+  )
   main.title = "Open the oldest decision (Alt+D)"
   main.onclick = () => openDecision(first.id)
   const all = el("button", "sfd-pill-bell", "☰")
@@ -159,7 +190,8 @@ const chime = () => {
   try {
     const ac = new AudioContext()
     ;[880, 1320].forEach((f, i) => {
-      const o = ac.createOscillator(), g = ac.createGain()
+      const o = ac.createOscillator(),
+        g = ac.createGain()
       o.frequency.value = f
       g.gain.setValueAtTime(0.0001, ac.currentTime + i * 0.12)
       g.gain.exponentialRampToValueAtTime(0.08, ac.currentTime + i * 0.12 + 0.02)
@@ -185,7 +217,10 @@ const announce = (d: Decision) => {
   setTimeout(() => toast.classList.add("sfd-in"), 10)
   setTimeout(() => toast.remove(), 30_000)
   if ("Notification" in window && Notification.permission === "granted" && document.visibilityState !== "visible") {
-    const n = new Notification(`${label(d)}: ${d.title}`, { body: d.summary.replace(/[*`#]/g, "").slice(0, 160), tag: d.id })
+    const n = new Notification(`${label(d)}: ${d.title}`, {
+      body: d.summary.replace(/[*`#]/g, "").slice(0, 160),
+      tag: d.id,
+    })
     n.onclick = () => (window.focus(), openDecision(d.id), n.close())
   }
 }
@@ -199,9 +234,14 @@ const renderCard = async () => {
   if (INBOX.test(location.hash)) return renderInbox(host)
   const m = location.hash.match(HASH)
   if (!m) return void (host.hidden = true)
-  const res = await runApprovals(fetchOne(m[1]!)).then((d) => ({ ok: true as const, d }), () => ({ ok: false as const }))
+  const res = await runApprovals(fetchOne(m[1]!)).then(
+    (d) => ({ ok: true as const, d }),
+    () => ({ ok: false as const }),
+  )
   // A newer render started while this one waited (hash changed or answered): let it win.
   if (seq !== renderSeq) return
+  // Play the open animation only when the modal was closed; a re-render or the next decision must not flash.
+  host.classList.toggle("sfd-enter", host.hidden)
   host.hidden = false
   host.innerHTML = ""
   const backdrop = el("div", "sfd-backdrop")
@@ -230,8 +270,17 @@ const renderCard = async () => {
     <div class="sfd-shadow"></div>
     <div class="sfd-answer"></div>`
   card.querySelector(".sfd-title")!.textContent = d.title
-  card.querySelector(".sfd-meta")!.textContent = [d.context ?? "coordinator", ago(d.createdAt), d.threadTitle ? `conversation “${d.threadTitle}”` : ""].filter(Boolean).join(" · ")
-  card.querySelector<HTMLButtonElement>(".sfd-x")!.onclick = closeDecision
+  card.querySelector(".sfd-meta")!.textContent = [
+    d.context ?? "coordinator",
+    ago(d.createdAt),
+    d.threadTitle ? `conversation “${d.threadTitle}”` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  // ✕ skips to the next waiting decision (oldest first); after the last one it closes.
+  const skipTo = pending.slice(pending.findIndex((p) => p.id === d.id) + 1)[0]
+  card.querySelector<HTMLButtonElement>(".sfd-x")!.onclick = () =>
+    skipTo && !done ? openDecision(skipTo.id) : closeDecision()
   card.querySelector(".sfd-shadow")!.textContent = shadowLine(d)
   const answerBox = card.querySelector<HTMLElement>(".sfd-answer")!
   if (done) {
@@ -247,17 +296,22 @@ const renderCard = async () => {
   const send = async (choice: string, note: string | null) => {
     card.classList.add("sfd-sending")
     // The store drops the decision from pending at once (the pill updates); the feed event confirms it.
-    const failed = await runApprovals(answer(d.id, choice, note)).then(() => null, (e: { reason?: string }) => e.reason ?? String(e))
-    card.classList.remove("sfd-sending")
-    if (failed) return void (err.textContent = failed)
-    answerBox.innerHTML = `<div class="sfd-done">✓ Sent. The coordinator continues.</div>`
+    const failed = await runApprovals(answer(d.id, choice, note)).then(
+      () => null,
+      (e: { reason?: string }) => e.reason ?? String(e),
+    )
+    if (failed) return void (card.classList.remove("sfd-sending"), (err.textContent = failed))
+    // Open the next decision at once; this card stays dimmed until the next one replaces it.
     const next = pending.find((p) => p.id !== d.id)
-    setTimeout(() => (next ? openDecision(next.id) : closeDecision()), 900)
+    if (next) return openDecision(next.id)
+    card.classList.remove("sfd-sending")
+    answerBox.innerHTML = `<div class="sfd-done">✓ Sent. The coordinator continues.</div>`
+    setTimeout(closeDecision, 900)
   }
   d.options.forEach((o, i) => {
     const b = el("button", `sfd-option${i === 0 ? " sfd-recommended" : ""}`)
     const jev = d.shadow?.pick === o
-    b.innerHTML = `<kbd>${i + 1}</kbd><span class="sfd-opt-label"></span>${i === 0 ? '<em>Recommended</em>' : ""}${jev ? `<span class="sfd-jev">Jev ${Math.round(d.shadow!.confidence * 100)}%</span>` : ""}<small></small>`
+    b.innerHTML = `<kbd>${i + 1}</kbd><span class="sfd-opt-label"></span>${i === 0 ? "<em>Recommended</em>" : ""}${jev ? `<span class="sfd-jev">Jev ${Math.round(d.shadow!.confidence * 100)}%</span>` : ""}<small></small>`
     b.querySelector(".sfd-opt-label")!.textContent = o
     b.querySelector("small")!.textContent = d.optionDetails?.[i] ? `→ ${d.optionDetails[i]}` : ""
     b.onclick = () => send(o, d.allowText ? null : text.value.trim() || null)
@@ -291,7 +345,12 @@ const row = (d: Decision) => {
   r.innerHTML = `<span class="sfd-icon">${icon(d)}</span><span class="sfd-row-main"><b></b><span class="sfd-muted"></span></span><span class="sfd-row-state"></span>`
   r.querySelector("b")!.textContent = d.title
   r.querySelector(".sfd-row-main .sfd-muted")!.textContent = `${d.context ?? "coordinator"} · ${ago(d.createdAt)}`
-  const jev = d.status !== "pending" && d.shadow?.pick ? (d.shadow.pick === d.answer ? " · Jev ✓" : ` · Jev ✗ (${d.shadow.pick})`) : ""
+  const jev =
+    d.status !== "pending" && d.shadow?.pick
+      ? d.shadow.pick === d.answer
+        ? " · Jev ✓"
+        : ` · Jev ✗ (${d.shadow.pick})`
+      : ""
   r.querySelector(".sfd-row-state")!.textContent = d.status === "pending" ? "Waiting" : `✓ ${d.answer}${jev}`
   r.onclick = () => openDecision(d.id)
   return r
@@ -304,11 +363,16 @@ const renderInbox = (host: HTMLElement) => {
   backdrop.onclick = closeDecision
   const card = el("div", "sfd-card sfd-inbox")
   card.innerHTML = `<div class="sfd-head"><span class="sfd-icon sfd-big">☰</span><div class="sfd-headtext"><div class="sfd-kind">Decision inbox</div><h2 class="sfd-title"></h2><div class="sfd-meta">Newest first. Click a row to open it.</div></div><button class="sfd-x" title="Close (Esc)">✕</button></div>`
-  card.querySelector(".sfd-title")!.textContent = pending.length ? `${pending.length} waiting for you` : "Nothing waiting. You are all caught up."
+  card.querySelector(".sfd-title")!.textContent = pending.length
+    ? `${pending.length} waiting for you`
+    : "Nothing waiting. You are all caught up."
   card.querySelector<HTMLButtonElement>(".sfd-x")!.onclick = closeDecision
   const list = el("div", "sfd-rows")
   for (const d of [...pending].reverse()) list.append(row(d))
-  const done = recent.filter((d) => d.status !== "pending").slice(-15).reverse()
+  const done = recent
+    .filter((d) => d.status !== "pending")
+    .slice(-15)
+    .reverse()
   if (done.length) list.append(el("div", "sfd-kind sfd-rows-head", "Recently answered"))
   for (const d of done) list.append(row(d))
   card.append(list)
@@ -345,9 +409,18 @@ export const startDecisionCenter = (): void => {
   new MutationObserver(applyTitle).observe(document.head, { subtree: true, childList: true, characterData: true })
   window.addEventListener("hashchange", () => void renderCard())
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && (HASH.test(location.hash) || INBOX.test(location.hash))) closeDecision()
+    // Esc does what ✕ does: skip to the next waiting decision, or close.
+    if (e.key === "Escape" && (HASH.test(location.hash) || INBOX.test(location.hash))) {
+      const x = root.querySelector<HTMLButtonElement>(".sfd-modal .sfd-x")
+      if (x) x.click()
+      else closeDecision()
+    }
     // Alt+D: jump to the oldest waiting decision, or the inbox when none waits.
-    if (e.altKey && e.code === "KeyD") (e.preventDefault(), pending[0] ? openDecision(pending[0].id) : (location.hash = "decisions"))
+    if (e.altKey && e.code === "KeyD") {
+      e.preventDefault()
+      if (pending[0]) openDecision(pending[0].id)
+      else location.hash = "decisions"
+    }
   })
   setInterval(renderPill, 30_000)
   subscribeApprovals(onApprovals)

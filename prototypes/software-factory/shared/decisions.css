@@ -27,10 +27,12 @@
 .sfd-icon.sfd-big { width: 44px; height: 44px; font-size: 20px; }
 
 .sfd-modal { position: fixed; inset: 0; z-index: 970; display: grid; place-items: center; }
-.sfd-backdrop { position: absolute; inset: 0; background: #000b; backdrop-filter: blur(4px); animation: sfd-fade .2s ease-out; }
+.sfd-backdrop { position: absolute; inset: 0; background: #000b; backdrop-filter: blur(4px); }
+.sfd-modal.sfd-enter .sfd-backdrop { animation: sfd-fade .2s ease-out; }
 .sfd-card { position: relative; width: min(720px, 94vw); max-height: 88vh; overflow: auto; padding: 22px 24px; border-radius: 16px; outline: none;
   background: linear-gradient(180deg, color-mix(in srgb, var(--sfd-approval) 10%, var(--sf-surface, #171717)), var(--sf-surface, #171717) 120px);
-  border: 1px solid color-mix(in srgb, var(--sfd-approval) 50%, var(--sf-border, #262626)); box-shadow: 0 30px 80px #000c; animation: sfd-pop .25s cubic-bezier(.2,.9,.3,1.2); }
+  border: 1px solid color-mix(in srgb, var(--sfd-approval) 50%, var(--sf-border, #262626)); box-shadow: 0 30px 80px #000c; }
+.sfd-modal.sfd-enter .sfd-card { animation: sfd-pop .25s cubic-bezier(.2,.9,.3,1.2); }
 .sfd-card.sfd-question { --sfd-approval: var(--sfd-question); }
 .sfd-card.sfd-sending { opacity: .6; pointer-events: none; }
 @keyframes sfd-fade { from { opacity: 0; } }
