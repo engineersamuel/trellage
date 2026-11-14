@@ -38,6 +38,7 @@ import {
   startFinalSecurity,
 } from "./gates.ts"
 import { addLessons, artifact, prBody, unprovenCriteria } from "./sdlc.ts"
+import { fetchOrigin, upstreamState } from "./folders.ts"
 import { decideNext, selectableSteps, SkillPreflightError } from "./steps.ts"
 import { homeFor, readHome } from "./home.ts"
 import { fanoutCatalog, routeFanout, type FanoutSelection } from "./workflows.ts"
@@ -64,6 +65,7 @@ export type Scope = {
   threadId: string | null
   workdir?: string
   /** Commit the worktree branched from; the security review diffs against it. */ base?: string
+  /** Branch the PR targets, when it is not origin's default branch. */ prBase?: string
   /** Default decision context, e.g. the repo folder name. */ label?: string
   /** Repo folder id; its lessons file is read at start and appended by report_up. */ folderId?: string
   /** The repo's registered main checkout; merge_pr pulls it after a merge. */ repo?: string
@@ -351,6 +353,16 @@ const sdlcPlanTool = (f: Factory, scope: Scope) =>
     },
   })
 
+/**
+ * The upstream branch against the conversation's base. A branch is rebased once, at ship time, and only when its
+ * changes conflict with upstream: an upstream that merely moved does not need a rebase (GitHub merges it).
+ */
+const upstreamOf = (scope: Scope, fetch: boolean) => {
+  if (!scope.workdir || !scope.base) return null
+  if (fetch) fetchOrigin(scope.workdir)
+  return upstreamState(scope.workdir, scope.base, scope.prBase)
+}
+
 /** sdlc_status: tier, gates, what still blocks shipping, and the PR body to use. */
 const sdlcStatusTool = (f: Factory, scope: Scope) =>
   defineTool("sdlc_status", {
@@ -385,6 +397,8 @@ const sdlcStatusTool = (f: Factory, scope: Scope) =>
         gates: s?.gates ?? [],
         criteria: s?.criteria ?? [],
         scopeWarning: s?.scopeWarning ?? null,
+        base: scope.base ?? null,
+        upstream: upstreamOf(scope, false),
         blockers,
         readyToShip: blockers.length === 0,
         ...(prFile ? { prBody: prFile } : {}),
@@ -759,7 +773,15 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
       if (evaluation) return json({ error: `Not ready to ship yet: ${evaluation}` })
       const security = shipBranch !== null ? startFinalSecurity(f, scope) : null
       if (security) return json({ error: `Not ready to ship yet: ${security}` })
-      const blockers = shipBranch !== null ? sdlcShipBlockers(f, scope) : []
+      const up = shipBranch !== null ? upstreamOf(scope, true) : null
+      const blockers = [
+        ...(shipBranch !== null ? sdlcShipBlockers(f, scope) : []),
+        ...(up?.conflicts
+          ? [
+              `the branch conflicts with upstream ${up.upstream} (${up.behind} commits past the base): rebase onto exactly ${up.upstream} once, resolve the conflicts, verify, then ask again`,
+            ]
+          : []),
+      ]
       if (blockers.length)
         return json({
           error: `Not ready to ship:\n- ${blockers.join("\n- ")}\nFix these (sdlc_status shows the gates), then ask again.`,

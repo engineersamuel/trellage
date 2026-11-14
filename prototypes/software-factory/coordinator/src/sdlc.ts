@@ -156,6 +156,53 @@ export const diffFiles = (workdir: string, base: string): DiffFile[] => {
 
 // ---------- Gates ----------
 
+/** The added and removed lines of base..head per non-test file, as "file\0+text" keys with counts. */
+const changedLines = (workdir: string, base: string, head: string): Map<string, number> => {
+  const out = execFileSync("git", ["-C", workdir, "diff", "--no-color", "--no-ext-diff", "-U0", base, head], {
+    encoding: "utf8",
+    maxBuffer: 64 << 20,
+  })
+  const lines = new Map<string, number>()
+  let file = ""
+  for (const l of out.split("\n")) {
+    if (l.startsWith("diff --git ")) file = l.slice(l.lastIndexOf(" b/") + 3)
+    else if (l.startsWith("+++ ") || l.startsWith("--- ")) continue
+    else if ((l.startsWith("+") || l.startsWith("-")) && !isTestPath(file)) {
+      const k = `${file}\0${l}`
+      lines.set(k, (lines.get(k) ?? 0) + 1)
+    }
+  }
+  return lines
+}
+
+/**
+ * After a rebase: the non-test lines of the branch's own diff that changed from the reviewed version
+ * (oldBase..oldHead) to the new one (newBase..HEAD). 0 for a clean rebase; conflict resolutions count.
+ * Null when git cannot compare them (e.g. the old commit is gone).
+ */
+export const rebaseChangedLines = (workdir: string, oldHead: string, newBase: string): number | null => {
+  try {
+    const oldBase = execFileSync("git", ["-C", workdir, "merge-base", oldHead, newBase], { encoding: "utf8" }).trim()
+    const a = changedLines(workdir, oldBase, oldHead)
+    const b = changedLines(workdir, newBase, "HEAD")
+    let n = 0
+    for (const k of new Set([...a.keys(), ...b.keys()])) n += Math.abs((a.get(k) ?? 0) - (b.get(k) ?? 0))
+    return n
+  } catch {
+    return null
+  }
+}
+
+/** True when `commit` is in HEAD's history (false after a rebase rewrote it). */
+export const inHistory = (workdir: string, commit: string): boolean => {
+  try {
+    execFileSync("git", ["-C", workdir, "merge-base", "--is-ancestor", commit, "HEAD"], { stdio: "ignore" })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export type GateId = "design" | "testFirst" | "codeReview" | "supplyChain" | "docs" | "postMerge"
 export type Phase = "plan" | "diff"
 type GateDef = { id: GateId; phase: Phase; threshold: number; question: string }
@@ -285,6 +332,11 @@ export type Sdlc = {
   /** Time the last implement worker finished, and the last verify worker after it. */
   implementDoneAt: number | null
   verifyDoneAt: number | null
+  /** Time the branch's own code last changed: a clean rebase (no own line changed) leaves it, so the security review
+   *  and the evaluation do not run again. Verify still runs after every implement. */
+  codeChangedAt?: number | null
+  /** HEAD after the last implement; a rebase is detected when it leaves HEAD's history. */
+  implementHead?: string | null
   startedAt: number
   /** Metrics of the delivery. */
   workers: number

@@ -17,6 +17,8 @@ import {
   gateDefs,
   gate,
   implementAddendum,
+  inHistory,
+  rebaseChangedLines,
   rereviewLines,
   maxReviewRounds,
   isTestPath,
@@ -203,6 +205,9 @@ const growthNeeded = async (state: Record<string, unknown>): Promise<number | nu
 export const afterImplement = (f: Factory, scope: Scope, implementWorkerId: string, scopeAuth: Auth | undefined) =>
   inScopeRun(f, scope, () => afterImplementIn(f, scope, implementWorkerId, scopeAuth))
 
+/** When the branch's own code last changed; a clean rebase does not count (security and evaluation keep their result). */
+const codeChangedAt = (s: Sdlc): number => s.codeChangedAt ?? s.implementDoneAt ?? 0
+
 /** A gate error from a coordinator restart or a cost-limit pause: the work did not fail, it was stopped. */
 const interrupted = (detail: string | undefined) =>
   !!detail && (detail === "coordinator restarted" || detail.includes(PAUSE_REASON))
@@ -231,9 +236,25 @@ const afterImplementIn = async (
   const implementer = implementWorkerId ? f.workers.get(implementWorkerId) : undefined
   const s0 = { ...s0prev, implementerModel: implementer?.model ?? s0prev.implementerModel ?? null }
   const c = pinnedConfig(f.root, s0.configId)
-  publish(f, implementWorkerId ? { ...s0, implementDoneAt: Date.now() } : s0)
   const workdir = scope.workdir
   const base = scope.base
+  if (implementWorkerId) {
+    const at = Date.now()
+    const nowHead = workdir ? head(workdir) : null
+    // A clean rebase moves HEAD off the last implement's commit but changes none of the branch's own lines.
+    const clean =
+      !!workdir &&
+      !!base &&
+      !!s0.implementHead &&
+      !inHistory(workdir, s0.implementHead) &&
+      rebaseChangedLines(workdir, s0.implementHead, base) === 0
+    publish(f, {
+      ...s0,
+      implementDoneAt: at,
+      implementHead: nowHead,
+      codeChangedAt: clean ? (s0.codeChangedAt ?? s0.implementDoneAt) : at,
+    })
+  } else publish(f, s0)
   if (!workdir || !base) return
   const files = diffFiles(workdir, base)
   const risk = classify(files)
@@ -292,13 +313,19 @@ const afterImplementIn = async (
     )
   }
   const cr = gate(f.sdlc.get(scope.id)!, "codeReview")
-  const since = s0.reviewedCommit ?? base
+  // A rebase rewrote the reviewed commit: only the branch's own lines that changed (conflict resolutions) count, and a
+  // re-review reads the whole branch diff on the new base, not main's changes since the old commit.
+  const rebased = s0.reviewedCommit !== null && !inHistory(workdir, s0.reviewedCommit)
+  const rebaseLines = rebased ? rebaseChangedLines(workdir, s0.reviewedCommit!, base) : null
+  const since = rebased ? base : (s0.reviewedCommit ?? base)
   // Re-reviews count only non-test lines: tests added for review findings do not earn another round.
-  const newLines = s0.reviewedCommit
-    ? diffFiles(workdir, s0.reviewedCommit)
-        .filter((x) => !isTestPath(x.path))
-        .reduce((n, x) => n + x.added + x.removed, 0)
-    : risk.lines
+  const newLines = !s0.reviewedCommit
+    ? risk.lines
+    : rebased
+      ? (rebaseLines ?? risk.lines)
+      : diffFiles(workdir, s0.reviewedCommit)
+          .filter((x) => !isTestPath(x.path))
+          .reduce((n, x) => n + x.added + x.removed, 0)
   const rounds = s0.reviewRounds ?? 0
   const rereview = s0.reviewedCommit !== null
   if (cr?.chosen && rounds < maxReviewRounds(c) && (!rereview || newLines >= rereviewLines(c))) {
@@ -340,7 +367,9 @@ const afterImplementIn = async (
       "done",
       rounds >= maxReviewRounds(c)
         ? `review round limit (${maxReviewRounds(c)}) reached; verify only`
-        : `${newLines} non-test lines since the last review (< ${rereviewLines(c)}); verify only`,
+        : rebased
+          ? `rebase changed ${newLines} non-test lines of the branch's own diff (< ${rereviewLines(c)}); verify only`
+          : `${newLines} non-test lines since the last review (< ${rereviewLines(c)}); verify only`,
     )
   await Promise.all(jobs)
 }
@@ -368,7 +397,7 @@ const startFinalSecurityIn = (f: Factory, scope: Scope): string | null => {
   const last = [...f.securityReviews.values()].filter((r) => r.scopeId === scope.id).at(-1)
   if (last && last.status !== "done" && last.status !== "failed")
     return `final security review ${last.id} is ${last.status}; wait for it, then ask to ship again.`
-  if (last?.status === "done" && last.at >= (s.implementDoneAt ?? 0)) return null
+  if (last?.status === "done" && last.at >= codeChangedAt(s)) return null
   void securityReview(
     f,
     scope,
@@ -397,7 +426,7 @@ const startEvaluationIn = (f: Factory, scope: Scope): string | null => {
     return `the independent evaluation ${pending.id} is ${pending.status} (round ${pending.round}); wait with next_step, then ask to ship again.`
   const last = lastEvaluation(f.evaluations.values(), scope.id)
   const restarted = last?.status === "failed" && interrupted(last.error)
-  if (last && !restarted && last.at >= (s.implementDoneAt ?? 0)) return null
+  if (last && !restarted && last.at >= codeChangedAt(s)) return null
   void evaluate(f, scope, s, c)
   return loadPrompt("evaluate-started")
 }
@@ -427,7 +456,7 @@ export const sdlcShipBlockers = (f: Factory, scope: Scope): string[] => {
   if (!scope.workdir) return []
   const s = f.sdlc.get(scope.id)
   const securityDone = [...f.securityReviews.values()].some(
-    (r) => r.scopeId === scope.id && r.status === "done" && r.at >= (s?.implementDoneAt ?? 0),
+    (r) => r.scopeId === scope.id && r.status === "done" && r.at >= (s ? codeChangedAt(s) : 0),
   )
   const crDone =
     codeReviewDoneSince(f.codeReviews.values(), scope.id, 0) ||

@@ -7,7 +7,11 @@ import path from "node:path"
 export type Folder = { id: string; name: string; path: string }
 export const GENERAL: Folder = { id: "general", name: "General", path: "" }
 
-const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
+const git = (cwd: string, ...a: string[]) =>
+  execFileSync("git", ["-C", cwd, ...a], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim()
 
 /** Main checkout of the repo that contains `p`, so a repo and its worktrees map to one folder. */
 export const repoRoot = (p: string): string => {
@@ -23,16 +27,25 @@ export const addFolder = (folders: Folder[], p: string): Folder => {
   const root = repoRoot(p)
   const found = folders.find((f) => f.path === root)
   if (found) return found
-  const base = path.basename(root).toLowerCase().replace(/[^a-z0-9-]+/g, "-")
+  const base = path
+    .basename(root)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
   let id = base
   for (let n = 2; id === GENERAL.id || folders.some((f) => f.id === id); n++) id = `${base}-${n}`
   return { id, name: path.basename(root), path: root }
 }
 
 /** Default home of conversation worktrees: ~/.trellage/worktrees/<folder>/<id8>. */
-export const worktreeRoot = (env = process.env): string => env.SF_WORKTREES ?? path.join(homedir(), ".trellage", "worktrees")
+export const worktreeRoot = (env = process.env): string =>
+  env.SF_WORKTREES ?? path.join(homedir(), ".trellage", "worktrees")
 
-export type Worktree = { worktree: string; branch: string; base: string; /** Branch the PR targets: the `baseRef` when it names a branch. */ prBase?: string }
+export type Worktree = {
+  worktree: string
+  branch: string
+  base: string
+  /** Branch the PR targets: the `baseRef` when it names a branch. */ prBase?: string
+}
 
 const branchExists = (repo: string, ref: string): boolean => {
   try {
@@ -52,11 +65,12 @@ export const createWorktree = (repo: string, dir: string, branch: string, baseRe
     } catch {
       throw new Error(`base '${baseRef}' is not a branch or commit in ${repo}`)
     }
-  } else try {
-    base = git(repo, "rev-parse", "--verify", "-q", "refs/remotes/origin/HEAD")
-  } catch {
-    base = git(repo, "rev-parse", "HEAD")
-  }
+  } else
+    try {
+      base = git(repo, "rev-parse", "--verify", "-q", "refs/remotes/origin/HEAD")
+    } catch {
+      base = git(repo, "rev-parse", "HEAD")
+    }
   git(repo, "worktree", "add", "-q", "-b", branch, dir, base)
   const prBase = baseRef && branchExists(repo, baseRef) ? baseRef.replace(/^origin\//, "") : undefined
   return { worktree: dir, branch, base, ...(prBase ? { prBase } : {}) }
@@ -70,10 +84,49 @@ const tryGit = (cwd: string, ...a: string[]): string | null => {
   }
 }
 
+/** The upstream branch tip the PR targets: origin/<prBase> (or local <prBase>), else origin's default branch. */
+const upstreamTip = (workdir: string, prBase?: string): string | null =>
+  prBase
+    ? (tryGit(workdir, "rev-parse", "--verify", "-q", `refs/remotes/origin/${prBase}^{commit}`) ??
+      tryGit(workdir, "rev-parse", "--verify", "-q", `refs/heads/${prBase}^{commit}`))
+    : tryGit(workdir, "rev-parse", "--verify", "-q", "refs/remotes/origin/HEAD^{commit}")
+
+/**
+ * The branch's base now. After a rebase it is the merge-base of HEAD and the upstream branch; the base recorded at
+ * worktree creation is kept when the branch was not rebased onto a newer upstream commit.
+ */
+export const currentBase = (workdir: string, recorded: string, prBase?: string): string => {
+  const up = upstreamTip(workdir, prBase)
+  const mb = up && tryGit(workdir, "merge-base", "HEAD", up)
+  if (!mb || mb === recorded || mb === tryGit(workdir, "rev-parse", "HEAD")) return recorded
+  return tryGit(workdir, "merge-base", "--is-ancestor", recorded, mb) !== null ? mb : recorded
+}
+
+/** Fetch origin quietly; false when it fails (offline, no remote). */
+export const fetchOrigin = (workdir: string): boolean => tryGit(workdir, "fetch", "-q", "origin") !== null
+
+/** How far the upstream branch moved past the base, and whether rebasing onto it would conflict. Null when unknown. */
+export const upstreamState = (
+  workdir: string,
+  base: string,
+  prBase?: string,
+): { upstream: string; behind: number; conflicts: boolean } | null => {
+  const up = upstreamTip(workdir, prBase)
+  if (!up) return null
+  const behind = Number(tryGit(workdir, "rev-list", "--count", `${base}..${up}`) ?? "0")
+  // merge-tree exits 1 on conflicts (tryGit -> null); it writes objects only, never the worktree or index.
+  const conflicts = behind > 0 && tryGit(workdir, "merge-tree", "--write-tree", "HEAD", up) === null
+  return { upstream: up, behind, conflicts }
+}
+
 /** Merged PR head for a branch, from the GitHub CLI (catches squash and rebase merges). Null when unknown. */
 const mergedPrHead = (repo: string, branch: string): string | null => {
   try {
-    const out = execFileSync("gh", ["pr", "list", "--head", branch, "--state", "merged", "--json", "headRefOid", "--limit", "1"], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 20_000 })
+    const out = execFileSync(
+      "gh",
+      ["pr", "list", "--head", branch, "--state", "merged", "--json", "headRefOid", "--limit", "1"],
+      { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 20_000 },
+    )
     return (JSON.parse(out) as { headRefOid: string }[])[0]?.headRefOid ?? null
   } catch {
     return null

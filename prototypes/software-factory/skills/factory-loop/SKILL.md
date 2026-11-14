@@ -34,6 +34,10 @@ If it does not, a criterion is missing: tell the user which one.
 
 - Never edit the target repo, the factory's worktrees or the goal state by hand.
 - Never merge, close, or delete a PR, branch, or worktree. A human merges.
+- When main moves, do not tell a conversation to rebase. Its finish worker runs `git pull --rebase` once at ship
+  time; the factory asks for an earlier rebase only when the branch conflicts. If a PR you opened shows a conflict on
+  GitHub, send one message with the exact upstream SHA, and send no other rebase message until that one is done.
+- Do not ask for extra review or verify workers after a rebase: the factory decides the re-review.
 - Never answer a `budget` or `goal` decision, or any decision the policy leaves to the human.
 
 ## Report
