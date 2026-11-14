@@ -201,7 +201,7 @@ export class EventStore {
   }
 
   /** Token and nano-AIU sums of every `assistant.usage` call, by agent, model and whether Copilot reported the AIC. */
-  usageRows(): UsageRow[] {
+  usageRows(sinceIso?: string): UsageRow[] {
     const rows = this.db
       .query(
         `SELECT worker, coalesce(json_extract(data, '$.model'), 'unknown') AS model,
@@ -209,9 +209,9 @@ export class EventStore {
            total(json_extract(data, '$.inputTokens')) AS inputTokens, total(json_extract(data, '$.outputTokens')) AS outputTokens,
            total(json_extract(data, '$.cacheReadTokens')) AS cacheReadTokens, total(json_extract(data, '$.cacheWriteTokens')) AS cacheWriteTokens,
            total(json_extract(data, '$.copilotUsage.totalNanoAiu')) AS nanoAiu
-         FROM events WHERE type = 'assistant.usage' GROUP BY 1, 2, 3`,
+         FROM events WHERE type = 'assistant.usage'${sinceIso ? " AND ts >= ?" : ""} GROUP BY 1, 2, 3`,
       )
-      .all() as (Omit<UsageRow, "reported"> & { reported: number })[]
+      .all(...(sinceIso ? [sinceIso] : [])) as (Omit<UsageRow, "reported"> & { reported: number })[]
     return rows.map((r) => ({ ...r, reported: r.reported === 1 }))
   }
 

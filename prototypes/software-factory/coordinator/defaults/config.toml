@@ -94,6 +94,57 @@ contract_rounds = 2
 # Evaluations per ship; a fix and a verify worker run between two of them when a criterion fails.
 max_rounds = 2
 
+# Chief of Staff rules (ADR 0008). Every rule acts live; set one to false to stop it.
+[cos]
+# R1: Jev confidence at or above which the Chief of Staff answers a decision for the human.
+auto_answer_confidence = 0.95
+# R29: factory spend today (local time) at which no new worker or conversation starts.
+daily_usd_limit = 1000
+# R25: a sub-coordinator idle this long without reporting is told to report (or archived when done).
+idle_report_minutes = 15
+# R15, R17: how often CI on main is checked per repo.
+main_ci_poll_seconds = 120
+# R28: this many workers with auth or rate-limit errors within the window stop new workers.
+model_error_workers = 3
+model_error_window_minutes = 5
+# R12: tell the human once when a goal's spend reaches this share of its limit (at 100% the goal pauses).
+cost_alert_share = 0.8
+# Chief of Staff event sessions that run at the same time; more wait.
+max_parallel_events = 4
+
+[cos.rules]
+# R1: answer a decision with Jev's pick (never ship, merge, delete, cost, goal or config decisions).
+r1 = true
+# R3: merge_pr squash-merges a green, ship-granted factory PR, then pulls the repo's main checkout.
+r3 = true
+# R6: a stalled worker is nudged once, then stopped and reported to its owner.
+r6 = true
+# R7: 3 failed tool calls in a row go to the owner; a second time to the human.
+r7 = true
+# R8: a worker Jev scores off-track (< 0.30) twice in a row is reported to its owner; it keeps running.
+# Gate, verify and review workers, and workers inside a tool call, are not scored.
+r8 = true
+# R12: a goal at 80% of its cost limit is reported to the human (100% pauses it, as before).
+r12 = true
+# R14: grant a ship when every gate is done and the independent evaluator passed every criterion.
+r14 = true
+# R15, R16: CI on main is red: start a fix conversation (again until main is green); other merges wait.
+r15 = true
+# R17: one merge at a time per repo; the next waits until CI on main is green.
+r17 = true
+# R24: the same blocker reported twice stops the conversation's workers and asks the human.
+r24 = true
+# R25: idle without a report: done (PR merged) is archived, not done is told to report.
+r25 = true
+# R26: start_conversation refuses a task an open conversation in that repo already has.
+r26 = true
+# R27: code relays a decision answer to the reporting conversation, with no coordinator turn.
+r27 = true
+# R28: auth or rate-limit errors in several workers stop new workers until the window passes.
+r28 = true
+# R29: the daily spend limit stops new workers and conversations.
+r29 = true
+
 # Steps, research workflows and review lenses are prompt files: prompts/steps/, prompts/research/, prompts/lenses/.
 
 # Gate workers (code review, security review, evaluator, and their fix and verify workers). There is no short time

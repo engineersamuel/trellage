@@ -1,5 +1,6 @@
 // Worker lifecycle: each worker is a separate agent process with its own home. A Claude model runs in the Claude
 // Agent SDK; any other model in the Copilot SDK (a runtime over TCP). A step may name its own harness.
+import { RepoGates } from "./cos.ts"
 import type { Evaluation } from "./evaluate.ts"
 import { deskShellFeedback, readOnlyViolation, subShellFeedback } from "./readonly.ts"
 import { isolatedLauncher, reapRuntimes, recordRuntime, spawnIsolated } from "./isolate.ts"
@@ -539,6 +540,10 @@ export class Factory {
   readonly codeReviews = new Map<string, CodeReview>()
   /** Independent acceptance evaluations (src/evaluate.ts) by id. */
   readonly evaluations = new Map<string, Evaluation>()
+  /** Chief of Staff merge holds per repo path (rules R15, R17). */
+  readonly repoGates: RepoGates
+  /** Why no new worker or conversation may start now (rules R28, R29), or null. */
+  spawnHold: string | null = null
   /** SDLC state per sub-coordinator id: criteria, risk tier, gates. */
   readonly sdlc = new Map<string, Sdlc>()
   /** Sub-coordinator turns by worker id, for the report_up nudge. */
@@ -558,6 +563,7 @@ export class Factory {
     mkdirSync(this.root, { recursive: true })
     this.store = new EventStore(path.join(this.root, "events.db"))
     this.store.importAll(this.root)
+    this.repoGates = new RepoGates(this.root)
     this.seq = Math.max(Date.now() * 1000, this.store.maxSeq() + 1)
     this.defaultAuth = env.SF_AUTH === "proxy" ? "proxy" : "native"
     this.proxyUrl = env.SF_PROXY_URL ?? "http://localhost:8080/v1"
@@ -1388,7 +1394,7 @@ export class Factory {
       return {
         kind: "reject",
         feedback:
-          "Sub-coordinators never merge, push, or delete branches or worktrees. To push and open a PR: request_approval with ship=true, then spawn_worker step=finish. Merging and deleting stay with the human.",
+          "Sub-coordinators never merge, push, or delete branches or worktrees. To push and open a PR: request_approval with ship=true, then spawn_worker step=finish. To merge a green PR: merge_pr. Deleting stays with the human.",
       }
     // Coordinate, do not do: no file writes, and only read-only shell commands.
     if (request.kind === "write") return { kind: "reject", feedback: subShellFeedback() }

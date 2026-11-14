@@ -1,5 +1,5 @@
 // Prototype 3 — Inbox: pure model. No DOM, no HTTP.
-// A "conversation" is a root of the tree: the Factory desk, a General chat, or a repo conversation no General chat started.
+// The Chief of Staff (the desk node) is the root over every repo conversation (ADR 0008); archived General chats are their own roots.
 // Each conversation's tree: chat → sub-coordinators (repo conversations) → workers; drafts and direct workers hang off the chat.
 // Below a worker: the gate its finish started (code review, security review; its workers inside) and the subagents
 // it started inside its own harness. A gate with no starting worker (final security review, evaluation) sits under its
@@ -60,7 +60,13 @@ export const build = (
   const byAgent = new Map(agents.map((a) => [a.id, a]))
   const pending = decisions.filter((d) => d.status === "pending")
   const add = (n: Omit<Node, "children" | "parent" | "pending" | "agg"> & { parent?: string | null }) => {
-    nodes.set(n.id, { parent: null, ...n, children: [], pending: [], agg: { running: 0, error: 0, needs: 0, desc: 0 } })
+    nodes.set(n.id, {
+      parent: null,
+      ...n,
+      children: [],
+      pending: [],
+      agg: { running: 0, error: 0, needs: 0, desc: 0 },
+    })
   }
   const shown = threads.filter((t) => !!t.archivedAt === archived || t.desk)
   for (const t of shown) {
@@ -70,7 +76,7 @@ export const build = (
     add({
       id,
       kind,
-      title: t.desk ? "Factory desk" : isDraft(t) ? draftPrompt(t) : t.title,
+      title: t.desk ? "Chief of Staff" : isDraft(t) ? draftPrompt(t) : t.title,
       status: kind === "draft" ? "draft" : agentStatus(a),
       agent: a,
       thread: t,
@@ -84,7 +90,12 @@ export const build = (
   const gates = new Map<string, { title: string; after: string | null; members: Node[] }>()
   for (const n of nodes.values()) {
     const g = n.kind === "worker" ? n.agent?.group : null
-    if (g) gates.set(g.id, { title: g.title, after: g.after, members: [...(gates.get(g.id)?.members ?? []), n] })
+    if (g)
+      gates.set(g.id, {
+        title: g.title,
+        after: g.after,
+        members: [...(gates.get(g.id)?.members ?? []), n],
+      })
   }
   for (const [id, g] of gates) {
     if (nodes.has(id)) continue
@@ -98,7 +109,7 @@ export const build = (
           : "idle"
     add({ id, kind: "gate", title: g.title, status, at: Math.min(...g.members.map(bornAt)) })
   }
-  // Parent: a thread's parentThreadId, else the agent's owner. The desk owns nothing it did not start itself.
+  // Parent: a thread's parentThreadId, else the agent's owner. The Chief of Staff oversees every repo conversation and draft.
   for (const n of nodes.values()) {
     if (n.kind === "desk") continue
     const pt = n.thread?.parentThreadId ? threads.find((t) => t.id === n.thread!.parentThreadId) : undefined
@@ -115,7 +126,11 @@ export const build = (
             : (gateOwner ?? "coordinator")
           : n.kind === "worker"
             ? (n.agent?.owner ?? "coordinator")
-            : null
+            : n.kind === "sub" || n.kind === "draft"
+              ? "coordinator"
+              : null
+    // A parent chat that is not shown (archived) leaves the conversation under the Chief of Staff.
+    if (owner && !nodes.has(owner) && (n.kind === "sub" || n.kind === "draft")) owner = "coordinator"
     // A live worker or gate whose owner is gone (archived chat, stopped run) still shows, under the desk.
     // A stopped one belongs to its conversation's record only: it shows when that conversation does.
     if ((n.kind === "worker" || n.kind === "gate") && (!owner || !nodes.has(owner))) {
@@ -177,22 +192,50 @@ export const build = (
   roots.forEach((r) => roll(nodes.get(r)!))
   return { nodes, roots }
 }
-const ORDER: Record<Kind, number> = { desk: 0, chat: 1, sub: 2, draft: 3, worker: 4, gate: 4, subagent: 5 }
+const ORDER: Record<Kind, number> = {
+  desk: 0,
+  chat: 1,
+  sub: 2,
+  draft: 3,
+  worker: 4,
+  gate: 4,
+  subagent: 5,
+}
 const rank = (n: Node) => ORDER[n.kind]
 /** When a node was spawned: its agent's start, else its thread's creation; 0 when unknown. */
 export const bornAt = (n: Node): number => n.agent?.startedAt ?? n.thread?.createdAt ?? n.at ?? 0
 
+/** The conversation a node belongs to: its tree's root, or the conversation right under the Chief of Staff. */
 export const rootOf = (m: Model, id: string): string => {
   let n = m.nodes.get(id)
-  while (n?.parent) n = m.nodes.get(n.parent)
+  while (n?.parent && m.nodes.get(n.parent)?.kind !== "desk") n = m.nodes.get(n.parent)
+  if (n?.parent && n.kind === "worker") return n.parent
   return n?.id ?? id
 }
+/** Ancestors inside the node's conversation (the Chief of Staff above it is left out). */
 export const ancestors = (m: Model, id: string): Node[] => {
   const out: Node[] = []
-  for (let n = m.nodes.get(m.nodes.get(id)?.parent ?? ""); n; n = n.parent ? m.nodes.get(n.parent) : undefined)
+  for (
+    let n = m.nodes.get(m.nodes.get(id)?.parent ?? "");
+    n && n.kind !== "desk";
+    n = n.parent ? m.nodes.get(n.parent) : undefined
+  )
     out.unshift(n)
   return out
 }
+/** Conversations (inbox rows): roots, and every conversation the Chief of Staff oversees. */
+const conversations = (m: Model): Node[] =>
+  m.roots.flatMap((id) => {
+    const r = m.nodes.get(id)!
+    return r.kind === "desk"
+      ? [
+          r,
+          ...r.children
+            .map((c) => m.nodes.get(c)!)
+            .filter((c) => c.kind === "sub" || c.kind === "draft" || c.kind === "chat"),
+        ]
+      : [r]
+  })
 /** The coordinator a worker reports to: the first chat, sub-coordinator or desk above it, past gates and the worker a gate hangs under. */
 export const bossOf = (m: Model, id: string): Node | undefined => {
   let p = m.nodes.get(m.nodes.get(id)?.parent ?? "")
@@ -234,14 +277,20 @@ export const modelReason = (a: Agent): { text: string; title: string } | null =>
               : "Jev's top pick is not usable with this auth; next usable model in Jev's ranking",
       }
     case "pinned":
-      return { text: "set by spawner", title: "The coordinator or the factory named this model; Jev was not asked" }
+      return {
+        text: "set by spawner",
+        title: "The coordinator or the factory named this model; Jev was not asked",
+      }
     case "fallback":
       return {
         text: "default · Jev unavailable",
         title: "Jev routing failed or gave no usable model; SF_MODEL was used",
       }
     case "default":
-      return { text: "default", title: "Not routed (coordinator, or no task); settings or SF_MODEL" }
+      return {
+        text: "default",
+        title: "Not routed (coordinator, or no task); settings or SF_MODEL",
+      }
   }
 }
 const name = (n: Node) => (n.kind === "worker" ? (n.agent?.name ?? n.title) : n.title)
@@ -290,7 +339,8 @@ export const row = (m: Model, r: Node, v?: View): Row => {
 
 /** Inbox rows of a view: one per conversation, open questions first, then newest. The desk is a row only when it has something for you. */
 export const items = (m: Model, v: View): Row[] => {
-  const roots = m.roots.map((r) => m.nodes.get(r)!)
+  // The Chief of Staff is a row only for its own open questions or failures; its conversations are rows of their own.
+  const roots = conversations(m).filter((r) => r.kind !== "desk" || r.pending.length || r.status === "error")
   const pick =
     v === "needs"
       ? roots.filter((r) => r.agg.needs)

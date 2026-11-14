@@ -18,6 +18,7 @@ import { promptErrors, promptFile, promptNames, stalePrompts } from "./prompt.ts
 import { evaluatePrompt } from "./promptEval.ts"
 import type { ShipGrant } from "./approvals.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
+import { ledgerOf, mergeHold, mergePr, type MergeResult } from "./cos.ts"
 import { briefProblem } from "./reports.ts"
 import { diffSummary, reportFindings } from "./cards.ts"
 import { pendingReview, reviewIn } from "./security.ts"
@@ -65,6 +66,10 @@ export type Scope = {
   /** Commit the worktree branched from; the security review diffs against it. */ base?: string
   /** Default decision context, e.g. the repo folder name. */ label?: string
   /** Repo folder id; its lessons file is read at start and appended by report_up. */ folderId?: string
+  /** The repo's registered main checkout; merge_pr pulls it after a merge. */ repo?: string
+  /** After merge_pr merged (rule R17). */ merged?: (r: MergeResult) => void
+  /** A decision this scope opened (a Chief of Staff event session records it, so the answer comes back to it). */
+  opened?: (approvalId: string) => void
   /** Sends a sub-coordinator's report_up to the human. */ report?: (r: Report) => void | Promise<void>
   /** A conversation exists and is not cleaned up; checks request_approval's reportThreadId. */ knownThread?: (
     threadId: string,
@@ -262,7 +267,9 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       }
     },
   }),
-  ...(scope.workdir ? [reportUp(f, scope, scope.workdir), sdlcPlanTool(f, scope), sdlcStatusTool(f, scope)] : []),
+  ...(scope.workdir
+    ? [reportUp(f, scope, scope.workdir), sdlcPlanTool(f, scope), sdlcStatusTool(f, scope), mergePrTool(f, scope)]
+    : []),
   defineTool("extension_errors", {
     description:
       "Runtime errors that UI extensions threw in the browsers (per extension and UI). Call this a few seconds after installing or changing an extension, and fix any error with update_settings.",
@@ -590,6 +597,7 @@ const spawnWorker = (f: Factory, scope: Scope) =>
       ["name", "task"],
     ),
     handler: async (a: Args) => {
+      if (f.spawnHold) return json({ error: f.spawnHold })
       const blocked = spawnBlocked(f, scope) ?? (a.step === "synthesis" ? synthesisBlocked(f, scope) : null)
       if (blocked) return json({ error: blocked })
       const ship = a.step === "finish" ? shipGrant(f, scope) : null
@@ -728,6 +736,7 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
         topic: shipBranch ? "ship" : a.topic === "plan" || a.topic === "findings" ? a.topic : "other",
       })
       if (shipBranch) f.approvals.addShip(item.id, scope.id, shipBranch)
+      scope.opened?.(item.id)
       f.publish("coordinator", "factory.approval_requested", null, String(Date.now()), item)
       return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
     },
@@ -929,6 +938,39 @@ const reportUp = (f: Factory, scope: Scope, workdir: string) =>
     },
   })
 
+/** merge_pr (rule R3): the code checks every merge condition; the shell never merges. */
+const mergePrTool = (f: Factory, scope: Scope) =>
+  defineTool("merge_pr", {
+    description:
+      "Squash-merge this conversation's PR (rule R3), then pull the repo's main checkout. Code checks every condition: rule on, factory/* branch, accepted ship approval, PR open, not a draft, no change request, no conflict, every check green. Call it when the finish worker reports green. It returns merged=true, or the reason it did not merge.",
+    parameters: obj({}),
+    handler: async (_a: Args) => {
+      const branch = gitOr(scope.workdir!, "--abbrev-ref", "HEAD")
+      const hold = scope.repo ? mergeHold(f.repoGates.get(scope.repo), scope.threadId) : null
+      if (hold && scope.threadId) f.repoGates.wait(scope.repo!, scope.threadId)
+      const r = hold
+        ? { merged: false, reason: hold }
+        : scope.repo
+          ? await mergePr({
+              worktree: scope.workdir!,
+              repo: scope.repo,
+              branch,
+              shipGranted: f.approvals.acceptedShips(scope.id, branch).length > 0,
+            })
+          : { merged: false, reason: "this conversation has no registered repo folder" }
+      const e = ledgerOf(f.root).add({
+        rule: "R3",
+        threadId: scope.threadId,
+        action: `merge ${branch}`,
+        result: r.merged ? "done" : "refused",
+        detail: [r.pr, r.reason, r.pull].filter(Boolean).join("; "),
+      })
+      f.publish("coordinator", "factory.cos_action", null, now(), e)
+      if (r.merged && scope.repo) scope.merged?.(r)
+      return json(r)
+    },
+  })
+
 /** `git rev-parse` in the worktree, or "unknown" when git fails. */
 const gitOr = (workdir: string, ...args: string[]): string => {
   try {
@@ -949,7 +991,8 @@ export const optimizeRepoTask = (request: string) =>
 export type Conversations = {
   list: () => unknown
   folders: () => unknown
-  start: (folder: string, task: string) => Promise<unknown>
+  /** `fresh`: a new conversation even when one in the folder has the same task (optimize_repo; skips R26). */
+  start: (folder: string, task: string, fresh?: boolean) => Promise<unknown>
   message: (threadId: string, text: string) => Promise<void>
   read: (threadId: string, wait: boolean) => Promise<unknown>
   /** Compact live snapshot of every conversation, worker and pending decision. */
@@ -996,7 +1039,7 @@ export const globalTools = (c: Conversations): Tool<Args>[] => [
       },
       ["folder", "request"],
     ),
-    handler: async (a: Args) => json(await c.start(str(a, "folder"), optimizeRepoTask(str(a, "request")))),
+    handler: async (a: Args) => json(await c.start(str(a, "folder"), optimizeRepoTask(str(a, "request")), true)),
   }),
   defineTool("message_conversation", {
     description:

@@ -45,10 +45,16 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""):
   return e
 }
 
+/** One Chief of Staff (ADR 0008): "new" in the General folder opens the CoS conversation. */
+const cosThread = (): string | null => threads.find((t) => t.desk)?.id ?? null
+
 const newIn = (folderId: string) => {
   setFolder(folderId)
-  current = null
-  window.dispatchEvent(new CustomEvent("sf:new-thread", { detail: folderId }))
+  const cos = folderId === "general" ? cosThread() : null
+  current = cos
+  window.dispatchEvent(
+    cos ? new CustomEvent("sf:open-thread", { detail: cos }) : new CustomEvent("sf:new-thread", { detail: folderId }),
+  )
   render()
 }
 
@@ -164,9 +170,9 @@ export const startFolderSidebar = (): void => {
   const openLocation = () => {
     const threadId = new URL(window.location.href).searchParams.get("thread")
     syncThreadUrl(threadId)
-    window.dispatchEvent(
-      threadId ? new CustomEvent("sf:open-thread", { detail: threadId }) : new CustomEvent("sf:new-thread"),
-    )
+    // No thread in the URL: open the Chief of Staff (ADR 0008), else a new chat.
+    const open = threadId ?? cosThread()
+    window.dispatchEvent(open ? new CustomEvent("sf:open-thread", { detail: open }) : new CustomEvent("sf:new-thread"))
   }
   window.addEventListener("popstate", openLocation)
   void load().then(() => {

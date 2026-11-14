@@ -24,7 +24,7 @@ import { init, update } from "./update"
 import { view } from "./view"
 
 const config: AgentConfig = {
-  agentName: "General chat",
+  agentName: "Chief of Staff",
   artifacts: NO_ARTIFACTS,
   componentLibrary: "openuiChat",
   maybeStarterVariant: Option.none(),
