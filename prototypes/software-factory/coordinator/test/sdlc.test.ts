@@ -14,6 +14,7 @@ import {
   isTestPath,
   newSdlc,
   parseCriteria,
+  factoryThreadUrl,
   prBody,
   readLessons,
   repoChecks,
@@ -163,6 +164,11 @@ describe("worktree artifacts", () => {
     expect(body).toContain("- [x] AC-1: works")
     expect(body).toContain("Tier T1")
     expect(body).toContain("Revert and restart.")
+    expect(body).not.toContain("## Factory")
+    const id = "11111111-2222-3333-4444-555555555555"
+    const linked = prBody(s, r, "Adds a.", undefined, id)
+    expect(linked).toContain(`## Factory\nthread=${id}\nhttp://localhost:5174/?thread=${id}`)
+    expect(factoryThreadUrl(id, "http://factory.test:9000/ui")).toBe(`http://factory.test:9000/ui?thread=${id}`)
   })
 
   test("implement rules follow the chosen gates", () => {

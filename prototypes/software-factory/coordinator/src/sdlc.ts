@@ -453,8 +453,21 @@ export const verifyAddendum = (s: Sdlc): string =>
     criteria: criteriaWithChecks(s.criteria, contractFor(s)),
   })}`
 
-/** PR body from the artifacts: criteria with ✓, tier, gates, evidence, rollback, how to try it. */
-export const prBody = (s: Sdlc, workdir: string, summary: string, evaluation?: string): string => {
+/** The running Factory UI's link to a conversation. SF_UI_URL overrides the default UI address. */
+export const factoryThreadUrl = (threadId: string, ui = process.env.SF_UI_URL || "http://localhost:5174/"): string => {
+  const u = new URL(ui)
+  u.searchParams.set("thread", threadId)
+  return u.toString()
+}
+
+/** PR body from the artifacts: criteria with ✓, tier, gates, evidence, rollback, how to try it, and the Factory conversation. */
+export const prBody = (
+  s: Sdlc,
+  workdir: string,
+  summary: string,
+  evaluation?: string,
+  threadId?: string | null,
+): string => {
   const evidence = readOr(artifact(workdir, "evidence.md")) ?? ""
   const design = readOr(artifact(workdir, "design.md"))
   const unproven = new Set(unprovenCriteria(s.criteria, evidence))
@@ -469,6 +482,7 @@ export const prBody = (s: Sdlc, workdir: string, summary: string, evaluation?: s
     `## Evidence\n\`\`\`\n${evidence.trim().slice(0, 6000)}\n\`\`\``,
     `## Rollback\n${rollback}`,
     `## How to try it\nSee the evidence commands above.`,
+    ...(threadId ? [`## Factory\nthread=${threadId}\n${factoryThreadUrl(threadId)}`] : []),
   ].join("\n\n")
 }
 
