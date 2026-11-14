@@ -18,7 +18,8 @@ import { homeAll, homeFor, homeFile, homeWarning, readHome } from "./home.ts"
 import { cardsPrompt, coordinatorPrompt, deskPrompt, globalPrompt, researchPrompt, subPrompt } from "./prompts.ts"
 import { loadPrompt } from "./prompt.ts"
 import { configStore, type Scalar } from "./config.ts"
-import { settleProposal } from "./configChanges.ts"
+import { isProposal, settleProposal } from "./configChanges.ts"
+import { ledgerOf, r14Blocker, r1Pick, relayText, ruleOn } from "./cos.ts"
 import { inRun, rerunInterruptedReview } from "./gates.ts"
 import { interruptedScopes, resumePrompt, type Interrupted, type Resumed, type Shutdown } from "./resume.ts"
 import { GoalBudgets, pauseApproval, PAUSE_REASON, readAnswer, shouldPause, type Budget } from "./budget.ts"
@@ -423,6 +424,7 @@ const subScope = (t: Thread): Scope => {
     ...(t.base ? { base: t.base } : {}),
     label: folder.name,
     folderId: folder.id,
+    repo: folder.path,
     report: (r) => {
       // A done report gets a fresh manual test guide (src/testGuide.ts) for the header pin.
       if (r.status === "done") void writeGuide(factory, subScope(t), r.summary)
@@ -1017,7 +1019,49 @@ const answerApproval = (a: ReturnType<typeof factory.approvals.answer>) => {
       note: [a.note, `factory config change failed: ${e instanceof Error ? e.message : e}`].filter(Boolean).join("; "),
     }
   }
+  // R27: an answer to a report goes straight to the reporting conversation; no global coordinator turn.
+  if (a.reportThreadId && ruleOn("r27")) {
+    cosLog("R27", a.reportThreadId, `relay decision ${a.id}`, "done", `"${a.title}": ${a.answer}`)
+    return deliverAndLog(a.reportThreadId, relayText(a))
+  }
   return deliverAndLog(a.threadId, answerPrompt(a))
+}
+
+/** Write a Chief of Staff action to the ledger and the feed. */
+const cosLog = (
+  rule: string,
+  threadId: string | null,
+  action: string,
+  result: "done" | "refused" | "failed",
+  detail: string,
+) => {
+  const e = ledgerOf(factory.root).add({ rule, threadId, action, result, detail })
+  factory.publish("coordinator", "factory.cos_action", null, now(), e)
+}
+
+/** A rule answers a decision for the human, then the answer flows on like the human's. */
+const ruleAnswer = (id: string, pick: string, rule: string, why: string) => {
+  try {
+    const a = factory.approvals.answer(id, pick, `Chief of Staff rule ${rule}: ${why}`, `cos:${rule}`)
+    factory.publish("coordinator", "factory.approval_answered", null, now(), a)
+    cosLog(rule, a.threadId, `answer decision ${a.id}`, "done", `"${a.title}": ${pick} (${why})`)
+    if (!improvementAnswered(a) && !budgetAnswered(a) && !goalAnswered(a)) answerApproval(a)
+  } catch (e) {
+    cosLog(rule, null, `answer decision ${id}`, "failed", e instanceof Error ? e.message : String(e))
+  }
+}
+
+/** R14: a ship request whose evaluation passed every criterion is granted by the Chief of Staff. Returns true when granted. */
+const r14Grant = (a: Approval): boolean => {
+  const scopeId = a.topic === "ship" ? factory.approvals.shipScope(a.id) : null
+  if (!scopeId || !ruleOn("r14")) return false
+  const blocker = r14Blocker(lastEvaluation(factory.evaluations.values(), scopeId))
+  if (blocker) {
+    cosLog("R14", a.threadId, `ship decision ${a.id}`, "refused", blocker)
+    return false
+  }
+  ruleAnswer(a.id, a.options[0]!, "R14", "every gate done; the independent evaluator passed every criterion")
+  return true
 }
 
 /** Shadow mode: Jev predicts each new decision's answer from INSTRUCTIONS.md (re-read each time, so edits apply at once). */
@@ -1026,11 +1070,16 @@ factory.feed.subscribe((ev) => {
   const requested = Option.flatMap(decodeId(ev.data), ({ id }) => Option.fromNullishOr(factory.approvals.get(id)))
   if (Option.isNone(requested)) return
   const { id } = requested.value
+  if (r14Grant(requested.value)) return
   predict(requested.value, readInstructions())
     .catch((e) => (console.error(`shadow prediction failed: ${e}`), null))
     .then((shadow) => {
       const a = factory.approvals.setShadow(id, shadow)
       if (a) factory.publish("coordinator", "factory.approval_shadowed", null, now(), a)
+      // R1: Jev at or above the threshold answers for the human.
+      const threshold = factoryConfig().cos.auto_answer_confidence
+      const pick = a && ruleOn("r1") ? r1Pick(a, threshold, isProposal(factory.root, a.id)) : null
+      if (a && pick) ruleAnswer(a.id, pick, "R1", `Jev confidence ${a.shadow!.confidence.toFixed(2)} >= ${threshold}`)
     })
 })
 
@@ -1543,6 +1592,11 @@ const routes: [string, RegExp, Handler][] = [
     "GET",
     /^\/api\/shadow$/,
     () => json({ ...shadowStats(factory.approvals.list()), instructions: instructionsPath() }),
+  ],
+  [
+    "GET",
+    /^\/api\/cos\/ledger$/,
+    (_req, url) => json(ledgerOf(factory.root).list(200, url.searchParams.get("thread") ?? undefined)),
   ],
   ["GET", /^\/api\/folders$/, () => json(threads.folders())],
   [

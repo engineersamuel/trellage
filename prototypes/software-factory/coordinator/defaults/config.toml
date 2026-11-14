@@ -94,6 +94,21 @@ contract_rounds = 2
 # Evaluations per ship; a fix and a verify worker run between two of them when a criterion fails.
 max_rounds = 2
 
+# Chief of Staff rules (ADR 0008). Every rule acts live; set one to false to stop it.
+[cos]
+# R1: Jev confidence at or above which the Chief of Staff answers a decision for the human.
+auto_answer_confidence = 0.95
+
+[cos.rules]
+# R1: answer a decision with Jev's pick (never ship, merge, delete, cost, goal or config decisions).
+r1 = true
+# R3: merge_pr squash-merges a green, ship-granted factory PR, then pulls the repo's main checkout.
+r3 = true
+# R14: grant a ship when every gate is done and the independent evaluator passed every criterion.
+r14 = true
+# R27: code relays a decision answer to the reporting conversation, with no coordinator turn.
+r27 = true
+
 # Steps, research workflows and review lenses are prompt files: prompts/steps/, prompts/research/, prompts/lenses/.
 
 # Gate workers (code review, security review, evaluator, and their fix and verify workers). There is no short time

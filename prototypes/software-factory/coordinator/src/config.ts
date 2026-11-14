@@ -64,6 +64,11 @@ const FactoryConfigSchema = Schema.Struct({
     contract_rounds: Count,
     max_rounds: Count,
   }),
+  /** Chief of Staff rules (src/cos.ts, ADR 0008): each rule on or off, and R1's Jev threshold. */
+  cos: Schema.Struct({
+    auto_answer_confidence: Probability,
+    rules: Schema.Struct({ r1: Schema.Boolean, r3: Schema.Boolean, r14: Schema.Boolean, r27: Schema.Boolean }),
+  }),
   /** Gate workers (gateWorker.ts): when one counts as stuck, how often it is replaced, and the backstop wait. */
   workers: Schema.Struct({
     wait_minutes: Count,

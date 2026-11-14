@@ -18,6 +18,7 @@ import { promptErrors, promptFile, promptNames, stalePrompts } from "./prompt.ts
 import { evaluatePrompt } from "./promptEval.ts"
 import type { ShipGrant } from "./approvals.ts"
 import { parseReport, type Report, type ReportInput } from "./report.ts"
+import { ledgerOf, mergePr } from "./cos.ts"
 import { briefProblem } from "./reports.ts"
 import { diffSummary, reportFindings } from "./cards.ts"
 import { pendingReview, reviewIn } from "./security.ts"
@@ -65,6 +66,7 @@ export type Scope = {
   /** Commit the worktree branched from; the security review diffs against it. */ base?: string
   /** Default decision context, e.g. the repo folder name. */ label?: string
   /** Repo folder id; its lessons file is read at start and appended by report_up. */ folderId?: string
+  /** The repo's registered main checkout; merge_pr pulls it after a merge. */ repo?: string
   /** Sends a sub-coordinator's report_up to the human. */ report?: (r: Report) => void | Promise<void>
   /** A conversation exists and is not cleaned up; checks request_approval's reportThreadId. */ knownThread?: (
     threadId: string,
@@ -262,7 +264,9 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
       }
     },
   }),
-  ...(scope.workdir ? [reportUp(f, scope, scope.workdir), sdlcPlanTool(f, scope), sdlcStatusTool(f, scope)] : []),
+  ...(scope.workdir
+    ? [reportUp(f, scope, scope.workdir), sdlcPlanTool(f, scope), sdlcStatusTool(f, scope), mergePrTool(f, scope)]
+    : []),
   defineTool("extension_errors", {
     description:
       "Runtime errors that UI extensions threw in the browsers (per extension and UI). Call this a few seconds after installing or changing an extension, and fix any error with update_settings.",
@@ -926,6 +930,34 @@ const reportUp = (f: Factory, scope: Scope, workdir: string) =>
         addLessons(f.root, scope.folderId, a.lessons.map(String).slice(0, 3))
       f.publish(scope.id, "factory.report_up", null, now(), { threadId: scope.threadId, report: r })
       return json({ sent: true, note: "The human decides the next step. End your turn now." })
+    },
+  })
+
+/** merge_pr (rule R3): the code checks every merge condition; the shell never merges. */
+const mergePrTool = (f: Factory, scope: Scope) =>
+  defineTool("merge_pr", {
+    description:
+      "Squash-merge this conversation's PR (rule R3), then pull the repo's main checkout. Code checks every condition: rule on, factory/* branch, accepted ship approval, PR open, not a draft, no change request, no conflict, every check green. Call it when the finish worker reports green. It returns merged=true, or the reason it did not merge.",
+    parameters: obj({}),
+    handler: async (_a: Args) => {
+      const branch = gitOr(scope.workdir!, "--abbrev-ref", "HEAD")
+      const r = scope.repo
+        ? await mergePr({
+            worktree: scope.workdir!,
+            repo: scope.repo,
+            branch,
+            shipGranted: f.approvals.acceptedShips(scope.id, branch).length > 0,
+          })
+        : { merged: false, reason: "this conversation has no registered repo folder" }
+      const e = ledgerOf(f.root).add({
+        rule: "R3",
+        threadId: scope.threadId,
+        action: `merge ${branch}`,
+        result: r.merged ? "done" : "refused",
+        detail: [r.pr, r.reason, r.pull].filter(Boolean).join("; "),
+      })
+      f.publish("coordinator", "factory.cos_action", null, now(), e)
+      return json(r)
     },
   })
 

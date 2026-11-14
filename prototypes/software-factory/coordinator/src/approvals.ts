@@ -129,6 +129,14 @@ export class Approvals {
     })
   }
 
+  /** The conversation (scope id) a ship approval was requested from, or null when `id` is not a ship request. */
+  shipScope(id: string): string | null {
+    const r = this.db.query("SELECT scope_id AS scopeId FROM ship_grants WHERE id = ?").get(id) as {
+      scopeId: string
+    } | null
+    return r?.scopeId ?? null
+  }
+
   /** Save a grant's push count. */
   setPushes(g: ShipGrant): void {
     this.db.run("UPDATE ship_grants SET pushes = ? WHERE id = ?", [g.pushes, g.id])

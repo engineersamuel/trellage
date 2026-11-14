@@ -1388,7 +1388,7 @@ export class Factory {
       return {
         kind: "reject",
         feedback:
-          "Sub-coordinators never merge, push, or delete branches or worktrees. To push and open a PR: request_approval with ship=true, then spawn_worker step=finish. Merging and deleting stay with the human.",
+          "Sub-coordinators never merge, push, or delete branches or worktrees. To push and open a PR: request_approval with ship=true, then spawn_worker step=finish. To merge a green PR: merge_pr. Deleting stays with the human.",
       }
     // Coordinate, do not do: no file writes, and only read-only shell commands.
     if (request.kind === "write") return { kind: "reject", feedback: subShellFeedback() }
