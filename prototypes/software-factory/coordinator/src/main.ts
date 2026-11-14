@@ -21,7 +21,11 @@ import { configStore, type Scalar } from "./config.ts"
 import { isProposal, settleProposal } from "./configChanges.ts"
 import {
   blockerKey,
+  changedFiles,
   costAlert,
+  OffTrack,
+  R11_STOP,
+  r8Scores,
   isModelError,
   issueAction,
   overlaps,
@@ -84,7 +88,7 @@ import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, withSubagents, type Run } from "./run.ts"
 import { costReport, GOAL_PAGE_AGENT, gradeCost, rollUp, runCost, type AgentInfo } from "./costs.ts"
 import { factoryConfig } from "./config.ts"
-import { artifact, diffFiles, readLessons, unprovenCriteria } from "./sdlc.ts"
+import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
 import { postMergeCheck } from "./postmerge.ts"
 import { ARTIFACTS_DIR, servableImage } from "./files.ts"
@@ -1042,6 +1046,16 @@ const answerApproval = (a: ReturnType<typeof factory.approvals.answer>) => {
       note: [a.note, `factory config change failed: ${e instanceof Error ? e.message : e}`].filter(Boolean).join("; "),
     }
   }
+  // R11 "stop the newer one" is done in code, not left to the conversation's sub-coordinator.
+  if (a.context === "Chief of Staff · R11" && a.answer === R11_STOP && a.reportThreadId) {
+    const id = a.reportThreadId
+    void stopConversationWorkers(id).then(
+      () => cosLog("R11", id, "stop the newer conversation", "done", `decision ${a.id}`),
+      (e) => cosLog("R11", id, "stop the newer conversation", "failed", String(e)),
+    )
+    factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: id })
+    return
+  }
   // R27: an answer to a report goes straight to the reporting conversation; no global coordinator turn.
   if (a.reportThreadId && ruleOn("r27")) {
     cosLog("R27", a.reportThreadId, `relay decision ${a.id}`, "done", `"${a.title}": ${a.answer}`)
@@ -1195,19 +1209,33 @@ const latestWorkerActivity = (worker: Worker): string =>
     )
     .join("\n")
 
+/** A worker a gate (security review, code review, independent evaluation) waits on. */
+const isGateWorker = (id: string): boolean =>
+  [...factory.securityReviews.values(), ...factory.codeReviews.values()].some((r) => r.workerId === id) ||
+  [...factory.evaluations.values()].some((e) => e.workerId === id || e.workerIds.includes(id))
+
+const offTrack = new OffTrack()
 const offTrackIssues = async (workers: Worker[]): Promise<Issue[]> => {
-  const running = workers.filter((w) => w.role === "worker" && w.status === "running" && w.task)
+  offTrack.forget((id) => factory.workers.has(id))
+  // R8 scores only workers between tool calls that are not gate or check workers (ADR 0008).
+  const running = workers.filter(
+    (w) =>
+      w.role === "worker" &&
+      w.status === "running" &&
+      w.task &&
+      r8Scores({ step: w.summary().step, toolsInFlight: w.toolsInFlight }, isGateWorker(w.id)),
+  )
   const scores = await onTrack(
     running.map((w) => ({ id: w.id, task: w.task!, latest: latestWorkerActivity(w) })),
   ).catch(() => ({}) as Record<string, number>)
   return running.flatMap((worker) =>
-    (scores[worker.id] ?? 1) < 0.3
+    worker.id in scores && offTrack.score(worker.id, scores[worker.id]!)
       ? [
           {
             worker: worker.id,
             name: worker.name,
             kind: "off-track" as const,
-            detail: `Jev on-track probability ${scores[worker.id]!.toFixed(2)}`,
+            detail: `Jev on-track probability ${scores[worker.id]!.toFixed(2)}, low twice in a row`,
           },
         ]
       : [],
@@ -1292,10 +1320,9 @@ const ruleIssue = async (issue: Issue, coordinator: Worker): Promise<boolean> =>
       factory.publish("coordinator", "factory.approval_requested", null, now(), item)
       break
     }
-    case "pause":
-      await w.session.abort().catch(() => {})
+    case "warn-owner":
       toOwner(
-        `[Chief of Staff · rule R8] Worker ${w.name} (${w.id}) was paused: ${issue.detail}. Read what it did with read_worker; then message_worker with a correction to resume it on its task, or stop_worker.`,
+        `[Chief of Staff · rule R8] Worker ${w.name} (${w.id}) may be off its task: ${issue.detail}. It keeps running. Its latest activity:\n${latestWorkerActivity(w).slice(0, 1200)}\nIf it is off track, message_worker with a correction or stop_worker; else do nothing.`,
       )
       break
   }
@@ -1568,11 +1595,9 @@ const overlapSweep = async () => {
   const changes: Changes[] = []
   for (const t of openRepoThreads()) {
     const repo = threads.folder(t.folderId)?.path
-    if (!repo || !t.base) continue
+    if (!repo) continue
     const { pr } = await prOf(t)
-    const files = diffFiles(t.worktree!, t.base)
-      .map((f) => f.path)
-      .filter((f) => !f.startsWith(".factory/"))
+    const files = await changedFiles(t.worktree!, t.prBase ?? "main")
     changes.push({
       threadId: t.id,
       repo,
@@ -1598,10 +1623,10 @@ const overlapSweep = async () => {
       threadId: newer.id,
       title: `Overlap: "${newer.title.slice(0, 60)}" and "${older.title.slice(0, 60)}"`,
       summary: `Rule R11 held the newer conversation: both change ${o.files.length ? `the same files:\n- ${o.files.slice(0, 20).join("\n- ")}` : "the same PR"}.`,
-      options: ["Continue both", "Stop the newer one", "Merge the newer one's work into the older one"],
+      options: ["Continue both", R11_STOP, "Merge the newer one's work into the older one"],
       optionDetails: [
         "The newer one resumes",
-        "Nothing more runs in the newer one",
+        "The factory stops its sub-coordinator and workers; its worktree stays",
         "The newer one reports its changes for the older one to take",
       ],
       allowText: true,

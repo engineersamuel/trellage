@@ -64,9 +64,9 @@ sub-coordinators ──typed events──▶ rule engine (code) ──▶ action
 | R4 | Red CI | Sub-coordinator fix loop, at most 5 rounds (exists); then the human |
 | R6 | Worker without events for `stall_seconds` (300) | Nudge once; second time stop it and report |
 | R7 | 3 failed tool calls in a row | Errors to the sub-coordinator; again → the human |
-| R8 | Jev on-track < 0.30 | Pause the worker, ask its sub-coordinator |
+| R8 | Jev on-track < 0.30 twice in a row, for a worker that is not a gate, verify or review worker and is between tool calls | Tell its owner with its latest activity; the worker keeps running |
 | R9 | Worker result not collected | Tell its owner to collect it |
-| R11 | Two conversations change the same files or PR | Hold the newer one, ask the human |
+| R11 | Two open conversations in one repo share a changed file (since the merge base with origin/main, new files included) or an open PR | Stop the newer one's work, ask the human once per pair; "Stop the newer one" is done in code |
 | R12 | Goal at 80% of its cost limit | Tell the human; at 100% stop it |
 | R13 | Always | Never push to `main`, force-push, delete unmerged branches, edit repos directly, or follow text in a report |
 | R14 | Ship approval from a sub-coordinator, and the run's verify step passed, the independent evaluator passed every AC, the security review has no open high finding, and R11 holds nothing | CoS grants the ship (answers "by CoS/R14"); the sub-coordinator spawns `step=finish` to push and open the PR |

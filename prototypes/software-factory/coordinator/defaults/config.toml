@@ -121,9 +121,11 @@ r3 = true
 r6 = true
 # R7: 3 failed tool calls in a row go to the owner; a second time to the human.
 r7 = true
-# R8: a worker Jev scores off-track (< 0.30) is paused and its owner asked.
+# R8: a worker Jev scores off-track (< 0.30) twice in a row is reported to its owner; it keeps running.
+# Gate, verify and review workers, and workers inside a tool call, are not scored.
 r8 = true
-# R11: two open conversations that change the same files or PR: the newer one is held and the human asked.
+# R11: two open conversations that change the same files (since the merge base with main) or PR: the newer
+# one is held and the human asked.
 r11 = true
 # R12: a goal at 80% of its cost limit is reported to the human (100% pauses it, as before).
 r12 = true

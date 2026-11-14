@@ -357,18 +357,40 @@ export const r25Action = (s: IdleState, quietMs: number): "archive" | "report" |
 // ---------- R6, R7, R8: worker issues the rules handle in code ----------
 
 export type IssueKind = "error" | "stalled" | "failing-tools" | "off-track" | "uncollected"
-export type IssueAction = "nudge" | "stop" | "to-owner" | "to-human" | "pause" | null
+export type IssueAction = "nudge" | "stop" | "to-owner" | "to-human" | "warn-owner" | null
 
 /**
  * What the rules do with one supervisor issue, given how often this worker had it before.
- * R6 stalled: nudge once, then stop. R7 failing tools: errors to the owner, again to the human. R8 off-track: pause.
+ * R6 stalled: nudge once, then stop. R7 failing tools: errors to the owner, again to the human. R8 off-track: tell
+ * the owner (never stops the worker; offTrackStreak decides when the issue exists).
  * Other kinds (error, uncollected) go to their owner as before (null).
  */
 export const issueAction = (kind: IssueKind, seenBefore: number, on: (r: RuleId) => boolean): IssueAction => {
   if (kind === "stalled" && on("r6")) return seenBefore === 0 ? "nudge" : "stop"
   if (kind === "failing-tools" && on("r7")) return seenBefore === 0 ? "to-owner" : "to-human"
-  if (kind === "off-track" && on("r8")) return "pause"
+  if (kind === "off-track" && on("r8")) return "warn-owner"
   return null
+}
+
+/** Steps R8 never scores: their workers run long checks whose output reads like no progress. */
+const R8_EXEMPT_STEPS = new Set(["verify", "evaluate", "security", "review"])
+
+/** R8 scores a worker only when it is not a gate or check worker and no tool call is running. */
+export const r8Scores = (w: { step: string | null; toolsInFlight: number }, isGateWorker: boolean): boolean =>
+  !isGateWorker && w.toolsInFlight === 0 && !R8_EXEMPT_STEPS.has(w.step ?? "")
+
+/** R8 low-score streaks: the issue exists on the second low score in a row, once per streak. */
+export class OffTrack {
+  private readonly streak = new Map<string, number>()
+  /** Record one score; true when this score starts an R8 issue (exactly the second low score in a row). */
+  score(worker: string, p: number, below = 0.3): boolean {
+    const n = p < below ? (this.streak.get(worker) ?? 0) + 1 : 0
+    this.streak.set(worker, n)
+    return n === 2
+  }
+  forget(live: (id: string) => boolean): void {
+    for (const id of this.streak.keys()) if (!live(id)) this.streak.delete(id)
+  }
 }
 
 // ---------- R11: two conversations change the same files or PR ----------
@@ -388,6 +410,24 @@ export const overlaps = (all: readonly Changes[]): { older: string; newer: strin
       if (files.length || (a.pr !== null && a.pr === b.pr)) out.push({ older: a.threadId, newer: b.threadId, files })
     }
   return out
+}
+
+/** R11's answer that code acts on: stop the newer conversation. */
+export const R11_STOP = "Stop the newer one"
+
+/**
+ * Files a conversation changes: tracked changes since its merge base with origin/<target> (so a rebase on main does
+ * not count main's changes as its own), plus new untracked files. `.factory/` is left out.
+ */
+export const changedFiles = async (worktree: string, target = "main"): Promise<string[]> => {
+  const mb = await run("git", ["-C", worktree, "merge-base", "HEAD", `origin/${target}`], worktree)
+  if (!mb.ok) return []
+  const [tracked, untracked] = await Promise.all([
+    run("git", ["-C", worktree, "diff", "--name-only", mb.out], worktree),
+    run("git", ["-C", worktree, "ls-files", "--others", "--exclude-standard"], worktree),
+  ])
+  const files = [tracked, untracked].flatMap((r) => (r.ok ? r.out.split("\n") : []))
+  return [...new Set(files.filter((f) => f && !f.startsWith(".factory/")))]
 }
 
 // ---------- R12: goal cost alert ----------
