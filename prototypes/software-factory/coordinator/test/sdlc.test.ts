@@ -602,6 +602,112 @@ describe("test-first rust", () => {
     expect(gate).toContain(shortSha)
     expect(gate).toContain("src/main.rs:1")
   })
+
+  test("AC-7: production multiline backslash string, raw string, and char literals before test module pass test-first gate", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    const prodPrefix = [
+      'const JS: &str = "(e=>e&&\\',
+      '    e.x)";',
+      'const RAW: &str = r#"line one',
+      'line "two" still raw"#;',
+      "const QUOTE: char = '\"';",
+      "const ESCAPED: char = '\\'';",
+      "pub fn check<'a>(s: &'a str) -> &'a str {",
+      "  s",
+      "}",
+      "",
+    ]
+    writeFileSync(
+      path.join(r, "src/app.rs"),
+      [...prodPrefix, "#[cfg(test)]", "mod tests {", "  #[test]", "  fn initial() {}", "}", ""].join("\n"),
+    )
+    git("add", "src/app.rs")
+    git("commit", "-q", "-m", "chore: base app.rs")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/app.rs"),
+      [
+        ...prodPrefix,
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn initial() {",
+        '    let msg = "line 1\nunindented inside test string";',
+        "    assert_eq!(super::check(msg), msg);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/app.rs")
+    git("commit", "-q", "-m", "test: update inline test in app.rs")
+
+    writeFileSync(
+      path.join(r, "src/app.rs"),
+      [
+        ...prodPrefix.slice(0, 7),
+        "  s.trim()",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn initial() {",
+        '    let msg = "line 1\nunindented inside test string";',
+        "    assert_eq!(super::check(msg), msg);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/app.rs")
+    git("commit", "-q", "-m", "feat: trim in check")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    expect(blockers.some((b) => b.startsWith("test-first gate"))).toBe(false)
+  })
+
+  test.each([
+    [
+      "marker look-alike inside multiline string",
+      'pub fn f() {}\nconst FAKE: &str = "\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn fake() {}\n}\n";\n',
+      'pub fn f() {}\nconst FAKE: &str = "\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn fake() { assert!(true); }\n}\n";\n',
+    ],
+    [
+      "marker look-alike inside block comment",
+      "pub fn f() {}\n/*\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn fake() {}\n}\n*/\n",
+      "pub fn f() {}\n/*\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn fake() { assert!(true); }\n}\n*/\n",
+    ],
+    [
+      "file ending inside unterminated string",
+      'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\nconst BROKEN: &str = "unterminated\n',
+      'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() { assert!(true); }\n}\nconst BROKEN: &str = "unterminated\n',
+    ],
+  ])("AC-7: %s fails closed as could not be classified", (_label, baseContent, nextContent) => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/app.rs"), baseContent)
+    git("add", "src/app.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/app.rs"), nextContent)
+    git("add", "src/app.rs")
+    git("commit", "-q", "-m", "test: attempt")
+    const shortSha = git("rev-parse", "--short", "HEAD")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(shortSha)
+    expect(gate).toContain("src/app.rs: could not be classified")
+  })
 })
 
 describe("worktree artifacts", () => {
