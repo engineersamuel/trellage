@@ -24,6 +24,8 @@ const FactoryConfigSchema = Schema.Struct({
     claude_worker: Model,
     goal_page: Model,
   }),
+  /** Small-model gate in Factory.spawnModel: Jev's low-complexity score at or above the threshold picks small_model. */
+  routing: Schema.Struct({ small_model: Model, small_threshold: Probability }),
   review: Schema.Struct({
     lens_threshold: Probability,
     max_lenses: Count,
