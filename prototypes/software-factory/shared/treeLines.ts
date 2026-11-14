@@ -29,7 +29,9 @@ type Kid = { id: string; x: number; y: number; status: string }
 type Group = { id: string; x: number; y: number; kids: Kid[] }
 
 const groups = (host: HTMLElement): Group[] => {
-  const H = host.getBoundingClientRect()
+  // The layer scrolls with the content: measure from the content origin, not the visible top, so a redraw while scrolled stays aligned.
+  const r = host.getBoundingClientRect()
+  const H = { left: r.left - host.scrollLeft, top: r.top - host.scrollTop }
   return [...host.querySelectorAll<HTMLElement>("[data-tl]")].flatMap((parent) => {
     const id = parent.dataset.tl!
     const kidEls = [...host.querySelectorAll<HTMLElement>(`[data-tl-parent="${CSS.escape(id)}"]`)]
