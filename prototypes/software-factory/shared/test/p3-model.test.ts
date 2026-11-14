@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Agent, Decision, Thread } from "../protos/core.ts"
 import { ancestors, bossOf, build, count, items, rootOf } from "../protos/p3-model.ts"
-import type { Agent, Decision, Thread } from "../protos/core"
 
 const agent = (id: string, role: string, status: string, owner?: string) =>
   ({
