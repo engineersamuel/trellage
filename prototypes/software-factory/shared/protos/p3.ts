@@ -27,6 +27,7 @@ import {
 import { mountStream, openHistory, type StreamAgent } from "./stream"
 import { mountTimeline } from "./timeline-view"
 import { mountPins } from "./pins-view"
+import { mountTestGuide } from "./test-guide-view"
 import {
   ancestors,
   bornAt,
@@ -446,8 +447,12 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     if (n.kind !== "sub") return (pinned?.stop(), (pinned = null), [])
     if (pinned?.id !== n.id) {
       pinned?.stop()
-      const box = el("div")
-      pinned = { id: n.id, el: box, stop: mountPins(box, n.id) }
+      const pins = el("div")
+      const test = el("div")
+      const box = el("div", "p3-pins")
+      box.append(pins, test)
+      const stops = [mountPins(pins, n.id), ...(n.thread ? [mountTestGuide(test, n.id, n.thread.id)] : [])]
+      pinned = { id: n.id, el: box, stop: () => stops.forEach((off) => off()) }
     }
     return [pinned.el]
   }

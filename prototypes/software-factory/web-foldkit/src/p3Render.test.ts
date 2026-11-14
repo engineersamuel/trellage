@@ -2,13 +2,18 @@ import { Effect } from "effect"
 import { expect, test, vi } from "vitest"
 import type { FeedEvent } from "../../shared/feed"
 
-const feed = vi.hoisted(() => ({
-  subs: new Set<(event: FeedEvent) => void>(),
-  workerStatus: "running",
-  /** Context tokens of w1; 0 = no reading yet. */
-  workerContext: 0,
-  posts: new Array<{ url: string; body: unknown }>(),
-}))
+const feed = vi.hoisted(() => {
+  const noGuide: unknown = null
+  return {
+    subs: new Set<(event: FeedEvent) => void>(),
+    workerStatus: "running",
+    /** Context tokens of w1; 0 = no reading yet. */
+    workerContext: 0,
+    posts: new Array<{ url: string; body: unknown }>(),
+    /** GET /api/threads/<id>/test-guide; null = none written yet. */
+    guide: noGuide,
+  }
+})
 vi.mock("../../shared/feed", async (original) => ({
   ...(await original<typeof import("../../shared/feed")>()),
   onFeed: (subscriber: (event: FeedEvent) => void) => (
@@ -51,45 +56,48 @@ const threads = [
   },
 ]
 const responses = (url: string): unknown =>
-  url === "/api/workers"
-    ? [
-        agent("coordinator", "coordinator", "idle"),
-        agent("gen-aaaaaaaa", "coordinator", "idle"),
-        agent("sub-bbbbbbbb", "coordinator", "running", "gen-aaaaaaaa", "claude"),
-        {
-          ...agent("w1", "worker", feed.workerStatus, "sub-bbbbbbbb", "pi"),
-          contextTokens: feed.workerContext || null,
-          contextLimit: feed.workerContext ? 200_000 : null,
-        },
-      ]
-    : url === "/api/threads/get"
-      ? {
-          threads,
-          folders: [
-            { id: "general", name: "General", path: "" },
-            { id: "trellage", name: "trellage", path: "/repo" },
-          ],
-        }
-      : url === "/api/drafts"
-        ? { id: "dddddddd-new" }
-        : url === "/api/steps"
-          ? { securityReviews: [] }
-          : url.startsWith("/api/events")
-            ? [
-                {
-                  seq: 7,
-                  workerId: "w1",
-                  type: "assistant.message",
-                  agentId: null,
-                  timestamp: "2026-01-01T00:00:00Z",
-                  data: { content: "Tests pass." },
-                },
-              ]
-            : []
+  url.endsWith("/test-guide")
+    ? feed.guide
+    : url === "/api/workers"
+      ? [
+          agent("coordinator", "coordinator", "idle"),
+          agent("gen-aaaaaaaa", "coordinator", "idle"),
+          agent("sub-bbbbbbbb", "coordinator", "running", "gen-aaaaaaaa", "claude"),
+          {
+            ...agent("w1", "worker", feed.workerStatus, "sub-bbbbbbbb", "pi"),
+            contextTokens: feed.workerContext || null,
+            contextLimit: feed.workerContext ? 200_000 : null,
+          },
+        ]
+      : url === "/api/threads/get"
+        ? {
+            threads,
+            folders: [
+              { id: "general", name: "General", path: "" },
+              { id: "trellage", name: "trellage", path: "/repo" },
+            ],
+          }
+        : url === "/api/drafts"
+          ? { id: "dddddddd-new" }
+          : url === "/api/steps"
+            ? { securityReviews: [] }
+            : url.startsWith("/api/events")
+              ? [
+                  {
+                    seq: 7,
+                    workerId: "w1",
+                    type: "assistant.message",
+                    agentId: null,
+                    timestamp: "2026-01-01T00:00:00Z",
+                    data: { content: "Tests pass." },
+                  },
+                ]
+              : []
 vi.mock("../../shared/http", async (original) => ({
   ...(await original<typeof import("../../shared/http")>()),
   json: (url: string, _schema: unknown, init?: RequestInit) =>
     Effect.sync(() => (init?.body && feed.posts.push({ url, body: JSON.parse(String(init.body)) }), responses(url))),
+  send: (url: string, method: string) => Effect.sync(() => void feed.posts.push({ url, body: method })),
 }))
 
 await import("../../shared/protos/p3")
@@ -217,5 +225,38 @@ test("the detail header shows the selected agent's context fill and updates it",
   push("factory.worker_updated")
   await vi.waitFor(() => expect(ctx()?.textContent).toBe("◔ ctx 50k / 200k · 25%"))
   feed.workerContext = 0
+  stop()
+})
+
+// The sub-coordinator header keeps a How to test pin: steps from the guide, herdr and rewrite buttons, stale marker.
+test("the sub-coordinator header pins How to test with Open in herdr and Rewrite", async () => {
+  const { root, stop } = await mountInbox()
+  root.querySelector<HTMLElement>("[data-testid=tree-sub]")!.click()
+  const pin = () => root.querySelector<HTMLElement>(".p3-head [data-testid=test-guide]")
+  await vi.waitFor(() => expect(pin()?.textContent).toContain("🧪 How to test · not written yet"))
+  feed.guide = {
+    status: "ready",
+    commit: "abcdef123",
+    setup: ["bun install"],
+    steps: [{ do: "Open the page", expect: "it loads" }],
+    cleanup: [],
+    stale: true,
+  }
+  push("factory.test_guide", "sub-bbbbbbbb")
+  await vi.waitFor(() => expect(pin()?.textContent).toContain("stale: written for abcdef1"))
+  expect(pin()!.querySelector(".p3-pin-doc")?.textContent).toContain("Open the page")
+  const button = (text: string) => [...pin()!.querySelectorAll("button")].find((b) => b.textContent === text)!
+  button("▶ Open in herdr").click()
+  button("↻ Rewrite").click()
+  await vi.waitFor(() =>
+    expect(feed.posts).toEqual(
+      expect.arrayContaining([
+        { url: "/api/threads/bbbbbbbb/test-guide/herdr", body: "POST" },
+        { url: "/api/threads/bbbbbbbb/test-guide", body: "POST" },
+      ]),
+    ),
+  )
+  await vi.waitFor(() => expect(pin()?.textContent).toContain("opened in herdr"))
+  feed.guide = null
   stop()
 })

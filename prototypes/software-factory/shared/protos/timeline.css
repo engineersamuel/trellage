@@ -29,3 +29,5 @@
 .sfp-p3 .p3-pin[open] > summary { border-bottom: 1px solid var(--sf-border); }
 .sfp-p3 .p3-pin-doc { max-height: 40vh; overflow: auto; padding: 6px 12px; overflow-wrap: anywhere; }
 .sfp-p3 .p3-pin-doc table { display: block; overflow-x: auto; }
+.sfp-p3 .p3-pin > summary .p3-pin-btn { margin-left: 8px; padding: 1px 8px; font-size: 11px; }
+.sfp-p3 .p3-pin > summary .p3-why { margin-left: 8px; }
