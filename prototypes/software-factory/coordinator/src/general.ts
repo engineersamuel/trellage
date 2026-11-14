@@ -1,6 +1,5 @@
-// General chats and the Factory desk.
-// Each General chat has its own coordinator session ("gen-<id>"), so a new chat starts with a clean memory.
-// The Factory desk ("coordinator") owns events no chat owns: crons, supervisor issues, reports whose chat is gone.
+// The Chief of Staff ("coordinator", ADR 0008) and the older General chats (archived; "gen-<id>" sessions).
+// Every report, supervisor issue and cron goes to the Chief of Staff as a stateless event turn.
 // Every coordinator sees the whole factory through factory_status: live state, never accumulated memory.
 import type { Thread } from "./threads.ts"
 import { DRAFT_NOTE, isUnstartedDraft } from "./drafts.ts"
@@ -72,10 +71,6 @@ export const factorySnapshot = (
       .map((c) => c.id),
   }
 }
-
-/** Where a repo conversation's report goes: the General chat that started it, else the desk. */
-export const reportTarget = (t: Thread, all: readonly Thread[], deskThreadId: string): string =>
-  (t.parentThreadId && all.some((x) => x.id === t.parentThreadId) && t.parentThreadId) || deskThreadId
 
 export const deletedNotice = (t: Thread) =>
   `[conversation ${t.id} deleted by the human] "${t.title}" (${t.folderId}${t.branch ? `, branch ${t.branch}` : ""}) and its worktree are gone. Ignore it: do not wait for it, quote it, or reuse it. If the same request comes again, start a new run.`

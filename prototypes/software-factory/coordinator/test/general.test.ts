@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { conversationStatus, deletedNotice, factorySnapshot, genId, reportTarget } from "../src/general.ts"
+import { conversationStatus, deletedNotice, factorySnapshot, genId } from "../src/general.ts"
 
 const repo = (id: string, extra: object = {}) => ({
   id,
@@ -62,14 +62,6 @@ test("the snapshot is compact live state and flags runs that need attention", ()
   expect(s.conversations[1]!.last!.length).toBe(240)
   expect(s.generalChats).toEqual([{ id: "gen-g1", name: "General · chat", status: "idle" }])
   expect(s.needsAttention).toEqual(["aaaaaaaa1", "bbbbbbbb2"])
-})
-
-test("reports go back to the chat that started the run, else to the desk", () => {
-  const parent = { id: "g1", title: "c", createdAt: 0, folderId: "general" }
-  const t = repo("a", { parentThreadId: "g1" })
-  expect(reportTarget(t, [parent, t], "desk")).toBe("g1")
-  expect(reportTarget(t, [t], "desk")).toBe("desk")
-  expect(reportTarget(repo("b"), [parent], "desk")).toBe("desk")
 })
 
 test("ids and the delete notice", () => {

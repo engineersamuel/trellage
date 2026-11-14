@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Agent, Decision, Thread } from "../protos/core.ts"
 import { ancestors, bossOf, build, count, items, rootOf } from "../protos/p3-model.ts"
+import type { Agent, Decision, Thread } from "../protos/core"
 
 const agent = (id: string, role: string, status: string, owner?: string) =>
   ({
@@ -181,4 +182,30 @@ describe("depth below workers: gates and subagents", () => {
     const m2 = build([...agents, s("x1"), s("x2")], threads, [])
     expect(["cr-x", "x1", "x2"].some((id) => m2.nodes.has(id))).toBe(false)
   })
+})
+
+test("the Chief of Staff oversees every repo conversation and draft; each is still its own inbox row", () => {
+  const ts = [
+    thread("desk0000", { desk: true }),
+    thread("bbbbbbbb", { folderId: "trellage", worktree: "/w", createdAt: 6 }),
+    thread("ffffffff", { folderId: "trellage", worktree: "/w2", parentThreadId: "eeeeeeee", createdAt: 7 }),
+    thread("eeeeeeee", { archivedAt: 9 }),
+  ]
+  const as = [
+    agent("coordinator", "coordinator", "idle"),
+    agent("sub-bbbbbbbb", "coordinator", "running"),
+    agent("w1", "worker", "idle", "sub-bbbbbbbb"),
+  ]
+  const m = build(as, ts, [])
+  expect(m.roots).toEqual(["coordinator"])
+  expect(m.nodes.get("coordinator")!.children.sort()).toEqual(["sub-bbbbbbbb", "sub-ffffffff"])
+  expect(m.nodes.get("coordinator")!.agg.desc).toBe(3)
+  expect(rootOf(m, "w1")).toBe("sub-bbbbbbbb")
+  expect(ancestors(m, "w1").map((n) => n.id)).toEqual(["sub-bbbbbbbb"])
+  expect(
+    items(m, "chats")
+      .map((r) => r.root.id)
+      .sort(),
+  ).toEqual(["sub-bbbbbbbb", "sub-ffffffff"])
+  expect(items(m, "running").map((r) => r.root.id)).toEqual(["sub-bbbbbbbb"])
 })

@@ -16,7 +16,6 @@ import {
   el,
   messageAgent,
   mountTranscript,
-  newThread,
   openDecision,
   openThread,
   register,
@@ -63,7 +62,7 @@ const ICON: Record<Node["kind"], string> = {
   subagent: "↳",
 }
 const KIND: Record<Node["kind"], string> = {
-  desk: "Factory desk",
+  desk: "Chief of Staff",
   chat: "General chat",
   sub: "Sub-coordinator",
   worker: "Worker",
@@ -167,9 +166,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       return r
     }
     const desk = live.nodes.get("coordinator")
-    const deskRow = el("div", `p3-sv ${cur === "coordinator" && !streamOn ? "on" : ""}`)
+    const deskRow = el("div", `p3-sv ${sel === "coordinator" && !streamOn ? "on" : ""}`)
     deskRow.append(
-      el("span", "p3-ell", "🌐 Factory desk"),
+      el("span", "p3-ell", "🌐 Chief of Staff"),
       el("span", "p3-n", desk?.agg.needs ? `▲${desk.pending.length}` : ""),
     )
     deskRow.onclick = () => ((autoView = false), (streamOn = false), (sel = cur = "coordinator"), render())
@@ -180,7 +179,6 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const repos = (s?.folders ?? []).filter((f) => f.path)
     const archivedN = (s?.threads ?? []).filter((t) => t.archivedAt && !t.desk).length
     side.replaceChildren(
-      btn("＋ New General chat", () => newThread("general"), "p3-new"),
       draftBox,
       el("h5", "", "Views"),
       ...VIEWS.map((v) => row(v.id, v.label, count(live, v.id), v.id === "needs")),
