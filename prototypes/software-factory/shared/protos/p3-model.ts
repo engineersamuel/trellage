@@ -60,7 +60,13 @@ export const build = (
   const byAgent = new Map(agents.map((a) => [a.id, a]))
   const pending = decisions.filter((d) => d.status === "pending")
   const add = (n: Omit<Node, "children" | "parent" | "pending" | "agg"> & { parent?: string | null }) => {
-    nodes.set(n.id, { parent: null, ...n, children: [], pending: [], agg: { running: 0, error: 0, needs: 0, desc: 0 } })
+    nodes.set(n.id, {
+      parent: null,
+      ...n,
+      children: [],
+      pending: [],
+      agg: { running: 0, error: 0, needs: 0, desc: 0 },
+    })
   }
   const shown = threads.filter((t) => !!t.archivedAt === archived || t.desk)
   for (const t of shown) {
@@ -84,7 +90,12 @@ export const build = (
   const gates = new Map<string, { title: string; after: string | null; members: Node[] }>()
   for (const n of nodes.values()) {
     const g = n.kind === "worker" ? n.agent?.group : null
-    if (g) gates.set(g.id, { title: g.title, after: g.after, members: [...(gates.get(g.id)?.members ?? []), n] })
+    if (g)
+      gates.set(g.id, {
+        title: g.title,
+        after: g.after,
+        members: [...(gates.get(g.id)?.members ?? []), n],
+      })
   }
   for (const [id, g] of gates) {
     if (nodes.has(id)) continue
@@ -181,7 +192,15 @@ export const build = (
   roots.forEach((r) => roll(nodes.get(r)!))
   return { nodes, roots }
 }
-const ORDER: Record<Kind, number> = { desk: 0, chat: 1, sub: 2, draft: 3, worker: 4, gate: 4, subagent: 5 }
+const ORDER: Record<Kind, number> = {
+  desk: 0,
+  chat: 1,
+  sub: 2,
+  draft: 3,
+  worker: 4,
+  gate: 4,
+  subagent: 5,
+}
 const rank = (n: Node) => ORDER[n.kind]
 /** When a node was spawned: its agent's start, else its thread's creation; 0 when unknown. */
 export const bornAt = (n: Node): number => n.agent?.startedAt ?? n.thread?.createdAt ?? n.at ?? 0
@@ -208,7 +227,14 @@ export const ancestors = (m: Model, id: string): Node[] => {
 const conversations = (m: Model): Node[] =>
   m.roots.flatMap((id) => {
     const r = m.nodes.get(id)!
-    return r.kind === "desk" ? [r, ...r.children.map((c) => m.nodes.get(c)!).filter((c) => c.kind === "sub" || c.kind === "draft" || c.kind === "chat")] : [r]
+    return r.kind === "desk"
+      ? [
+          r,
+          ...r.children
+            .map((c) => m.nodes.get(c)!)
+            .filter((c) => c.kind === "sub" || c.kind === "draft" || c.kind === "chat"),
+        ]
+      : [r]
   })
 /** The coordinator a worker reports to: the first chat, sub-coordinator or desk above it, past gates and the worker a gate hangs under. */
 export const bossOf = (m: Model, id: string): Node | undefined => {
@@ -251,14 +277,20 @@ export const modelReason = (a: Agent): { text: string; title: string } | null =>
               : "Jev's top pick is not usable with this auth; next usable model in Jev's ranking",
       }
     case "pinned":
-      return { text: "set by spawner", title: "The coordinator or the factory named this model; Jev was not asked" }
+      return {
+        text: "set by spawner",
+        title: "The coordinator or the factory named this model; Jev was not asked",
+      }
     case "fallback":
       return {
         text: "default · Jev unavailable",
         title: "Jev routing failed or gave no usable model; SF_MODEL was used",
       }
     case "default":
-      return { text: "default", title: "Not routed (coordinator, or no task); settings or SF_MODEL" }
+      return {
+        text: "default",
+        title: "Not routed (coordinator, or no task); settings or SF_MODEL",
+      }
   }
 }
 const name = (n: Node) => (n.kind === "worker" ? (n.agent?.name ?? n.title) : n.title)

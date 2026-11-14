@@ -93,18 +93,18 @@ const responses = (url: string): unknown =>
                     detail: "checks are PENDING",
                   },
                 ]
-            : url.startsWith("/api/events")
-              ? [
-                  {
-                    seq: 7,
-                    workerId: "w1",
-                    type: "assistant.message",
-                    agentId: null,
-                    timestamp: "2026-01-01T00:00:00Z",
-                    data: { content: "Tests pass." },
-                  },
-                ]
-              : []
+              : url.startsWith("/api/events")
+                ? [
+                    {
+                      seq: 7,
+                      workerId: "w1",
+                      type: "assistant.message",
+                      agentId: null,
+                      timestamp: "2026-01-01T00:00:00Z",
+                      data: { content: "Tests pass." },
+                    },
+                  ]
+                : []
 vi.mock("../../shared/http", async (original) => ({
   ...(await original<typeof import("../../shared/http")>()),
   json: (url: string, _schema: unknown, init?: RequestInit) =>
@@ -220,7 +220,10 @@ test("+ Draft creates a draft in a repo folder", async () => {
   form.querySelector("textarea")!.value = "Add retries"
   form.requestSubmit()
   await vi.waitFor(() =>
-    expect(feed.posts).toContainEqual({ url: "/api/drafts", body: { folderId: "trellage", prompt: "Add retries" } }),
+    expect(feed.posts).toContainEqual({
+      url: "/api/drafts",
+      body: { folderId: "trellage", prompt: "Add retries" },
+    }),
   )
   await vi.waitFor(() => expect(form.hidden).toBe(true))
   stop()
