@@ -609,6 +609,7 @@ describe("test-first rust", () => {
     writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
     mkdirSync(path.join(r, "src"), { recursive: true })
     const prodPrefix = [
+      "/* outer /* nested */ still comment */",
       'const JS: &str = "(e=>e&&\\',
       '    e.x)";',
       'const RAW: &str = r#"line one',
@@ -649,7 +650,7 @@ describe("test-first rust", () => {
     writeFileSync(
       path.join(r, "src/app.rs"),
       [
-        ...prodPrefix.slice(0, 7),
+        ...prodPrefix.slice(0, 8),
         "  s.trim()",
         "}",
         "",
@@ -686,6 +687,11 @@ describe("test-first rust", () => {
       "file ending inside unterminated string",
       'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\nconst BROKEN: &str = "unterminated\n',
       'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() { assert!(true); }\n}\nconst BROKEN: &str = "unterminated\n',
+    ],
+    [
+      "unsupported string prefix or malformed char literal",
+      "pub fn f() {\n  let _ = 'unclosed;\n}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n",
+      'pub fn f() {\n  let _ = cr#"hi"#;\n}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() { assert!(true); }\n}\n',
     ],
   ])("AC-7: %s fails closed as could not be classified", (_label, baseContent, nextContent) => {
     const { r, git } = repo()
