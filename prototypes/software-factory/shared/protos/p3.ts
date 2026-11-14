@@ -65,7 +65,7 @@ const ICON: Record<Node["kind"], string> = {
 }
 const KIND: Record<Node["kind"], string> = {
   desk: "Chief of Staff",
-  chat: "General chat",
+  chat: "Archived chat",
   sub: "Sub-coordinator",
   worker: "Worker",
   draft: "Draft",

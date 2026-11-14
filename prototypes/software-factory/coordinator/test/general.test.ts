@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { conversationStatus, deletedNotice, factorySnapshot, genId } from "../src/general.ts"
+import { conversationStatus, cosRoute, deletedNotice, factorySnapshot, genId } from "../src/general.ts"
 
 const repo = (id: string, extra: object = {}) => ({
   id,
@@ -67,4 +67,17 @@ test("the snapshot is compact live state and flags runs that need attention", ()
 test("ids and the delete notice", () => {
   expect(genId("0123456789")).toBe("gen-01234567")
   expect(deletedNotice(repo("a"))).toContain("Ignore it")
+})
+
+test("one Chief of Staff: new General chats and old chats go to the CoS thread; repo and CoS threads stay", () => {
+  const old = { id: "old1", title: "Old chat", createdAt: 0, folderId: "general" }
+  const cos = { ...old, id: "cos", desk: true }
+  expect(cosRoute(undefined, true, "hi", "cos")).toEqual({ threadId: "cos", prompt: "hi" })
+  expect(cosRoute(old, false, "hi", "cos")).toEqual({
+    threadId: "cos",
+    prompt: '[from the archived chat "Old chat" (old1)]\nhi',
+  })
+  expect(cosRoute(cos, false, "hi", "cos")).toEqual({ threadId: null, prompt: "hi" })
+  expect(cosRoute(repo("a"), false, "hi", "cos")).toEqual({ threadId: null, prompt: "hi" })
+  expect(cosRoute(undefined, false, "hi", "cos")).toEqual({ threadId: null, prompt: "hi" })
 })

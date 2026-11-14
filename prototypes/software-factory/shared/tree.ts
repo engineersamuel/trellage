@@ -38,7 +38,7 @@ export const agentLabel = (w: {
   name: string
 }): { tag: string; kind: "global" | "sub" | "worker"; name: string } => {
   if (w.id === "coordinator") return { tag: "🌐 Chief of Staff", kind: "global", name: "Chief of Staff" }
-  if (w.id.startsWith("gen-")) return { tag: "💬 General chat", kind: "sub", name: w.name.replace(/^General · /, "") }
+  if (w.id.startsWith("gen-")) return { tag: "💬 Archived chat", kind: "sub", name: w.name.replace(/^General · /, "") }
   if (w.role === "coordinator") {
     const [folder, ...rest] = w.name.split(" · ")
     return { tag: `⎇ Sub-coordinator · ${folder}`, kind: "sub", name: rest.join(" · ") || w.name }

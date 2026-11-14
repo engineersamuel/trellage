@@ -31,7 +31,9 @@ matched 30/47 (64%); < 0.70 matched 52/96 (54%). At the chosen threshold, ≥ 0.
 ### One Chief of Staff
 
 - The desk and General chats become one **Chief of Staff** root. Every repo conversation shows under it.
-- Existing General chats are archived. New chats with the human go to the CoS chat.
+- Existing General chats are archived; their history stays readable. A new chat in the General folder, or a
+  message sent to an archived chat, goes to the CoS conversation (the latter with a link back). No General chat
+  session (`gen-*`) starts any more. The desk thread is renamed "Chief of Staff".
 - Every sub-coordinator report, supervisor issue, PR status change and cost alert goes to the CoS.
 
 ### Rules are code, not prompt text

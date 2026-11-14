@@ -72,7 +72,16 @@ import { instructionsPath, predict, readInstructions, shadowStats } from "./shad
 import { findingTask, findReport } from "./reports.ts"
 import { CARD_TOOLS, cardOpenUi, reportFindings } from "./cards.ts"
 import { cardView } from "../../shared/cardviews.ts"
-import { conversationStatus, deletedNotice, DESK_ID, factorySnapshot, genId, statusNote } from "./general.ts"
+import {
+  conversationStatus,
+  cosRoute,
+  deletedNotice,
+  DESK_ID,
+  factorySnapshot,
+  genId,
+  isOldChat,
+  statusNote,
+} from "./general.ts"
 import { specView } from "./spec.ts"
 import { onTrack, steps } from "./steps.ts"
 import { findIssues, supervisorPrompt, type Issue } from "./supervisor.ts"
@@ -283,43 +292,9 @@ const deskThread = (): Thread => {
 
 // One Chief of Staff (ADR 0008): the desk and General chats are one thing. Archive the old General chats; their
 // history stays readable under Marked done.
-for (const t of threads.list())
-  if (t.folderId === GENERAL.id && !t.desk && !t.worktree && !t.draft && !t.archivedAt)
-    threads.update(t.id, { archivedAt: Date.now() })
-
-/** A General chat's own coordinator: a session with clean memory, on the desk's runtime. Started on first use. */
-const startingChat = new Map<string, Promise<Worker>>()
-const chatCoordinator = (t: Thread): Promise<Worker> => {
-  if (t.desk) return Promise.resolve(coord)
-  const id = genId(t.id)
-  const live = factory.workers.get(id)
-  if (live) return Promise.resolve(live)
-  if (!startingChat.has(id)) {
-    const p = factory
-      .spawn({
-        id,
-        name: `General · ${t.title}`.slice(0, 60),
-        role: "coordinator",
-        owner: DESK_ID,
-        threadId: t.id,
-        shareRuntimeOf: DESK_ID,
-        sessionId: `sf-${id}`,
-        system: globalSystem(""),
-        tools: globalScopeTools(id, t.id),
-        permissions: factory.globalPermissions,
-        workdir: DESK_DIR,
-        model: factory.settings.agent.model,
-      })
-      .then(async (w) => {
-        const { model: chatModel, reasoningEffort: chatEffort } = factory.settings.agent
-        if (chatEffort !== "default") await w.setModel(chatModel, chatEffort).catch(() => {})
-        return w
-      })
-      .finally(() => startingChat.delete(id))
-    startingChat.set(id, p)
-  }
-  return startingChat.get(id)!
-}
+for (const t of threads.list()) if (isOldChat(t) && !t.archivedAt) threads.update(t.id, { archivedAt: Date.now() })
+// The desk thread from before ADR 0008 keeps its id and history, under the new name.
+if (deskThread().title !== "Chief of Staff") threads.update(deskThread().id, { title: "Chief of Staff" })
 
 const desk = coord.summary()
 console.error(`coordinator runtime pid=${desk.pid} auth=${desk.auth} model=${desk.model}`)
@@ -469,7 +444,8 @@ const subScope = (t: Thread): Scope => {
 const starting = new Map<string, Promise<Worker>>()
 const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
   if (!t) return Promise.resolve(coord)
-  if (!t.worktree) return chatCoordinator(t)
+  // One Chief of Staff (ADR 0008): every conversation without a worktree is answered by it.
+  if (!t.worktree) return Promise.resolve(coord)
   if (isUnstartedDraft(t))
     return Promise.reject(new Error(`conversation ${t.id} is an unstarted draft; only Run on its draft node starts it`))
   const id = subId(t.id)
@@ -685,6 +661,17 @@ const cleanMerged = async () => {
   for (const t of threads.list()) await cleanMergedThread(t)
 }
 loop("clean-merged", "10 minutes", cleanMerged, "30 seconds")
+
+/** Where a chat message goes: the asked thread, or the CoS thread for General chats (ADR 0008). */
+const cosTarget = (
+  threadId: string,
+  prompt: string | null,
+  req: Request,
+): { threadId: string; prompt: string | null } => {
+  const asked = threads.get(threadId)
+  const r = cosRoute(asked, !asked && !threads.folder(cookieFolder(req))?.path, prompt, deskThread().id)
+  return { threadId: r.threadId ?? threadId, prompt: r.prompt }
+}
 
 const ensureAguiThread = (threadId: string, prompt: string | null, req: Request): Response | null => {
   if (prompt === null || threads.get(threadId)) return null
@@ -914,8 +901,12 @@ const CAPABILITIES = {
  */
 const aguiRun = async (id: string | null, url: URL, req: Request): Promise<Response> => {
   const input = fieldsOf(await req.json().catch(() => ({})))
-  const threadId = typeof input.threadId === "string" ? input.threadId : "default"
-  const prompt = newUserText(input)
+  const asked = typeof input.threadId === "string" ? input.threadId : "default"
+  const raw = newUserText(input)
+  // One Chief of Staff (ADR 0008): a new General chat or an old (archived) one is answered in the CoS thread.
+  const target = id ? { threadId: asked, prompt: raw } : cosTarget(asked, raw, req)
+  const threadId = target.threadId
+  const prompt = target.prompt
   const ensureError = ensureAguiThread(threadId, prompt, req)
   if (ensureError) return ensureError
   if (!id && threads.get(threadId)?.cleanedAt)

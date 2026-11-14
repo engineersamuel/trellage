@@ -74,3 +74,23 @@ export const factorySnapshot = (
 
 export const deletedNotice = (t: Thread) =>
   `[conversation ${t.id} deleted by the human] "${t.title}" (${t.folderId}${t.branch ? `, branch ${t.branch}` : ""}) and its worktree are gone. Ignore it: do not wait for it, quote it, or reuse it. If the same request comes again, start a new run.`
+
+/** A General chat from before ADR 0008: no desk, no worktree, no draft. */
+export const isOldChat = (t: Thread): boolean => t.folderId === "general" && !t.desk && !t.worktree && !t.draft
+
+/**
+ * Where a chat message goes (ADR 0008, one Chief of Staff): a new conversation in the General folder, or a message
+ * to an old General chat, goes to the CoS thread; an old chat's message keeps a link back to it.
+ */
+export const cosRoute = (
+  asked: Thread | undefined,
+  newInGeneral: boolean,
+  prompt: string | null,
+  cosThreadId: string,
+): { threadId: string | null; prompt: string | null } => {
+  if (asked ? !isOldChat(asked) : !newInGeneral) return { threadId: null, prompt }
+  return {
+    threadId: cosThreadId,
+    prompt: prompt !== null && asked ? `[from the archived chat "${asked.title}" (${asked.id})]\n${prompt}` : prompt,
+  }
+}
