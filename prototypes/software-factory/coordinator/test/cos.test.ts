@@ -6,13 +6,11 @@ import path from "node:path"
 import type { Approval } from "../src/approvals.ts"
 import {
   blockerKey,
-  changedFiles,
   costAlert,
   OffTrack,
   r8Scores,
   isModelError,
   issueAction,
-  overlaps,
   prEvent,
   prState,
   Ledger,
@@ -268,22 +266,6 @@ test("R6/R7/R8: first stall nudges, second stops; tool failures go to the owner,
   expect(issueAction("stalled", 0, () => false)).toBeNull()
 })
 
-test("R11: the newer of two conversations sharing a file or PR in one repo is held", () => {
-  const c = (threadId: string, createdAt: number, files: string[], prNo: number | null = null, repo = "/r") => ({
-    threadId,
-    repo,
-    createdAt,
-    files,
-    pr: prNo,
-  })
-  expect(overlaps([c("b", 2, ["x.ts", "y.ts"]), c("a", 1, ["y.ts"])])).toEqual([
-    { older: "a", newer: "b", files: ["y.ts"] },
-  ])
-  expect(overlaps([c("a", 1, ["x"], 7), c("b", 2, ["z"], 7)])).toEqual([{ older: "a", newer: "b", files: [] }])
-  expect(overlaps([c("a", 1, ["x"]), c("b", 2, ["x"], null, "/other")])).toEqual([])
-  expect(overlaps([c("a", 1, ["x"]), c("b", 2, ["y"])])).toEqual([])
-})
-
 test("R12: one alert between 80% and the limit", () => {
   expect(costAlert(80, 100, 0.8, false)).toBe(true)
   expect(costAlert(79, 100, 0.8, false)).toBe(false)
@@ -324,26 +306,4 @@ test("R8 acts on the second low score in a row, once per streak", () => {
   expect(o.score("x", 0.1)).toBe(false)
   expect(o.score("x", 0.5)).toBe(false)
   expect(o.score("x", 0.1)).toBe(false)
-})
-
-test("R11 files: own changes since the merge base with origin/main plus new files; a rebase adds none of main's", async () => {
-  const { root, origin, checkout, worktree } = repoFixture()
-  git(worktree, "push", "-q", "-u", "origin", "factory/x")
-  writeFileSync(path.join(worktree, "own.txt"), "x\n")
-  git(worktree, "add", "own.txt")
-  git(worktree, "commit", "-qm", "own")
-  writeFileSync(path.join(worktree, "new.txt"), "untracked\n")
-  mkdirSync(path.join(worktree, ".factory"))
-  writeFileSync(path.join(worktree, ".factory", "pr.md"), "x\n")
-  // main moves on with another file; the branch rebases on it.
-  const other = path.join(root, "other")
-  git(root, "clone", "-q", origin, other)
-  writeFileSync(path.join(other, "mains.txt"), "m\n")
-  git(other, "add", "mains.txt")
-  git(other, "commit", "-qm", "main moves")
-  git(other, "push", "-q", "origin", "main")
-  git(worktree, "fetch", "-q", "origin")
-  git(worktree, "rebase", "-q", "origin/main")
-  expect((await changedFiles(worktree)).sort()).toEqual(["new.txt", "own.txt"])
-  expect(checkout).toBeTruthy()
 })

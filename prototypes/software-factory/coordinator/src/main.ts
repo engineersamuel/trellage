@@ -21,17 +21,13 @@ import { configStore, type Scalar } from "./config.ts"
 import { isProposal, settleProposal } from "./configChanges.ts"
 import {
   blockerKey,
-  changedFiles,
   costAlert,
   OffTrack,
-  R11_STOP,
   r8Scores,
   isModelError,
   issueAction,
-  overlaps,
   prEvent,
   prState,
-  type Changes,
   type PrState,
   ledgerOf,
   mainChecks,
@@ -1046,16 +1042,6 @@ const answerApproval = (a: ReturnType<typeof factory.approvals.answer>) => {
       note: [a.note, `factory config change failed: ${e instanceof Error ? e.message : e}`].filter(Boolean).join("; "),
     }
   }
-  // R11 "stop the newer one" is done in code, not left to the conversation's sub-coordinator.
-  if (a.context === "Chief of Staff · R11" && a.answer === R11_STOP && a.reportThreadId) {
-    const id = a.reportThreadId
-    void stopConversationWorkers(id).then(
-      () => cosLog("R11", id, "stop the newer conversation", "done", `decision ${a.id}`),
-      (e) => cosLog("R11", id, "stop the newer conversation", "failed", String(e)),
-    )
-    factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: id })
-    return
-  }
   // R27: an answer to a report goes straight to the reporting conversation; no global coordinator turn.
   if (a.reportThreadId && ruleOn("r27")) {
     cosLog("R27", a.reportThreadId, `relay decision ${a.id}`, "done", `"${a.title}": ${a.answer}`)
@@ -1562,7 +1548,7 @@ const holdSweep = () => {
 }
 loop("cos-holds", "1 minute", holdSweep)
 
-/** Open repo conversations with a worktree (R11, PR events). */
+/** Open repo conversations with a worktree (PR events). */
 const openRepoThreads = () => threads.list().filter((t) => t.worktree && t.branch && !t.cleanedAt && !t.archivedAt)
 
 /** Typed PR events (ADR 0008 step 1): pr-green, pr-red, merged, from each conversation's PR state. */
@@ -1587,63 +1573,6 @@ const prSweep = async () => {
   }
 }
 loop("cos-pr-events", "2 minutes", prSweep)
-
-/** R11: two open conversations in one repo change the same files or PR: hold the newer one and ask the human. */
-let lastOverlap = 0
-const overlapSweep = async () => {
-  if (!ruleOn("r11")) return
-  const changes: Changes[] = []
-  for (const t of openRepoThreads()) {
-    const repo = threads.folder(t.folderId)?.path
-    if (!repo) continue
-    const { pr } = await prOf(t)
-    const files = await changedFiles(t.worktree!, t.prBase ?? "main")
-    changes.push({
-      threadId: t.id,
-      repo,
-      createdAt: t.createdAt,
-      files,
-      pr: pr && pr.state === "OPEN" ? pr.number : null,
-    })
-  }
-  for (const o of overlaps(changes)) {
-    // Asked once per pair, also across restarts: the ledger remembers.
-    if (
-      ledgerOf(factory.root)
-        .list(200, o.newer)
-        .some((e) => e.rule === "R11" && e.action === `hold overlap with ${o.older}`)
-    )
-      continue
-    const [older, newer] = [threads.get(o.older)!, threads.get(o.newer)!]
-    for (const w of [...factory.workers.values()])
-      if (w.owner === subId(newer.id)) await factory.interrupt(w.id, "held by rule R11").catch(() => {})
-    const sub = factory.workers.get(subId(newer.id))
-    if (sub) await sub.session.abort().catch(() => {})
-    const item = factory.approvals.open({
-      threadId: newer.id,
-      title: `Overlap: "${newer.title.slice(0, 60)}" and "${older.title.slice(0, 60)}"`,
-      summary: `Rule R11 held the newer conversation: both change ${o.files.length ? `the same files:\n- ${o.files.slice(0, 20).join("\n- ")}` : "the same PR"}.`,
-      options: ["Continue both", R11_STOP, "Merge the newer one's work into the older one"],
-      optionDetails: [
-        "The newer one resumes",
-        "The factory stops its sub-coordinator and workers; its worktree stays",
-        "The newer one reports its changes for the older one to take",
-      ],
-      allowText: true,
-      context: "Chief of Staff · R11",
-      reportThreadId: newer.id,
-      topic: "other",
-    })
-    factory.publish("coordinator", "factory.approval_requested", null, now(), item)
-    cosLog("R11", newer.id, `hold overlap with ${older.id}`, "done", o.files.slice(0, 5).join(", ") || "same PR")
-  }
-}
-loop("cos-overlap", "1 minute", () => {
-  const every = factoryConfig().cos.overlap_poll_seconds * 1000
-  if (Date.now() - lastOverlap < every) return
-  lastOverlap = Date.now()
-  return overlapSweep()
-})
 
 const supervise = async () => {
   const cfg = factory.settings.supervisor

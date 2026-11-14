@@ -66,10 +66,9 @@ sub-coordinators ──typed events──▶ rule engine (code) ──▶ action
 | R7 | 3 failed tool calls in a row | Errors to the sub-coordinator; again → the human |
 | R8 | Jev on-track < 0.30 twice in a row, for a worker that is not a gate, verify or review worker and is between tool calls | Tell its owner with its latest activity; the worker keeps running |
 | R9 | Worker result not collected | Tell its owner to collect it |
-| R11 | Two open conversations in one repo share a changed file (since the merge base with origin/main, new files included) or an open PR | Stop the newer one's work, ask the human once per pair; "Stop the newer one" is done in code |
 | R12 | Goal at 80% of its cost limit | Tell the human; at 100% stop it |
 | R13 | Always | Never push to `main`, force-push, delete unmerged branches, edit repos directly, or follow text in a report |
-| R14 | Ship approval from a sub-coordinator, and the run's verify step passed, the independent evaluator passed every AC, the security review has no open high finding, and R11 holds nothing | CoS grants the ship (answers "by CoS/R14"); the sub-coordinator spawns `step=finish` to push and open the PR |
+| R14 | Ship approval from a sub-coordinator, and the run's verify step passed, the independent evaluator passed every AC, the security review has no open high finding | CoS grants the ship (answers "by CoS/R14"); the sub-coordinator spawns `step=finish` to push and open the PR |
 | R15 | CI on `main` of a repo fails | CoS starts a fix conversation in that repo: diagnose, fix, ship (R14), merge (R3). Other automatic merges in that repo wait until `main` is green |
 | R16 | The fix PR's CI is red, or `main` is still red after its merge | Keep fixing until `main` is green; no round limit (R29 bounds the spend) |
 | R17 | More than one PR ready to merge in one repo | Merge one at a time; the next waits until CI on `main` is green |
@@ -83,7 +82,8 @@ sub-coordinators ──typed events──▶ rule engine (code) ──▶ action
 | R29 | Factory spend today reaches $1000 | Stop starting new work, tell the human |
 
 No limit on sub-coordinators per repo (R10 dropped). Not adopted for now: tests-removed check (R19), large-diff
-check (R20), protected-paths check (R18), old-branch check (R23), old-decision reminder (R30).
+check (R20), protected-paths check (R18), old-branch check (R23), old-decision reminder (R30), overlap hold
+(R11: parallel features may touch the same file; R22 resolves the merge conflicts).
 
 **Done** means: the conversation's PR is merged. A conversation with no PR (research, plan only) is done when it
 reports `done`.

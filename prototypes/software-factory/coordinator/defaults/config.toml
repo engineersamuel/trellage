@@ -109,8 +109,6 @@ model_error_workers = 3
 model_error_window_minutes = 5
 # R12: tell the human once when a goal's spend reaches this share of its limit (at 100% the goal pauses).
 cost_alert_share = 0.8
-# R11: how often open conversations are compared for shared files or PRs.
-overlap_poll_seconds = 300
 
 [cos.rules]
 # R1: answer a decision with Jev's pick (never ship, merge, delete, cost, goal or config decisions).
@@ -124,9 +122,6 @@ r7 = true
 # R8: a worker Jev scores off-track (< 0.30) twice in a row is reported to its owner; it keeps running.
 # Gate, verify and review workers, and workers inside a tool call, are not scored.
 r8 = true
-# R11: two open conversations that change the same files (since the merge base with main) or PR: the newer
-# one is held and the human asked.
-r11 = true
 # R12: a goal at 80% of its cost limit is reported to the human (100% pauses it, as before).
 r12 = true
 # R14: grant a ship when every gate is done and the independent evaluator passed every criterion.

@@ -15,7 +15,6 @@ export type RuleId =
   | "r6"
   | "r7"
   | "r8"
-  | "r11"
   | "r12"
   | "r14"
   | "r15"
@@ -391,43 +390,6 @@ export class OffTrack {
   forget(live: (id: string) => boolean): void {
     for (const id of this.streak.keys()) if (!live(id)) this.streak.delete(id)
   }
-}
-
-// ---------- R11: two conversations change the same files or PR ----------
-
-export type Changes = { threadId: string; repo: string; createdAt: number; files: string[]; pr: number | null }
-
-/** Pairs of open conversations in one repo with a shared file or the same PR; `newer` is the one R11 holds. */
-export const overlaps = (all: readonly Changes[]): { older: string; newer: string; files: string[] }[] => {
-  const out: { older: string; newer: string; files: string[] }[] = []
-  const sorted = [...all].sort((a, b) => a.createdAt - b.createdAt)
-  for (let i = 0; i < sorted.length; i++)
-    for (let j = i + 1; j < sorted.length; j++) {
-      const [a, b] = [sorted[i]!, sorted[j]!]
-      if (a.repo !== b.repo) continue
-      const set = new Set(a.files)
-      const files = b.files.filter((f) => set.has(f))
-      if (files.length || (a.pr !== null && a.pr === b.pr)) out.push({ older: a.threadId, newer: b.threadId, files })
-    }
-  return out
-}
-
-/** R11's answer that code acts on: stop the newer conversation. */
-export const R11_STOP = "Stop the newer one"
-
-/**
- * Files a conversation changes: tracked changes since its merge base with origin/<target> (so a rebase on main does
- * not count main's changes as its own), plus new untracked files. `.factory/` is left out.
- */
-export const changedFiles = async (worktree: string, target = "main"): Promise<string[]> => {
-  const mb = await run("git", ["-C", worktree, "merge-base", "HEAD", `origin/${target}`], worktree)
-  if (!mb.ok) return []
-  const [tracked, untracked] = await Promise.all([
-    run("git", ["-C", worktree, "diff", "--name-only", mb.out], worktree),
-    run("git", ["-C", worktree, "ls-files", "--others", "--exclude-standard"], worktree),
-  ])
-  const files = [tracked, untracked].flatMap((r) => (r.ok ? r.out.split("\n") : []))
-  return [...new Set(files.filter((f) => f && !f.startsWith(".factory/")))]
 }
 
 // ---------- R12: goal cost alert ----------
