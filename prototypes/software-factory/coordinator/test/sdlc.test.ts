@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -77,6 +77,7 @@ describe("test-first", () => {
     expect(testsCameFirst([{ files: ["src/a.rs"] }, { files: ["tests/a.rs"] }])).toBe(false)
     expect(testsCameFirst([{ files: ["src/a.test.ts", "src/a.ts"] }])).toBe(false)
     expect(testsCameFirst([{ files: ["test.sh"] }, { files: ["hello.txt"] }])).toBe(true)
+    expect(testsCameFirst([{ files: ["tests/a.rs", "README.md"] }])).toBe(false)
   })
 
   test.each([
@@ -99,14 +100,751 @@ describe("test-first", () => {
   )
 })
 
+const repositories: string[] = []
+afterAll(() => {
+  for (const directory of repositories) rmSync(directory, { recursive: true, force: true })
+})
+
 const repo = () => {
   const r = mkdtempSync(path.join(tmpdir(), "sf-sdlc-"))
+  repositories.push(r)
   const git = (...a: string[]) =>
-    execFileSync("git", ["-C", r, "-c", "user.email=t@t", "-c", "user.name=t", ...a], { encoding: "utf8" }).trim()
+    execFileSync("git", ["-C", r, "-c", "user.email=t@t", "-c", "user.name=t", ...a], {
+      encoding: "utf8",
+    }).trim()
   git("init", "-q")
   git("commit", "-q", "--allow-empty", "-m", "base")
   return { r, git, base: git("rev-parse", "HEAD") }
 }
+
+const rustPlan = (): Sdlc =>
+  withGates(
+    { ...newSdlc("sub", "t"), criteria: ["works"], implementDoneAt: 1, verifyDoneAt: 2 },
+    decide("plan", { design: 0.1, testFirst: 0.9 }, null),
+  )
+
+describe("test-first rust", () => {
+  test("AC-1: inline-test-only commit on src/lib.rs then production commit passes test-first gate", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/lib.rs"), "pub fn add(a: i32, b: i32) -> i32 {\n  a\n}\n")
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "chore: scaffold")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn add(a: i32, b: i32) -> i32 {",
+        "  a",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  use super::*;",
+        "",
+        "  #[test]",
+        "  fn adds_numbers() {",
+        "    assert_eq!(add(2, 3), 5);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: inline add test")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn add(a: i32, b: i32) -> i32 {",
+        "  a + b",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  use super::*;",
+        "",
+        "  #[test]",
+        "  fn adds_numbers() {",
+        "    assert_eq!(add(2, 3), 5);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "feat: implement add")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    expect(blockers.some((b) => b.startsWith("test-first gate"))).toBe(false)
+  })
+
+  test.each([
+    [
+      "stub fn",
+      [
+        "pub enum Kind {",
+        "  One,",
+        "}",
+        "",
+        "fn helper() -> i32 {",
+        "  1",
+        "}",
+        "",
+        "pub fn stub() -> i32 {",
+        "  0",
+        "}",
+      ],
+      "src/lib.rs:9",
+    ],
+    [
+      "use line",
+      ["use std::fmt;", "", "pub enum Kind {", "  One,", "}", "", "fn helper() -> i32 {", "  1", "}"],
+      "src/lib.rs:1",
+    ],
+    [
+      "enum variant",
+      ["pub enum Kind {", "  One,", "  Two,", "}", "", "fn helper() -> i32 {", "  1", "}"],
+      "src/lib.rs:3",
+    ],
+    [
+      "pub(crate) visibility change",
+      ["pub enum Kind {", "  One,", "}", "", "pub(crate) fn helper() -> i32 {", "  1", "}"],
+      "src/lib.rs:5",
+    ],
+  ])("AC-2: inline test plus %s outside test module fails with short sha and file:line", (_label, prodLines, loc) => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      ["pub enum Kind {", "  One,", "}", "", "fn helper() -> i32 {", "  1", "}", ""].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "chore: base scaffold")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [...prodLines, "", "#[cfg(test)]", "mod tests {", "  #[test]", "  fn it_works() {}", "}", ""].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: mixed commit")
+    const shortSha = git("rev-parse", "--short", "HEAD")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(shortSha)
+    expect(gate).toContain(loc)
+  })
+
+  test("AC-3: production .rs commit followed by inline-test-only commit still fails", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/lib.rs"), "pub fn run() -> i32 {\n  1\n}\n")
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/lib.rs"), "pub fn run() -> i32 {\n  2\n}\n")
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "feat: prod first")
+    const firstSha = git("rev-parse", "--short", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn run() -> i32 {",
+        "  2",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn checks_run() {}",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: inline second")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(firstSha)
+    expect(gate).toContain("src/lib.rs:2")
+  })
+
+  test.each([
+    [
+      "no column-0 closing brace",
+      ["pub fn f() {}", "", "#[cfg(test)]", "mod tests {", "  #[test]", "  fn t() {}", "  }", ""].join("\n"),
+      "src/lib.rs:3: test module has no column-0 closing brace",
+    ],
+    [
+      "non-blank column-0 interior line",
+      ["pub fn f() {}", "", "#[cfg(test)]", "mod tests {", "  #[test]", "  fn t() {}", "fn sneaky() {}", "}", ""].join(
+        "\n",
+      ),
+      "src/lib.rs:7: non-indented test module interior",
+    ],
+    [
+      "missing module declaration",
+      "pub fn f() {}\n\n#[cfg(test)]\n",
+      "src/lib.rs:3: expected a column-0 inline test module",
+    ],
+    [
+      "module text inside a multiline string",
+      'pub fn f() {}\nconst TEXT: &str = "\n#[cfg(test)]\nmod tests {\n  fn fake() {}\n}\n";\n',
+      "src/lib.rs:2: unsupported multiline comment or string",
+    ],
+  ])("AC-4: malformed test module (%s) fails closed as could not be classified", (_label, content, explanation) => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/lib.rs"), "pub fn f() {}\n")
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/lib.rs"), content)
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: malformed")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(explanation)
+    expect(gate).toContain(git("rev-parse", "--short", "HEAD"))
+    expect(gate).toContain("could not be classified")
+  })
+
+  test.each([
+    ["production removal", "fn obsolete() {}\n", "", "src/lib.rs:1"],
+    [
+      "production removal preserving tests",
+      "fn obsolete() {}\n#[cfg(test)]\nmod tests {\n  fn t() {}\n}\n",
+      "#[cfg(test)]\nmod tests {\n  fn t() {}\n}\n",
+      "src/lib.rs:1",
+    ],
+    ["blank-only edit", "fn f() {}\n", "fn f() {}\n\n", undefined],
+    ["comment-only module", "", "// No tests here.\n", "src/lib.rs:1"],
+  ])("%s does not establish a tests-only commit", (_label, before, after, location) => {
+    const { r, git } = repo()
+    mkdirSync(path.join(r, "src"))
+    if (before) writeFileSync(path.join(r, "src/lib.rs"), before)
+    git("add", "src")
+    git("commit", "-q", "--allow-empty", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+    writeFileSync(path.join(r, "src/lib.rs"), after)
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: candidate")
+    const sha = git("rev-parse", "--short", "HEAD")
+    const gate = shipBlockers(rustPlan(), r, base, true, true).find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    if (location) {
+      expect(gate).toContain(sha)
+      expect(gate).toContain(location)
+    }
+  })
+
+  test("removing a complete inline-test-only file counts as tests-only", () => {
+    const { r, git } = repo()
+    mkdirSync(path.join(r, "src"))
+    writeFileSync(path.join(r, "src/lib.rs"), "#[cfg(test)]\nmod tests {\n  fn t() {}\n}\n")
+    git("add", "src")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+    git("rm", "src/lib.rs")
+    git("commit", "-q", "-m", "test: remove obsolete tests")
+    expect(shipBlockers(rustPlan(), r, base, true, true).some((b) => b.startsWith("test-first gate:"))).toBe(false)
+  })
+
+  test("unreadable history fails closed with a classification explanation", () => {
+    const { r } = repo()
+    const gate = shipBlockers(rustPlan(), r, "missing-base", true, true).find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toContain("commit history could not be classified")
+    expect(gate).toContain("missing-base")
+  })
+
+  test("AC-5: commit removing non-blank lines inside an existing Rust test module counts as tests-only", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn val() -> i32 {",
+        "  1",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn old_test() {",
+        "    assert_eq!(1, 1);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "chore: base with test")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn val() -> i32 {",
+        "  1",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn old_test() {",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "test: trim assertion")
+
+    writeFileSync(
+      path.join(r, "src/lib.rs"),
+      [
+        "pub fn val() -> i32 {",
+        "  2",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn old_test() {",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/lib.rs")
+    git("commit", "-q", "-m", "feat: update val")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    expect(blockers.some((b) => b.startsWith("test-first gate"))).toBe(false)
+  })
+
+  test.each([
+    ["src/main.rs", "src/history.rs"],
+    ["src/feature.rs", "src/feature/history.rs"],
+  ])("AC-6: plain mod history; in %s with new test-only %s passes test-first gate", (parent, module) => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, parent), "fn main() {}\n")
+    git("add", parent)
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, parent), "mod history;\nfn main() {}\n")
+    mkdirSync(path.dirname(path.join(r, module)), { recursive: true })
+    writeFileSync(
+      path.join(r, module),
+      [
+        "//! History module tests.",
+        "// Plain comment.",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn records_entry() {",
+        "    assert!(true);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", parent, module)
+    git("commit", "-q", "-m", "test: add history test module")
+
+    writeFileSync(
+      path.join(r, module),
+      [
+        "//! History module tests.",
+        "pub fn entries() -> usize {",
+        "  0",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn records_entry() {",
+        "    assert!(true);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", module)
+    git("commit", "-q", "-m", "feat: implement entries")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    expect(blockers.some((b) => b.startsWith("test-first gate"))).toBe(false)
+  })
+
+  test("AC-6: new module file containing a production fn fails test-first gate", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/main.rs"), "fn main() {}\n")
+    git("add", "src/main.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/main.rs"), "mod history;\nfn main() {}\n")
+    writeFileSync(
+      path.join(r, "src/history.rs"),
+      [
+        "//! History module.",
+        "pub fn prod() {}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn t() {}",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/main.rs", "src/history.rs")
+    git("commit", "-q", "-m", "test: history with prod fn")
+    const shortSha = git("rev-parse", "--short", "HEAD")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(shortSha)
+  })
+
+  test("AC-6: new test-only module file containing a multiline string fails closed as could not be classified", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/main.rs"), "fn main() {}\n")
+    git("add", "src/main.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/main.rs"), "mod history;\nfn main() {}\n")
+    writeFileSync(
+      path.join(r, "src/history.rs"),
+      ["#[cfg(test)]", "mod tests {", "  #[test]", "  fn t() {", '    let _ = "a', '    b";', "  }", "}", ""].join(
+        "\n",
+      ),
+    )
+    git("add", "src/main.rs", "src/history.rs")
+    git("commit", "-q", "-m", "test: history with multiline string")
+    const shortSha = git("rev-parse", "--short", "HEAD")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(shortSha)
+    expect(gate).toContain("src/history.rs: could not be classified")
+  })
+
+  test("AC-6: plain mod line naming an omitted module file fails test-first gate", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(
+      path.join(r, "src/main.rs"),
+      ["fn main() {}", "", "#[cfg(test)]", "mod tests {", "  #[test]", "  fn a() {}", "}", ""].join("\n"),
+    )
+    git("add", "src/main.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/main.rs"),
+      [
+        "mod other;",
+        "fn main() {}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        "  #[test]",
+        "  fn a() {",
+        "    assert!(true);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/main.rs")
+    git("commit", "-q", "-m", "test: missing other.rs")
+    const shortSha = git("rev-parse", "--short", "HEAD")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(shortSha)
+    expect(gate).toContain("src/main.rs:1")
+  })
+
+  test("AC-6: plain mod line referencing a pre-existing test-only file in base fails test-first gate", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/main.rs"), "fn main() {}\n")
+    writeFileSync(
+      path.join(r, "src/other.rs"),
+      ["#[cfg(test)]", "mod tests {", "  #[test]", "  fn existing() {}", "}", ""].join("\n"),
+    )
+    git("add", "src/main.rs", "src/other.rs")
+    git("commit", "-q", "-m", "chore: base with pre-existing other.rs")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/main.rs"), "mod other;\nfn main() {}\n")
+    git("add", "src/main.rs")
+    git("commit", "-q", "-m", "test: wire pre-existing other.rs")
+    const shortSha = git("rev-parse", "--short", "HEAD")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(shortSha)
+    expect(gate).toContain("src/main.rs:1")
+  })
+
+  test("AC-7: production multiline backslash string, raw string, and char literals before test module pass test-first gate", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    const prodPrefix = [
+      '""/*/*"*/"*/',
+      'const JS: &str = "(e=>e&&\\',
+      '    e.x)";',
+      'const RAW: &str = r#"line one',
+      'line "two" still raw"#;',
+      'const BYTES: &[u8] = b"hello\\n";',
+      'const CSTR: &core::ffi::CStr = c"hello";',
+      "const BCHAR: u8 = b'x';",
+      "const QUOTE: char = '\"';",
+      "const ESCAPED: char = '\\'';",
+      "pub fn check<'a>(s: &'a str) -> &'a str {",
+      "  s",
+      "}",
+      "",
+    ]
+    writeFileSync(
+      path.join(r, "src/app.rs"),
+      [
+        ...prodPrefix,
+        "#[cfg(test)]",
+        "mod tests {",
+        '  const B: &[u8] = b"hello";',
+        '  const C: &core::ffi::CStr = c"hello";',
+        '  const R: &str = r"trailing\\";',
+        '  const BR: &[u8] = br"trailing\\";',
+        "  #[test]",
+        "  fn initial() {}",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/app.rs")
+    git("commit", "-q", "-m", "chore: base app.rs")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(
+      path.join(r, "src/app.rs"),
+      [
+        ...prodPrefix,
+        "#[cfg(test)]",
+        "mod tests {",
+        '  const B: &[u8] = b"hello";',
+        '  const C: &core::ffi::CStr = c"hello";',
+        '  const R: &str = r"trailing\\";',
+        '  const BR: &[u8] = br"trailing\\";',
+        "  #[test]",
+        "  fn renamed() {",
+        '    let msg = "single line inside test string";',
+        "    assert_eq!(super::check(msg), msg);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/app.rs")
+    git("commit", "-q", "-m", "test: update inline test in app.rs")
+
+    writeFileSync(
+      path.join(r, "src/app.rs"),
+      [
+        ...prodPrefix.slice(0, 11),
+        "  s.trim()",
+        "}",
+        "",
+        "#[cfg(test)]",
+        "mod tests {",
+        '  const B: &[u8] = b"hello";',
+        '  const C: &core::ffi::CStr = c"hello";',
+        '  const R: &str = r"trailing\\";',
+        '  const BR: &[u8] = br"trailing\\";',
+        "  #[test]",
+        "  fn renamed() {",
+        '    let msg = "single line inside test string";',
+        "    assert_eq!(super::check(msg), msg);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    )
+    git("add", "src/app.rs")
+    git("commit", "-q", "-m", "feat: trim in check")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    expect(blockers.some((b) => b.startsWith("test-first gate"))).toBe(false)
+  })
+
+  test.each([
+    [
+      "marker look-alike inside multiline string",
+      'pub fn f() {}\nconst FAKE: &str = "\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn fake() {}\n}\n";\n',
+      'pub fn f() {}\nconst FAKE: &str = "\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn fake() { assert!(true); }\n}\n";\n',
+    ],
+    [
+      "marker look-alike inside block comment",
+      "pub fn f() {}\n/*\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn fake() {}\n}\n*/\n",
+      "pub fn f() {}\n/*\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn fake() { assert!(true); }\n}\n*/\n",
+    ],
+    [
+      "changed interior line of multiline string inside test module",
+      'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {\n    let _ = "a\n    b";\n  }\n}\n',
+      'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {\n    let _ = "a\n    c";\n  }\n}\n',
+      "src/app.rs:7: changed line inside multiline comment or string",
+    ],
+    [
+      "changed column-0 line inside multiline block comment in test module",
+      "pub fn f() {}\n#[cfg(test)]\nmod tests {\n  /*\nunindented comment line\n  */\n  #[test]\n  fn t() {}\n}\n",
+      "pub fn f() {}\n#[cfg(test)]\nmod tests {\n  /*\nchanged unindented comment line\n  */\n  #[test]\n  fn t() {}\n}\n",
+      "src/app.rs:5: changed line inside multiline comment or string",
+    ],
+    [
+      "changed multiline string continuation outside test module",
+      'pub fn f() {}\nconst S: &str = "a\nb";\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n',
+      'pub fn f() {}\nconst S: &str = "a\nc";\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n',
+      "src/app.rs:3: changed line inside multiline comment or string",
+    ],
+    [
+      "file ending inside unterminated string",
+      'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\nconst BROKEN: &str = "unterminated\n',
+      'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() { assert!(true); }\n}\nconst BROKEN: &str = "unterminated\n',
+      "src/app.rs:7: unterminated string or comment",
+    ],
+    [
+      "unsupported string prefix or malformed char literal",
+      "pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n",
+      'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {\n    let _ = cr#"hi"#;\n  }\n}\n',
+      "unsupported string prefix",
+    ],
+    [
+      "malformed character literal",
+      "pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n",
+      "pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {\n    let _ = 'ab';\n  }\n}\n",
+      "unterminated or unsupported character literal",
+    ],
+  ] as [string, string, string, string?][])(
+    "AC-7: %s fails closed as could not be classified",
+    (_label, baseContent, nextContent, detail = "src/app.rs:2") => {
+      const { r, git } = repo()
+      ensureFactoryDir(r)
+      writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+      mkdirSync(path.join(r, "src"), { recursive: true })
+      writeFileSync(path.join(r, "src/app.rs"), baseContent)
+      git("add", "src/app.rs")
+      git("commit", "-q", "-m", "chore: base")
+      const base = git("rev-parse", "HEAD")
+
+      writeFileSync(path.join(r, "src/app.rs"), nextContent)
+      git("add", "src/app.rs")
+      git("commit", "-q", "-m", "test: attempt")
+      const shortSha = git("rev-parse", "--short", "HEAD")
+
+      const blockers = shipBlockers(rustPlan(), r, base, true, true)
+      const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+      expect(gate).toBeDefined()
+      expect(gate).toContain(shortSha)
+      expect(gate).toContain("src/app.rs: could not be classified")
+      expect(gate).toContain(detail)
+    },
+  )
+
+  const gateFor = (files: Record<string, string>, next: Record<string, string>) => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    const commit = (content: Record<string, string>, message: string) => {
+      for (const [file, text] of Object.entries(content)) writeFileSync(path.join(r, file), text)
+      git("add", "src")
+      git("commit", "-q", "-m", message)
+    }
+    commit(files, "chore: base")
+    const base = git("rev-parse", "HEAD")
+    commit(next, "test: attempt")
+    const sha = git("rev-parse", "--short", "HEAD")
+    const gate = shipBlockers(rustPlan(), r, base, true, true).find((b) => b.startsWith("test-first gate:"))
+    return { gate, sha }
+  }
+
+  const leaked = "#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n  }\n  pub fn leaked() {\n}\n"
+
+  test("AC-2/AC-4: indented module close followed by a production fn is not a test module", () => {
+    const { gate, sha } = gateFor(
+      { "src/lib.rs": "pub fn base() {}\n" },
+      { "src/lib.rs": `pub fn base() {}\n\n${leaked}` },
+    )
+    expect(gate).toContain(sha)
+    expect(gate).toContain("could not be classified")
+  })
+
+  test("AC-6: wiring a new module whose test module closes early is blocked", () => {
+    const { gate, sha } = gateFor(
+      { "src/main.rs": "fn main() {}\n" },
+      { "src/main.rs": "mod history;\nfn main() {}\n", "src/history.rs": `// tests\n\n${leaked}` },
+    )
+    expect(gate).toContain(sha)
+  })
+
+  test.each([
+    ["string", 'const TEXT: &str = "one\\\ntwo";\n', "two"],
+    ["comment", "/*\nold\n*/\n", "old"],
+  ])("AC-7: production change before a changed multiline %s fails closed", (_label, middle, word) => {
+    const mod = "#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n"
+    const before = `pub fn base() {}\n${middle}\n${mod}`
+    const after = before.replace("pub fn base() {}", "pub fn base() { let _ = 1; }").replace(word, "changed")
+    const { gate } = gateFor({ "src/lib.rs": before }, { "src/lib.rs": after })
+    expect(gate).toContain("could not be classified")
+  })
+})
 
 describe("worktree artifacts", () => {
   test(".factory is git-excluded; CI and AGENTS.md checks are read", () => {
@@ -134,7 +872,12 @@ describe("worktree artifacts", () => {
     expect(shipBlockers(undefined, r, base, true, true)).toEqual([
       "no SDLC plan: call sdlc_plan with the acceptance criteria first",
     ])
-    let s: Sdlc = { ...newSdlc("sub", "t"), criteria: ["works"], implementDoneAt: 2, verifyDoneAt: 1 }
+    let s: Sdlc = {
+      ...newSdlc("sub", "t"),
+      criteria: ["works"],
+      implementDoneAt: 2,
+      verifyDoneAt: 1,
+    }
     s = withGates(s, decide("plan", { design: 0.9, testFirst: 0.9 }, null))
     s = withGates(
       s,
@@ -199,11 +942,15 @@ describe("lessons", () => {
 describe("code review", () => {
   test("lens pick: threshold, cap, at least one, default without Jev", () => {
     expect(pickLenses(null)).toEqual(["correctness", "tests"])
-    expect(pickLenses({ correctness: 0.9, tests: 0.7, design: 0.65, performance: 0.8, operability: 0.1 })).toEqual([
-      "correctness",
-      "performance",
-      "tests",
-    ])
+    expect(
+      pickLenses({
+        correctness: 0.9,
+        tests: 0.7,
+        design: 0.65,
+        performance: 0.8,
+        operability: 0.1,
+      }),
+    ).toEqual(["correctness", "performance", "tests"])
     expect(pickLenses({ correctness: 0.1, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.3 })).toEqual([
       "operability",
     ])
@@ -218,7 +965,15 @@ describe("code review", () => {
   test("findings parse and score", () => {
     const fs = parseReviewFindings(JSON.stringify([{ title: "t", problem: "p", severity: "high" }, { nope: 1 }]))
     expect(fs).toEqual([
-      { id: "cr1", title: "t", file: "unknown", severity: "high", problem: "p", fix: "", lenses: [] },
+      {
+        id: "cr1",
+        title: "t",
+        file: "unknown",
+        severity: "high",
+        problem: "p",
+        fix: "",
+        lenses: [],
+      },
     ])
     expect(parseReviewFindings("not json")).toEqual([])
     expect(score(fs[0]!, 0.8, 0.7).keep).toBe(true)
@@ -278,7 +1033,9 @@ describe("reviewer model", () => {
     const { reviewerRoute } = await import("../src/review.ts")
     expect(reviewerRoute("gemini-4-argon", "copilot")).toEqual({ auth: "proxy" })
     expect(reviewerRoute("gemini-4-argon", "auto")).toEqual({ auth: "proxy" })
-    expect(reviewerRoute("gemini-4-argon", "claude")).toEqual({ harness: { kind: "claude", profiles: ["default"] } })
+    expect(reviewerRoute("gemini-4-argon", "claude")).toEqual({
+      harness: { kind: "claude", profiles: ["default"] },
+    })
     expect(reviewerRoute("gpt-6-astra", "copilot")).toEqual({})
     expect(reviewerRoute("gemini-4-argon", "pi")).toEqual({})
     expect(reviewModelFor("gpt-6-astra", "")).toBe("claude-opus-5.5")
@@ -300,7 +1057,11 @@ test("osv flags: advisories and license violations per package", () => {
             vulnerabilities: [{ id: "RUSTSEC-1" }],
             license_violations: [],
           },
-          { package: { name: "subtle", version: "2.6.1" }, vulnerabilities: [], license_violations: ["BSD-3-Clause"] },
+          {
+            package: { name: "subtle", version: "2.6.1" },
+            vulnerabilities: [],
+            license_violations: ["BSD-3-Clause"],
+          },
           { package: { name: "toml", version: "1.2.1" } },
         ],
       },

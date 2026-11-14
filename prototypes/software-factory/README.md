@@ -55,6 +55,15 @@ per gate against its threshold, `GATES` in `coordinator/src/sdlc.ts`); a risk ti
 | Docs | Jev ≥ 0.5 | the diff changes README, docs or CHANGELOG |
 | Post-merge | Jev ≥ 0.5 | after the human merges, the merge commit's checks on the default branch |
 
+The tests-first gate inspects commits oldest first, keeping the existing test/documentation path rules.
+For other Rust files, non-blank added and removed lines are checked against the commit and parent respectively.
+It recognizes column-0 `#[cfg(test)]` followed immediately by `mod name {`, indented non-blank interior lines,
+and a column-0 `}`. A plain `mod name;` addition also qualifies when the same commit adds the corresponding
+`name.rs` containing only such test modules, blank lines, and line comments. Existing modules, production stubs,
+and mixed production/test commits do not qualify. Unsupported layouts, unterminated strings/comments, or module
+markers or changed lines inside multiline comments/strings fail closed. Blockers identify the commit and production
+location or explain the classification failure.
+
 Risk tier (`classify`): T0 small docs-only, T2 > 400 lines, dependency manifests or sensitive paths (auth, secrets,
 bind, CI, scripts, Docker, mise), else T1. `.factory/` is git-excluded; `.factory/pr.md` (criteria ✓, tier, gates,
 evidence, rollback, `thread=<uuid>` and the Factory UI link `<SF_UI_URL>?thread=<uuid>`, default
