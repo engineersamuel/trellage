@@ -21,6 +21,13 @@ claude = "claude-opus-5.5"
 gpt = "gpt-6-astra"
 gemini = "gemini-4-argon"
 
+# Worker model routing. Before the proxy router picks a model, Jev scores whether the task is low-complexity
+# (fully specified, checked by tests or commands). At or above small_threshold, and not a UI task, the worker runs
+# on small_model. Pinned models (reviewers, evaluator, security) are not affected. 1.0 turns it off.
+[routing]
+small_model = "claude-haiku-5.5"
+small_threshold = 0.7
+
 [review]
 # Jev probability at or above which a review lens runs.
 lens_threshold = 0.6

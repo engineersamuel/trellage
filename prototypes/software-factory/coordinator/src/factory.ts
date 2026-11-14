@@ -46,7 +46,8 @@ import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./c
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
 import { composePi, piBudgetFile, PiSession, usePiSubagentDir, withProxyModel } from "./pi.ts"
 import { configStore, factoryConfig, missingProfiles, userConfigPath, type FactoryConfig } from "./config.ts"
-import { setDecisionEngine } from "./decide.ts"
+import { decisionsAvailable, setDecisionEngine, systemOne } from "./decide.ts"
+import { noul } from "@typesafe-ai/sdk"
 import { acquireStateLock, migrateLegacyState, stateDir } from "./statedir.ts"
 import { trackSubagent } from "./subagents.ts"
 
@@ -856,6 +857,18 @@ export class Factory {
   private async spawnModel(spec: SpawnSpec): Promise<{ model: string; source: ModelSource }> {
     if (spec.model) return { model: spec.model, source: { kind: "pinned" } }
     if (spec.role !== "worker" || !spec.task) return { model: this.defaultModel, source: { kind: "default" } }
+    const { small_model, small_threshold } = factoryConfig().routing
+    const low = await this.lowComplexity(spec.task)
+    if (low && !low.ui && low.p >= small_threshold) {
+      this.publish("coordinator", "factory.model_routed", null, now(), {
+        worker: spec.name,
+        id: small_model,
+        confidence: low.p,
+        routedBy: "jev-low-complexity",
+        ranked: [small_model],
+      })
+      return { model: small_model, source: { kind: "routed", by: "jev-low-complexity", confidence: low.p } }
+    }
     const routed = await this.routeModel(spec.task)
     if (!routed) return { model: this.defaultModel, source: { kind: "fallback" } }
     this.publish("coordinator", "factory.model_routed", null, now(), {
@@ -865,6 +878,24 @@ export class Factory {
     return {
       model: routed.id,
       source: { kind: "routed", by: routed.routedBy, confidence: routed.confidence },
+    }
+  }
+
+  /**
+   * Jev: how likely the task is low-complexity (prompts/jev/low-complexity.md), and whether it is a UI task (the proxy
+   * router sends UI work to Opus, so the small model must not take it). Null when no decision engine answers.
+   */
+  async lowComplexity(task: string): Promise<{ p: number; ui: boolean } | null> {
+    if (!decisionsAvailable()) return null
+    try {
+      const res = await systemOne({
+        state: task.slice(0, 16_000),
+        questions: { low: noul(loadPrompt("jev/low-complexity")), ui: noul(loadPrompt("jev/ui-task")) },
+      })
+      const [p, ui] = [res.answers?.low?.noul, res.answers?.ui?.noul]
+      return typeof p === "number" ? { p, ui: typeof ui !== "number" || ui >= 0.5 } : null
+    } catch {
+      return null
     }
   }
 

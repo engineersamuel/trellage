@@ -121,10 +121,12 @@ test("spawnModel records how the model was picked", async () => {
   type Spy = {
     publish: () => void
     routeModel: () => Promise<{ id: string; confidence: number; routedBy: string } | null>
+    lowComplexity: () => Promise<{ p: number; ui: boolean } | null>
     spawnModel: (spec: object) => Promise<unknown>
   }
   const f = as<Spy>(new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-m-")), SF_MODEL: "dflt" }))
   f.publish = () => {}
+  f.lowComplexity = async () => null
   f.routeModel = async () => ({ id: "gpt-x", confidence: 0.7, routedBy: "jev" })
   expect(await f.spawnModel({ name: "a", role: "worker", task: "t" })).toEqual({
     model: "gpt-x",
@@ -143,6 +145,62 @@ test("spawnModel records how the model was picked", async () => {
     model: "dflt",
     source: { kind: "fallback" },
   })
+})
+
+test("spawnModel: a low-complexity, non-UI task runs on the small model; otherwise the router picks", async () => {
+  type Spy = {
+    publish: (...a: unknown[]) => void
+    routeModel: () => Promise<{ id: string; confidence: number; routedBy: string } | null>
+    lowComplexity: () => Promise<{ p: number; ui: boolean } | null>
+    spawnModel: (spec: object) => Promise<unknown>
+  }
+  const f = as<Spy>(new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-m-")), SF_MODEL: "dflt" }))
+  const events: unknown[] = []
+  f.publish = (...a) => events.push(a[4])
+  f.routeModel = async () => ({ id: "claude-opus-5.5", confidence: 0.5, routedBy: "jev" })
+  const spec = { name: "v", role: "worker", task: "run bun test and report" }
+  const routed = { model: "claude-opus-5.5", source: { kind: "routed", by: "jev", confidence: 0.5 } }
+
+  f.lowComplexity = async () => ({ p: 0.7, ui: false })
+  expect(await f.spawnModel(spec)).toEqual({
+    model: "claude-haiku-5.5",
+    source: { kind: "routed", by: "jev-low-complexity", confidence: 0.7 },
+  })
+  expect(events[0]).toMatchObject({ worker: "v", id: "claude-haiku-5.5", routedBy: "jev-low-complexity" })
+  // Below the threshold, a UI task, or no decision engine: the router picks as before.
+  f.lowComplexity = async () => ({ p: 0.69, ui: false })
+  expect(await f.spawnModel(spec)).toEqual(routed)
+  f.lowComplexity = async () => ({ p: 0.95, ui: true })
+  expect(await f.spawnModel(spec)).toEqual(routed)
+  f.lowComplexity = async () => null
+  expect(await f.spawnModel(spec)).toEqual(routed)
+  // A pinned model (reviewers, security) never asks.
+  f.lowComplexity = async () => {
+    throw new Error("must not ask")
+  }
+  expect(await f.spawnModel({ ...spec, model: "gpt-6-astra" })).toEqual({
+    model: "gpt-6-astra",
+    source: { kind: "pinned" },
+  })
+})
+
+test("lowComplexity: a missing UI answer counts as UI, so the small model is not used", async () => {
+  const decide = await import("../src/decide.ts")
+  const steps = await import("../src/steps.ts")
+  const f = new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-m-")) })
+  const key = spyOn(steps, "jevKey").mockReturnValue("k")
+  const ask = spyOn(decide, "systemOne")
+  try {
+    ask.mockResolvedValue({ answers: { low: { noul: 0.9 } } as never, engine: "jev" })
+    expect(await f.lowComplexity("t")).toEqual({ p: 0.9, ui: true })
+    ask.mockResolvedValue({ answers: { low: { noul: 0.9 }, ui: { noul: 0.1 } } as never, engine: "jev" })
+    expect(await f.lowComplexity("t")).toEqual({ p: 0.9, ui: false })
+    ask.mockRejectedValue(new Error("down"))
+    expect(await f.lowComplexity("t")).toBeNull()
+  } finally {
+    ask.mockRestore()
+    key.mockRestore()
+  }
 })
 
 import { stepSkillDir, workerHarness } from "../src/factory.ts"
