@@ -7,6 +7,11 @@ import type { Approval } from "../src/approvals.ts"
 import {
   blockerKey,
   costAlert,
+  defaultBranch,
+  NUDGE_ECHO_MS,
+  SETTLE_MAX_MS,
+  settleDone,
+  stallNudges,
   OffTrack,
   r8Scores,
   isModelError,
@@ -116,7 +121,8 @@ test("R3 merges only an open, green, non-draft PR of the branch", () => {
   ])
   expect(r3Blockers(pr({ isDraft: true }), "factory/x")).toEqual(["PR is a draft"])
   expect(r3Blockers(pr({ reviewDecision: "CHANGES_REQUESTED" }), "factory/x")).toEqual(["a reviewer requested changes"])
-  expect(r3Blockers(pr({ mergeable: "CONFLICTING" }), "factory/x")[0]).toStartWith("PR has merge conflicts (rule R22")
+  expect(r3Blockers(pr({ mergeable: "CONFLICTING" }), "factory/x")[0]).toStartWith("PR is behind or conflicts")
+  expect(r3Blockers(pr({ mergeStateStatus: "BEHIND" }), "factory/x")[0]).toContain("rules R21/R22")
   expect(r3Blockers(pr({ state: "MERGED" }), "factory/x")).toEqual(["PR #7 is MERGED"])
   expect(r3Blockers(pr(), "factory/y")).toEqual(["PR #7 is for factory/x, not factory/y"])
 })
@@ -306,4 +312,52 @@ test("R8 acts on the second low score in a row, once per streak", () => {
   expect(o.score("x", 0.1)).toBe(false)
   expect(o.score("x", 0.5)).toBe(false)
   expect(o.score("x", 0.1)).toBe(false)
+})
+
+test("R6 stops only a worker that did nothing since its nudge; real work after it starts over", () => {
+  expect(stallNudges(undefined, 5)).toBe(0)
+  expect(stallNudges(1000, 1000)).toBe(1)
+  expect(stallNudges(1000, 1000 + NUDGE_ECHO_MS)).toBe(1)
+  expect(stallNudges(1000, 1001 + NUDGE_ECHO_MS)).toBe(0)
+})
+
+test("R17 releases a hold on green, or after 30 min without a red main", () => {
+  expect(settleDone("SUCCESS", 0, 1)).toBe(true)
+  expect(settleDone("PENDING", 0, SETTLE_MAX_MS)).toBe(false)
+  expect(settleDone("PENDING", 0, SETTLE_MAX_MS + 1)).toBe(true)
+  expect(settleDone("NONE", 0, SETTLE_MAX_MS + 1)).toBe(true)
+  expect(settleDone("FAILURE", 0, SETTLE_MAX_MS + 1)).toBe(false)
+  expect(settleDone("PENDING", undefined, Number.MAX_SAFE_INTEGER)).toBe(false)
+})
+
+test("the default branch comes from origin/HEAD; R3a then checks that branch, not main", async () => {
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), "cos-master-")))
+  const origin = path.join(root, "origin.git")
+  git(root, "init", "-q", "--bare", "-b", "master", origin)
+  const seed = path.join(root, "seed")
+  git(root, "clone", "-q", origin, seed)
+  git(seed, "checkout", "-q", "-b", "master")
+  writeFileSync(path.join(seed, "a"), "1\n")
+  git(seed, "add", "a")
+  git(seed, "commit", "-qm", "one")
+  git(seed, "push", "-q", "-u", "origin", "master")
+  const checkout = path.join(root, "app")
+  git(root, "clone", "-q", origin, checkout)
+  expect(await defaultBranch(checkout)).toBe("master")
+  expect(await r3aBlocker(checkout, "master")).toBeNull()
+  expect(await r3aBlocker(checkout)).toBe(`${checkout} is on master, not main`)
+  expect(await defaultBranch(root)).toBe("main")
+})
+
+test("the ledger prunes entries older than 90 days and remembers decisions an event turn opened", () => {
+  const l = new Ledger(mkdtempSync(path.join(tmpdir(), "ledger-")))
+  l.add({ rule: "CoS", threadId: "t1", action: "event decision d1", result: "done", detail: "" })
+  l.add({ rule: "CoS", threadId: null, action: "event decision d2", result: "done", detail: "" })
+  expect(l.eventDecision("d1")).toEqual({ threadId: "t1" })
+  expect(l.eventDecision("d2")).toEqual({ threadId: null })
+  expect(l.eventDecision("d3")).toBeNull()
+  l.prune(90)
+  expect(l.list()).toHaveLength(2)
+  l.prune(-1)
+  expect(l.list()).toHaveLength(0)
 })

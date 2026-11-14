@@ -19,7 +19,6 @@ export type RuleId =
   | "r14"
   | "r15"
   | "r17"
-  | "r21"
   | "r24"
   | "r25"
   | "r26"
@@ -60,6 +59,17 @@ export class Ledger {
       [at, e.rule, e.threadId, e.action, e.result, e.detail],
     )
     return { ...e, seq: Number(r.lastInsertRowid), at }
+  }
+  /** Delete entries older than `days` (the ledger keeps 90 days). */
+  prune(days = 90): void {
+    this.db.run("DELETE FROM ledger WHERE at < ?", [Date.now() - days * 86_400_000])
+  }
+  /** When a CoS event session opened decision `id`: the conversation it was about (or null); null when none did. */
+  eventDecision(id: string): { threadId: string | null } | null {
+    const r = this.db
+      .query("SELECT thread_id AS threadId FROM ledger WHERE rule = 'CoS' AND action = ? ORDER BY seq DESC LIMIT 1")
+      .get(`event decision ${id}`) as { threadId: string | null } | null
+    return r ?? null
   }
   list(limit = 200, threadId?: string): LedgerEntry[] {
     const sql = `SELECT seq, at, rule, thread_id AS threadId, action, result, detail FROM ledger${threadId ? " WHERE thread_id = ?" : ""} ORDER BY seq DESC LIMIT ?`
@@ -116,6 +126,7 @@ export type PrView = {
   headRefName: string
   reviewDecision: string | null
   mergeable: string
+  mergeStateStatus?: string
   statusCheckRollup: Check[] | null
 }
 
@@ -126,9 +137,10 @@ export const r3Blockers = (pr: PrView, branch: string): string[] => {
   if (pr.state !== "OPEN") out.push(`PR #${pr.number} is ${pr.state}`)
   if (pr.isDraft) out.push("PR is a draft")
   if (pr.reviewDecision === "CHANGES_REQUESTED") out.push("a reviewer requested changes")
-  if (pr.mergeable === "CONFLICTING")
+  // R21/R22: a PR is rebased only when it needs it (on demand, not after every merge).
+  if (pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "BEHIND")
     out.push(
-      "PR has merge conflicts (rule R22: spawn step=finish to rebase on origin/main, resolve them, run the tests and push)",
+      "PR is behind or conflicts with its base branch (rules R21/R22): spawn step=finish to rebase on the base branch, resolve any conflict, run the tests and push with --force-with-lease; then call merge_pr again",
     )
   const checks = checksState(pr.statusCheckRollup ?? [])
   if (checks !== "SUCCESS" && checks !== "NONE") out.push(`checks are ${checks}`)
@@ -164,10 +176,10 @@ export const mainCheckout = async (worktree: string, registered: string): Promis
 }
 
 /** R3a: why the main checkout is not pulled (not clean, not on main), or null. Never stashes. */
-export const r3aBlocker = async (checkout: string): Promise<string | null> => {
+export const r3aBlocker = async (checkout: string, main = "main"): Promise<string | null> => {
   const branch = await run("git", ["-C", checkout, "rev-parse", "--abbrev-ref", "HEAD"], checkout)
   if (!branch.ok) return `git failed in ${checkout}: ${branch.out}`
-  if (branch.out !== "main") return `${checkout} is on ${branch.out}, not main`
+  if (branch.out !== main) return `${checkout} is on ${branch.out}, not ${main}`
   const status = await run("git", ["-C", checkout, "status", "--porcelain"], checkout)
   if (!status.ok) return `git status failed in ${checkout}: ${status.out}`
   return status.out ? `${checkout} has uncommitted changes` : null
@@ -189,7 +201,7 @@ export const mergePr = async (m: MergeInput): Promise<MergeResult> => {
   if (!m.branch.startsWith("factory/"))
     return { merged: false, reason: `only factory/* branches merge; on ${m.branch}` }
   if (!m.shipGranted) return { merged: false, reason: `no accepted ship approval for ${m.branch}` }
-  const fields = "number,url,state,isDraft,headRefName,reviewDecision,mergeable,statusCheckRollup"
+  const fields = "number,url,state,isDraft,headRefName,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup"
   const view = await run("gh", ["pr", "view", m.branch, "--json", fields], m.worktree)
   if (!view.ok) return { merged: false, reason: `gh pr view failed: ${view.out.split("\n")[0]}` }
   const pr = JSON.parse(view.out) as PrView
@@ -209,9 +221,10 @@ export const mergePr = async (m: MergeInput): Promise<MergeResult> => {
 export const pullMain = async (worktree: string, repo: string): Promise<string> => {
   const checkout = await mainCheckout(worktree, repo)
   if (typeof checkout !== "string") return `not pulled: ${checkout.error}`
-  const blocked = await r3aBlocker(checkout)
+  const main = await defaultBranch(checkout)
+  const blocked = await r3aBlocker(checkout, main)
   if (blocked) return `not pulled: ${blocked}`
-  const pull = await run("git", ["-C", checkout, "pull", "--rebase", "origin", "main"], checkout, 120_000)
+  const pull = await run("git", ["-C", checkout, "pull", "--rebase", "origin", main], checkout, 120_000)
   return pull.ok ? `pulled ${checkout}` : `pull failed in ${checkout}: ${pull.out.split("\n")[0]}`
 }
 
@@ -226,7 +239,7 @@ export const relayText = (a: Approval): string =>
 /** Per repo: main is red (R15; only its fix conversation may merge), or a merge waits for main CI (R17). */
 export type RepoHold = {
   red?: { fixThread: string | null; since: number }
-  settling?: { pr: string; sha: string }
+  settling?: { pr: string; sha: string; at?: number }
   /** Conversations whose merge_pr was held; told to call it again when the hold ends. */
   waiting?: string[]
 }
@@ -274,9 +287,20 @@ export const mergeHold = (h: RepoHold, threadId: string | null): string | null =
   return null
 }
 
-/** The check state of the newest commit on main, or null when gh cannot tell (no GitHub remote). */
+/** The repo's default branch from origin/HEAD (e.g. main or master); "main" when git cannot tell. */
+export const defaultBranch = async (repo: string): Promise<string> => {
+  const r = await run("git", ["-C", repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], repo, 10_000)
+  return r.ok && r.out.startsWith("origin/") ? r.out.slice("origin/".length) : "main"
+}
+
+/** The check state of the newest commit on the default branch, or null when gh cannot tell (no GitHub remote). */
 export const mainChecks = async (repo: string): Promise<{ sha: string; state: string } | null> => {
-  const sha = await run("git", ["-C", repo, "ls-remote", "origin", "refs/heads/main"], repo, 30_000)
+  const sha = await run(
+    "git",
+    ["-C", repo, "ls-remote", "origin", `refs/heads/${await defaultBranch(repo)}`],
+    repo,
+    30_000,
+  )
   const head = sha.ok ? sha.out.split(/\s/)[0] : ""
   if (!head) return null
   const runs = await run(
@@ -299,15 +323,12 @@ export const mergeCommit = async (worktree: string, pr: string): Promise<string 
   return r.ok && r.out ? r.out : null
 }
 
-/** Open PR branches of a repo (R21 tells them to rebase after a merge). */
-export const openPrBranches = async (repo: string): Promise<string[]> => {
-  const r = await run(
-    "gh",
-    ["pr", "list", "--state", "open", "--limit", "100", "--json", "headRefName", "--jq", ".[].headRefName"],
-    repo,
-  )
-  return r.ok ? r.out.split("\n").filter(Boolean) : []
-}
+/** R17: a merge hold whose main CI never finished (skipped, path-filtered) ends after this long. */
+export const SETTLE_MAX_MS = 30 * 60_000
+
+/** R17: release the hold when main is green, or when it is not red and the hold is older than SETTLE_MAX_MS. */
+export const settleDone = (state: string, since: number | undefined, now: number): boolean =>
+  state === "SUCCESS" || (state !== "FAILURE" && since !== undefined && now - since > SETTLE_MAX_MS)
 
 // ---------- R24: same blocker twice ----------
 
@@ -364,6 +385,14 @@ export type IssueAction = "nudge" | "stop" | "to-owner" | "to-human" | "warn-own
  * the owner (never stops the worker; offTrackStreak decides when the issue exists).
  * Other kinds (error, uncollected) go to their owner as before (null).
  */
+/**
+ * R6: nudges this stall already had: 1 when the worker was nudged and did nothing since (its last activity is the
+ * nudge itself, or the session echoing it within NUDGE_ECHO_MS), else 0 (a new stall after real work starts over).
+ */
+export const NUDGE_ECHO_MS = 30_000
+export const stallNudges = (nudgedAt: number | undefined, lastActivity: number): number =>
+  nudgedAt !== undefined && lastActivity <= nudgedAt + NUDGE_ECHO_MS ? 1 : 0
+
 export const issueAction = (kind: IssueKind, seenBefore: number, on: (r: RuleId) => boolean): IssueAction => {
   if (kind === "stalled" && on("r6")) return seenBefore === 0 ? "nudge" : "stop"
   if (kind === "failing-tools" && on("r7")) return seenBefore === 0 ? "to-owner" : "to-human"

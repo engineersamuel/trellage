@@ -73,6 +73,7 @@ const FactoryConfigSchema = Schema.Struct({
     model_error_workers: Count,
     model_error_window_minutes: Count,
     cost_alert_share: Probability,
+    max_parallel_events: Count,
     rules: Schema.Struct({
       r1: Schema.Boolean,
       r3: Schema.Boolean,
@@ -83,7 +84,6 @@ const FactoryConfigSchema = Schema.Struct({
       r14: Schema.Boolean,
       r15: Schema.Boolean,
       r17: Schema.Boolean,
-      r21: Schema.Boolean,
       r24: Schema.Boolean,
       r25: Schema.Boolean,
       r26: Schema.Boolean,

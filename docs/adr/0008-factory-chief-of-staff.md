@@ -64,8 +64,8 @@ sub-coordinators ──typed events──▶ rule engine (code) ──▶ action
 | R3 | Factory PR, ship granted, all required checks pass, none pending, no change request, not draft | Sub-coordinator's `merge_pr` tool squash-merges (`gh pr merge --squash`); then one worker in the repo's main checkout runs `git pull --rebase origin main` |
 | R3a | Before R3's pull: main checkout not clean, or not on `main` | No pull, no stash; tell the human |
 | R4 | Red CI | Sub-coordinator fix loop, at most 5 rounds (exists); then the human |
-| R6 | Worker without events for `stall_seconds` (300) | Nudge once; second time stop it and report |
-| R7 | 3 failed tool calls in a row | Errors to the sub-coordinator; again → the human |
+| R6 | Worker without events for `stall_seconds` (300) and no tool call running | Nudge once; if it does nothing after the nudge, stop it and report; real work after a nudge starts over |
+| R7 | 3 failed tool calls in a row | Errors to the sub-coordinator; again → one card for the human per worker |
 | R8 | Jev on-track < 0.30 twice in a row, for a worker that is not a gate, verify or review worker and is between tool calls | Tell its owner with its latest activity; the worker keeps running |
 | R9 | Worker result not collected | Tell its owner to collect it |
 | R12 | Goal at 80% of its cost limit | Tell the human; at 100% stop it |
@@ -73,8 +73,8 @@ sub-coordinators ──typed events──▶ rule engine (code) ──▶ action
 | R14 | Ship approval from a sub-coordinator, and the run's verify step passed, the independent evaluator passed every AC, the security review has no open high finding | CoS grants the ship (answers "by CoS/R14"); the sub-coordinator spawns `step=finish` to push and open the PR |
 | R15 | CI on `main` of a repo fails | CoS starts a fix conversation in that repo: diagnose, fix, ship (R14), merge (R3). Other automatic merges in that repo wait until `main` is green |
 | R16 | The fix PR's CI is red, or `main` is still red after its merge | Keep fixing until `main` is green; no round limit (R29 bounds the spend) |
-| R17 | More than one PR ready to merge in one repo | Merge one at a time; the next waits until CI on `main` is green |
-| R21 | A PR merged in a repo | Tell every other open factory PR in that repo to rebase on `main` |
+| R17 | More than one PR ready to merge in one repo | Merge one at a time; the next waits until CI on the default branch is green, or 30 min without a red result (skipped or path-filtered CI) |
+| R21 | A PR is behind its base branch | Rebase on demand: `merge_pr` refuses a behind or conflicting PR and tells the sub-coordinator to rebase it (not every open PR after every merge) |
 | R22 | Merge conflict on a factory branch | A worker resolves it in the conversation's worktree, runs the tests, pushes; red after that → R4 |
 | R24 | A conversation reports the same blocker 2 times | Stop its loop, ask the human |
 | R25 | Sub-coordinator idle, no running workers, no report for 15 min | **Done** (its PR is merged): archive as successful, clean its worktree. **Not done**: tell it to report up |
@@ -124,14 +124,16 @@ The pull worker after R3 gets only `git pull --rebase origin main` in that one d
 - **Event turns are stateless.** Each event that reaches the model gets a fresh short session: the rules, the case
   file of that conversation (its last ledger entries and report), and the board. Same event and state give the same
   action; nothing drifts; cost stays low.
-- **Events run in parallel.** Events of different conversations run at the same time, each in its own session;
+- **Events run in parallel**, at most `[cos] max_parallel_events` (4) at once. Each runs in its own short session
+  with a short prompt (no live-card or OpenUI Lang reference). A decision an event turn opens is answered as a new
+  event about the same conversation. Events of different conversations run at the same time;
   events of one conversation run in order, so two turns never act on it at once.
 - **Rule state is in SQLite.** The ledger and the per-repo merge holds (red main, merge in progress, waiting PRs)
   are in `cos.db`, so a restart keeps them.
 - **The human's chat with the CoS is stateful**, with auto-compaction. It reads the board and ledger with tools, so a
   compaction loses nothing that matters.
-- **The ledger is the memory.** Append-only table: time, event, rule id, mode, action, result, conversation. Code and
-  the CoS can query it; the UI shows it.
+- **The ledger is the memory.** Append-only table (kept 90 days): time, event, rule id, mode, action, result,
+  conversation. Code and the CoS can query it; the UI shows it.
 - **The board** is the cross-conversation view: the current snapshot with no 30-item limit, chats included, grouped
   by repo, blocked first.
 

@@ -67,7 +67,9 @@ export type Scope = {
   /** Default decision context, e.g. the repo folder name. */ label?: string
   /** Repo folder id; its lessons file is read at start and appended by report_up. */ folderId?: string
   /** The repo's registered main checkout; merge_pr pulls it after a merge. */ repo?: string
-  /** After merge_pr merged (rules R17, R21). */ merged?: (r: MergeResult) => void
+  /** After merge_pr merged (rule R17). */ merged?: (r: MergeResult) => void
+  /** A decision this scope opened (a Chief of Staff event session records it, so the answer comes back to it). */
+  opened?: (approvalId: string) => void
   /** Sends a sub-coordinator's report_up to the human. */ report?: (r: Report) => void | Promise<void>
   /** A conversation exists and is not cleaned up; checks request_approval's reportThreadId. */ knownThread?: (
     threadId: string,
@@ -734,6 +736,7 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
         topic: shipBranch ? "ship" : a.topic === "plan" || a.topic === "findings" ? a.topic : "other",
       })
       if (shipBranch) f.approvals.addShip(item.id, scope.id, shipBranch)
+      scope.opened?.(item.id)
       f.publish("coordinator", "factory.approval_requested", null, String(Date.now()), item)
       return json({ id: item.id, status: "pending", note: "Shown to the human. End your turn now." })
     },
@@ -988,7 +991,8 @@ export const optimizeRepoTask = (request: string) =>
 export type Conversations = {
   list: () => unknown
   folders: () => unknown
-  start: (folder: string, task: string) => Promise<unknown>
+  /** `fresh`: a new conversation even when one in the folder has the same task (optimize_repo; skips R26). */
+  start: (folder: string, task: string, fresh?: boolean) => Promise<unknown>
   message: (threadId: string, text: string) => Promise<void>
   read: (threadId: string, wait: boolean) => Promise<unknown>
   /** Compact live snapshot of every conversation, worker and pending decision. */
@@ -1035,7 +1039,7 @@ export const globalTools = (c: Conversations): Tool<Args>[] => [
       },
       ["folder", "request"],
     ),
-    handler: async (a: Args) => json(await c.start(str(a, "folder"), optimizeRepoTask(str(a, "request")))),
+    handler: async (a: Args) => json(await c.start(str(a, "folder"), optimizeRepoTask(str(a, "request")), true)),
   }),
   defineTool("message_conversation", {
     description:

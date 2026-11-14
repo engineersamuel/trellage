@@ -109,6 +109,8 @@ model_error_workers = 3
 model_error_window_minutes = 5
 # R12: tell the human once when a goal's spend reaches this share of its limit (at 100% the goal pauses).
 cost_alert_share = 0.8
+# Chief of Staff event sessions that run at the same time; more wait.
+max_parallel_events = 4
 
 [cos.rules]
 # R1: answer a decision with Jev's pick (never ship, merge, delete, cost, goal or config decisions).
@@ -130,8 +132,6 @@ r14 = true
 r15 = true
 # R17: one merge at a time per repo; the next waits until CI on main is green.
 r17 = true
-# R21: after a merge, every other open factory PR in that repo is told to rebase on main.
-r21 = true
 # R24: the same blocker reported twice stops the conversation's workers and asks the human.
 r24 = true
 # R25: idle without a report: done (PR merged) is archived, not done is told to report.

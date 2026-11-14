@@ -19,8 +19,11 @@ export const findIssues = (workers: Worker[], nowMs: number, l: Limits): Issue[]
     const quietS = Math.round((nowMs - w.lastActivity) / 1000)
     const add = (kind: Issue["kind"], detail: string) => out.push({ worker: w.id, name: w.name, kind, detail })
     if (w.status === "error") add("error", w.lastError ?? "session error")
-    else if (w.status === "running" && quietS >= l.stallSeconds) add("stalled", `no events for ${quietS}s`)
-    if (w.failedTools >= l.failedToolsInARow) add("failing-tools", `${w.failedTools} tool calls failed in a row; last: ${w.lastError ?? "?"}`)
+    // A worker inside a tool call (a long test or build) is not stalled.
+    else if (w.status === "running" && !w.toolsInFlight && quietS >= l.stallSeconds)
+      add("stalled", `no events for ${quietS}s`)
+    if (w.failedTools >= l.failedToolsInARow)
+      add("failing-tools", `${w.failedTools} tool calls failed in a row; last: ${w.lastError ?? "?"}`)
     if (w.status === "idle" && w.task && !w.collected && quietS >= l.uncollectedSeconds)
       add("uncollected", `finished ${quietS}s ago; result not read with read_worker`)
   }

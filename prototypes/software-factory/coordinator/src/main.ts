@@ -22,6 +22,8 @@ import { isProposal, settleProposal } from "./configChanges.ts"
 import {
   blockerKey,
   costAlert,
+  settleDone,
+  stallNudges,
   OffTrack,
   r8Scores,
   isModelError,
@@ -32,7 +34,6 @@ import {
   ledgerOf,
   mainChecks,
   modelErrorWorkers,
-  openPrBranches,
   r14Blocker,
   r1Pick,
   r25Action,
@@ -198,8 +199,9 @@ console.error(
   `global instructions: ${instructionsPath()} (${instructions ? `${instructions.length} chars` : "missing"})`,
 )
 /** Tools of a global-level coordinator: the desk, or one General chat (`chat` is its thread id). */
-const globalScopeTools = (id: string, chat: string | null) => [
+const globalScopeTools = (id: string, chat: string | null, extra: Pick<Scope, "opened"> = {}) => [
   ...coordinatorTools(factory, {
+    ...extra,
     id,
     threadId: chat,
     knownThread: (tid) => !!threads.get(tid) && !threads.get(tid)!.cleanedAt,
@@ -214,8 +216,8 @@ const globalScopeTools = (id: string, chat: string | null) => [
         ...(isUnstartedDraft(t) ? { note: DRAFT_NOTE } : {}),
       })),
     folders: () => threads.folders(),
-    start: (folder, task) => {
-      const held = startHold(folder, task)
+    start: (folder, task, fresh) => {
+      const held = startHold(folder, task, fresh)
       return held ? Promise.resolve({ error: held }) : startConversation(folder, task, chat)
     },
     message: async (tid, text) => logFailure(await deliverToThread(tid, `[from the global coordinator] ${text}`)),
@@ -258,6 +260,10 @@ const snapshot = () =>
 const DESK_DIR = path.dirname(homeFile())
 const deskWhere = `Your working directory is ${DESK_DIR}, the folder that holds the human's repos. Read any repo there (ls, cat, git -C <repo> log). Never edit there: writes and non-read-only shell are refused. To change a repo, start_conversation in its folder; its workers edit in their own worktree.`
 const homeBlock = (h: string) => (h ? `\n\n${h}` : "")
+
+/** System prompt of a CoS event session: the global prompt without the live-card and OpenUI Lang references. */
+const eventSystem = () =>
+  `${coordinatorPrompt()}\n\n${globalPrompt()}\n\n${deskPrompt()}${homeBlock(homeAll(readHome()))}\n\n${deskWhere}${instructions ? `\n\n<human-instructions>\n${instructions}\n</human-instructions>` : ""}`
 
 const globalSystem = (extra: string) =>
   `${coordinatorPrompt()}\n\n${cardsPrompt()}\n\n${globalPrompt()}${extra}${homeBlock(homeAll(readHome()))}\n\n${deskWhere}${instructions ? `\n\n<human-instructions>\n${instructions}\n</human-instructions>` : ""}\n\n# OpenUI Lang\n${openuiPrompt}`
@@ -1033,6 +1039,9 @@ const answerApproval = (a: ReturnType<typeof factory.approvals.answer>) => {
       note: [a.note, `factory config change failed: ${e instanceof Error ? e.message : e}`].filter(Boolean).join("; "),
     }
   }
+  // A decision a CoS event turn opened: its answer is a new event about the same conversation (that session is gone).
+  const ev = a.reportThreadId ? null : ledgerOf(factory.root).eventDecision(a.id)
+  if (ev) return cosEvent(ev.threadId, answerPrompt(a))
   // R27: an answer to a report goes straight to the reporting conversation; no global coordinator turn.
   if (a.reportThreadId && ruleOn("r27")) {
     cosLog("R27", a.reportThreadId, `relay decision ${a.id}`, "done", `"${a.title}": ${a.answer}`)
@@ -1102,10 +1111,23 @@ factory.feed.subscribe((ev) => {
  * event, the conversation's case file (its last ledger entries) and the board. One event at a time; the turn is
  * saved in the CoS thread, so the human sees it. The human's own chat with the CoS stays one session.
  */
-// Events run in parallel; events of one conversation run in order, so two turns never act on it at once.
+// Events run in parallel (at most [cos] max_parallel_events at once); events of one conversation run in order, so
+// two turns never act on it at once.
 const cosChains = new Map<string, Promise<void>>()
+let cosRunning = 0
+const cosWaiting: (() => void)[] = []
+const cosSlot = async <T>(f: () => Promise<T>): Promise<T> => {
+  while (cosRunning >= factoryConfig().cos.max_parallel_events) await new Promise<void>((ok) => cosWaiting.push(ok))
+  cosRunning++
+  try {
+    return await f()
+  } finally {
+    cosRunning--
+    cosWaiting.shift()?.()
+  }
+}
 const cosEvent = (caseThread: string | null, event: string): void => {
-  const run = () => runCosEvent(caseThread, event).catch((e) => console.error(`CoS event failed: ${e}`))
+  const run = () => cosSlot(() => runCosEvent(caseThread, event)).catch((e) => console.error(`CoS event failed: ${e}`))
   if (!caseThread) return void run()
   const next = (cosChains.get(caseThread) ?? Promise.resolve()).then(run)
   cosChains.set(caseThread, next)
@@ -1132,9 +1154,13 @@ const runCosEvent = async (caseThread: string | null, event: string): Promise<vo
     owner: DESK_ID,
     threadId: cosThread.id,
     shareRuntimeOf: DESK_ID,
-    system: globalSystem(`\n\n${deskPrompt()}`),
-    // Workers it starts belong to the CoS, not to this short session.
-    tools: globalScopeTools(DESK_ID, cosThread.id),
+    // Short prompt: an event turn writes markdown, so no live-card or OpenUI Lang reference (ADR 0008 cost).
+    system: eventSystem(),
+    // Workers it starts belong to the CoS, not to this short session. Decisions it opens come back as events.
+    tools: globalScopeTools(DESK_ID, cosThread.id, {
+      opened: (approvalId) =>
+        cosLog("CoS", caseThread, `event decision ${approvalId}`, "done", "opened by an event turn"),
+    }),
     permissions: factory.globalPermissions,
     workdir: DESK_DIR,
     model: factory.settings.agent.model,
@@ -1250,14 +1276,22 @@ const groupIssuesByOwner = (issues: Issue[], coordinator: Worker): Map<string, I
 const issueSeen = new Map<string, number>()
 
 /** R6, R7, R8: act on an issue in code. Returns false when the issue goes to its owner as before. */
+/** R6: when each worker was last nudged. R7: workers whose failures already went to the human (one card each). */
+const stallNudgedAt = new Map<string, number>()
+const r7Asked = new Set<string>()
+
 const ruleIssue = async (issue: Issue, coordinator: Worker): Promise<boolean> => {
   const key = `${issue.worker}|${issue.kind}`
-  const seen = issueSeen.get(key) ?? 0
+  const w = factory.workers.get(issue.worker)
+  // R6 counts nudges per stall (activity after a nudge starts over); others count fresh issues.
+  const seen =
+    issue.kind === "stalled" && w ? stallNudges(stallNudgedAt.get(w.id), w.lastActivity) : (issueSeen.get(key) ?? 0)
   const action = issueAction(issue.kind, seen, ruleOn)
   if (!action) return false
-  issueSeen.set(key, seen + 1)
-  const w = factory.workers.get(issue.worker)
+  issueSeen.set(key, (issueSeen.get(key) ?? 0) + 1)
   if (!w) return true
+  if (action === "to-human" && r7Asked.has(w.id)) return true
+  if (action === "to-human") r7Asked.add(w.id)
   const ownerId = w.owner ?? coordinator.id
   const owner = factory.workers.get(ownerId)
   const threadOfOwner = threads.list().find((t) => subId(t.id) === ownerId)?.id ?? null
@@ -1266,6 +1300,7 @@ const ruleIssue = async (issue: Issue, coordinator: Worker): Promise<boolean> =>
     owner && owner !== coordinator && threadOfOwner ? deliverAndLog(threadOfOwner, text) : cosEvent(null, text)
   switch (action) {
     case "nudge":
+      stallNudgedAt.set(w.id, Date.now())
       await w
         .send(
           `[Chief of Staff · rule R6] You have been silent for a while (${issue.detail}). Continue your task now, or finish with what you have and say what blocks you.`,
@@ -1334,9 +1369,9 @@ const firstTask = (t: Thread): string => {
 }
 
 /** R26, R29, R28: why start_conversation must not start this task now, or null. */
-const startHold = (folder: string, task: string): string | null => {
+const startHold = (folder: string, task: string, fresh = false): string | null => {
   if (factory.spawnHold) return factory.spawnHold
-  if (!ruleOn("r26")) return null
+  if (fresh || !ruleOn("r26")) return null
   const f = threads.folder(folder)
   const key = taskKey(task)
   const dup = f
@@ -1381,29 +1416,15 @@ const cosOnReport = async (threadId: string, r: Report): Promise<void> => {
   cosLog("R24", threadId, "stop loop, ask the human", "done", key.slice(0, 200))
 }
 
-/** R17, R21 after merge_pr merged: hold the repo's merges until main CI is green; tell other PRs to rebase. */
+/** R17 after merge_pr merged: hold the repo's merges until main CI is green. R21/R22 rebase on demand (merge_pr). */
 const afterMerge = (t: Thread, repo: string, m: MergeResult) => {
   if (ruleOn("r17") && m.sha)
-    factory.repoGates.set(repo, { ...factory.repoGates.get(repo), settling: { pr: m.pr ?? "?", sha: m.sha } })
+    factory.repoGates.set(repo, {
+      ...factory.repoGates.get(repo),
+      settling: { pr: m.pr ?? "?", sha: m.sha, at: Date.now() },
+    })
   const hold = factory.repoGates.get(repo)
   if (hold.red?.fixThread === t.id) factory.repoGates.set(repo, { ...hold, red: { ...hold.red, fixThread: null } })
-  if (!ruleOn("r21")) return
-  void openPrBranches(repo).then((branches) => {
-    for (const other of threads.list())
-      if (
-        other.id !== t.id &&
-        other.branch &&
-        branches.includes(other.branch) &&
-        !other.cleanedAt &&
-        threads.folder(other.folderId)?.path === repo
-      ) {
-        cosLog("R21", other.id, `rebase ${other.branch} on main`, "done", `after ${m.pr ?? "a merge"}`)
-        deliverAndLog(
-          other.id,
-          `[Chief of Staff · rule R21] ${m.pr ?? "A PR"} was merged into main. Spawn step=finish to rebase ${other.branch} on origin/main, resolve any conflict (rule R22), run the tests and push with --force-with-lease; then continue.`,
-        )
-      }
-  })
 }
 
 /** R15, R16, R17: per repo, check CI on main. Red: one fix conversation, others hold; green: release the holds. */
@@ -1427,8 +1448,18 @@ const watchMain = async () => {
     if (!main) continue
     const hold = factory.repoGates.get(repo)
     if (main.state !== "NONE") reposWithChecks.add(repo)
-    if (main.state === "PENDING" || (main.state === "NONE" && reposWithChecks.has(repo))) continue
-    if (main.state === "SUCCESS" || main.state === "NONE") {
+    // R17: a merge hold whose main CI never finishes (skipped or path-filtered checks) ends after 30 min.
+    const stale = !hold.red && hold.settling && settleDone(main.state, hold.settling.at, Date.now())
+    if (stale && main.state !== "SUCCESS")
+      cosLog(
+        "R17",
+        null,
+        `release merge hold in ${repo}`,
+        "done",
+        `no green checks on main after 30 min (${main.state})`,
+      )
+    if (!stale && (main.state === "PENDING" || (main.state === "NONE" && reposWithChecks.has(repo)))) continue
+    if (stale || main.state === "SUCCESS" || main.state === "NONE") {
       if (hold.red)
         cosLog("R15", hold.red.fixThread, `main green in ${repo}`, "done", `merges resume at ${main.sha.slice(0, 10)}`)
       factory.repoGates.set(repo, {})
@@ -1464,7 +1495,7 @@ loop("cos-main-ci", "30 seconds", watchMain)
 
 /** R25: a sub-coordinator idle without a report: done (PR merged) is archived; not done is told to report. */
 const r25Told = new Map<string, number>()
-const idleSweep = () => {
+const idleSweep = async () => {
   if (!ruleOn("r25")) return
   const quietMs = factoryConfig().cos.idle_report_minutes * 60_000
   for (const t of threads.list()) {
@@ -1475,19 +1506,16 @@ const idleSweep = () => {
       continue
     }
     const w = factory.workers.get(subId(t.id))
-    const repo = threads.folder(t.folderId)?.path
-    if (!w || !repo || (r25Told.get(t.id) ?? 0) >= w.lastActivity) continue
+    if (!w || (r25Told.get(t.id) ?? 0) >= w.lastActivity) continue
     const idle =
       w.status === "idle" && ![...factory.workers.values()].some((x) => x.owner === w.id && x.status === "running")
     const quiet = Date.now() - w.lastActivity
     if (!idle || quiet < quietMs) continue
     r25Told.set(t.id, Date.now())
     const hasReported = (lastReportAt.get(t.id) ?? 0) >= factory.turn(w.id).start
-    // Checked only now: it runs git and gh.
-    const action = r25Action(
-      { idle, quietMs: quiet, done: fullyMerged(repo, t as Worktree), reported: hasReported },
-      quietMs,
-    )
+    // Done = its PR is merged (gh, async: the service never blocks on it).
+    const { pr } = await prOf(t)
+    const action = r25Action({ idle, quietMs: quiet, done: pr?.state === "MERGED", reported: hasReported }, quietMs)
     if (action === "archive") {
       archiveDone(t)
       void cleanMergedThread(t)
@@ -1503,6 +1531,8 @@ const archiveDone = (t: Thread) => {
   cosLog("R25", t.id, "archive as successful", "done", "PR merged")
 }
 loop("cos-idle", "1 minute", idleSweep)
+// The ledger keeps 90 days.
+loop("cos-ledger-prune", "1 day", () => ledgerOf(factory.root).prune(), "1 minute")
 
 /** R28, R29: hold new workers and conversations on model errors across workers, or at the daily spend limit. */
 const modelErrors: { worker: string; at: number }[] = []
