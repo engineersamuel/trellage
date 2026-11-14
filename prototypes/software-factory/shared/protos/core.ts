@@ -169,19 +169,16 @@ export const pendingFor = (threadId: string | null) =>
 /** Show a conversation in the host's native chat. */
 export const openThread = (threadId: string) =>
   window.dispatchEvent(new CustomEvent("sf:open-thread", { detail: threadId }))
-/** Start a new conversation in a folder in the host's native chat. */
+/** Start a new conversation in a folder in the host's native chat. The General folder has one: the Chief of Staff. */
 export const newThread = (folderId = "general") => {
   document.cookie = `sf_folder=${folderId}; path=/; max-age=31536000; samesite=lax`
+  const cos = folderId === "general" ? state.threads.find((t) => t.desk) : undefined
+  if (cos) return openThread(cos.id)
   window.dispatchEvent(new CustomEvent("sf:new-thread", { detail: folderId }))
 }
-/** Open the conversation behind an agent in the native chat: the newest General thread for the global coordinator, the repo thread for a sub-coordinator. Returns false for workers (no conversation). */
+/** Open the conversation behind an agent in the native chat: the Chief of Staff for the global coordinator, the repo thread for a sub-coordinator. Returns false for workers (no conversation). */
 export const openAgentChat = (agentId: string): boolean => {
-  if (agentId === "general") {
-    const chat = state.threads.find((t) => t.folderId === "general" && !t.desk)
-    if (chat) openThread(chat.id)
-    else newThread("general")
-    return true
-  }
+  if (agentId === "general") return (newThread("general"), true)
   const t = threadOf(agentId)
   if (t) return (openThread(t.id), true)
   return false

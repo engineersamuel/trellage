@@ -189,6 +189,7 @@ class Grading {
       options: ["Launch improvement run", "Reject"],
       optionDetails: ["Start one improvement conversation for the Factory", "Do nothing"],
       context: "factory grader · human only",
+      humanOnly: true,
     })
     this.d.publish("factory.approval_requested", item)
     return item.id

@@ -721,3 +721,15 @@
   font-size: 11px;
   color: var(--sf-muted);
 }
+
+/* 📒 Rule ledger (shared/ledger.ts): refused and failed rows stand out */
+.sfp-p3 .sf-ledger td:last-child {
+  text-align: left !important;
+  white-space: normal;
+}
+.sfp-p3 .sf-ledger-refused td:nth-child(4) {
+  color: var(--sf-warn, #d29922);
+}
+.sfp-p3 .sf-ledger-failed td:nth-child(4) {
+  color: var(--sf-error, #f85149);
+}

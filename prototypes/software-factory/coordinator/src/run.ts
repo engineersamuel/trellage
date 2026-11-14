@@ -74,7 +74,7 @@ export const runWorkers = (
     }))
 }
 
-type Check = { status?: string; conclusion?: string; state?: string }
+export type Check = { status?: string; conclusion?: string; state?: string }
 
 /** gh's statusCheckRollup as one state: any failure fails, any unfinished check is pending. */
 export const checksState = (rollup: Check[]): ChecksState => {

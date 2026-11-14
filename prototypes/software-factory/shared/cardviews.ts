@@ -25,8 +25,8 @@ const STATUS: Record<string, TagVariant> = {
 
 /** Role tag and display name (same rule as shared/tree.ts agentLabel, kept here so this file has no imports). */
 const label = (w: W): { tag: string; name: string } => {
-  if (w.id === "coordinator") return { tag: "🌐 Factory desk", name: "Factory desk" }
-  if (w.id.startsWith("gen-")) return { tag: "💬 General chat", name: w.name.replace(/^General · /, "") }
+  if (w.id === "coordinator") return { tag: "🌐 Chief of Staff", name: "Chief of Staff" }
+  if (w.id.startsWith("gen-")) return { tag: "💬 Archived chat", name: w.name.replace(/^General · /, "") }
   if (w.role === "coordinator") {
     const [folder, ...rest] = w.name.split(" · ")
     return { tag: `⎇ Sub-coordinator · ${folder}`, name: rest.join(" · ") || w.name }
@@ -138,7 +138,7 @@ export type RunView = {
   steps: { title: string; details: string }[]
 }
 
-/** Only one coordinator's decisions. Untagged (older) ones belong to the Factory desk. */
+/** Only one coordinator's decisions. Untagged (older) ones belong to the Chief of Staff. */
 export const ownSteps = <S extends Step>(all: readonly S[], scopeId: string | undefined): S[] =>
   scopeId === undefined ? [...all] : all.filter((d) => (d.scopeId ?? "coordinator") === scopeId)
 

@@ -76,6 +76,9 @@ export const describe = (p: Proposal, evaluation?: Evaluation): { title: string;
 export const saveProposal = (root: string, approvalId: string, p: Proposal) =>
   writeAll(root, { ...readAll(root), [approvalId]: p })
 
+/** Approval `id` is a pending config or prompt proposal. */
+export const isProposal = (root: string, id: string): boolean => id in readAll(root)
+
 /** Apply or drop the proposal an answered decision belongs to. Returns what happened, or null when it is not one. */
 export const settleProposal = (root: string, a: Pick<Approval, "id" | "answer">): string | null => {
   const all = readAll(root)
