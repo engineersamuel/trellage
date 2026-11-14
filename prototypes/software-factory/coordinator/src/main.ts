@@ -7,6 +7,7 @@ import { Translator } from "./agui.ts"
 import { Factory, now, type FeedEvent, type Worker, type WorkerSummary } from "./factory.ts"
 import {
   createWorktree,
+  currentBase,
   discardWorktree,
   fullyMerged,
   GENERAL,
@@ -429,6 +430,10 @@ const worktreeFor = (folderId: string, base?: string) => {
     createWorktree(f.path, path.join(worktreeRoot(), f.id, id.slice(0, 8)), `factory/${f.id}-${id.slice(0, 8)}`, base)
 }
 
+/** The conversation's base now: it follows the branch after a rebase (gates, reviews and diffs use it). */
+const baseOf = (t: Thread): string | undefined =>
+  t.base && t.worktree ? currentBase(t.worktree, t.base, t.prBase) : t.base
+
 const createThread = (text: string | null, folderId: string, base?: string) => {
   const t = threads.create(text, folderId, worktreeFor(folderId, base))
   factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
@@ -451,7 +456,11 @@ const subScope = (t: Thread): Scope => {
     id: subId(t.id),
     threadId: t.id,
     workdir: t.worktree!,
-    ...(t.base ? { base: t.base } : {}),
+    // A getter: the scope lives as long as the sub-coordinator, and a rebase moves the base.
+    get base() {
+      return baseOf(threads.get(t.id) ?? t)
+    },
+    ...(t.prBase ? { prBase: t.prBase } : {}),
     label: folder.name,
     folderId: folder.id,
     repo: folder.path,
@@ -1826,7 +1835,7 @@ const threadOfAgent = (w: Worker): Thread | undefined =>
 const cardScope = (id: string): Scope => {
   const w = factory.workers.get(id)
   const t = w ? threadOfAgent(w) : threads.list().find((x) => subId(x.id) === id || genId(x.id) === id)
-  if (t?.worktree) return { id, threadId: t.id, workdir: t.worktree, ...(t.base ? { base: t.base } : {}) }
+  if (t?.worktree) return { id, threadId: t.id, workdir: t.worktree, ...(t.base ? { base: baseOf(t) } : {}) }
   return { id, threadId: t?.id ?? null }
 }
 
@@ -1953,7 +1962,7 @@ const runRecord = async (threadId: string): Promise<Run | null> => {
     threadId: t.id,
     status: statusOf(t.id),
     branch: t.branch ?? null,
-    base: t.base ?? null,
+    base: baseOf(t) ?? null,
     workers,
     steps: [...new Set(workers.flatMap((w) => (w.step ? [w.step] : [])))],
     approvals: factory.approvals
@@ -2523,7 +2532,7 @@ const routes: [string, RegExp, Handler][] = [
       const t = threads.get(id!)
       const wt =
         t?.worktree && !t.cleanedAt
-          ? { worktree: t.worktree, base: t.base }
+          ? { worktree: t.worktree, base: baseOf(t) }
           : factory.run && { worktree: factory.run.worktree, base: factory.run.base }
       if (!wt?.base) return new Response("no worktree for this conversation", { status: 404 })
       try {
@@ -2664,7 +2673,7 @@ const handoff = (t: Thread, lost: Interrupted[], at: number, event?: { tag: stri
     ...(event ? { event } : {}),
     lost: lost.filter((w) => !gateWorkers.has(w.id) && w.id !== scopeId),
     workdir: t.worktree!,
-    base: t.base,
+    base: baseOf(t),
     sdlc: factory.sdlc.get(scopeId),
   })
   deliverAndLog(t.id, text)

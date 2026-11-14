@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
   addLessons,
+  inHistory,
+  rebaseChangedLines,
   artifact,
   classify,
   criteriaMarkdown,
@@ -307,4 +309,40 @@ test("osv flags: advisories and license violations per package", () => {
     ],
   }
   expect([...osvFlagsFrom(report)]).toEqual(["tokio@1.0.0: RUSTSEC-1", "subtle@2.6.1: license BSD-3-Clause"])
+})
+
+test("rebaseChangedLines: 0 for a clean rebase, conflict resolutions count", () => {
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "sf-rebase-")))
+  const g = (...a: string[]) =>
+    execFileSync("git", ["-C", dir, "-c", "user.email=t@t", "-c", "user.name=t", ...a], { encoding: "utf8" }).trim()
+  g("init", "-q", "-b", "main")
+  writeFileSync(path.join(dir, "f.txt"), "1\n2\n3\n")
+  g("add", ".")
+  g("commit", "-q", "-m", "init")
+  g("checkout", "-q", "-b", "feat")
+  writeFileSync(path.join(dir, "f.txt"), "1\n2\n3\nfeat\n")
+  g("commit", "-q", "-am", "feat")
+  const reviewed = g("rev-parse", "HEAD")
+  g("checkout", "-q", "main")
+  writeFileSync(path.join(dir, "m.txt"), "main\n")
+  g("add", ".")
+  g("commit", "-q", "-m", "main")
+  const main1 = g("rev-parse", "HEAD")
+  g("checkout", "-q", "feat")
+  g("rebase", "-q", "main")
+  expect(inHistory(dir, reviewed)).toBe(false)
+  expect(rebaseChangedLines(dir, reviewed, main1)).toBe(0)
+
+  // A conflict: main edits the same spot; the resolution rewrites the branch line.
+  const reviewed2 = g("rev-parse", "HEAD")
+  g("checkout", "-q", "main")
+  writeFileSync(path.join(dir, "f.txt"), "1\n2\n3\nmain\n")
+  g("commit", "-q", "-am", "main2")
+  const main2 = g("rev-parse", "HEAD")
+  g("checkout", "-q", "feat")
+  g("checkout", "-q", "-b", "tmp", main2)
+  writeFileSync(path.join(dir, "f.txt"), "1\n2\n3\nmain feat\n")
+  g("commit", "-q", "-am", "feat resolved")
+  expect(rebaseChangedLines(dir, reviewed2, main2)).toBeGreaterThan(0)
+  expect(inHistory(dir, main2)).toBe(true)
 })
