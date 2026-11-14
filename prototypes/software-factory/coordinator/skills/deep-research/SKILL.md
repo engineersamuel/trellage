@@ -115,6 +115,13 @@ Save it to the report path the task names (default `reports/deep-research.md`):
    parallel subagents.
 7. **Sources**: numbered URLs with dates.
 
+**Ranked list.** When the task asks for a list of suggestions, options or improvements to choose from, put them
+between **Answer** and **Comparison**, one level-2 heading each, best first: `## 1. <short title>`,
+`## 2. <short title>`. The report viewer gives each heading a button that starts a new conversation with that
+item's text as its task, so the text up to the next heading must stand alone: a **TL;DR:** line, what to build,
+why (with source links), the effort (S, M or L), and the risks. Use no other numbered level-2 headings, and write
+the other sections as `## TL;DR`, `## Answer`, and so on, without numbers.
+
 ## 7. Check citations
 
 Read the report once more. For each sentence with a number, a version, a date or a ranking:

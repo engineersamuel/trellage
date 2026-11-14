@@ -1,7 +1,7 @@
 import { Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { Message } from "./message"
-import { feedEventToMessage } from "./subscription"
+import { feedEventToMessage, inboxPickToMessage } from "./subscription"
 import { feedEventToMessage as workersFeedEventToMessage } from "./workers/subscription"
 
 const raw = (type: string, data: unknown) => ({
@@ -46,4 +46,16 @@ describe("subscriptions", () => {
     const { subscriptions } = await import("./subscription")
     expect(Object.keys(subscriptions)).toEqual(expect.arrayContaining(["feed", "workersFeed", "settingsFeed", "keys"]))
   })
+})
+
+test("an Inbox pick event becomes SelectedInboxNode; a bad payload is dropped", () => {
+  const pick = new CustomEvent("sf:select-node", { detail: { threadId: "t1", workerId: "w-1" } })
+  expect(inboxPickToMessage(pick)).toEqual(
+    Option.some(Message.SelectedInboxNode({ maybeThreadId: Option.some("t1"), maybeWorkerId: Option.some("w-1") })),
+  )
+  const conversation = new CustomEvent("sf:select-node", { detail: { threadId: "t1", workerId: null } })
+  expect(inboxPickToMessage(conversation)).toEqual(
+    Option.some(Message.SelectedInboxNode({ maybeThreadId: Option.some("t1"), maybeWorkerId: Option.none() })),
+  )
+  expect(inboxPickToMessage(new CustomEvent("sf:select-node", { detail: "t1" }))).toEqual(Option.none())
 })

@@ -16,5 +16,7 @@ export const Model = Schema.Struct({
   reportViewer: ReportViewer.Model,
   /** Waiting human decisions, oldest first, from the shared Effect store (shared/approvals.ts). */
   approvals: Schema.Array(Approval),
+  /** The worker picked in the Inbox tree (?worker=); none when the pick is a conversation. */
+  maybeFocusedWorkerId: Schema.Option(Schema.String),
 })
 export type Model = typeof Model.Type

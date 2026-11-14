@@ -210,3 +210,40 @@ describe("agent UI actions", () => {
     )
   })
 })
+
+describe("URL follows the Inbox pick", () => {
+  const syncArgs = (commands: ReadonlyArray<{ name: string; args?: Record<string, unknown> }> | undefined) =>
+    (commands ?? []).filter((c) => c.name === "SyncThreadUrl").map((c) => c.args)
+  const pick = (thread: string, worker: string | null) =>
+    Message.SelectedInboxNode({ maybeThreadId: Option.some(thread), maybeWorkerId: Option.fromNullishOr(worker) })
+
+  test("a worker pick opens its conversation, focuses the worker, and writes both into the URL", () => {
+    const { model: next, commands } = update(loaded, pick("t-sub", "w-1"))
+    expect(next.chat.maybeSelectedThreadId).toEqual(Option.some("t-sub"))
+    expect(next.maybeFocusedWorkerId).toEqual(Option.some("w-1"))
+    expect(syncArgs(commands)).toEqual([{ maybeThreadId: Option.some("t-sub"), maybeWorkerId: Option.some("w-1") }])
+  })
+
+  test("a conversation pick in the same conversation clears the worker and does not reopen the chat", () => {
+    const onWorker = update(loaded, pick("t-sub", "w-1")).model
+    const { model: next, commands } = update(onWorker, pick("t-sub", null))
+    expect(next.chat).toBe(onWorker.chat)
+    expect(next.maybeFocusedWorkerId).toEqual(Option.none())
+    expect(syncArgs(commands)).toEqual([{ maybeThreadId: Option.some("t-sub"), maybeWorkerId: Option.none() }])
+  })
+
+  test("the same pick again changes nothing and writes no URL", () => {
+    const onWorker = update(loaded, pick("t-sub", "w-1")).model
+    const { model: next, commands } = update(onWorker, pick("t-sub", "w-1"))
+    expect(next).toBe(onWorker)
+    expect(syncArgs(commands)).toEqual([])
+  })
+
+  test("opening another conversation another way (sidebar, decision) drops the focused worker", () => {
+    const onWorker = update(loaded, pick("t-sub", "w-1")).model
+    const { model: next, commands } = update(onWorker, Message.RequestedOpenThread({ threadId: "t-other" }))
+    expect(next.chat.maybeSelectedThreadId).toEqual(Option.some("t-other"))
+    expect(next.maybeFocusedWorkerId).toEqual(Option.none())
+    expect(syncArgs(commands)).toEqual([{ maybeThreadId: Option.some("t-other"), maybeWorkerId: Option.none() }])
+  })
+})

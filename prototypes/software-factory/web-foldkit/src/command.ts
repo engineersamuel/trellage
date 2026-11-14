@@ -57,12 +57,14 @@ export const ReloadThread = Command.define("ReloadThread", {
     ),
 })
 
-/** Write the open thread into the address bar (?thread=) and the conversation sidebar. */
+/** Write the open thread (?thread=) and the focused worker (?worker=) into the address bar and the conversation sidebar. */
 export const SyncThreadUrl = Command.define("SyncThreadUrl", {
-  args: { maybeThreadId: Schema.Option(Schema.String) },
+  args: { maybeThreadId: Schema.Option(Schema.String), maybeWorkerId: Schema.Option(Schema.String) },
   messages: [Message.CompletedSyncThreadUrl],
-  execute: ({ maybeThreadId }) =>
-    Effect.sync(() => syncThreadUrl(Option.getOrNull(maybeThreadId))).pipe(Effect.as(Message.CompletedSyncThreadUrl())),
+  execute: ({ maybeThreadId, maybeWorkerId }) =>
+    Effect.sync(() => syncThreadUrl(Option.getOrNull(maybeThreadId), Option.getOrNull(maybeWorkerId))).pipe(
+      Effect.as(Message.CompletedSyncThreadUrl()),
+    ),
 })
 
 /** Give extensions the current worker list (their api.workers and onWorkers callbacks). */

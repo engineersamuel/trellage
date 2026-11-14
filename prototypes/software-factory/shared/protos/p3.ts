@@ -829,6 +829,20 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     renderInbox()
     renderTree()
     syncDetail()
+    announcePick()
+  }
+  /** Tell the host what is picked, so the URL follows it (?thread= the conversation, ?worker= a worker). */
+  let announced: string | null = null
+  const announcePick = () => {
+    const n = cur ? m.nodes.get(cur) : undefined
+    if (!n || n.id === announced) return
+    announced = n.id
+    // A worker's conversation is the nearest one above it (its sub-coordinator's, not the chat that spawned that).
+    let up: typeof n | undefined = n
+    while (up && !up.thread) up = up.parent ? m.nodes.get(up.parent) : undefined
+    const thread = up?.thread
+    const workerId = n.kind === "worker" ? (n.agent?.id ?? null) : null
+    window.dispatchEvent(new CustomEvent("sf:select-node", { detail: { threadId: thread?.id ?? null, workerId } }))
   }
   /** Native chat shows only for a conversation (chat, sub-coordinator, desk), never over a worker, draft, gate or subagent. */
   const showsChat = (id: string | null) => {
@@ -905,6 +919,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     // It counts as a pick, so the view stops following: a decision that arrives later must not move it to "Needs me".
     if (first) {
       const t = new URL(location.href).searchParams.get("thread")
+      // ?worker= focuses that worker once it is in the tree.
+      const w = new URL(location.href).searchParams.get("worker")
+      if (w) wantSel = w
       const thread = t ? st.threads.find((x) => x.id === t) : undefined
       if (thread) autoView = false
       if (thread?.desk) sel = cur = "coordinator"

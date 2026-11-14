@@ -156,6 +156,7 @@ const handleMessage = (model: Model, message: Message) =>
     ReceivedFeedGap: () => Update.combine(model, [refreshThreads, reloadOpenThread(Option.none()), refreshCards]),
     ReceivedCardDataChange: () => refreshCards(model),
     RequestedOpenThread: ({ threadId }) => openThread(threadId)(model),
+    SelectedInboxNode: ({ maybeThreadId, maybeWorkerId }) => selectInboxNode(maybeThreadId, maybeWorkerId)(model),
     RequestedNewThread: () => newThread(model),
     RequestedOpenReport: ({ ref, maybeAgent }) => openReport(ref, maybeAgent)(model),
     PressedKey: ({ key }) =>
@@ -184,15 +185,47 @@ const handleMessage = (model: Model, message: Message) =>
     CompletedAttachSlot: () => ({ model }),
   })
 
+/** An Inbox pick: focus its worker (or none) and open its conversation when another one is open. */
+const selectInboxNode =
+  (maybeThreadId: Option.Option<string>, maybeWorkerId: Option.Option<string>): Step =>
+  (model) => {
+    const focused = Equal.equals(model.maybeFocusedWorkerId, maybeWorkerId)
+      ? model
+      : modifyFields(model, { maybeFocusedWorkerId: () => maybeWorkerId })
+    return Option.match(maybeThreadId, {
+      onNone: () => ({ model: focused }),
+      onSome: (threadId) =>
+        Option.contains(focused.chat.maybeSelectedThreadId, threadId)
+          ? { model: focused }
+          : openThread(threadId)(focused),
+    })
+  }
+
+/** Another conversation opened by any other way (sidebar, decision, URL) has no focused worker. */
+const dropStaleWorker =
+  (previous: Model): Step =>
+  (model) =>
+    Option.isSome(model.maybeFocusedWorkerId) &&
+    Equal.equals(previous.maybeFocusedWorkerId, model.maybeFocusedWorkerId) &&
+    !Equal.equals(previous.chat.maybeSelectedThreadId, model.chat.maybeSelectedThreadId)
+      ? { model: modifyFields(model, { maybeFocusedWorkerId: () => Option.none() }) }
+      : { model }
+
 /** Effects that follow from a Model change, whatever Message caused it: keep the URL and the extension host in step. */
 const syncOutside =
   (previous: Model): Step =>
   (model) => ({
     model,
     commands: [
-      ...(Equal.equals(previous.chat.maybeSelectedThreadId, model.chat.maybeSelectedThreadId)
+      ...(Equal.equals(previous.chat.maybeSelectedThreadId, model.chat.maybeSelectedThreadId) &&
+      Equal.equals(previous.maybeFocusedWorkerId, model.maybeFocusedWorkerId)
         ? []
-        : [SyncThreadUrl({ maybeThreadId: model.chat.maybeSelectedThreadId })]),
+        : [
+            SyncThreadUrl({
+              maybeThreadId: model.chat.maybeSelectedThreadId,
+              maybeWorkerId: model.maybeFocusedWorkerId,
+            }),
+          ]),
       ...Option.match(AsyncData.getData(model.workers.workers), {
         onNone: () => [],
         onSome: (workers) =>
@@ -213,7 +246,12 @@ const followThread: Step = (model) =>
   })(model)
 
 export const update = (model: Model, message: Message): UpdateReturn =>
-  Update.combine(model, [(stepModel) => handleMessage(stepModel, message), followThread, syncOutside(model)])
+  Update.combine(model, [
+    (stepModel) => handleMessage(stepModel, message),
+    dropStaleWorker(model),
+    followThread,
+    syncOutside(model),
+  ])
 
 /** ?thread=<id> in the address bar opens that conversation on load. */
 const openThreadFromUrl =
@@ -241,6 +279,7 @@ export const init = (
       diffPanel: diffPanel.model,
       reportViewer: reportViewer.model,
       approvals: [],
+      maybeFocusedWorkerId: Option.none(),
     }),
   })
   return Update.combine(app.model, [
