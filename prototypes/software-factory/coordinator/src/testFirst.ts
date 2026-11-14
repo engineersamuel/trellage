@@ -22,7 +22,7 @@ export const testFirstFailure = (history: Iterable<Commit>): string | null => {
 const git = (workdir: string, ...args: string[]): string =>
   execFileSync("git", ["-C", workdir, ...args], { encoding: "utf8", maxBuffer: 8 << 20 })
 
-type LexState = { close: string | null; raw: boolean; depth: number; start: number }
+type LexState = { close: string | null; raw: boolean; depth: number; start: number; braces: number }
 
 const markerLike = (line: string): boolean =>
   /^#\[cfg\(test\)]\s*$|^mod [A-Za-z_][A-Za-z0-9_]* \{\s*$|^}\s*$/.test(line)
@@ -60,6 +60,7 @@ const stepNormal = (line: string, i: number, s: LexState): [number, LexState] =>
   const str = stringStart(line, i, s)
   if (str) return str
   if (line[i] === "'") return [charSkip(line, i), s]
+  if (line[i] === "{" || line[i] === "}") return [i + 1, { ...s, braces: s.braces + (line[i] === "{" ? 1 : -1) }]
   return [i + 1, s]
 }
 
@@ -74,9 +75,11 @@ const scanLine = (line: string, lineNo: number, s: LexState): LexState => {
 }
 
 /** Only markers hidden inside strings or comments can fake a test module; unchanged multiline literals do not. */
-const scanStarts = (file: string, lines: string[]): boolean[] => {
-  let s = {} as LexState
+const scanStarts = (file: string, lines: string[]): { normal: boolean[]; braces: number[] } => {
+  let s: LexState = { close: null, raw: false, depth: 0, start: 0, braces: 0 }
+  const braces: number[] = []
   const normal = lines.map((line, idx) => {
+    braces.push(s.braces)
     const startsNormal = !s.close && !s.depth
     if (!startsNormal && markerLike(line))
       throw new Error(`${file}:${s.start}: unsupported multiline comment or string around test module marker`)
@@ -84,16 +87,17 @@ const scanStarts = (file: string, lines: string[]): boolean[] => {
     return startsNormal
   })
   if (s.close || s.depth) throw new Error(`${file}:${s.start}: unterminated string or comment`)
-  return normal
+  return { normal, braces }
 }
 
-const moduleEnd = (file: string, lines: string[], normal: boolean[], start: number): number => {
+const moduleEnd = (file: string, lines: string[], normal: boolean[], braces: number[], start: number): number => {
   const modIdx = start + 1
   if (!normal[modIdx] || !/^mod [A-Za-z_][A-Za-z0-9_]* \{\s*$/.test(lines[modIdx]!))
     throw new Error(`${file}:${modIdx}: expected a column-0 inline test module after #[cfg(test)]`)
   for (let i = modIdx + 1; lines[i] !== undefined; i++) {
     const line = lines[i]!
-    if (normal[i] && /^}\s*$/.test(line)) return i
+    if (braces[i]! <= braces[modIdx]!) break
+    if (normal[i] && /^}\s*$/.test(line) && braces[i] === braces[modIdx]! + 1) return i
     if (normal[i] && /^\S/.test(line)) throw new Error(`${file}:${i + 1}: non-indented test module interior`)
   }
   throw new Error(`${file}:${modIdx}: test module has no column-0 closing brace`)
@@ -102,11 +106,11 @@ const moduleEnd = (file: string, lines: string[], normal: boolean[], start: numb
 /** Deliberately recognize only the conventional column-0 module layout, not arbitrary Rust syntax. */
 const rustSource = (file: string, text: string): RustSource => {
   const lines = text.split("\n")
-  const normal = scanStarts(file, lines)
+  const { normal, braces } = scanStarts(file, lines)
   const tests = new Set<number>()
   for (let i = 0; lines[i] !== undefined; i++) {
     if (normal[i] && /^#\[cfg\(test\)]\s*$/.test(lines[i]!)) {
-      const end = moduleEnd(file, lines, normal, i)
+      const end = moduleEnd(file, lines, normal, braces, i)
       for (; i <= end; i++) tests.add(i)
       i--
     }
@@ -136,9 +140,10 @@ const wiredModule = (file: string, line: string, addedTests: Set<string>): boole
 }
 
 const rustLines = (file: string, source: RustSource, indices: number[], addedTests: Set<string>): Change => {
+  const hidden = indices.find((i) => !source.normal[i])
+  if (hidden !== undefined) throw new Error(`${file}:${hidden + 1}: changed line inside multiline comment or string`)
   let kind: ChangeKind = "neutral"
   for (const i of indices) {
-    if (!source.normal[i]) throw new Error(`${file}:${i + 1}: changed line inside multiline comment or string`)
     const line = source.lines[i]!
     if (!line.trim()) continue
     if (!source.tests.has(i) && !wiredModule(file, line, addedTests))
