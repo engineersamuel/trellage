@@ -901,6 +901,16 @@ const reportUp = (f: Factory, scope: Scope, workdir: string) =>
         return json({
           error: `Not sent: ${brief}. Fix the brief (or spawn a synthesis worker to fix it), then call report_up again.`,
         })
+      const criteria = f.sdlc.get(scope.id)?.criteria ?? []
+      const evidence = artifact(workdir, "evidence.md")
+      const unproven =
+        input.status === "done" && criteria.length
+          ? unprovenCriteria(criteria, existsSync(evidence) ? readFileSync(evidence, "utf8") : null)
+          : []
+      if (unproven.length)
+        return json({
+          error: `Not sent: ${unproven.join(", ")} not proven. Fix them (implement, then verify) so .factory/evidence.md has a PASS line for each, or report status blocked or needs-decision with the gap.`,
+        })
       const r: Report = { ...input, branch: gitOr(workdir, "--abbrev-ref", "HEAD"), commit: gitOr(workdir, "HEAD") }
       const turn = f.turn(scope.id)
       const key = `${turn.start}|${r.commit}|${r.status}`
