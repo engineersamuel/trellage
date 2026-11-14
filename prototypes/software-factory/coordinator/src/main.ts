@@ -84,6 +84,7 @@ import { makeGoalPage, startGoalRun } from "./goalPage.ts"
 import { Option, Schema } from "effect"
 import { worktreeDiff } from "./worktreeDiff.ts"
 import { guideOutdated, guideView, latestGuide, openInHerdr, writeGuide } from "./testGuide.ts"
+import { llmTitle } from "./titles.ts"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
 const landing = asset("landing.html")
@@ -410,7 +411,16 @@ const worktreeFor = (folderId: string, base?: string) => {
 const createThread = (text: string | null, folderId: string, base?: string) => {
   const t = threads.create(text, folderId, worktreeFor(folderId, base))
   factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
+  if (text?.trim()) void retitle(t.id, t.title, text)
   return t
+}
+
+/** Replace a new conversation's cut-text title with a model title, unless the human renamed it meanwhile. */
+const retitle = async (id: string, cut: string, text: string) => {
+  const title = await llmTitle(text, factory.proxyUrl)
+  if (!title || threads.get(id)?.title !== cut) return
+  threads.update(id, { title })
+  factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: id })
 }
 
 /** The tool scope of a repo conversation's sub-coordinator. */
