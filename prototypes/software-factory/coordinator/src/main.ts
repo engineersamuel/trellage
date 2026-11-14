@@ -83,6 +83,7 @@ import { enhanceWith, stopEnhance } from "./enhance.ts"
 import { makeGoalPage, startGoalRun } from "./goalPage.ts"
 import { Option, Schema } from "effect"
 import { worktreeDiff } from "./worktreeDiff.ts"
+import { guideOutdated, guideView, latestGuide, openInHerdr, writeGuide } from "./testGuide.ts"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
 const landing = asset("landing.html")
@@ -422,13 +423,16 @@ const subScope = (t: Thread): Scope => {
     ...(t.base ? { base: t.base } : {}),
     label: folder.name,
     folderId: folder.id,
-    report: (r) =>
-      reportToGeneral(folder.name, threads.get(t.id) ?? t, r).finally(
+    report: (r) => {
+      // A done report gets a fresh manual test guide (src/testGuide.ts) for the header pin.
+      if (r.status === "done") void writeGuide(factory, subScope(t), r.summary)
+      return reportToGeneral(folder.name, threads.get(t.id) ?? t, r).finally(
         () =>
           void gradeThread(t.id, r).finally(
             () => void goalReported(t.id, r).catch((e) => console.error(`goal loop: ${e}`)),
           ),
-      ),
+      )
+    },
   }
 }
 
@@ -553,9 +557,22 @@ const watchSub = (w: Worker, threadId: string, ev: SessionEvent) => {
       owned.some((x) => x.status === "error" && x.lastActivity >= turn.start) ||
       reviews.some((r) => r.scopeId === w.id && r.status === "failed" && r.at >= turn.start),
   }
-  if (!inRun(factory, factory.sdlc.get(w.id), () => shouldReport(state))) return
+  if (!inRun(factory, factory.sdlc.get(w.id), () => shouldReport(state))) {
+    // New commits without a done report (that one writes the guide itself): write the test guide again.
+    const t = threads.get(threadId)
+    if (t?.worktree && !t.cleanedAt && state.runningWorkers === 0 && guideOutdated(factory, w.id)) rewriteGuide(t)
+    return
+  }
   turn.nudged = true
   deliverAndLog(threadId, reportNudge())
+}
+
+/** Write the conversation's test guide again, from its newest report_up summary (else its title). */
+const rewriteGuide = (t: Thread) => {
+  const last = (factory.store.latest("factory.report_up", 2000) as { threadId: string; report: Report }[]).findLast(
+    (r) => r.threadId === t.id,
+  )
+  void writeGuide(factory, subScope(t), last?.report.summary ?? t.title)
 }
 
 /** Open a conversation in a folder (id, or a repo path to add) with `meta` set before its first prompt, and send the task. */
@@ -1870,6 +1887,32 @@ const routes: [string, RegExp, Handler][] = [
   ],
   ["GET", /^\/api\/threads\/get$/, () => json({ threads: threads.list(), folders: threads.folders() })],
   ["GET", /^\/api\/threads\/get\/([^/]+)$/, (_req, _url, [id]) => json(threads.messages(id!))],
+  // Manual test guide of a repo conversation (src/testGuide.ts): read, write again, run its setup in herdr.
+  ["GET", /^\/api\/threads\/([^/]+)\/test-guide$/, (_req, _url, [id]) => json(guideView(factory, subId(id!)))],
+  [
+    "POST",
+    /^\/api\/threads\/([^/]+)\/test-guide$/,
+    (_req, _url, [id]) => {
+      const t = threads.get(id!)
+      if (!t?.worktree || t.cleanedAt) return new Response("no worktree for this conversation", { status: 404 })
+      rewriteGuide(t)
+      return empty(202)
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/threads\/([^/]+)\/test-guide\/herdr$/,
+    (_req, _url, [id]) => {
+      const t = threads.get(id!)
+      const g = latestGuide(factory, subId(id!))
+      if (!t || !g || g.status !== "ready" || t.cleanedAt) return new Response("no ready test guide", { status: 404 })
+      try {
+        return json({ pane: openInHerdr(g, `test: ${t.title}`.slice(0, 40)) })
+      } catch (e) {
+        return new Response(`herdr failed: ${e instanceof Error ? e.message : String(e)}`, { status: 500 })
+      }
+    },
+  ],
   // Diff panel: every change of the conversation's worktree against its base. A thread without a worktree
   // (general chat) shows the factory run worktree. Paths come from the server only, never from the request.
   [

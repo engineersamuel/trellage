@@ -335,6 +335,17 @@ deliverable, writes only its own output folder (outside the worktree), and never
 
 A coordinator restart marks a running evaluation failed; the next ship request runs it again.
 
+## How to test (manual test guide)
+
+After a sub-coordinator's `report_up status=done`, a read-only worker in its worktree writes how a human tries the
+change (`coordinator/src/testGuide.ts`, prompt `tasks/manual-test`): `setup` commands, 2-8 steps with what to expect,
+and `cleanup`. The sub-coordinator header pins it as **🧪 How to test**; it says **stale** when the worktree HEAD moved
+past the commit it was written for. When the sub-coordinator goes idle with no workers running on a newer commit
+and sends no done report, the guide is written again. **↻ Rewrite** writes it again by hand. **▶ Open in herdr** writes
+`.factory/manual-test.{md,sh}` and runs them in a focused herdr tab in the worktree (a new workspace when herdr has none
+there). The coordinator runs `herdr`, so it needs a running herdr server for the same user. API:
+`GET|POST /api/threads/<id>/test-guide`, `POST /api/threads/<id>/test-guide/herdr`.
+
 ## Restart resume
 
 A coordinator stop (`factory:restart`, SIGTERM) publishes `factory.shutdown` with every running agent. The next start
