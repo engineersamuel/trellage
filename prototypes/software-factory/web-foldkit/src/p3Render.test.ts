@@ -81,6 +81,18 @@ const responses = (url: string): unknown =>
           ? { id: "dddddddd-new" }
           : url === "/api/steps"
             ? { securityReviews: [] }
+            : url === "/api/cos/ledger"
+              ? [
+                  {
+                    seq: 1,
+                    at: 0,
+                    rule: "R3",
+                    threadId: "bbbbbbbb",
+                    action: "merge factory/x",
+                    result: "refused",
+                    detail: "checks are PENDING",
+                  },
+                ]
             : url.startsWith("/api/events")
               ? [
                   {
@@ -159,6 +171,23 @@ test("the Factory stream view lists agent events and opens the agent it names", 
   who.click()
   await vi.waitFor(() => expect(root.querySelector("[data-testid=tree-row].on")?.textContent).toContain("w1"))
   expect(root.querySelector("[data-testid=factory-stream]")).toBe(stream)
+  stop()
+})
+
+// The 📒 Rule ledger row lists every Chief of Staff rule action; a click on a row opens its conversation.
+test("the Rule ledger lists rule actions and opens the conversation of a row", async () => {
+  const root = document.createElement("div")
+  document.body.append(root)
+  const stop = prototypes()
+    .find(({ id }) => id === 3)!
+    .mount({ root, placeChat: () => {} })
+  await vi.waitFor(() => expect(root.querySelector("[data-testid=ledger-row]")).not.toBeNull())
+  root.querySelector<HTMLElement>("[data-testid=ledger-row]")!.click()
+  const ledger = root.querySelector("[data-testid=rule-ledger]")!
+  await vi.waitFor(() => expect(ledger.textContent).toContain("checks are PENDING"))
+  expect(ledger.querySelector("tr.sf-ledger-refused")?.textContent).toContain("R3")
+  ledger.querySelector<HTMLElement>("tr.sf-ledger-refused")!.click()
+  await vi.waitFor(() => expect(root.querySelector("[data-testid=rule-ledger]")).toBeNull())
   stop()
 })
 

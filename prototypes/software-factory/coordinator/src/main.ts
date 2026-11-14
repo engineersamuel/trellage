@@ -2548,7 +2548,7 @@ const goalDone = (s: GoalState) => {
   if (t)
     cosEvent(
       t.id,
-      `[goal ${s.goalId} done] Every acceptance criterion passes and the PR is green after ${s.loop} loop(s): ${s.pr?.url ?? "no PR"}. The human merges it.`,
+      `[goal ${s.goalId} done] Every acceptance criterion passes and the PR is green after ${s.loop} loop(s): ${s.pr?.url ?? "no PR"}. Its sub-coordinator merges it with merge_pr when the rules pass (R3).`,
     )
   const parent = s.parentGoalId && goalStates.get(s.parentGoalId)
   if (parent && parent.status === "waiting-child" && parent.childGoalId === s.goalId)

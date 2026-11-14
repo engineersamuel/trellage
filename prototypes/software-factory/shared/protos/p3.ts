@@ -10,6 +10,7 @@ import { critterOf, layoutCrittersOn, mountCritter, onLayoutCritters } from "../
 import { treeLines } from "../treeLines"
 import { openSpec } from "../spec"
 import { costSummary, mountCost } from "../costs"
+import { mountLedger } from "../ledger"
 import { draftDetail, draftForm } from "./drafts"
 import { mountCanvas } from "./canvas"
 import {
@@ -28,6 +29,7 @@ import { mountTimeline } from "./timeline-view"
 import { mountPins } from "./pins-view"
 import { mountTestGuide } from "./test-guide-view"
 import {
+  agentIdOf,
   ancestors,
   bornAt,
   bossOf,
@@ -154,28 +156,33 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   const canvasHost = el("div")
   const canvas = mountCanvas(canvasHost)
   let streamOn = false
+  let ledgerOn = false
   let stream: ReturnType<typeof mountStream> | null = null
-  const choose = (id: string) => ((streamOn = false), (cur = id), render())
+  const choose = (id: string) => ((streamOn = ledgerOn = false), (cur = id), render())
 
   // ---------- sidebar ----------
   const renderSide = (live: Model) => {
     const row = (v: View, label: string, n: number, alert = false) => {
       const r = el("div", `p3-sv ${view === v ? "on" : ""}`)
       r.append(el("span", "p3-ell", label), el("span", alert && n ? "p3-badge" : "p3-n", String(n)))
-      r.onclick = () => ((view = v), (autoView = false), (streamOn = false), (sel = cur = null), render())
+      r.onclick = () => ((view = v), (autoView = false), (streamOn = ledgerOn = false), (sel = cur = null), render())
       return r
     }
     const desk = live.nodes.get("coordinator")
-    const deskRow = el("div", `p3-sv ${sel === "coordinator" && !streamOn ? "on" : ""}`)
+    const deskRow = el("div", `p3-sv ${sel === "coordinator" && !streamOn && !ledgerOn ? "on" : ""}`)
     deskRow.append(
       el("span", "p3-ell", "🌐 Chief of Staff"),
       el("span", "p3-n", desk?.agg.needs ? `▲${desk.pending.length}` : ""),
     )
-    deskRow.onclick = () => ((autoView = false), (streamOn = false), (sel = cur = "coordinator"), render())
+    deskRow.onclick = () => ((autoView = false), (streamOn = ledgerOn = false), (sel = cur = "coordinator"), render())
     const streamRow = el("div", `p3-sv ${streamOn ? "on" : ""}`)
     streamRow.dataset.testid = "stream-row"
     streamRow.append(el("span", "p3-ell", "📡 Factory stream"))
-    streamRow.onclick = () => ((streamOn = true), render())
+    streamRow.onclick = () => ((streamOn = true), (ledgerOn = false), render())
+    const ledgerRow = el("div", `p3-sv ${ledgerOn ? "on" : ""}`)
+    ledgerRow.dataset.testid = "ledger-row"
+    ledgerRow.append(el("span", "p3-ell", "📒 Rule ledger"))
+    ledgerRow.onclick = () => ((ledgerOn = true), (streamOn = false), render())
     const repos = (s?.folders ?? []).filter((f) => f.path)
     const archivedN = (s?.threads ?? []).filter((t) => t.archivedAt && !t.desk).length
     side.replaceChildren(
@@ -184,6 +191,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       ...VIEWS.map((v) => row(v.id, v.label, count(live, v.id), v.id === "needs")),
       deskRow,
       streamRow,
+      ledgerRow,
       el("h5", "", "Repos"),
       ...repos.map((f) => row(`repo:${f.id}`, `# ${f.name}`, count(live, `repo:${f.id}`))),
       el("h5", "", "Archive"),
@@ -709,7 +717,30 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     if (s) v.render(s)
     return () => ((stream = null), v.stop(), (head.style.display = ""))
   }
+  const showLedger = () => {
+    head.replaceChildren(el("h4", "", "📒 Rule ledger · every Chief of Staff rule action"))
+    placeChat(null)
+    askBox = null
+    const box = el("div", "p3-log")
+    box.dataset.testid = "rule-ledger"
+    body.replaceChildren(box)
+    return mountLedger(box, (threadId) => {
+      const t = s?.threads.find((x) => x.id === threadId)
+      const id = t && m.nodes.has(agentIdOf(t)) ? agentIdOf(t) : null
+      if (!id) return
+      ledgerOn = false
+      sel = rootOf(m, id)
+      cur = id
+      render()
+    })
+  }
   const syncDetail = () => {
+    if (ledgerOn) {
+      if (mounted?.key === "ledger") return
+      mounted?.stop()
+      mounted = { key: "ledger", stop: showLedger() }
+      return
+    }
     if (streamOn) {
       if (mounted?.key === "stream") return
       mounted?.stop()
