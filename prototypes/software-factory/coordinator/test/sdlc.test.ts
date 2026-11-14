@@ -537,6 +537,34 @@ describe("test-first rust", () => {
     expect(gate).toContain(shortSha)
   })
 
+  test("AC-6: new test-only module file containing a multiline string fails closed as could not be classified", () => {
+    const { r, git } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+    mkdirSync(path.join(r, "src"), { recursive: true })
+    writeFileSync(path.join(r, "src/main.rs"), "fn main() {}\n")
+    git("add", "src/main.rs")
+    git("commit", "-q", "-m", "chore: base")
+    const base = git("rev-parse", "HEAD")
+
+    writeFileSync(path.join(r, "src/main.rs"), "mod history;\nfn main() {}\n")
+    writeFileSync(
+      path.join(r, "src/history.rs"),
+      ["#[cfg(test)]", "mod tests {", "  #[test]", "  fn t() {", '    let _ = "a', '    b";', "  }", "}", ""].join(
+        "\n",
+      ),
+    )
+    git("add", "src/main.rs", "src/history.rs")
+    git("commit", "-q", "-m", "test: history with multiline string")
+    const shortSha = git("rev-parse", "--short", "HEAD")
+
+    const blockers = shipBlockers(rustPlan(), r, base, true, true)
+    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+    expect(gate).toBeDefined()
+    expect(gate).toContain(shortSha)
+    expect(gate).toContain("src/history.rs: could not be classified")
+  })
+
   test("AC-6: plain mod line naming an omitted module file fails test-first gate", () => {
     const { r, git } = repo()
     ensureFactoryDir(r)
@@ -609,11 +637,14 @@ describe("test-first rust", () => {
     writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
     mkdirSync(path.join(r, "src"), { recursive: true })
     const prodPrefix = [
-      "/* outer /* nested */ still comment */",
+      '""/*/*"*/"*/',
       'const JS: &str = "(e=>e&&\\',
       '    e.x)";',
       'const RAW: &str = r#"line one',
       'line "two" still raw"#;',
+      'const BYTES: &[u8] = b"hello\\n";',
+      'const CSTR: &core::ffi::CStr = c"hello";',
+      "const BCHAR: u8 = b'x';",
       "const QUOTE: char = '\"';",
       "const ESCAPED: char = '\\'';",
       "pub fn check<'a>(s: &'a str) -> &'a str {",
@@ -623,7 +654,19 @@ describe("test-first rust", () => {
     ]
     writeFileSync(
       path.join(r, "src/app.rs"),
-      [...prodPrefix, "#[cfg(test)]", "mod tests {", "  #[test]", "  fn initial() {}", "}", ""].join("\n"),
+      [
+        ...prodPrefix,
+        "#[cfg(test)]",
+        "mod tests {",
+        '  const B: &[u8] = b"hello";',
+        '  const C: &core::ffi::CStr = c"hello";',
+        '  const R: &str = r"trailing\\";',
+        '  const BR: &[u8] = br"trailing\\";',
+        "  #[test]",
+        "  fn initial() {}",
+        "}",
+        "",
+      ].join("\n"),
     )
     git("add", "src/app.rs")
     git("commit", "-q", "-m", "chore: base app.rs")
@@ -635,9 +678,13 @@ describe("test-first rust", () => {
         ...prodPrefix,
         "#[cfg(test)]",
         "mod tests {",
+        '  const B: &[u8] = b"hello";',
+        '  const C: &core::ffi::CStr = c"hello";',
+        '  const R: &str = r"trailing\\";',
+        '  const BR: &[u8] = br"trailing\\";',
         "  #[test]",
-        "  fn initial() {",
-        '    let msg = "line 1\nunindented inside test string";',
+        "  fn renamed() {",
+        '    let msg = "single line inside test string";',
         "    assert_eq!(super::check(msg), msg);",
         "  }",
         "}",
@@ -650,15 +697,19 @@ describe("test-first rust", () => {
     writeFileSync(
       path.join(r, "src/app.rs"),
       [
-        ...prodPrefix.slice(0, 8),
+        ...prodPrefix.slice(0, 11),
         "  s.trim()",
         "}",
         "",
         "#[cfg(test)]",
         "mod tests {",
+        '  const B: &[u8] = b"hello";',
+        '  const C: &core::ffi::CStr = c"hello";',
+        '  const R: &str = r"trailing\\";',
+        '  const BR: &[u8] = br"trailing\\";',
         "  #[test]",
-        "  fn initial() {",
-        '    let msg = "line 1\nunindented inside test string";',
+        "  fn renamed() {",
+        '    let msg = "single line inside test string";',
         "    assert_eq!(super::check(msg), msg);",
         "  }",
         "}",
@@ -684,36 +735,66 @@ describe("test-first rust", () => {
       "pub fn f() {}\n/*\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn fake() { assert!(true); }\n}\n*/\n",
     ],
     [
+      "changed interior line of multiline string inside test module",
+      'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {\n    let _ = "a\n    b";\n  }\n}\n',
+      'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {\n    let _ = "a\n    c";\n  }\n}\n',
+      "src/app.rs:7: changed line inside multiline comment or string",
+    ],
+    [
+      "changed column-0 line inside multiline block comment in test module",
+      "pub fn f() {}\n#[cfg(test)]\nmod tests {\n  /*\nunindented comment line\n  */\n  #[test]\n  fn t() {}\n}\n",
+      "pub fn f() {}\n#[cfg(test)]\nmod tests {\n  /*\nchanged unindented comment line\n  */\n  #[test]\n  fn t() {}\n}\n",
+      "src/app.rs:5: changed line inside multiline comment or string",
+    ],
+    [
+      "changed multiline string continuation outside test module",
+      'pub fn f() {}\nconst S: &str = "a\nb";\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n',
+      'pub fn f() {}\nconst S: &str = "a\nc";\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n',
+      "src/app.rs:3: changed line inside multiline comment or string",
+    ],
+    [
       "file ending inside unterminated string",
       'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\nconst BROKEN: &str = "unterminated\n',
       'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() { assert!(true); }\n}\nconst BROKEN: &str = "unterminated\n',
+      "src/app.rs:7: unterminated string or comment",
     ],
     [
       "unsupported string prefix or malformed char literal",
-      "pub fn f() {\n  let _ = 'unclosed;\n}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n",
-      'pub fn f() {\n  let _ = cr#"hi"#;\n}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() { assert!(true); }\n}\n',
+      "pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n",
+      'pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {\n    let _ = cr#"hi"#;\n  }\n}\n',
+      "unsupported string prefix",
     ],
-  ])("AC-7: %s fails closed as could not be classified", (_label, baseContent, nextContent) => {
-    const { r, git } = repo()
-    ensureFactoryDir(r)
-    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
-    mkdirSync(path.join(r, "src"), { recursive: true })
-    writeFileSync(path.join(r, "src/app.rs"), baseContent)
-    git("add", "src/app.rs")
-    git("commit", "-q", "-m", "chore: base")
-    const base = git("rev-parse", "HEAD")
+    [
+      "malformed character literal",
+      "pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {}\n}\n",
+      "pub fn f() {}\n#[cfg(test)]\nmod tests {\n  #[test]\n  fn t() {\n    let _ = 'ab';\n  }\n}\n",
+      "unterminated or unsupported character literal",
+    ],
+  ])(
+    "AC-7: %s fails closed as could not be classified",
+    (_label, baseContent, nextContent, detail = "src/app.rs:2") => {
+      const { r, git } = repo()
+      ensureFactoryDir(r)
+      writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
+      mkdirSync(path.join(r, "src"), { recursive: true })
+      writeFileSync(path.join(r, "src/app.rs"), baseContent)
+      git("add", "src/app.rs")
+      git("commit", "-q", "-m", "chore: base")
+      const base = git("rev-parse", "HEAD")
 
-    writeFileSync(path.join(r, "src/app.rs"), nextContent)
-    git("add", "src/app.rs")
-    git("commit", "-q", "-m", "test: attempt")
-    const shortSha = git("rev-parse", "--short", "HEAD")
+      writeFileSync(path.join(r, "src/app.rs"), nextContent)
+      git("add", "src/app.rs")
+      git("commit", "-q", "-m", "test: attempt")
+      const shortSha = git("rev-parse", "--short", "HEAD")
 
-    const blockers = shipBlockers(rustPlan(), r, base, true, true)
-    const gate = blockers.find((b) => b.startsWith("test-first gate:"))
-    expect(gate).toBeDefined()
-    expect(gate).toContain(shortSha)
-    expect(gate).toContain("src/app.rs: could not be classified")
-  })
+      const blockers = shipBlockers(rustPlan(), r, base, true, true)
+      const gate = blockers.find((b) => b.startsWith("test-first gate:"))
+      expect(gate).toBeDefined()
+      expect(gate).toContain(shortSha)
+      expect(gate).toContain("src/app.rs: could not be classified")
+      expect(gate).toContain(detail)
+    },
+  )
 })
 
 describe("worktree artifacts", () => {

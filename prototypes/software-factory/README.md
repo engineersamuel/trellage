@@ -61,8 +61,8 @@ It recognizes column-0 `#[cfg(test)]` followed immediately by `mod name {`, inde
 and a column-0 `}`. A plain `mod name;` addition also qualifies when the same commit adds the corresponding
 `name.rs` containing only such test modules, blank lines, and line comments. Existing modules, production stubs,
 and mixed production/test commits do not qualify. Unsupported layouts, unterminated strings/comments, or module
-markers inside multiline comments/strings fail closed. Blockers identify the commit and production location or
-explain the classification failure.
+markers or changed lines inside multiline comments/strings fail closed. Blockers identify the commit and production
+location or explain the classification failure.
 
 Risk tier (`classify`): T0 small docs-only, T2 > 400 lines, dependency manifests or sensitive paths (auth, secrets,
 bind, CI, scripts, Docker, mise), else T1. `.factory/` is git-excluded; `.factory/pr.md` (criteria ✓, tier, gates,

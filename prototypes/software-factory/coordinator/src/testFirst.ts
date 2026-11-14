@@ -14,8 +14,7 @@ export const testFirstFailure = (history: Iterable<Commit>): string | null => {
   for (const commit of history) {
     const code = commit.changes.find((change) => change.kind === "code")
     if (code) return `${MISSING}${commit.sha ? `; ${commit.sha}` : ""}${code.detail ? ` ${code.detail}` : ""}`
-    const kinds = commit.changes.map((change) => change.kind)
-    if (kinds.includes("test") && kinds.every((kind) => kind === "test" || kind === "neutral")) return null
+    if (commit.changes.some((c) => c.kind === "test") && !commit.changes.some((c) => c.kind === "docs")) return null
   }
   return MISSING
 }
@@ -23,7 +22,7 @@ export const testFirstFailure = (history: Iterable<Commit>): string | null => {
 const git = (workdir: string, ...args: string[]): string =>
   execFileSync("git", ["-C", workdir, ...args], { encoding: "utf8", maxBuffer: 8 << 20 })
 
-type LexState = { close: string | null; depth: number; start: number }
+type LexState = { close: string | null; raw: boolean; depth: number; start: number }
 
 const markerLike = (line: string): boolean =>
   /^#\[cfg\(test\)]\s*$|^mod [A-Za-z_][A-Za-z0-9_]* \{\s*$|^}\s*$/.test(line)
@@ -35,71 +34,69 @@ const stepComment = (line: string, i: number, s: LexState): [number, LexState] =
 }
 
 const stepString = (line: string, i: number, s: LexState): [number, LexState] => {
-  if (s.close === '"' && line[i] === "\\") return [i + 2, s]
+  if (!s.raw && line[i] === "\\") return [i + 2, s]
   if (line.startsWith(s.close!, i)) return [i + s.close!.length, { ...s, close: null }]
   return [i + 1, s]
 }
 
-const rawStart = (line: string, i: number): [number, string] | null => {
-  const match = /^(?:b?r)(#*)"/.exec(line.slice(i))
+const stringStart = (line: string, i: number, s: LexState): [number, LexState] | null => {
+  const match = /^(?:(b?r)(#*)"|[bc]?")/.exec(line.slice(i))
   if (!match) return null
-  if (i > 0 && /[A-Za-z0-9_]/.test(line[i - 1]!)) throw new Error("unsupported string prefix")
-  return [i + match[0].length, `"${match[1]!}`]
+  if (/[A-Za-z0-9_]/.test(line[i - 1] || "")) throw new Error("unsupported string prefix")
+  const [full, raw, hashes = ""] = match
+  return [i + full.length, { ...s, close: `"${hashes}`, raw: Boolean(raw) }]
 }
 
 const charSkip = (line: string, i: number): number => {
-  const char = /^'\\?(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F_]+\}|.)'/.exec(line.slice(i))
-  if (char) return i + char[0].length
-  const lifetime = /^'[A-Za-z_][A-Za-z0-9_]*(?!')/.exec(line.slice(i))
-  if (lifetime) return i + lifetime[0].length
+  const [token] =
+    /^'\\?(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F_]+\}|.)'|^'[A-Za-z_][A-Za-z0-9_]*(?!')/.exec(line.slice(i)) || []
+  if (token) return i + token.length
   throw new Error("unterminated or unsupported character literal")
 }
 
-const stepNormal = (line: string, i: number, lineNo: number): [number, LexState] => {
-  if (line.startsWith("//", i)) return [line.length, { close: null, depth: 0, start: lineNo }]
-  if (line.startsWith("/*", i)) return [i + 2, { close: null, depth: 1, start: lineNo }]
-  const raw = rawStart(line, i)
-  if (raw) return [raw[0], { close: raw[1], depth: 0, start: lineNo }]
-  if (line[i] === '"') {
-    if (i > 0 && /[A-Za-z0-9_]/.test(line[i - 1]!)) throw new Error("unsupported string prefix")
-    return [i + 1, { close: '"', depth: 0, start: lineNo }]
-  }
-  if (line[i] === "'") return [charSkip(line, i), { close: null, depth: 0, start: lineNo }]
-  return [i + 1, { close: null, depth: 0, start: lineNo }]
+const stepNormal = (line: string, i: number, s: LexState): [number, LexState] => {
+  if (line.startsWith("//", i)) return [line.length, s]
+  if (line.startsWith("/*", i)) return [i + 2, { ...s, depth: 1 }]
+  const str = stringStart(line, i, s)
+  if (str) return str
+  if (line[i] === "'") return [charSkip(line, i), s]
+  return [i + 1, s]
 }
 
 const scanLine = (line: string, lineNo: number, s: LexState): LexState => {
-  for (let i = 0; i < line.length;) {
-    if (s.depth > 0) [i, s] = stepComment(line, i, s)
-    else if (s.close !== null) [i, s] = stepString(line, i, s)
-    else [i, s] = stepNormal(line, i, lineNo)
+  let i = 0
+  while (line[i]) {
+    if (s.depth) [i, s] = stepComment(line, i, s)
+    else if (s.close) [i, s] = stepString(line, i, s)
+    else [i, s] = stepNormal(line, i, { ...s, start: lineNo })
   }
   return s
 }
 
-/** Only markers hidden inside strings or comments can fake a test module; a multi-line string elsewhere does not. */
+/** Only markers hidden inside strings or comments can fake a test module; unchanged multiline literals do not. */
 const scanStarts = (file: string, lines: string[]): boolean[] => {
-  let s: LexState = { close: null, depth: 0, start: 1 }
+  let s = {} as LexState
   const normal = lines.map((line, idx) => {
-    const startsNormal = s.close === null && s.depth === 0
+    const startsNormal = !s.close && !s.depth
     if (!startsNormal && markerLike(line))
       throw new Error(`${file}:${s.start}: unsupported multiline comment or string around test module marker`)
     s = scanLine(line, idx + 1, s)
     return startsNormal
   })
-  if (s.close !== null || s.depth > 0) throw new Error(`${file}:${s.start}: unterminated string or comment`)
+  if (s.close || s.depth) throw new Error(`${file}:${s.start}: unterminated string or comment`)
   return normal
 }
 
 const moduleEnd = (file: string, lines: string[], normal: boolean[], start: number): number => {
-  if (!normal[start + 1] || !/^mod [A-Za-z_][A-Za-z0-9_]* \{\s*$/.test(lines[start + 1] ?? ""))
-    throw new Error(`${file}:${start + 1}: expected a column-0 inline test module after #[cfg(test)]`)
-  for (let i = start + 2; i < lines.length; i++) {
+  const modIdx = start + 1
+  if (!normal[modIdx] || !/^mod [A-Za-z_][A-Za-z0-9_]* \{\s*$/.test(lines[modIdx]!))
+    throw new Error(`${file}:${modIdx}: expected a column-0 inline test module after #[cfg(test)]`)
+  for (let i = modIdx + 1; lines[i] !== undefined; i++) {
     const line = lines[i]!
     if (normal[i] && /^}\s*$/.test(line)) return i
     if (normal[i] && /^\S/.test(line)) throw new Error(`${file}:${i + 1}: non-indented test module interior`)
   }
-  throw new Error(`${file}:${start + 1}: test module has no column-0 closing brace`)
+  throw new Error(`${file}:${modIdx}: test module has no column-0 closing brace`)
 }
 
 /** Deliberately recognize only the conventional column-0 module layout, not arbitrary Rust syntax. */
@@ -107,7 +104,7 @@ const rustSource = (file: string, text: string): RustSource => {
   const lines = text.split("\n")
   const normal = scanStarts(file, lines)
   const tests = new Set<number>()
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = 0; lines[i] !== undefined; i++) {
     if (normal[i] && /^#\[cfg\(test\)]\s*$/.test(lines[i]!)) {
       const end = moduleEnd(file, lines, normal, i)
       for (; i <= end; i++) tests.add(i)
@@ -118,19 +115,19 @@ const rustSource = (file: string, text: string): RustSource => {
 }
 
 const testOnlySource = (source: RustSource): boolean =>
-  source.tests.size > 0 &&
-  source.lines.every((line, i) => source.tests.has(i) || (source.normal[i] && /^\s*(?:\/\/.*)?$/.test(line)))
+  source.tests.size !== 0 &&
+  source.lines.every((line, i) => source.normal[i] && (source.tests.has(i) || /^\s*(?:\/\/.*)?$/.test(line)))
 
 const changedLines = (patch: string, side: "old" | "new"): number[] =>
   [...patch.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)].flatMap((hunk) => {
-    const offset = side === "old" ? 1 : 3
-    const start = Number(hunk[offset]) - 1
-    const count = Number(hunk[offset + 1] ?? 1)
-    return Array.from({ length: count }, (_, i) => start + i)
+    const [, oldStart, oldCount, newStart, newCount] = hunk
+    const [startText, countText] = side === "old" ? [oldStart, oldCount] : [newStart, newCount]
+    const start = Number(startText) - 1
+    return Array.from({ length: Number(countText || 1) }, (_, i) => start + i)
   })
 
 const wiredModule = (file: string, line: string, addedTests: Set<string>): boolean => {
-  const name = /^mod ([A-Za-z_][A-Za-z0-9_]*);$/.exec(line)?.[1]
+  const [, name] = /^mod ([A-Za-z_][A-Za-z0-9_]*);$/.exec(line) || []
   if (!name) return false
   const directory = /^(lib|main|mod)\.rs$/.test(path.posix.basename(file))
     ? path.posix.dirname(file)
@@ -141,9 +138,10 @@ const wiredModule = (file: string, line: string, addedTests: Set<string>): boole
 const rustLines = (file: string, source: RustSource, indices: number[], addedTests: Set<string>): Change => {
   let kind: ChangeKind = "neutral"
   for (const i of indices) {
+    if (!source.normal[i]) throw new Error(`${file}:${i + 1}: changed line inside multiline comment or string`)
     const line = source.lines[i]!
-    if (source.normal[i] && !line.trim()) continue
-    if (!source.tests.has(i) && !(source.normal[i] && wiredModule(file, line, addedTests)))
+    if (!line.trim()) continue
+    if (!source.tests.has(i) && !wiredModule(file, line, addedTests))
       return { kind: "code", detail: `${file}:${i + 1}: production change outside a test module` }
     kind = "test"
   }
