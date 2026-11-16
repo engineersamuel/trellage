@@ -421,6 +421,8 @@ shutdown handled, so a second restart does not repeat it. A crash (no shutdown r
 
 - `web-foldkit` uses npm `overrides` because `foldkit@0.169.0` peers `effect@4.0.0` but `agent-interface@0.5.0` peers
   `effect@4.0.6`.
+- The vendored `web-foldkit/repos/foldkit` workspace overrides `hono` to `>=4.13.16` in `pnpm-workspace.yaml`, because
+  `@modelcontextprotocol/sdk@1.29.0` resolves a vulnerable `hono` and Dependabot cannot raise it.
 - State lives in `~/.local/state/trellage/factory/<worker-id>` (override with `SF_STATE_DIR`).
 - Ctrl-C stops the coordinator and terminates every runtime process.
 
