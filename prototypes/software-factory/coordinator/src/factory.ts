@@ -37,6 +37,7 @@ import {
   prepareStepSkills,
   SKILL_REPOS,
   stepById,
+  steps,
   stepSetup,
   TOOL_REPOS,
   type HarnessSpec,
@@ -138,6 +139,15 @@ export type SpawnSpec = {
   step?: string
   /** Run in this harness instead of the step's (default: Copilot SDK). */
   harness?: HarnessSpec
+  /** Claude harness: skill folders loaded under their own names, beside the step's (UI tournament builders). */
+  skills?: { name: string; dir: string }[]
+  /** Claude harness: local plugin folders loaded beside the profiles' plugins. */
+  plugins?: string[]
+  /**
+   * Claude harness: no user or project settings (no CLAUDE.md, no ~/.claude skills or hooks), and the model sees only
+   * `skills`, loaded as one local plugin. For experiments where only the given skills may differ (tournaments).
+   */
+  isolated?: boolean
   /** Working directory, e.g. a conversation's worktree. Default: the run worktree or the worker's own workspace. */
   workdir?: string
   /** Coordinator that started this worker; supervisor issues go to it. */
@@ -483,6 +493,25 @@ export const claudeSessionOption = (configDir: string, name: string): { resume: 
   return found ? { resume: id } : { sessionId: id }
 }
 
+/** The step whose worker setup implement workers get for UI tasks (prompts/steps/ui.md). */
+export const UI_STEP = "ui"
+
+/** Plugin name of an isolated worker's skills: the model calls them `variant:<skill>`. */
+export const ISOLATED_PLUGIN = "variant"
+
+/** A local plugin whose skills/ links the given skill folders; returns the plugin folder and the enabled names. */
+export const isolatedSkillPlugin = (dir: string, skills: { name: string; dir: string }[]) => {
+  rmSync(dir, { recursive: true, force: true })
+  mkdirSync(path.join(dir, ".claude-plugin"), { recursive: true })
+  writeFileSync(
+    path.join(dir, ".claude-plugin", "plugin.json"),
+    JSON.stringify({ name: ISOLATED_PLUGIN, version: "0.0.0" }),
+  )
+  mkdirSync(path.join(dir, "skills"), { recursive: true })
+  for (const s of skills) symlinkSync(s.dir, path.join(dir, "skills", s.name))
+  return { dir, names: skills.map((s) => `${ISOLATED_PLUGIN}:${s.name}`) }
+}
+
 /** A folder whose .claude/skills/ links the step's skill folders; Claude loads them under their own names. */
 export const stepSkillDir = (dir: string, skills: { name: string; dir: string }[]): string => {
   const root = path.join(dir, ".claude", "skills")
@@ -626,7 +655,15 @@ export class Factory {
     const id = spec.id ?? `w-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`
     let auth = spec.auth ?? this.defaultAuth
     const home = path.join(this.root, id)
-    const step = spec.step ? stepById(spec.step) : null
+    let step = spec.step ? stepById(spec.step) : null
+    // UI work on the implement step gets the UI step's worker setup (skills, model, harness); it stays an implement
+    // worker, so verify, security and code review still follow it.
+    if (step && (await this.isUiImplement(step.id, spec))) {
+      step = { ...stepById(UI_STEP), id: step.id }
+      this.publish("coordinator", "factory.ui_step", null, now(), { worker: spec.name, step: UI_STEP })
+    }
+    // A step with a measured best model (e.g. the UI step) uses it unless the coordinator pins another.
+    if (step?.model && !spec.model) spec = { ...spec, model: step.model }
     const missing = step ? missingProfiles(step.id, step.harness) : []
     if (missing.length) throw new Error(`refused: ${missing.join("; ")}`)
     const mcp = stepMcp(step?.mcp ?? [])
@@ -700,7 +737,7 @@ export class Factory {
       worker?.observe(this, ev as SessionEvent)
       worker?.events.send(ev as SessionEvent)
     }
-    const stepSkills = skills.flatMap((s) => (s.dir ? [{ name: s.name, dir: s.dir }] : []))
+    const stepSkills = [...skills.flatMap((s) => (s.dir ? [{ name: s.name, dir: s.dir }] : [])), ...(spec.skills ?? [])]
     const { session, model, loaded } =
       harness.kind === "claude"
         ? await this.claudeSession(
@@ -764,7 +801,11 @@ export class Factory {
     const claudeServers = claudeMcp(mcp)
     // The step's skills (ub-mode, security-audit, ...) load under their own names, as in a Copilot worker:
     // a .claude/skills folder in the worker's home, added as a working directory (a plugin would prefix them).
-    const skillRoot = stepSkills.length ? stepSkillDir(path.join(home, "step-skills"), stepSkills) : null
+    const skillRoot =
+      stepSkills.length && !spec.isolated ? stepSkillDir(path.join(home, "step-skills"), stepSkills) : null
+    // Isolated: settingSources [] drops every filesystem setting (CLAUDE.md, user skills), which also drops skill
+    // folders in additionalDirectories, so the skills go in one local plugin and only they are enabled.
+    const skillPlugin = spec.isolated ? isolatedSkillPlugin(path.join(home, "skill-plugin"), stepSkills) : null
     // Claude SDK prefers Anthropic models; an explicit model (reviewers use another family on purpose) wins.
     const model =
       spec.model ??
@@ -776,8 +817,12 @@ export class Factory {
       {
         cwd: workdir,
         env: { ...launch.env, ...claudeServers.env },
-        plugins: launch.plugins.map((p) => ({ type: "local" as const, path: p })),
+        plugins: [...launch.plugins, ...(spec.plugins ?? []), ...(skillPlugin ? [skillPlugin.dir] : [])].map((p) => ({
+          type: "local" as const,
+          path: p,
+        })),
         ...(skillRoot ? { additionalDirectories: [skillRoot] } : {}),
+        ...(skillPlugin ? { settingSources: [], skills: skillPlugin.names } : {}),
         model,
         ...(launch.effort ? { effort: launch.effort as never } : {}),
         // default mode, so every permission prompt goes through the factory gate; bypassPermissions skips canUseTool.
@@ -884,6 +929,24 @@ export class Factory {
     return {
       model: routed.id,
       source: { kind: "routed", by: routed.routedBy, confidence: routed.confidence },
+    }
+  }
+
+  /** An implement task about a user interface (Jev's ui-task question), when the UI step exists and is on. */
+  async isUiImplement(stepId: string, spec: SpawnSpec): Promise<boolean> {
+    if (stepId !== "implement" || !spec.task || spec.model || !factoryConfig().routing.ui_step) return false
+    if (!steps().some((s) => s.id === UI_STEP)) return false
+    return (await this.uiTask(spec.task)) >= 0.5
+  }
+
+  /** Jev's probability that a task is UI work; 0 when no decision engine answers. */
+  async uiTask(task: string): Promise<number> {
+    if (!decisionsAvailable()) return 0
+    try {
+      const res = await systemOne({ state: task.slice(0, 16_000), questions: { ui: noul(loadPrompt("jev/ui-task")) } })
+      return res.answers?.ui?.noul ?? 0
+    } catch {
+      return 0
     }
   }
 

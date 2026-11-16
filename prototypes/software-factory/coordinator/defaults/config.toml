@@ -27,6 +27,9 @@ gemini = "gemini-4-argon"
 [routing]
 small_model = "claude-haiku-5.5"
 small_threshold = 0.7
+# An implement task that Jev rates UI work (prompts/jev/ui-task.md, p >= 0.5) gets the UI step's worker setup
+# (prompts/steps/ui.md: Owl-Listener designer-skills + Impeccable on claude-opus-5.5); it stays an implement worker.
+ui_step = true
 
 [review]
 # Jev probability at or above which a review lens runs.
@@ -158,3 +161,53 @@ stuck_failed_tools = 5
 retries = 1
 # Backstop: a worker still running after this long is treated as stuck. SF_SECURITY_TIMEOUT_MS overrides it.
 wait_minutes = 90
+
+# UI skill tournament (src/tournamentRun.ts, sf tournament): each skill source builds the same storefront brief
+# (prompts/tournament/brief.md), Playwright takes screenshots, Jev drops broken builds, frontier judges compare pairs.
+[tournament]
+# Every builder uses the same model and the Claude Agent SDK (clean profile), so only the skills differ.
+builder_model = "claude-opus-5.5"
+# The scout reads each source and writes how to use it.
+scout_model = "claude-sonnet-5.5"
+# Pairwise judges through copilot-proxy-rs; each sees both orders. Use model families from different labs.
+judges = ["claude-opus-5.5", "gpt-6-astra", "gemini-4-argon"]
+# Builds per variant: one build is not a statistic.
+runs = 3
+max_parallel_builds = 6
+# Games per pairing (build 1 vs build 1, build 2 vs build 2, ...); 0 = every build plays.
+games_per_match = 0
+# Reasoning judges need room to think before their JSON answer.
+judge_max_tokens = 6000
+# Most images one judge request may carry, by model (both sides together). gemini-4-argon refuses more than 10 with
+# HTTP 400. Each side keeps the first shot of every page and drops extra whole-page tiles first. A model not listed
+# gets every shot; if it refuses a request as too big (400 or 413) it is retried once with 10.
+judge_max_images = { "gemini-4-argon" = 10 }
+# Swiss rounds per generation.
+swiss_rounds = 3
+# Combinations come from the top this many variants...
+top_k = 3
+# ...that each beat the baseline with at least this probability...
+combo_margin = 0.6
+# ...when Jev's probability that the two sets complement each other is at least this.
+combo_threshold = 0.5
+# Combination generations after the first; the loop also stops when a generation does not raise the leader.
+max_generations = 2
+# Most skills the scout picks from one source.
+max_skills = 6
+# A build whose Jev check is below this is dropped from judging.
+check_threshold = 0.5
+# A source whose skills need a paid token, licence, subscription or paywall is excluded before its scout runs when
+# Jev's probability is at least this (prompts/tournament/paid.md). The scout excludes the ones Jev missed.
+paid_threshold = 0.5
+# Cost limit of one tournament: builds, scouts and judges together. At the limit it pauses.
+limit_usd = 400
+playwright = "playwright"
+# The Playwright library (node_modules/playwright) and axe-core's axe.min.js for scripts/buildAudit.cjs. Empty: the
+# global npm Playwright (`npm root -g`), and axe-core installed once into $SF_STATE_DIR/tools/axe.
+playwright_lib = ""
+axe = ""
+# Home page on desktop: a tall viewport shows more than the first screen. Jev reads this shot: each side at most
+# 1568 px and at most 2,458,624 px in all (docs.typesafe.ai/images), else Jev refuses it.
+home_viewport = "1440,1560"
+desktop_viewport = "1440,900"
+mobile_viewport = "390,844"

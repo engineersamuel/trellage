@@ -12,8 +12,15 @@ import type { Model } from "./model"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
 import * as Goals from "./goals"
+import * as Tournaments from "./tournaments"
 import * as Settings from "./settings"
-import { toGotDiffPanelMessage, toGotGoalsMessage, toGotReportViewerMessage, toGotSettingsMessage } from "./update"
+import {
+  toGotDiffPanelMessage,
+  toGotGoalsMessage,
+  toGotReportViewerMessage,
+  toGotSettingsMessage,
+  toGotTournamentsMessage,
+} from "./update"
 import * as Workers from "./workers"
 
 const BUSY_COLOR = "#f59e0b"
@@ -138,6 +145,7 @@ const EMPTY_WORKERS: ReadonlyArray<Worker> = []
 const navbar = (
   settingsModel: Settings.Model,
   goalsModel: Goals.Model,
+  tournamentsModel: Tournaments.Model,
   diffPanelModel: DiffPanel.Model,
   workers: Workers.Model["workers"],
   approvals: ReadonlyArray<Approval>,
@@ -164,6 +172,12 @@ const navbar = (
           h.span([h.Class("fk-spacer")]),
           h.span([h.Class("fk-nav-item fk-muted")], [settings.theme]),
           DiffPanel.navButton(diffPanelModel, Message.ClickedOpenChanges(), h),
+          h.submodel({
+            model: tournamentsModel,
+            slotId: "tournaments-button",
+            toParentMessage: toGotTournamentsMessage,
+            view: Tournaments.navButton,
+          }),
           h.submodel({
             model: goalsModel,
             slotId: "goals-button",
@@ -205,6 +219,7 @@ const settingsDrawer = (settingsModel: Settings.Model, h: HtmlBuilder<Message>):
 const lazyNavbar = createLazy()
 const lazySettingsDrawer = createLazy()
 const lazyGoalsDialog = createLazy()
+const lazyTournamentsDialog = createLazy()
 const lazyDiffPanel = createLazy()
 const lazyReportViewer = createLazy()
 const reportViewer = (reportViewerModel: ReportViewer.Model, h: HtmlBuilder<Message>): Html =>
@@ -220,6 +235,14 @@ const INBOX = "3"
 
 const goalsDialog = (goalsModel: Goals.Model, h: HtmlBuilder<Message>): Html =>
   h.submodel({ model: goalsModel, slotId: "goals", toParentMessage: toGotGoalsMessage, view: Goals.view })
+
+const tournamentsDialog = (tournamentsModel: Tournaments.Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({
+    model: tournamentsModel,
+    slotId: "tournaments",
+    toParentMessage: toGotTournamentsMessage,
+    view: Tournaments.view,
+  })
 
 const diffPanel = (diffPanelModel: DiffPanel.Model, h: HtmlBuilder<Message>): Html =>
   h.submodel({
@@ -260,6 +283,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
             lazyNavbar(navbar, [
               model.settings,
               model.goals,
+              model.tournaments,
               model.diffPanel,
               model.workers.workers,
               model.approvals,
@@ -275,6 +299,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
         slot("overlay", h, "fk-slot-overlay"),
         lazySettingsDrawer(settingsDrawer, [model.settings, h]),
         lazyGoalsDialog(goalsDialog, [model.goals, h]),
+        lazyTournamentsDialog(tournamentsDialog, [model.tournaments, h]),
         lazyDiffPanel(diffPanel, [model.diffPanel, h]),
         lazyReportViewer(reportViewer, [model.reportViewer, h]),
       ],

@@ -733,3 +733,17 @@
 .sfp-p3 .sf-ledger-failed td:nth-child(4) {
   color: var(--sf-error, #f85149);
 }
+
+/* Tournament leaderboard pin (tournament-view.ts): newest judged pair and best builds. */
+.p3-tour-gallery h4 { margin: 10px 0 4px; font-size: 12px; }
+.p3-tour-fig { margin: 0 0 8px; }
+.p3-tour-shots { display: flex; gap: 6px; overflow-x: auto; }
+.p3-tour-shots img { height: 150px; border: 1px solid var(--sf-border, #333); border-radius: 4px; }
+.p3-tour-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.p3-tour-table th, .p3-tour-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--sf-border, #333); vertical-align: middle; }
+.p3-tour-baseline { opacity: 0.8; }
+.p3-tour-assets { display: flex; gap: 6px; align-items: center; }
+.p3-tour-assets img { height: 48px; width: 72px; object-fit: cover; object-position: top; border: 1px solid var(--sf-border, #333); border-radius: 4px; display: block; }
+.p3-tour-assets a:hover img { outline: 2px solid var(--sf-accent, #f59e42); }
+.p3-tour-dropped img { opacity: 0.45; }
+.p3-tour-mark { width: 72px; text-align: center; opacity: 0.6; }

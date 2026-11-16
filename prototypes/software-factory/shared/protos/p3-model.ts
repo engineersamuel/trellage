@@ -32,7 +32,11 @@ const isDraft = (t: Thread) => !!t.draft && !t.draft.startedAt
 const draftPrompt = (t: Thread) => t.draft?.versions.find((v) => v.id === t.draft!.current)?.prompt ?? t.title
 /** Agent id of a thread's coordinator. */
 export const agentIdOf = (t: Thread): string =>
-  t.desk ? "coordinator" : isDraft(t) ? `draft-${short(t.id)}` : `${t.worktree ? "sub" : "gen"}-${short(t.id)}`
+  t.desk
+    ? "coordinator"
+    : isDraft(t)
+      ? `draft-${short(t.id)}`
+      : `${t.worktree || t.tournamentId ? "sub" : "gen"}-${short(t.id)}`
 
 /** A node that is an agent or conversation; gates and subagents are only drawn. */
 export const counted = (n: Node): boolean => n.kind !== "gate" && n.kind !== "subagent"
@@ -72,7 +76,7 @@ export const build = (
   for (const t of shown) {
     const id = agentIdOf(t)
     const a = byAgent.get(id)
-    const kind: Kind = t.desk ? "desk" : isDraft(t) ? "draft" : t.worktree ? "sub" : "chat"
+    const kind: Kind = t.desk ? "desk" : isDraft(t) ? "draft" : t.worktree || t.tournamentId ? "sub" : "chat"
     add({
       id,
       kind,

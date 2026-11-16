@@ -686,3 +686,71 @@ kbd {
   color: #d29922;
   margin-left: 0.3rem;
 }
+
+/* UI skill tournaments dialog (src/tournaments) */
+.fk-drawer.fk-tournaments {
+  width: min(960px, 100vw);
+}
+.fk-tour-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fk-tour-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fk-tour-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+.fk-tour-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.fk-tour-table th,
+.fk-tour-table td {
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--sf-border);
+  vertical-align: top;
+}
+.fk-tour-table td button {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+}
+.fk-tour-baseline {
+  opacity: 0.75;
+}
+.fk-tour-reason {
+  margin: 2px 0;
+  font-size: 12px;
+}
+.fk-tour-build h4 {
+  margin: 8px 0 4px;
+}
+.fk-tour-shots {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+.fk-tour-shots img {
+  height: 140px;
+  border: 1px solid var(--sf-border);
+  border-radius: 4px;
+}
+.fk-tour-log {
+  font-size: 12px;
+  max-height: 240px;
+  overflow: auto;
+}

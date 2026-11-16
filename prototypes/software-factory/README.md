@@ -346,6 +346,67 @@ and sends no done report, the guide is written again. **↻ Rewrite** writes it 
 there). The coordinator runs `herdr`, so it needs a running herdr server for the same user. API:
 `GET|POST /api/threads/<id>/test-guide`, `POST /api/threads/<id>/test-guide/herdr`.
 
+## Tournaments
+
+A tournament finds which variant makes the best result for one brief: variants are built several times, screenshotted,
+and judged in pairs by expert judges aspect by aspect. A **preset** says what the variants are:
+
+| Preset | Variants | Brief | Aspects (1-10 each, all equal) |
+|---|---|---|---|
+| `ui-skills` | one per skill source (GitHub repo or web page) | `prompts/tournament/ui-skills/brief.md`: an umbrella shop, 4 pages | typography, color, layout, hierarchy, spacing, consistency, imagery, accessibility, responsiveness, commerce clarity, distinctiveness |
+| `prototypes` | approaches to an idea, written by the sub-coordinator | the human's idea, one page | concept, usefulness, usability, clarity, visual design, interaction, feasibility, delight |
+
+Every preset also plays a **baseline** (no skill, no direction): a variant is good only if it beats it. A new preset is
+an entry in `src/tournamentPresets.ts` plus `prompts/tournament/<preset>/` (build, judge, checks/, and brief + scout
+for source presets).
+
+**One conversation per tournament.** Starting one opens a conversation (title `♛ …`) whose **sub-coordinator**
+(`sub-<id8>`, system prompt `prompts/tournament/coordinator.md`) runs it with the tournament tools; every scout,
+builder and judge call hangs under it, so the Inbox tree and its cost show the whole tournament. Its header pins
+**♛ Leaderboard**, open by default and live: the table, the running job, the spend, a Stop button, the **newest judged
+pair** (both builds' home shots and the share of aspects each won) and the **best build of each of the top 3**.
+
+| Tool | Job | What code does |
+|---|---|---|
+| `tournament_scout` | yes | Paid sources out first: Jev reads the page (and the site's skill, install, docs and pricing pages) or README (`tournament/paid.md`, `paid_threshold`). Then a scout (`scout_model`) clones the repo or the repo the page links, picks at most `max_skills` skills, writes `card.json`. |
+| `tournament_add_variants` | no | `prototypes`: the sub-coordinator's approaches become variants. |
+| `tournament_build` | yes | `runs` builds per variant, same model (`builder_model`), Claude Agent SDK with the `clean` profile; Playwright screenshots; Jev image checks. Only a check with `drop = true` (renders) drops a build; the others are notes. |
+| `tournament_round` | yes | Swiss pairs (or given pairs). Each `judges` model (three labs) scores every aspect for both sides, in both orders; each aspect goes to the higher mean, so a position bias cancels; the vote is A's share of the aspects. |
+| `tournament_combine` | no | Candidates: top `top_k` variants that beat the baseline with p ≥ `combo_margin`, with Jev's fit (`tournament/combine.md`); with pairs, adds combo variants. |
+| `tournament_status`, `tournament_finish` | no | The state and a leaderboard table; the conclusion. |
+
+A job tool starts the job and returns; one job runs at a time. When it ends the sub-coordinator gets a
+`[tournament job …]` message (`tournament/job-ended.md`). Ratings are Bradley-Terry strengths shown on the Elo scale
+(baseline 1000) with each variant's probability of beating the baseline.
+
+**Cost and stopping.** The spend is the sub-coordinator, every agent it started, and its judge calls
+(`<sub>-judge`). Before each paid step it is compared with the limit (`limit_usd`, or the one given at start). At the
+limit the job stops and a `budget` decision asks the human for a higher limit or a stop. **Stop** halts the job at
+once and stops its workers; finished builds and games stay. A restart marks the running job interrupted and tells the
+sub-coordinator to start it again.
+
+| Part | Where |
+|---|---|
+| State, builds, screenshots | `$SF_STATE_DIR/tournaments/<id>/` (`state.json`, `sources/`, `builds/`, `shots/`) |
+| API | `GET/POST /api/tournaments` (`preset`, `sources` or `idea`, `limitUsd`), `GET /api/tournaments/<id>` (`leaderboard`, `leaderboardMd`, `gallery`), `POST .../<id>/stop`, `POST .../<id>/resume` `{limitUsd}`, `GET /api/tournament-presets` |
+| CLI | `sf tournament new [--limit USD] FILE`, `idea [--limit USD] "IDEA"`, `list`, `show ID`, `resume ID`, `stop ID` |
+| UI | the tournament's conversation (♛ Leaderboard pin); Foldkit navbar **♛ Tournaments** to start one and browse every build's screenshots |
+| Config | `[tournament]` in `coordinator/defaults/config.toml` |
+
+**Result → default UI step.** Tournament `t-2026-11-15-f4f711` (6 skill sources + baseline, every build, 3 judges,
+browser audit): Owl-Listener designer-skills beat the no-skill baseline in 3 of 3 builds (+0.60 points, all 3 judges
+positive) and Impeccable in 2 of 3 (+0.30); both cut serious WCAG AA violations from 54 per build to 3-4. So
+`prompts/steps/ui.md` (step `ui`) loads both (cloned by `SKILL_REPOS`) on `claude-opus-5.5` in the Claude SDK, and an
+implement task that Jev rates UI work (`jev/ui-task.md`, p ≥ 0.5; `[routing] ui_step`) gets that setup while it stays
+an implement worker, so verify, review and security still run. A coordinator that pins a model keeps it.
+
+Judging a model with an image limit: `judge_max_images` caps the images per request (gemini-4-argon: 10); each side
+keeps the first shot of every page and drops extra whole-page tiles first. An unlisted model that refuses a request
+as too big (400/413) is retried once with 10.
+
+Limits: one tournament is one brief; scores say what works for *this* brief. LLM judges share biases; the baseline and
+three judge families reduce them but do not remove them.
+
 ## Restart resume
 
 A coordinator stop (`factory:restart`, SIGTERM) publishes `factory.shutdown` with every running agent. The next start

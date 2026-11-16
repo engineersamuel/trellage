@@ -95,6 +95,8 @@ export const Thread = Schema.Struct({
   desk: Schema.optionalKey(Schema.Boolean),
   parentThreadId: Schema.optionalKey(Schema.String),
   draft: Schema.optionalKey(Draft),
+  /** A tournament conversation: its header pins the live leaderboard. */
+  tournamentId: Schema.optionalKey(Schema.String),
 })
 export type Thread = typeof Thread.Type
 

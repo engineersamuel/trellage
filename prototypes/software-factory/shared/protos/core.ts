@@ -160,7 +160,7 @@ export const subscribe = (cb: (s: State) => void): (() => void) => {
 export const threadOf = (agentId: string): Thread | undefined =>
   agentId === "coordinator"
     ? state.threads.find((t) => t.desk)
-    : state.threads.find((t) => `${t.worktree ? "sub" : "gen"}-${t.id.slice(0, 8)}` === agentId)
+    : state.threads.find((t) => `${t.worktree || t.tournamentId ? "sub" : "gen"}-${t.id.slice(0, 8)}` === agentId)
 /** Sub-coordinator id of a thread, if it is a repo conversation. */
 export const agentOfThread = (t: Thread): string | null => (t.worktree ? `sub-${t.id.slice(0, 8)}` : null)
 export const pendingFor = (threadId: string | null) =>

@@ -5,6 +5,7 @@ import { Decision as Approval } from "../../shared/approvals"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
 import * as Goals from "./goals"
+import * as Tournaments from "./tournaments"
 import * as Settings from "./settings"
 import * as Workers from "./workers"
 
@@ -13,6 +14,7 @@ export const Message = defineMessageUnion({
   GotWorkersMessage: { message: Workers.Message },
   GotSettingsMessage: { message: Settings.Message },
   GotGoalsMessage: { message: Goals.Message },
+  GotTournamentsMessage: { message: Tournaments.Message },
   GotDiffPanelMessage: { message: DiffPanel.Message },
   GotReportViewerMessage: { message: ReportViewer.Message },
   /** The navbar "Changes" button: open the diff panel on the open conversation's worktree. */

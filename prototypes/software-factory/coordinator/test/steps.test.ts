@@ -119,3 +119,26 @@ test("five-whys routes its subagents on a short low-cost text", () => {
   expect(stepById("five-whys").subagentRoute).toMatch(/^Low-cost/)
   expect(stepById("debug").subagentRoute).toBeUndefined()
 })
+
+test("the UI step loads Owl-Listener's six skills and Impeccable from their repos, on Opus 5.5 in the Claude SDK", () => {
+  const ui = stepById("ui")
+  expect(ui.model).toBe("claude-opus-5.5")
+  expect(ui.harness).toEqual({ kind: "claude", profiles: ["default"] })
+  expect(ui.skills).toEqual([
+    "visual-hierarchy",
+    "typography-scale",
+    "color-system",
+    "layout-grid",
+    "responsive-design",
+    "interfaces-that-feel",
+    "impeccable",
+  ])
+  expect(stepSetup(ui, "/s", "/t").skillDirectories).toEqual([
+    "/s/designer-skills/ui-design/skills",
+    "/s/designer-skills/interaction-design/skills",
+    "/s/impeccable/.claude/skills",
+  ])
+  expect(SKILL_REPOS["designer-skills"]).toMatchObject({ url: "https://github.com/Owl-Listener/designer-skills.git" })
+  expect(SKILL_REPOS.impeccable).toMatchObject({ url: "https://github.com/pbakaus/impeccable.git" })
+  expect(selectableSteps().map((s) => s.id)).toContain("ui")
+})

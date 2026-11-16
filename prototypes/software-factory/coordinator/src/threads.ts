@@ -40,10 +40,11 @@ export type Thread = {
   /** Latest proposal, retained for existing API clients. */ improvement?: ImprovementProposal
   /** All proposals, keyed by source grade; older approvals must remain routable. */ improvements?: ImprovementProposal[]
   /** Source thread when this is a Factory improvement run. */ improvementOf?: string
+  /** The tournament this conversation runs; its sub-coordinator has the tournament tools. */ tournamentId?: string
 } & Partial<Worktree>
 type Meta = Pick<
   Thread,
-  "parentThreadId" | "desk" | "goalId" | "goalSpec" | "improvement" | "improvements" | "improvementOf"
+  "parentThreadId" | "desk" | "goalId" | "goalSpec" | "improvement" | "improvements" | "improvementOf" | "tournamentId"
 >
 export type ChatMessage =
   | { id: string; role: "user"; content: string }

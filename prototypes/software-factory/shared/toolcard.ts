@@ -57,9 +57,15 @@ const svg = (cls: string, viewBox: string, shapes: readonly Shape[]): SVGSVGElem
   return s
 }
 
-const ok = () => svg("ui-tcc__ok", "0 0 16 16", [["circle", { cx: "8", cy: "8", r: "7" }], path("M5.1 8.2 7.1 10.1 10.9 6", { pathLength: "1" })])
-const errIcon = () => svg("ui-tcc__err", "0 0 16 16", [["circle", { cx: "8", cy: "8", r: "7" }], path("M8 4.9v3.5M8 10.9v.1")])
-const spinner = () => svg("ui-tcc__spinner", "0 0 16 16", [["circle", { cx: "8", cy: "8", r: "6" }], path("M8 2a6 6 0 0 1 6 6")])
+const ok = () =>
+  svg("ui-tcc__ok", "0 0 16 16", [
+    ["circle", { cx: "8", cy: "8", r: "7" }],
+    path("M5.1 8.2 7.1 10.1 10.9 6", { pathLength: "1" }),
+  ])
+const errIcon = () =>
+  svg("ui-tcc__err", "0 0 16 16", [["circle", { cx: "8", cy: "8", r: "7" }], path("M8 4.9v3.5M8 10.9v.1")])
+const spinner = () =>
+  svg("ui-tcc__spinner", "0 0 16 16", [["circle", { cx: "8", cy: "8", r: "6" }], path("M8 2a6 6 0 0 1 6 6")])
 const chevron = () => svg("ui-tcc__chevron", "0 0 12 12", [path("M3.5 5.25 6 7.75l2.5-2.5")])
 
 /** The glyph for a tool as an SVG element. */
@@ -73,6 +79,23 @@ export const imagePaths = (args: unknown, result: unknown): string[] => {
   const text = `${typeof args === "string" ? args : JSON.stringify(args ?? "")}\n${typeof result === "string" ? result : JSON.stringify(result ?? "")}`
   return [...new Set([...text.matchAll(IMAGE_PATH)].map((m) => m[1]!))].slice(0, 6)
 }
+
+/** One preview per image (opens full size); a path the server will not serve (outside the allowed folders, or gone) drops its preview. */
+export const imagePreviews = (paths: readonly string[]): HTMLElement[] =>
+  paths.map((p) => {
+    const a = el("a", "ui-tcc__image")
+    a.href = imageUrl(p)
+    a.target = "_blank"
+    a.rel = "noopener"
+    a.title = p
+    const img = el("img")
+    img.src = imageUrl(p)
+    img.alt = p.slice(p.lastIndexOf("/") + 1)
+    img.loading = "lazy"
+    img.onerror = () => a.remove()
+    a.append(img, el("span", "", img.alt))
+    return a
+  })
 
 export const toolIcon = (name: string): SVGSVGElement => svg("", "0 0 16 16", toolGlyph(name))
 
@@ -153,7 +176,10 @@ const copyButton = (text: string, label: string): HTMLButtonElement => {
   }
   idle()
   b.append(
-    svg("ui-tcc__copy-icon", "0 0 16 16", [["rect", { x: "5.5", y: "5.5", width: "8.5", height: "8.5", rx: "2" }], path("M10.5 3.75v-.25A1.5 1.5 0 0 0 9 2H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5h.25")]),
+    svg("ui-tcc__copy-icon", "0 0 16 16", [
+      ["rect", { x: "5.5", y: "5.5", width: "8.5", height: "8.5", rx: "2" }],
+      path("M10.5 3.75v-.25A1.5 1.5 0 0 0 9 2H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5h.25"),
+    ]),
     svg("ui-tcc__copy-done", "0 0 16 16", [path("M3.5 8.4 6.6 11.3 12.5 4.9", { pathLength: "1" })]),
   )
   let timer = 0
@@ -223,7 +249,14 @@ export class ToolCard {
   private autoOpened = false
   card!: CardInput
 
-  constructor(card: CardInput, private readonly opts: { isOpen: (id: string) => boolean; setOpen: (id: string, open: boolean) => void; touched: Set<string> }) {
+  constructor(
+    card: CardInput,
+    private readonly opts: {
+      isOpen: (id: string) => boolean
+      setOpen: (id: string, open: boolean) => void
+      touched: Set<string>
+    },
+  ) {
     const id = `ui-tcc-${++uid}`
     this.announce.role = "status"
     this.announce.ariaLive = "polite"
@@ -265,7 +298,12 @@ export class ToolCard {
     this.summaryEl.textContent = this.summaryEl.title = card.summary
     this.summaryEl.hidden = !card.summary
     this.el.dataset.status = status
-    this.announce.textContent = status === "running" ? `${name} running` : status === "success" ? `${name} finished` : `${name} failed${card.error ? `: ${card.error}` : ""}`
+    this.announce.textContent =
+      status === "running"
+        ? `${name} running`
+        : status === "success"
+          ? `${name} finished`
+          : `${name} failed${card.error ? `: ${card.error}` : ""}`
     if (prev?.status !== status) {
       // A new status element per status, so its entrance animation plays again.
       const s = el("span", "ui-tcc__status")
@@ -290,29 +328,15 @@ export class ToolCard {
     const imgKey = (card.images ?? []).join("\n")
     if (imgKey !== (prev?.images ?? []).join("\n") || !prev) {
       this.imageBox.hidden = !card.images?.length
-      this.imageBox.replaceChildren(
-        ...(card.images ?? []).map((p) => {
-          const a = el("a", "ui-tcc__image")
-          a.href = imageUrl(p)
-          a.target = "_blank"
-          a.rel = "noopener"
-          a.title = p
-          const img = el("img")
-          img.src = imageUrl(p)
-          img.alt = p.slice(p.lastIndexOf("/") + 1)
-          img.loading = "lazy"
-          // A path the server will not serve (outside the allowed folders, or gone) drops its preview.
-          img.onerror = () => a.remove()
-          a.append(img, el("span", "", img.alt))
-          return a
-        }),
-      )
+      this.imageBox.replaceChildren(...imagePreviews(card.images ?? []))
     }
     if (prev?.diffs !== card.diffs || prev?.status !== status) {
       const files = status === "error" ? [] : (card.diffs ?? [])
       this.diffBox.hidden = !files.length
-      if (files.length) renderDiffs(this.diffBox, files), this.diffBox.classList.add("ui-tcc__diffs")
-      else this.diffBox.replaceChildren()
+      if (files.length) {
+        renderDiffs(this.diffBox, files)
+        this.diffBox.classList.add("ui-tcc__diffs")
+      } else this.diffBox.replaceChildren()
     }
     const key = JSON.stringify([status, card.error, card.args, card.result, !!card.link])
     if (key === this.bodyKey) return
@@ -330,7 +354,9 @@ export class ToolCard {
   tick(now = Date.now()): void {
     const { status } = this.card
     const ms = this.ms(now)
-    if (this.timeEl) this.timeEl.textContent = status === "error" ? "Failed" : ms === undefined ? "" : formatMs(ms, status === "running")
+    if (this.timeEl)
+      this.timeEl.textContent =
+        status === "error" ? "Failed" : ms === undefined ? "" : formatMs(ms, status === "running")
   }
 
   private renderBody(): void {
@@ -353,7 +379,8 @@ export class ToolCard {
       s.append(h, el("p", "ui-tcc__pending", "Waiting for result…"))
       parts.push(s)
     }
-    if (args === undefined && result === undefined && status === "success") parts.push(el("p", "ui-tcc__pending", "No arguments or result."))
+    if (args === undefined && result === undefined && status === "success")
+      parts.push(el("p", "ui-tcc__pending", "No arguments or result."))
     this.sections.replaceChildren(...parts)
   }
 }
@@ -373,7 +400,10 @@ export class ToolGroup {
   private group!: GroupInput
   private cards: readonly ToolCard[] = []
 
-  constructor(group: GroupInput, private readonly opts: { isOpen: (id: string) => boolean; setOpen: (id: string, open: boolean) => void }) {
+  constructor(
+    group: GroupInput,
+    private readonly opts: { isOpen: (id: string) => boolean; setOpen: (id: string, open: boolean) => void },
+  ) {
     const id = `ui-tcc-${++uid}`
     this.announce.role = "status"
     this.announce.ariaLive = "polite"
@@ -445,7 +475,12 @@ export class ToolGroup {
     if (!this.timeEl) return
     const times = this.cards.map((c) => c.ms(now))
     const known = times.filter((t): t is number => t !== undefined)
-    this.timeEl.textContent = known.length ? `· ${formatMs(known.reduce((a, b) => a + b, 0), this.running())}` : ""
+    this.timeEl.textContent = known.length
+      ? `· ${formatMs(
+          known.reduce((a, b) => a + b, 0),
+          this.running(),
+        )}`
+      : ""
     this.timeEl.hidden = !known.length
   }
 }
