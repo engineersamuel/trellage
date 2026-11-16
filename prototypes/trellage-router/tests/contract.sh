@@ -1415,10 +1415,45 @@ for launcher in cpx cldx jcx omp prx agx; do
 done
 cp "$runtime_parent/cpx/catalog.json" "$fixture_root/copilot-isolation.catalog"
 printf '{not-json}\n' >"$runtime_parent/cpx/catalog.json"
-TRX_ARGUMENT_LOG="$argument_log" \
+old_bun_bin="$fixture_root/old-bun-bin"
+mise_call_log="$fixture_root/mise-calls.log"
+mkdir -p "$old_bun_bin"
+cat >"$old_bun_bin/bun" <<'EOF'
+#!/usr/bin/env bash
+printf '1.4.2\n'
+EOF
+cat >"$old_bun_bin/mise" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${TRX_TEST_MISE_LOG:?}"
+case "${1-}" in
+  install)
+    [[ "${2-}" == bun@1.4.4 && "$#" == 2 ]]
+    ;;
+  which)
+    [[ "${2-}" == bun && "${3-}" == --tool=bun@1.4.4 && "$#" == 3 ]]
+    printf '%s\n' "${TRX_TEST_PINNED_BUN:?}"
+    ;;
+  *)
+    exit 2
+    ;;
+esac
+EOF
+chmod 0755 "$old_bun_bin/bun" "$old_bun_bin/mise"
+TRX_TEST_MISE_LOG="$mise_call_log" \
+  TRX_TEST_PINNED_BUN="$real_bun" \
+  TRX_ARGUMENT_LOG="$argument_log" \
   TRELLAGE_CONFIG="$fixture_root/minimal-native-config.toml" \
+  env -u TRELLAGE_BUN_EXECUTABLE -u TRELLAGE_BUN_BOOTSTRAPPED \
+  PATH="$old_bun_bin:$PATH" \
   "$fixture_bin/trx" run claude cldx-p -- 'two words' '' '--literal=*' \
-  || fail 'direct Claude launch required a public launcher or unrelated catalog'
+  >"$fixture_root/old-bun-launch.out" 2>"$fixture_root/old-bun-launch.err" \
+  || fail 'direct Claude launch did not recover from an older Bun runtime'
+assert_contains 'installing Bun 1.4.4 with Mise; found 1.4.2' "$fixture_root/old-bun-launch.err"
+[[ "$(sed -n '1p' "$mise_call_log")" == 'install bun@1.4.4' ]] \
+  || fail 'old Bun launch did not install the pinned runtime through Mise'
+[[ "$(sed -n '2p' "$mise_call_log")" == 'which bun --tool=bun@1.4.4' ]] \
+  || fail 'old Bun launch did not select the pinned runtime through Mise'
 python3 - "$argument_log" <<'PY' || fail 'isolated Claude launch changed arguments'
 import pathlib
 import sys

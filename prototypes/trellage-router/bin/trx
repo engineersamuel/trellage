@@ -159,7 +159,7 @@ EOF
 }
 
 canonical_directory() {
-  (CDPATH= cd -P -- "$1" >/dev/null 2>&1 && pwd -P)
+  (CDPATH='' cd -P -- "$1" >/dev/null 2>&1 && pwd -P)
 }
 
 resolve_file() {
@@ -470,10 +470,14 @@ else
     || die 'invalid trx ownership marker'
   guide_root="$runtime/share/profile-guides"
 fi
+ensure_pinned_bun_runtime() {
+  trellage_select_bun_runtime "$source_workspace"
+}
 require_source_runtime() {
   [[ -f "$source_workspace/scripts/bun-runtime.sh" && ! -L "$source_workspace/scripts/bun-runtime.sh" ]] \
     || die "source runtime is missing or unsafe; reinstall trx: $source_workspace"
   . "$source_workspace/scripts/bun-runtime.sh"
+  ensure_pinned_bun_runtime || die 'pinned Bun runtime is unavailable'
   if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
     trellage_bun_runtime "$source_workspace" || die 'source Bun runtime is unavailable'
     TRELLAGE_READINESS_MEMO=1 "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/workspace-cli.ts" ensure "$source_workspace" \
@@ -562,6 +566,7 @@ if [[ "$mode" == run-list ]]; then
   [[ -f "$source_workspace/scripts/bun-runtime.sh" && ! -L "$source_workspace/scripts/bun-runtime.sh" ]] \
     || die 'source runtime is missing; install trx from a prepared checkout'
   . "$source_workspace/scripts/bun-runtime.sh"
+  ensure_pinned_bun_runtime || die 'pinned Bun runtime is unavailable'
   trellage_bun_runtime "$source_workspace" || die 'listing requires the installed pinned Bun runtime'
   TRELLAGE_READINESS_MEMO=0 "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/workspace-cli.ts" check "$source_workspace" \
     || die 'source runtime is not ready; run scripts/install-source-runtime.sh --prepare explicitly'
