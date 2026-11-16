@@ -28,7 +28,8 @@ must never be what enforces it.
 - Coordinator models have one home: `models.coordinator`, `models.sub_coordinator` in the config. The UI model picker
   writes a runtime override; `settings.json` does not store them. `SF_MODEL`, `SF_REVIEW_MODEL`,
   `SF_SECURITY_MODEL` still override worker and reviewer models.
-- Catalogs are folders of prompt files: `steps/`, `research/`, `lenses/`, `gates/`, `status/`, `jev/security/`. The
+- Catalogs are folders of prompt files: `steps/`, `research/`, `lenses/`, `gates/`, `status/`, `jev/security/`,
+  `tournament/<preset>/checks/` (Jev image checks of a tournament build; `drop = true` drops it). The
   body is the text the model reads; TOML front matter holds the item's fields (a step's skills, harness,
   instructions, best_for, avoid_for; `order` = its place in the list Jev reads). Add an item: add a file (shipped or
   in the user folder).

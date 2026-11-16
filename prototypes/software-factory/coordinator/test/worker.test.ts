@@ -375,3 +375,18 @@ test("handoffTranscript keeps the last turns: messages and tool names, not subag
   expect(handoffTranscript(log)).toBe("USER: first ask\n(tool spawn_worker)\nYOU: done")
   expect(handoffTranscript(log, 12)).toBe("YOU: done")
 })
+
+test("an implement task that Jev rates UI work gets the UI step's setup; others, pinned models and other steps do not", async () => {
+  type Spy = {
+    uiTask: (task: string) => Promise<number>
+    isUiImplement: (step: string, spec: object) => Promise<boolean>
+  }
+  const f = as<Spy>(new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-ui-")) }))
+  f.uiTask = async (task) => (task.includes("page") ? 0.9 : 0.1)
+  expect(await f.isUiImplement("implement", { name: "a", role: "worker", task: "build the pricing page" })).toBe(true)
+  expect(await f.isUiImplement("implement", { name: "a", role: "worker", task: "fix the SQL migration" })).toBe(false)
+  expect(await f.isUiImplement("verify", { name: "a", role: "worker", task: "check the page" })).toBe(false)
+  expect(await f.isUiImplement("implement", { name: "a", role: "worker", task: "the page", model: "gpt-x" })).toBe(
+    false,
+  )
+})

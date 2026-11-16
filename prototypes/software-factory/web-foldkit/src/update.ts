@@ -19,6 +19,7 @@ import type { Model } from "./model"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
 import * as Goals from "./goals"
+import * as Tournaments from "./tournaments"
 import * as Settings from "./settings"
 import * as Workers from "./workers"
 
@@ -28,6 +29,8 @@ type Step = Update.Step<Model, Message, ChatBackend>
 export const toGotWorkersMessage = (message: Workers.Message): Message => Message.GotWorkersMessage({ message })
 export const toGotSettingsMessage = (message: Settings.Message): Message => Message.GotSettingsMessage({ message })
 export const toGotGoalsMessage = (message: Goals.Message): Message => Message.GotGoalsMessage({ message })
+export const toGotTournamentsMessage = (message: Tournaments.Message): Message =>
+  Message.GotTournamentsMessage({ message })
 export const toGotDiffPanelMessage = (message: DiffPanel.Message): Message => Message.GotDiffPanelMessage({ message })
 export const toGotReportViewerMessage = (message: ReportViewer.Message): Message =>
   Message.GotReportViewerMessage({ message })
@@ -69,6 +72,14 @@ const foldGoals = Update.foldChild({
     next === model.goals ? model : modifyFields(model, { goals: () => next }),
   toParentMessage: toGotGoalsMessage,
   update: Goals.update,
+})
+
+const foldTournaments = Update.foldChild({
+  read: (model: Model) => Option.some(model.tournaments),
+  write: (model: Model, next: Tournaments.Model): Model =>
+    next === model.tournaments ? model : modifyFields(model, { tournaments: () => next }),
+  toParentMessage: toGotTournamentsMessage,
+  update: Tournaments.update,
 })
 
 const readDiffPanel = (model: Model) => Option.some(model.diffPanel)
@@ -147,6 +158,7 @@ const handleMessage = (model: Model, message: Message) =>
     GotWorkersMessage: ({ message: childMessage }) => foldWorkers(model, childMessage),
     GotSettingsMessage: ({ message: childMessage }) => foldSettings(model, childMessage),
     GotGoalsMessage: ({ message: childMessage }) => foldGoals(model, childMessage),
+    GotTournamentsMessage: ({ message: childMessage }) => foldTournaments(model, childMessage),
     GotDiffPanelMessage: ({ message: childMessage }) => foldDiffPanel(model, childMessage),
     GotReportViewerMessage: ({ message: childMessage }) => foldReportViewer(model, childMessage),
     ClickedOpenChanges: () => openChanges(model),
@@ -267,6 +279,7 @@ export const init = (
   const workers = Workers.init()
   const settings = Settings.init()
   const goals = Goals.init()
+  const tournaments = Tournaments.init()
   const diffPanel = DiffPanel.init()
   const reportViewer = ReportViewer.init()
   const app = Update.foldChildInit(chat.init(flags, url), {
@@ -276,6 +289,7 @@ export const init = (
       workers: workers.model,
       settings: settings.model,
       goals: goals.model,
+      tournaments: tournaments.model,
       diffPanel: diffPanel.model,
       reportViewer: reportViewer.model,
       approvals: [],

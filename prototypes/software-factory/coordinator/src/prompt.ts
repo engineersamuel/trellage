@@ -55,8 +55,8 @@ export const hashText = (text: string): string => createHash("sha256").update(te
 
 /** Split `+++` TOML front matter from the body. The body loses one final newline (editors add one). */
 export const parsePromptFile = (text: string): PromptFile => {
-  const m = /^\+\+\+\n([\s\S]*?)\n\+\+\+\n?([\s\S]*)$/.exec(text)
-  const meta = m ? (Bun.TOML.parse(m[1]!) as Record<string, unknown>) : {}
+  const m = /^\+\+\+\n(?:([\s\S]*?)\n)?\+\+\+\n?([\s\S]*)$/.exec(text)
+  const meta = m ? (Bun.TOML.parse(m[1] ?? "") as Record<string, unknown>) : {}
   const body = (m ? m[2]! : text).replace(/\n$/, "")
   return { meta, body, hash: hashText(text) }
 }

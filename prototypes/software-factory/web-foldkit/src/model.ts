@@ -4,6 +4,7 @@ import { chat } from "./chatProgram"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
 import * as Goals from "./goals"
+import * as Tournaments from "./tournaments"
 import * as Settings from "./settings"
 import * as Workers from "./workers"
 
@@ -12,6 +13,7 @@ export const Model = Schema.Struct({
   workers: Workers.Model,
   settings: Settings.Model,
   goals: Goals.Model,
+  tournaments: Tournaments.Model,
   diffPanel: DiffPanel.Model,
   reportViewer: ReportViewer.Model,
   /** Waiting human decisions, oldest first, from the shared Effect store (shared/approvals.ts). */

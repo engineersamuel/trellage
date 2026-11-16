@@ -25,7 +25,7 @@ const FactoryConfigSchema = Schema.Struct({
     goal_page: Model,
   }),
   /** Small-model gate in Factory.spawnModel: Jev's low-complexity score at or above the threshold picks small_model. */
-  routing: Schema.Struct({ small_model: Model, small_threshold: Probability }),
+  routing: Schema.Struct({ small_model: Model, small_threshold: Probability, ui_step: Schema.Boolean }),
   review: Schema.Struct({
     lens_threshold: Probability,
     max_lenses: Count,
@@ -58,6 +58,32 @@ const FactoryConfigSchema = Schema.Struct({
     finding_change: Probability,
   }),
   costs: Schema.Struct({ usd_per_ai_credit: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)) }),
+  /** UI skill tournament (src/tournamentRun.ts): builders, judges, rounds and the cost limit. */
+  tournament: Schema.Struct({
+    builder_model: Model,
+    scout_model: Model,
+    judges: Schema.Array(Model),
+    runs: Count,
+    max_parallel_builds: Count,
+    games_per_match: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    judge_max_tokens: Count,
+    judge_max_images: Schema.Record(Schema.String, Count),
+    swiss_rounds: Count,
+    top_k: Count,
+    combo_margin: Probability,
+    combo_threshold: Probability,
+    max_generations: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    max_skills: Count,
+    check_threshold: Probability,
+    paid_threshold: Probability,
+    limit_usd: Schema.Number.check(Schema.isGreaterThan(0)),
+    playwright: Model,
+    playwright_lib: Schema.String,
+    axe: Schema.String,
+    home_viewport: Model,
+    desktop_viewport: Model,
+    mobile_viewport: Model,
+  }),
   /** Independent acceptance evaluator (src/evaluate.ts): contract at sdlc_plan, verdicts before the security review. */
   evaluate: Schema.Struct({
     enabled: Schema.Boolean,

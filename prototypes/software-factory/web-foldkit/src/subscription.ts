@@ -11,7 +11,8 @@ import type { Model } from "./model"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
 import * as Settings from "./settings"
-import { toGotDiffPanelMessage, toGotSettingsMessage, toGotWorkersMessage } from "./update"
+import * as Tournaments from "./tournaments"
+import { toGotDiffPanelMessage, toGotSettingsMessage, toGotTournamentsMessage, toGotWorkersMessage } from "./update"
 import * as Workers from "./workers"
 
 const decodeEvent = Schema.decodeUnknownOption(StoredEvent)
@@ -125,6 +126,11 @@ const settingsSubscriptions = Subscription.lift(Settings.subscriptions)<Model, M
   toParentMessage: toGotSettingsMessage,
 })
 
+const tournamentsSubscriptions = Subscription.lift(Tournaments.subscriptions)<Model, Message>({
+  read: (model) => Option.some(model.tournaments),
+  toParentMessage: toGotTournamentsMessage,
+})
+
 // The diff panel reloads for tool calls of agents in its worktree; the agent list lives in `workers`.
 const diffPanelSubscriptions = Subscription.make<Model, Message>()((entry) => ({
   diffPanelReload: entry(DiffPanel.ReloadDependencies, {
@@ -143,5 +149,6 @@ export const subscriptions = Subscription.aggregate(
   appSubscriptions,
   workersSubscriptions,
   settingsSubscriptions,
+  tournamentsSubscriptions,
   diffPanelSubscriptions,
 )

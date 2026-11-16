@@ -28,6 +28,7 @@ import { mountStream, openHistory, type StreamAgent } from "./stream"
 import { mountTimeline } from "./timeline-view"
 import { mountPins } from "./pins-view"
 import { mountTestGuide } from "./test-guide-view"
+import { mountTournament } from "./tournament-view"
 import {
   agentIdOf,
   ancestors,
@@ -457,7 +458,15 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       const test = el("div")
       const box = el("div", "p3-pins")
       box.append(pins, test)
-      const stops = [mountPins(pins, n.id), ...(n.thread ? [mountTestGuide(test, n.id, n.thread.id)] : [])]
+      const t = n.thread
+      const stops = [
+        mountPins(pins, n.id),
+        ...(t?.tournamentId
+          ? [mountTournament(test, t.tournamentId)]
+          : t?.worktree
+            ? [mountTestGuide(test, n.id, t.id)]
+            : []),
+      ]
       pinned = { id: n.id, el: box, stop: () => stops.forEach((off) => off()) }
     }
     return [pinned.el]

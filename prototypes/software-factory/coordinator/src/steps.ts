@@ -26,6 +26,8 @@ export type Step = {
   factoryOnly?: boolean
   /** Claude harness: the proxy's model router (Jev) picks the worker's `sonnet` subagent model from this text. */
   subagentRoute?: string
+  /** The worker's model when the coordinator pins none: the step's measured best (e.g. the UI step's builder). */
+  model?: string
   /** Run in the Claude Agent SDK or Pi SDK with these trx profiles, for skills and plugins built for that harness. Default: Copilot SDK. */
   harness?: HarnessSpec
   /** MCP servers the worker gets, in every SDK (names from src/mcp.ts). */
@@ -58,6 +60,7 @@ const stepMeta = (id: string, meta: Record<string, unknown>) => {
     ...(typeof meta.gate_tools === "boolean" ? { gateTools: meta.gate_tools } : {}),
     ...(meta.factory_only === true ? { factoryOnly: true } : {}),
     ...(typeof meta.subagent_route === "string" ? { subagentRoute: meta.subagent_route } : {}),
+    ...(typeof meta.model === "string" ? { model: meta.model } : {}),
     ...(meta.mcp !== undefined ? { mcp: strings("mcp") } : {}),
     ...(h
       ? {
@@ -122,6 +125,12 @@ export const SKILL_REPOS: Record<string, Repo> = {
     url: "https://github.com/intercom/2x-skills.git",
     sparse: ["plugins/incident-tools/skills/five-whys"],
   },
+  // The UI step's skills: the two that won the UI skill tournament (t-2026-11-15-f4f711) on accessibility.
+  "designer-skills": {
+    url: "https://github.com/Owl-Listener/designer-skills.git",
+    sparse: ["ui-design/skills", "interaction-design/skills"],
+  },
+  impeccable: { url: "https://github.com/pbakaus/impeccable.git", sparse: [".claude/skills/impeccable"] },
 }
 export const TOOL_REPOS: Record<string, string> = {
   crapper: "https://github.com/unclebob/crapper.git",

@@ -2,6 +2,7 @@ import "./diffview.css"
 import { parseUnified, shortPath, toolDiffs, wordRanges, type DiffStyle, type FileDiff, type Line } from "./diff"
 import { markdown } from "./decisions"
 import { fire, send } from "./http"
+import { imagePaths, imagePreviews } from "./toolcard"
 // Colored file diffs for tool calls, shared by both UIs (plain DOM). Four styles. The setting `diffStyle` picks one
 // (default terminal); the picker in any diff header and the settings drawer change it, and every diff redraws.
 // `?diff=<style>` in the address overrides it for this page.
@@ -373,12 +374,17 @@ export const startToolDiffs = (): void => {
     if (drawn.get(slot) === raw) return
     drawn.set(slot, raw)
     let files: FileDiff[] = []
+    let images: string[] = []
     try {
       const t = JSON.parse(raw) as { name: string; args: string; result: string }
       files = toolDiffs(t.name, parseArgs(t.args), t.result)
+      // An image the call read or wrote (a Read of a screenshot): a preview, as in the stream's tool cards.
+      images = imagePaths(parseArgs(t.args), t.result)
     } catch {}
+    const box = images.length ? Object.assign(document.createElement("div"), { className: "ui-tcc__images" }) : null
+    box?.append(...imagePreviews(images))
     // Draw into a child: Foldkit owns the slot's own attributes.
-    slot.replaceChildren(...(files.length ? [diffView(files)] : []))
+    slot.replaceChildren(...(files.length ? [diffView(files)] : []), ...(box ? [box] : []))
   }
   /** Slots in or under one node. */
   const slotsIn = (node: Node): HTMLElement[] =>

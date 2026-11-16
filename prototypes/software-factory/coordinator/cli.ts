@@ -17,10 +17,12 @@
 //   sf run THREAD                       delivery record: workers and steps, approvals, security reviews, PR
 //   sf cost [THREAD] [--json]          cost: global and per sub-coordinator run, or one run by agent (USD, AIC, tokens)
 //   sf goal ...                         goal specs: create, run, score, history (see goal-cli.ts)
+//   sf tournament ...                   UI skill tournaments: new, list, show, resume, stop (tournament-cli.ts)
 //   sf config sync [--dry-run]          add the shipped config's missing sections and keys to your config, commented
 //                                       out (works with the factory down; never changes a value)
 import { Console, Effect, Stream } from "effect"
 import { goalCommand } from "./goal-cli.ts"
+import { tournamentCommand } from "./tournament-cli.ts"
 import { syncUserConfig } from "./src/configSync.ts"
 import { reportText, runText, type CostReport, type RunCost } from "./src/costs.ts"
 import type { Draft, Thread } from "./src/threads.ts"
@@ -164,7 +166,7 @@ const program = (() => {
     case "-h":
     case "--help":
       return Console.log(
-        'usage: sf "prompt" | sf -t THREAD "prompt" | sf -f FOLDER [-b BASE] "prompt" | sf folders [PATH] | sf status | sf workers | sf threads | sf settings [PATCH_JSON] | sf run THREAD | sf cost [THREAD] [--json] | sf config sync [--dry-run] | sf goal [list|show ID|new|save FILE|run ID [--thread T]|check ID THREAD|history ID] | sf approvals | sf approve ID "Option" [note] | sf draft FOLDER "prompt" | sf draft ID [enhance|council|debate|research|hyperresearch|dismiss|run|pick N|use VERSION|edit "prompt"|rm]',
+        'usage: sf "prompt" | sf -t THREAD "prompt" | sf -f FOLDER [-b BASE] "prompt" | sf folders [PATH] | sf status | sf workers | sf threads | sf settings [PATCH_JSON] | sf run THREAD | sf cost [THREAD] [--json] | sf config sync [--dry-run] | sf goal [list|show ID|new|save FILE|run ID [--thread T]|check ID THREAD|history ID] | sf tournament [list|new FILE|show ID|resume ID|stop ID] | sf approvals | sf approve ID "Option" [note] | sf draft FOLDER "prompt" | sf draft ID [enhance|council|debate|research|hyperresearch|dismiss|run|pick N|use VERSION|edit "prompt"|rm]',
       )
     case "run":
       return json(`/api/runs/${encodeURIComponent(rest[0] ?? "")}`).pipe(Effect.flatMap(print))
@@ -197,6 +199,8 @@ const program = (() => {
         (prompt, folderId, baseBranch, goalId) => ask(prompt, undefined, folderId, baseBranch, process.stderr, goalId),
         rest,
       )
+    case "tournament":
+      return tournamentCommand(json, rest)
     case "status":
       return json("/api/steps").pipe(Effect.flatMap(print))
     case "workers":

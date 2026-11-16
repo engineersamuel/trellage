@@ -3,6 +3,7 @@ import { KEEP_PER_WORKER } from "./events.ts"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import path from "node:path"
+import { tmpdir } from "node:os"
 import { Translator } from "./agui.ts"
 import { Factory, now, type FeedEvent, type Worker, type WorkerSummary } from "./factory.ts"
 import {
@@ -113,6 +114,11 @@ import { Option, Schema } from "effect"
 import { worktreeDiff } from "./worktreeDiff.ts"
 import { guideOutdated, guideView, latestGuide, openInHerdr, writeGuide } from "./testGuide.ts"
 import { llmTitle } from "./titles.ts"
+import { buildFile, gallery, leaderboard, TournamentStore } from "./tournament.ts"
+import { makeTournaments, STOP_TOURNAMENT } from "./tournamentRun.ts"
+import { assetUrl, leaderboardTable, thumbUrl, tournamentTools } from "./tournamentTools.ts"
+import { presetOf, presetPrompt, PRESETS } from "./tournamentPresets.ts"
+import { checkNames } from "./uiJudge.ts"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
 const landing = asset("landing.html")
@@ -491,6 +497,7 @@ const subScope = (t: Thread): Scope => {
 const starting = new Map<string, Promise<Worker>>()
 const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
   if (!t) return Promise.resolve(coord)
+  if (t.tournamentId) return tournamentCoordinator(t)
   // One Chief of Staff (ADR 0008): every conversation without a worktree is answered by it.
   if (!t.worktree) return Promise.resolve(coord)
   if (isUnstartedDraft(t))
@@ -521,6 +528,55 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
           .setModel(subModel, subEffort)
           .catch((e) => console.error(`sub-coordinator model ${subModel}/${subEffort} not applied: ${e}`))
         w.events.subscribe((ev) => watchSub(w, t.id, ev))
+        return w
+      })
+      .finally(() => starting.delete(id))
+    starting.set(id, p)
+  }
+  return starting.get(id)!
+}
+
+/**
+ * A tournament's sub-coordinator (`sub-<thread>`): it runs the tournament with the tournament tools; every scout,
+ * builder and judge it starts hangs under it, so the conversation tree and its cost show the whole tournament.
+ */
+const tournamentCoordinator = (t: Thread): Promise<Worker> => {
+  const id = subId(t.id)
+  const live = factory.workers.get(id)
+  if (live) return Promise.resolve(live)
+  if (!starting.has(id)) {
+    const tour = tournaments.get(t.tournamentId!)
+    const preset = presetOf(tour.preset)
+    const dir = tournamentStore.dir(tour.id)
+    const scope: Scope = { id, threadId: t.id, label: `tournament ${tour.title}` }
+    const p = factory
+      .spawn({
+        id,
+        name: `Tournament · ${tour.title}`.slice(0, 60),
+        role: "coordinator",
+        system: `${loadPrompt("tournament/coordinator", {
+          id: tour.id,
+          title: tour.title,
+          preset: preset.id,
+          brief: tour.brief,
+          sources: preset.variants === "sources" ? tour.sources.map((s) => `- ${s}`).join("\n") : "",
+          approaches: preset.variants === "approaches" ? "yes" : "",
+          aspects: preset.aspects.join(", "),
+        })}\n\n${cardsPrompt()}\n\n# OpenUI Lang\n${openuiPrompt}`,
+        tools: [
+          ...tournamentTools(tournaments, tour.id),
+          ...coordinatorTools(factory, scope).filter((x) =>
+            ["ask_user", "list_workers", "read_worker", "stop_worker", "render_ui", "focus_agent"].includes(x.name),
+          ),
+        ],
+        permissions: factory.subPermissions,
+        workdir: dir,
+        model: factory.settings.subAgent.model,
+        sessionId: `sf-tour-${tour.id}`,
+      })
+      .then(async (w) => {
+        const { model: subModel, reasoningEffort: subEffort } = factory.settings.subAgent
+        await w.setModel(subModel, subEffort).catch(() => {})
         return w
       })
       .finally(() => starting.delete(id))
@@ -832,7 +888,9 @@ const resumeAnswers = (resume: unknown): string[] =>
       const note = typeof payload.note === "string" && payload.note.trim() ? payload.note.trim() : null
       const a = factory.approvals.answer(String(r.interruptId), payload.answer, note)
       factory.publish("coordinator", "factory.approval_answered", null, now(), a)
-      return improvementAnswered(a) || budgetAnswered(a) || goalAnswered(a) ? [] : [answerPrompt(a)]
+      return improvementAnswered(a) || budgetAnswered(a) || goalAnswered(a) || tournamentBudgetAnswered(a)
+        ? []
+        : [answerPrompt(a)]
     } catch (e) {
       // Answered elsewhere first, or an unknown id: the coordinator already got that answer.
       console.error(`resume ${String(r.interruptId)}: ${e instanceof Error ? e.message : e}`)
@@ -1131,7 +1189,8 @@ const ruleAnswer = (id: string, pick: string, rule: string, why: string) => {
     const a = factory.approvals.answer(id, pick, `Chief of Staff rule ${rule}: ${why}`, `cos:${rule}`)
     factory.publish("coordinator", "factory.approval_answered", null, now(), a)
     cosLog(rule, a.threadId, `answer decision ${a.id}`, "done", `"${a.title}": ${pick} (${why})`)
-    if (!improvementAnswered(a) && !budgetAnswered(a) && !goalAnswered(a)) answerApproval(a)
+    if (!improvementAnswered(a) && !budgetAnswered(a) && !goalAnswered(a) && !tournamentBudgetAnswered(a))
+      answerApproval(a)
   } catch (e) {
     cosLog(rule, null, `answer decision ${id}`, "failed", e instanceof Error ? e.message : String(e))
   }
@@ -1320,6 +1379,9 @@ const collectSupervisionIssues = async (
   workers: Worker[],
   cfg: typeof factory.settings.supervisor,
 ): Promise<Issue[]> => {
+  // Tournament workers are watched by their job (awaitGateWorker), not the supervisor or R8.
+  const tourSubs = new Set(threads.list().flatMap((t) => (t.tournamentId ? [subId(t.id)] : [])))
+  workers = workers.filter((w) => !tourSubs.has(w.owner))
   const issues = findIssues(workers, Date.now(), {
     stallSeconds: cfg.stallSeconds,
     uncollectedSeconds: cfg.everySeconds,
@@ -2032,6 +2094,113 @@ const {
   publish: (type, data) => factory.publish("coordinator", type, null, now(), data),
 })
 
+/** The sub-coordinator that runs a tournament: the agent of its conversation. */
+const tournamentOwner = (t: { threadId?: string; id: string }) =>
+  t.threadId ? subId(t.threadId) : `tournament-${t.id}`
+
+/**
+ * USD of a tournament: its sub-coordinator, every agent it started, and its judge calls. Start events keep the
+ * original owner, because the roll-up moves agents whose owner is gone to the root.
+ */
+const tournamentSpent = (t: { threadId?: string; id: string }) => {
+  const owner = tournamentOwner(t)
+  const started = [...(factory.store.latest("factory.worker_started", 100_000) as AgentInfo[]), ...factory.summaries()]
+  const ids = new Set([owner, ...started.filter((a) => a.owner === owner).map((a) => a.id), `${owner}-judge`])
+  const costs = costTree().costs
+  return [...ids].reduce((s, id) => s + (costs.get(id)?.own.usd ?? 0), 0)
+}
+
+const tournamentStore = new TournamentStore(path.join(factory.root, "tournaments"))
+const tournaments = makeTournaments({
+  factory,
+  store: tournamentStore,
+  ownerOf: tournamentOwner,
+  spent: tournamentSpent,
+  recordUsage: (agent, data) => factory.publish(agent, "assistant.usage", null, now(), data),
+  notify: (t, text) => {
+    if (t.threadId) deliverAndLog(t.threadId, text)
+  },
+  ask: (t, a) => {
+    const item = factory.approvals.open({
+      threadId: t.threadId ?? null,
+      ...a,
+      allowText: true,
+      context: `tournament ${t.title}`,
+      topic: "budget",
+      humanOnly: true,
+    })
+    factory.publish("coordinator", "factory.approval_requested", null, now(), item)
+    return item.id
+  },
+})
+
+/** A tournament with its leaderboard, for the API, `sf tournament` and the header pin. */
+const tournamentView = (id: string) => {
+  const t = tournamentStore.get(id)
+  if (!t) return null
+  const rows = leaderboard(t)
+  return {
+    ...t,
+    running: tournaments.running(id),
+    leaderboard: rows,
+    leaderboardMd: leaderboardTable(rows),
+    gallery: gallery(t),
+    asset: presetOf(t.preset).asset,
+    assets: Object.fromEntries(
+      rows.map((r) => [
+        r.id,
+        r.builds
+          .filter((b) => b.status === "ok" || b.status === "dropped")
+          .map((b) => ({
+            build: b.n,
+            url: assetUrl(t.id, r.id, b.n, presetOf(t.preset).asset.file),
+            thumb: b.shots[0] ? thumbUrl(b.shots[0].file) : null,
+          })),
+      ]),
+    ),
+    checks: checkNames(presetPrompt(t.preset, "checks")),
+    aspects: presetOf(t.preset).aspects,
+  }
+}
+
+/** Start a tournament: its conversation, then the sub-coordinator's first turn. */
+const startTournament = (input: Parameters<typeof tournaments.create>[0]) => {
+  const t = tournaments.create(input)
+  const thread = threads.create(`♛ ${t.title}`)
+  threads.setMeta(thread.id, { tournamentId: t.id })
+  tournaments.attach(t.id, thread.id)
+  factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: thread.id })
+  deliverAndLog(thread.id, loadPrompt("tournament/start", { id: t.id }))
+  return tournaments.get(t.id)
+}
+
+/** The answer to a tournament's cost-limit decision: a new limit (the sub-coordinator goes on) or a stop. */
+const tournamentBudgetAnswered = (a: Approval): boolean => {
+  const t = tournaments.byApproval(a.id)
+  if (!t) return false
+  const spent = tournamentSpent(t)
+  const r = readAnswer(a.answer === STOP_TOURNAMENT ? "stop" : (a.answer ?? ""), spent)
+  if (r.kind === "stop") tournaments.stopAtLimit(t.id)
+  else if (r.kind === "raise") {
+    tournaments.raise(t.id, r.limitUsd)
+    if (t.threadId)
+      deliverAndLog(
+        t.threadId,
+        `[cost limit raised to $${r.limitUsd}] Call tournament_status and go on where the job stopped.`,
+      )
+  } else if (t.threadId)
+    deliverAndLog(t.threadId, `[cost limit answer not understood: ${r.why}] Ask the human again with ask_user.`)
+  return true
+}
+
+/** After a restart: a job it cut off is marked interrupted, and the sub-coordinator is told once. */
+for (const t of tournaments.settleAfterRestart())
+  if (t.threadId)
+    deliverAndLog(
+      t.threadId,
+      "[factory restarted] Your running job was stopped. Call tournament_status and start it again.",
+    )
+
 if (GRADING) {
   loop("improvement-retry", "1 minute", retryImprovements)
   loop("grade-pending-checks", "1 minute", regradePending)
@@ -2209,7 +2378,8 @@ const routes: [string, RegExp, Handler][] = [
           typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 200) : null,
         )
         factory.publish("coordinator", "factory.approval_answered", null, now(), a)
-        if (!improvementAnswered(a) && !budgetAnswered(a) && !goalAnswered(a)) answerApproval(a)
+        if (!improvementAnswered(a) && !budgetAnswered(a) && !goalAnswered(a) && !tournamentBudgetAnswered(a))
+          answerApproval(a)
         return json(a)
       } catch (e) {
         return bad(e)
@@ -2439,12 +2609,114 @@ const routes: [string, RegExp, Handler][] = [
     "GET",
     /^\/api\/files\/image$/,
     (_req, url) => {
-      const r = servableImage(url.searchParams.get("path") ?? "", [factory.root, worktreeRoot(), ARTIFACTS_DIR])
+      // Agents also save screenshots in the system temp folder (/tmp, $TMPDIR); images only, and the API is local.
+      const r = servableImage(url.searchParams.get("path") ?? "", [
+        factory.root,
+        worktreeRoot(),
+        ARTIFACTS_DIR,
+        "/tmp",
+        tmpdir(),
+      ])
       return "error" in r
         ? json({ error: r.error }, 404)
         : new Response(Bun.file(r.path), {
             headers: { "content-type": r.type, "cache-control": "no-store" },
           })
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/tournaments$/,
+    () =>
+      json(
+        tournamentStore.list().map((t) => ({
+          id: t.id,
+          preset: t.preset,
+          title: t.title,
+          threadId: t.threadId ?? null,
+          createdAt: t.createdAt,
+          status: t.status,
+          reason: t.reason,
+          sources: t.sources.length,
+          variants: Object.keys(t.variants).length,
+          spentUsd: t.spentUsd,
+          limitUsd: t.limitUsd,
+          leader: leaderboard(t).find((r) => r.games > 0)?.label ?? null,
+          running: tournaments.running(t.id),
+        })),
+      ),
+  ],
+  [
+    "POST",
+    /^\/api\/tournaments$/,
+    async (req) => {
+      const b = (await req.json().catch(() => ({}))) as Record<string, unknown>
+      try {
+        const t = startTournament({
+          preset: typeof b.preset === "string" ? b.preset : "ui-skills",
+          ...(Array.isArray(b.sources) ? { sources: b.sources.map(String) } : {}),
+          ...(typeof b.idea === "string" ? { idea: b.idea } : {}),
+          ...(typeof b.title === "string" ? { title: b.title } : {}),
+          ...(typeof b.limitUsd === "number" ? { limitUsd: b.limitUsd } : {}),
+        })
+        return json(tournamentView(t.id))
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 400)
+      }
+    },
+  ],
+  ["GET", /^\/api\/tournament-presets$/, () => json(Object.values(PRESETS))],
+  [
+    "GET",
+    /^\/api\/tournaments\/([a-z0-9-]+)\/builds\/([a-z0-9+-]+)\/(\d+)\/(.+)$/,
+    (_req, _url, [id, variant, n, file]) => {
+      // A build's files (its pages, CSS, JS), so its HTML opens live with relative links working.
+      const full = buildFile(tournamentStore.dir(id!), variant!, n!, file!)
+      if (!full) return json({ error: "not found" }, 404)
+      return new Response(Bun.file(full), {
+        headers: {
+          "cache-control": "no-store",
+          // An agent wrote this page: no scripts reach the factory's origin.
+          "content-security-policy": "sandbox allow-scripts allow-forms allow-popups",
+        },
+      })
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/tournaments\/([^/]+)$/,
+    (_req, _url, [id]) => {
+      const v = /^[a-z0-9-]+$/.test(id!) ? tournamentView(id!) : null
+      return v ? json(v) : json({ error: "not found" }, 404)
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/tournaments\/([^/]+)\/(resume|stop)$/,
+    async (req, _url, [id, action]) => {
+      const b = (await req.json().catch(() => ({}))) as { limitUsd?: unknown }
+      try {
+        const t = tournaments.get(id!)
+        if (action === "stop")
+          await tournaments.stop(id!, async () => {
+            const owner = tournamentOwner(t)
+            for (const w of [...factory.workers.values()])
+              if (w.owner === owner) await factory.stop(w.id).catch(() => {})
+            if (factory.workers.has(owner))
+              await factory.workers
+                .get(owner)!
+                .session.abort()
+                .catch(() => {})
+          })
+        else {
+          tournaments.reopen(id!, typeof b.limitUsd === "number" ? b.limitUsd : undefined)
+          if (t.threadId)
+            deliverAndLog(t.threadId, "[tournament resumed by the human] Call tournament_status and go on.")
+        }
+        return json(tournamentView(id!))
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 400)
+      }
     },
   ],
   [
