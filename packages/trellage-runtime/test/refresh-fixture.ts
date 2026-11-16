@@ -1,13 +1,11 @@
 import { createHash } from "node:crypto"
 import { lstatSync, readdirSync, readFileSync, readlinkSync } from "node:fs"
 import path from "node:path"
-import { writeReadiness } from "../src/workspace.ts"
+import { DependencyScope, writeReadiness } from "../src/workspace.ts"
 
 const [root, action = "refresh", ...rest] = process.argv.slice(2)
 const isFixture = (candidate: string) =>
-  candidate
-    .split(path.sep)
-    .some((component) => component.startsWith(".contract-fixture."))
+  candidate.split(path.sep).some((component) => component.startsWith(".contract-fixture."))
 if (root === undefined || !path.isAbsolute(root) || !isFixture(root) || rest.length !== 0) {
   throw new Error("Only an explicitly changed shell contract fixture can be refreshed")
 }
@@ -30,6 +28,6 @@ function snapshot(directory: string, relative = "."): void {
   }
 }
 
-if (action === "refresh") writeReadiness(root)
+if (action === "refresh") writeReadiness(root, DependencyScope.Runtime)
 else if (action === "snapshot") snapshot(root)
 else throw new Error(`Unknown fixture operation: ${action}`)

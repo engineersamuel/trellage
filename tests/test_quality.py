@@ -111,6 +111,26 @@ class RepositoryTests(unittest.TestCase):
         checks.git(self.root, "commit", "--quiet", "-m", "Quality fixture")
         return checks.git(self.root, "rev-parse", "HEAD").stdout.decode().strip()
 
+    def test_knip_excludes_installed_harness_code_but_checks_maintained_sources(self):
+        self.write("package.json", '{"name":"knip-fixture","private":true}')
+        self.write("knip.json", (checks.ROOT / "knip.json").read_text())
+        maintained = "prototypes/trellage-prime-profiles/assets/owned.ts"
+        generated = "prototypes/trellage-prime-profiles/mise/installs/tool/1.0.0/index.ts"
+        self.write(maintained, 'import "missing-maintained-dependency";\n')
+        self.write(generated, 'import "missing-generated-dependency";\n')
+        result = subprocess.run(
+            [checks.executable("knip"), "--reporter", "json", "--no-progress"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=checks.command_environment(),
+        )
+        self.assertIn(result.returncode, (0, 1), result.stderr)
+        findings = checks.graph_findings("knip", json.loads(result.stdout))
+        self.assertIn(f"unlisted:{maintained}:missing-maintained-dependency", findings)
+        self.assertFalse(any("missing-generated-dependency" in finding or generated in finding for finding in findings))
+
     def test_rename_and_delete_keep_both_sides_in_selection(self):
         self.write("packages/trellage-launcher/src/old.ts", "export {}\n")
         self.write("docs/removed.md", "Removed\n")

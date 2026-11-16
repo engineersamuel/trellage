@@ -22,6 +22,7 @@
         "prototypes/trellage-*-common/*.ts",
         "prototypes/trellage-*-common/tests/**/*.ts",
         "prototypes/trellage-*-profiles/**/*.ts",
+        "!prototypes/trellage-*-profiles/mise/**",
         "traits.ts"
       ],
       "project": [
@@ -31,6 +32,7 @@
         "!tests/playwright/**",
         "prototypes/trellage-*-common/**/*.ts",
         "prototypes/trellage-*-profiles/**/*.ts",
+        "!prototypes/trellage-*-profiles/mise/**",
         "traits.ts"
       ]
     },
