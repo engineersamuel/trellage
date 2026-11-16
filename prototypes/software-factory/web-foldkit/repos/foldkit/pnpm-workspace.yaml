@@ -28,6 +28,7 @@ minimumReleaseAgeExclude:
 overrides:
   '@mapbox/jsonlint-lines-primitives': 2.0.2
   '@types/node': 26.4.0
+  hono: '>=4.13.16'
   effect: 4.1.0
   '@effect/platform-browser': 4.1.0
   '@effect/platform-node': 4.1.0
