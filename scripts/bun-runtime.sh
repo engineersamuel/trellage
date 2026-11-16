@@ -2,6 +2,48 @@
 
 TRELLAGE_BUN_VERSION=1.4.4
 
+trellage_select_bun_runtime() {
+  local root="$1"
+  local executable version
+  [[ "$root" == /* && -d "$root" && ! -L "$root" ]] || {
+    printf 'trellage runtime: unsafe source workspace: %s\n' "$root" >&2
+    return 1
+  }
+  if [[ -n "${TRELLAGE_BUN_EXECUTABLE-}" ]]; then
+    return 0
+  fi
+  executable="$(command -v bun 2>/dev/null || true)"
+  version=
+  if [[ -n "$executable" ]]; then
+    version="$("$executable" --version 2>/dev/null || true)"
+  fi
+  [[ "$version" == "$TRELLAGE_BUN_VERSION" ]] && return 0
+  command -v mise >/dev/null 2>&1 || {
+    printf 'trellage runtime: Bun %s is required; found %s and Mise is unavailable\n' \
+      "$TRELLAGE_BUN_VERSION" "${version:-none}" >&2
+    return 1
+  }
+  printf 'trellage runtime: installing Bun %s with Mise; found %s\n' \
+    "$TRELLAGE_BUN_VERSION" "${version:-none}" >&2
+  mise install "bun@$TRELLAGE_BUN_VERSION"
+  executable="$(mise which bun --tool="bun@$TRELLAGE_BUN_VERSION")" || {
+    printf 'trellage runtime: could not resolve Bun %s with Mise\n' "$TRELLAGE_BUN_VERSION" >&2
+    return 1
+  }
+  [[ "$executable" == /* && -f "$executable" && -x "$executable" ]] || {
+    printf 'trellage runtime: Mise returned an invalid Bun executable: %s\n' "$executable" >&2
+    return 1
+  }
+  version="$("$executable" --version)" || return 1
+  [[ "$version" == "$TRELLAGE_BUN_VERSION" ]] || {
+    printf 'trellage runtime: Bun %s is required; Mise returned %s\n' \
+      "$TRELLAGE_BUN_VERSION" "$version" >&2
+    return 1
+  }
+  PATH="$(dirname "$executable"):$PATH"
+  export PATH
+}
+
 trellage_ensure_bun_runtime() {
   local root="$1"
   shift
