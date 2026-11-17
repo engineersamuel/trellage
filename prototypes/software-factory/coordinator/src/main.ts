@@ -56,6 +56,7 @@ import {
   childGoalId,
   childGoalPrompt,
   defectCard,
+  goalAcs as buildGoalAcs,
   goalVerdict,
   GoalStates,
   LOOP_ANYWAY,
@@ -69,9 +70,7 @@ import {
   STOP_GOAL,
   type GoalState,
 } from "./goalLoop.ts"
-import { criteriaResults } from "./sdlc.ts"
-import type { Verdict } from "../../shared/goal.ts"
-import { DEFAULT_RUN_USD } from "../../shared/goal.ts"
+import { DEFAULT_RUN_USD, type Verdict } from "../../shared/goal.ts"
 import type { Approval } from "./approvals.ts"
 import { lastEvaluation, verdictResults } from "./evaluate.ts"
 import { instructionsPath, predict, readInstructions, shadowStats } from "./shadow.ts"
@@ -100,7 +99,7 @@ import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, withSubagents, type Run } from "./run.ts"
 import { costReport, GOAL_PAGE_AGENT, gradeCost, rollUp, runCost, type AgentInfo } from "./costs.ts"
 import { factoryConfig } from "./config.ts"
-import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
+import { artifact, ciCriteria, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
 import { postMergeCheck } from "./postmerge.ts"
 import { ARTIFACTS_DIR, servableImage } from "./files.ts"
@@ -1230,7 +1229,8 @@ const ruleAnswer = (id: string, pick: string, rule: string, why: string) => {
 const r14Grant = (a: Approval): boolean => {
   const scopeId = a.topic === "ship" ? factory.approvals.shipScope(a.id) : null
   if (!scopeId || !ruleOn("r14")) return false
-  const blocker = r14Blocker(lastEvaluation(factory.evaluations.values(), scopeId))
+  const sdlc = factory.sdlc.get(scopeId)
+  const blocker = r14Blocker(lastEvaluation(factory.evaluations.values(), scopeId), sdlc ? ciCriteria(sdlc) : [])
   if (blocker) {
     cosLog("R14", a.threadId, `ship decision ${a.id}`, "refused", blocker)
     return false
@@ -2012,7 +2012,7 @@ const runSdlc = (scopeId: string, workdir: string | undefined): Run["sdlc"] => {
   return {
     tier: sdlc.risk?.tier ?? null,
     criteria: sdlc.criteria,
-    unproven: unprovenCriteria(sdlc.criteria, evidence),
+    unproven: unprovenCriteria(sdlc.criteria, evidence).filter((id) => !ciCriteria(sdlc).includes(id)),
     gates: sdlc.gates,
     codeReviews: [...factory.codeReviews.values()]
       .filter((r) => r.scopeId === scopeId)
@@ -2136,6 +2136,10 @@ const {
   runRecord,
   openConversation,
   criteria: (id) => factory.sdlc.get(subId(id))?.criteria ?? [],
+  ciCriteria: (id) => {
+    const s = factory.sdlc.get(subId(id))
+    return s ? ciCriteria(s) : []
+  },
   loopManaged: (id) => !!goalStates.byThread(id),
   evaluation: (id) => {
     const e = lastEvaluation(factory.evaluations.values(), subId(id))
@@ -3155,21 +3159,12 @@ const startGoal = async (goalId: string, parentGoalId?: string): Promise<{ threa
 }
 
 /** AC results of a goal loop: the independent evaluator's verdicts, else the run's own evidence. */
-const goalAcs = (t: Thread): { acs: Record<string, Verdict>; acSource: GoalState["acSource"] } => {
-  const e = lastEvaluation(factory.evaluations.values(), subId(t.id))
-  const criteria = factory.sdlc.get(subId(t.id))?.criteria ?? []
-  if (e?.verdicts.length) {
-    const v = verdictResults(e)
-    return {
-      acs: Object.fromEntries(criteria.map((_, i) => [`AC-${i + 1}`, v[`AC-${i + 1}`] ?? "missing"])),
-      acSource: "evaluator",
-    }
-  }
+const goalAcs = (t: Thread, pr: GoalState["pr"]): { acs: Record<string, Verdict>; acSource: GoalState["acSource"] } => {
   const ev =
     t.worktree && existsSync(artifact(t.worktree, "evidence.md"))
       ? readFileSync(artifact(t.worktree, "evidence.md"), "utf8")
       : null
-  return { acs: criteriaResults(criteria, ev), acSource: criteria.length ? "evidence" : null }
+  return buildGoalAcs(factory.sdlc.get(subId(t.id)), lastEvaluation(factory.evaluations.values(), subId(t.id)), ev, pr)
 }
 
 const goalPr = async (t: Thread): Promise<GoalState["pr"]> => {
@@ -3217,6 +3212,7 @@ const goalReported = async (threadId: string, r: Report) => {
   const t = threads.get(threadId)
   const s = t?.goalId ? goalStates.get(t.goalId) : undefined
   if (!t || !s || s.threadId !== t.id || s.status === "stopped" || s.status === "done") return
+  const pr = await goalPr(t)
   const { state, decision } = afterReport(s, {
     at: Date.now(),
     status: r.status,
@@ -3224,8 +3220,8 @@ const goalReported = async (threadId: string, r: Report) => {
     gaps: r.gaps,
     commit: r.commit,
     ...(r.factoryDefect ? { factoryDefect: r.factoryDefect } : {}),
-    ...goalAcs(t),
-    pr: await goalPr(t),
+    ...goalAcs(t, pr),
+    pr,
     usd: goalSpent(t.goalId!),
   })
   const saved = goalStates.set(state)
@@ -3283,9 +3279,10 @@ const tickGoals = async () => {
     if (!t?.worktree || t.cleanedAt || goalBlocked(s.goalId)) continue
     if (s.status === "checking" && conversationIdle(t)) {
       const pr = await goalPr(t)
-      const v = goalVerdict(s.acs, pr)
-      if (v === "done") goalDone(goalStates.set({ ...s, pr, status: "done" }))
-      else if (v === "not-done") goalStates.set({ ...s, pr, status: "running", next: true })
+      const { acs } = goalAcs(t, pr)
+      const v = goalVerdict(acs, pr)
+      if (v === "done") goalDone(goalStates.set({ ...s, acs, pr, status: "done" }))
+      else if (v === "not-done") goalStates.set({ ...s, acs, pr, status: "running", next: true })
     } else if (s.status === "running" && s.next && conversationIdle(t)) await startNextLoop(s)
   }
 }

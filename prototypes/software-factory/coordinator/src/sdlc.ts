@@ -308,6 +308,7 @@ export const askGates = async (
 /** The evaluator's answer for one criterion at sdlc_plan (src/evaluate.ts). */
 export type ContractItem =
   | { id: string; check: string; expect: string }
+  | { id: string; ci: string; expect: string }
   | { id: string; problem: string; rewrite: string }
 
 /** Criteria with their agreed check, for implement and verify tasks and the evaluator. */
@@ -315,7 +316,14 @@ export const criteriaWithChecks = (criteria: string[], contract: ContractItem[] 
   criteria
     .map((c, i) => {
       const k = contract?.find((x) => x.id === `AC-${i + 1}`)
-      const check = k && "check" in k ? `\n  check: ${k.check}${k.expect ? `\n  expect: ${k.expect}` : ""}` : ""
+      const how =
+        k &&
+        ("check" in k
+          ? `check: ${k.check}`
+          : "ci" in k
+            ? `ci: proven by the PR's CI job \`${k.ci}\` after push; no local evidence needed`
+            : "")
+      const check = how && k && "expect" in k ? `\n  ${how}${k.expect ? `\n  expect: ${k.expect}` : ""}` : ""
       return `AC-${i + 1}: ${c}${check}`
     })
     .join("\n")
@@ -382,6 +390,8 @@ export const contractFor = (s: Sdlc): ContractItem[] | undefined =>
   s.contractState?.status === "done" && JSON.stringify(s.contractState.criteria) === JSON.stringify(s.criteria)
     ? s.contract
     : undefined
+
+export const ciCriteria = (s: Sdlc): string[] => (contractFor(s) ?? []).filter((k) => "ci" in k).map((k) => k.id)
 
 export const newSdlc = (scopeId: string, threadId: string | null): Sdlc => ({
   scopeId,
@@ -456,7 +466,7 @@ export const testsCameFirst = (history: { files: string[] }[]): boolean => {
 }
 
 /**
- * Why the branch may not ship yet. Floors: criteria exist and each has PASS evidence; a verify ran after the last
+ * Why the branch may not ship yet. Floors: non-CI criteria have PASS evidence; a verify ran after the last
  * implement; the security review is done. Chosen gates: design note, tests first, code review, supply chain, docs.
  */
 export const shipBlockers = (
@@ -470,7 +480,8 @@ export const shipBlockers = (
   const out: string[] = []
   const evidence = readOr(artifact(workdir, "evidence.md"))
   if (!s.criteria.length) out.push("no acceptance criteria (sdlc_plan)")
-  const unproven = unprovenCriteria(s.criteria, evidence)
+  const ci = ciCriteria(s)
+  const unproven = unprovenCriteria(s.criteria, evidence).filter((id) => !ci.includes(id))
   if (unproven.length) out.push(`no PASS evidence in .factory/evidence.md for ${unproven.join(", ")}`)
   if (s.implementDoneAt === null) out.push("no implement step finished")
   else if (s.verifyDoneAt === null || s.verifyDoneAt < s.implementDoneAt)
@@ -523,11 +534,20 @@ export const prBody = (
   const evidence = readOr(artifact(workdir, "evidence.md")) ?? ""
   const design = readOr(artifact(workdir, "design.md"))
   const unproven = new Set(unprovenCriteria(s.criteria, evidence))
+  const contract = contractFor(s)
   const rollback =
     design?.match(/#+\s*Rollback\s*\n([\s\S]*?)(\n#|$)/i)?.[1]?.trim() ?? "Revert this PR's merge commit."
   return [
     `## Summary\n${summary.trim()}`,
-    `## Acceptance criteria\n${s.criteria.map((c, i) => `- [${unproven.has(`AC-${i + 1}`) ? " " : "x"}] AC-${i + 1}: ${c}`).join("\n")}`,
+    `## Acceptance criteria\n${s.criteria
+      .map((c, i) => {
+        const id = `AC-${i + 1}`
+        const k = contract?.find((x) => x.id === id)
+        return k && "ci" in k
+          ? `- [ ] ${id} (PR CI job \`${k.ci}\`): ${c}`
+          : `- [${unproven.has(id) ? " " : "x"}] ${id}: ${c}`
+      })
+      .join("\n")}`,
     `## Risk\nTier ${s.risk?.tier ?? "?"}${s.risk?.reasons.length ? `: ${s.risk.reasons.join("; ")}` : ""}`,
     `## Gates\n${s.gates.map((g) => `- ${g.id}: ${g.chosen ? g.status : "skipped"} (${g.reason})`).join("\n")}`,
     ...(evaluation ? [`## Independent evaluation\n${evaluation}`] : []),

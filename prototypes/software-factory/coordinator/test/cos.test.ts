@@ -97,6 +97,8 @@ test("R14 grants only a finished evaluation that passed every criterion", () => 
     verdicts: [...evaluation().verdicts, { id: "AC-2", verdict: "fail", command: "", output: "", note: "" }],
   })
   expect(r14Blocker(failed)).toBe("acceptance criteria failed: AC-2")
+  expect(r14Blocker(failed, ["AC-2"])).toBeNull()
+  expect(r14Blocker(failed, ["AC-1"])).toBe("acceptance criteria failed: AC-2")
 })
 
 const pr = (over: Partial<PrView> = {}): PrView => ({

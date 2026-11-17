@@ -140,6 +140,8 @@ Metrics, each reported separately on every grade:
 - **Criteria pass rate** = passed / evaluated. Each `AC-n` of the run's SDLC acceptance criteria is `pass` (an `AC-n … PASS`
   line in `.factory/evidence.md`), `fail` (a `FAIL` line) or `missing`. Missing criteria are not evaluated, so the rate
   is `-` when none were evaluated; `total` is reported beside it. Any `FAIL` takes precedence over conflicting `PASS` lines.
+  For agreed `ci` criteria, both `g1` and `g2` instead use the PR checks rollup: `SUCCESS` means pass, `FAILURE` means
+  fail, anything else (including no PR) means missing. `selfCriteria` stays the run's own evidence.
 - **PR checks**: the PR's check rollup (`SUCCESS`, `FAILURE`, `PENDING`, `NONE`, `missing`). Checks are required when
   the goal sets `expect.pr.checks`; for a prompted `done` run, when the PR reported any.
 - **Benchmarks**: `expect.benchmarks` is a list of `{id, baseline, higherIsBetter, tolerance}` with fixed baselines.
@@ -324,6 +326,11 @@ deliverable, writes only its own output folder (outside the worktree), and never
    implement and verify tasks get each criterion with its check. A contract applies only to the exact criteria it was
    agreed for: new criteria drop it (and its file). Criteria the goal page locked are never sent back. A restart
    stops a running contract without counting its round.
+   The evaluator knows the host OS/architecture. When a check needs capabilities the host lacks but the repo's
+   `.github/workflows` provides, it agrees `{id, ci, expect}` (`ci` is the CI job name). These criteria need no local
+   PASS evidence, stay unchecked in the PR body, and never trigger local fix rounds. Neither host nor CI can run it?
+   Report a problem and rewrite (locked criteria remain notes). CI proof uses the whole PR rollup, so an unrelated
+   failing job also fails a CI criterion.
 2. **Evaluation** (first ship request after the floors and other gates, before the final security review): it runs
    every check and writes `verdicts.json` (a criterion with no verdict fails). A failed criterion gets a fix
    (`implement`) and a `verify` worker, then a new evaluation, at most `[evaluate].max_rounds` evaluations (default 2).

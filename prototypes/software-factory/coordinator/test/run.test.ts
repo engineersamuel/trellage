@@ -510,6 +510,34 @@ describe("gradeStatus", () => {
 })
 
 describe("buildGrade", () => {
+  for (const version of ["g1", "g2"] as const) {
+    test.each([
+      ["SUCCESS", "pass"],
+      ["FAILURE", "fail"],
+      ["PENDING", "missing"],
+      ["NONE", "missing"],
+      [null, "missing"],
+    ] as const)(`${version}: CI criteria use PR rollup %s, not evidence or evaluator verdicts`, (checks, verdict) => {
+      const evidence = criteriaResults(["ci", "local fail", "local pass"], "AC-1: FAIL\nAC-2: FAIL\nAC-3: PASS\n")
+      const input = inputs({
+        criteria: evidence,
+        ciCriteria: ["AC-1"],
+        ...(version === "g2" ? { selfCriteria: evidence } : {}),
+      })
+      const grade = buildGrade({ ...run, pr: checks ? { ...run.pr!, checks } : null }, input)
+      expect(grade.gradingVersion).toBe(version)
+      expect(grade.criteria.results).toEqual({ "AC-1": verdict, "AC-2": "fail", "AC-3": "pass" })
+      expect(input.criteria["AC-1"]).toBe("fail")
+      if (version === "g2") expect(grade.selfCriteria).toEqual(evidence)
+      const onlyCi = buildGrade(
+        { ...run, pr: checks ? { ...run.pr!, checks } : null },
+        { ...input, criteria: { "AC-1": "pass" } },
+      )
+      expect(onlyCi.criteria.results).toEqual({ "AC-1": verdict })
+      expect(onlyCi.status).toBe(verdict === "missing" ? "unknown" : verdict)
+    })
+  }
+
   test("goal subject: linked to thread, factory commit, grading version and evidence; results reported separately", () => {
     const g = buildGrade(greenRun, inputs({ benchmarks: { latency: 90 } }), goalSpec)
     expect(g.key).toBe(`t|c0ffee|done|${GRADING_VERSION}`)

@@ -37,7 +37,7 @@ import {
   startEvaluation,
   startFinalSecurity,
 } from "./gates.ts"
-import { addLessons, artifact, prBody, unprovenCriteria } from "./sdlc.ts"
+import { addLessons, artifact, ciCriteria, prBody, unprovenCriteria } from "./sdlc.ts"
 import { fetchOrigin, upstreamState } from "./folders.ts"
 import { decideNext, selectableSteps, SkillPreflightError } from "./steps.ts"
 import { homeFor, readHome } from "./home.ts"
@@ -1290,7 +1290,7 @@ export const cardData = (f: Factory, scope: Scope, name: string, a: Record<strin
         tier: s.risk?.tier ?? null,
         reasons: s.risk?.reasons ?? [],
         criteria: s.criteria,
-        unproven: unprovenCriteria(s.criteria, evidence),
+        unproven: unprovenCriteria(s.criteria, evidence).filter((id) => !ciCriteria(s).includes(id)),
         gates: s.gates,
         security: sec?.status ?? null,
         verified: s.verifyDoneAt !== null && s.implementDoneAt !== null && s.verifyDoneAt >= s.implementDoneAt,

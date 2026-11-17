@@ -114,6 +114,28 @@ const fixture = (saved = true) => {
 }
 
 describe("report grading orchestration", () => {
+  test.each([false, true])(
+    "agreed CI ids reach grading while self evidence stays intact (evaluator=%s)",
+    async (evaluator) => {
+      const f = fixture()
+      f.write("evidence.md", "AC-1: FAIL\n")
+      f.deps.ciCriteria = (id) => {
+        expect(id).toBe(f.t.id)
+        return ["AC-1"]
+      }
+      if (evaluator)
+        f.deps.evaluation = () => ({
+          results: { "AC-1": "fail" },
+          file: { path: "verdicts.json", sha256: "hash" },
+        })
+      await f.grading.gradeThread(f.t.id, report)
+      const grade = f.grading.gradesOf(f.t)[0]!
+      expect(grade.criteria.results).toEqual({ "AC-1": "pass" })
+      expect(grade.gradingVersion).toBe(evaluator ? "g2" : "g1")
+      if (evaluator) expect(grade.selfCriteria).toEqual({ "AC-1": "fail" })
+    },
+  )
+
   test("legacy goal history returns only this thread's grades, not runner lines or other threads", async () => {
     const f = fixture()
     await f.grading.gradeThread(f.t.id, report)

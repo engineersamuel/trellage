@@ -63,6 +63,18 @@ test("a caller must pass every declared input; a user copy may use only those an
   expect(promptErrors.get("jev/lens")).toContain("{{secret}}")
 })
 
+test("the contract prompt requires the evaluator host", () => {
+  expect(() =>
+    loadPrompt("tasks/evaluate-contract", {
+      request: "r",
+      plan: "p",
+      criteria: "c",
+      locked: "",
+      out: "/out",
+    }),
+  ).toThrow("caller did not pass host")
+})
+
 test("a delivery run keeps the prompts and config it pinned; new runs read the edits", () => {
   const promptsId = snapshotPrompts(root)
   const configId = snapshotConfig(root)

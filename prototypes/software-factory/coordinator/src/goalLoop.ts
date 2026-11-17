@@ -4,7 +4,9 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import type { GoalState, GoalLoop, Verdict } from "../../shared/goal.ts"
+import { verdictResults, type Evaluation } from "./evaluate.ts"
 import { loadPrompt } from "./prompt.ts"
+import { ciCriteria, criteriaResults, type Sdlc } from "./sdlc.ts"
 
 export type { GoalState, GoalLoop }
 
@@ -72,6 +74,26 @@ export const newGoalState = (goalId: string, threadId: string, parentGoalId?: st
 })
 
 const passed = (acs: Record<string, Verdict>) => Object.values(acs).filter((v) => v === "pass").length
+
+/** AC results of a goal loop: the independent evaluator's verdicts, else the run's own evidence, with CI criteria mapped to PR checks. */
+export const goalAcs = (
+  sdlc: Sdlc | undefined,
+  e: Evaluation | undefined,
+  evidence: string | null,
+  pr: GoalState["pr"],
+): { acs: Record<string, Verdict>; acSource: GoalState["acSource"] } => {
+  const criteria = sdlc?.criteria ?? []
+  const base: { acs: Record<string, Verdict>; acSource: GoalState["acSource"] } = e?.verdicts.length
+    ? {
+        acs: Object.fromEntries(criteria.map((_, i) => [`AC-${i + 1}`, verdictResults(e)[`AC-${i + 1}`] ?? "missing"])),
+        acSource: "evaluator",
+      }
+    : { acs: criteriaResults(criteria, evidence), acSource: criteria.length ? "evidence" : null }
+  const acs = { ...base.acs }
+  for (const id of sdlc ? ciCriteria(sdlc) : [])
+    acs[id] = pr?.checks === "SUCCESS" ? "pass" : pr?.checks === "FAILURE" ? "fail" : "missing"
+  return { acs, acSource: base.acSource }
+}
 
 /** The goal is done when every AC passes and the PR is green (or the repo has no checks). */
 export const goalVerdict = (acs: Record<string, Verdict>, pr: GoalState["pr"]): "done" | "checking" | "not-done" => {

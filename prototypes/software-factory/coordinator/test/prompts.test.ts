@@ -25,6 +25,14 @@ const g = (id: GateId) => ({ id, chosen: true, probability: 1, threshold: 0.5, r
 
 test("rendered prompts equal the text that was in the code (re-review drift fixed: 100+ lines)", () => {
   const now: Record<string, string> = {
+    evaluate_contract: loadPrompt("tasks/evaluate-contract", {
+      request: "REQ",
+      plan: "PLAN",
+      criteria: "AC-1: Linux suite passes",
+      locked: "1",
+      out: "/out",
+      host: "darwin/arm64",
+    }),
     coordinator: P.coordinatorPrompt(),
     global: P.globalPrompt(),
     research: P.researchPrompt(),

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -111,6 +111,40 @@ const repo = () => {
 }
 
 describe("worktree artifacts", () => {
+  test("only an applicable CI contract exempts missing local evidence and stays unchecked in the PR", () => {
+    const r = mkdtempSync(path.join(tmpdir(), "sf-ci-"))
+    mkdirSync(path.join(r, ".factory"))
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS\n")
+    const s: Sdlc = {
+      ...newSdlc("sub", "t"),
+      criteria: ["local suite", "Linux suite"],
+      implementDoneAt: 1,
+      verifyDoneAt: 2,
+      contract: [{ id: "AC-2", ci: "linux", expect: "exit 0" }],
+      contractState: {
+        status: "done",
+        criteria: ["local suite", "Linux suite"],
+        round: 1,
+        open: [],
+        locked: [],
+        final: false,
+      },
+    }
+    try {
+      expect(shipBlockers(s, r, undefined, true, true)).toEqual([])
+      const local = { ...s, contract: [{ id: "AC-2", check: "bun test", expect: "exit 0" }] }
+      const blocker = ["no PASS evidence in .factory/evidence.md for AC-2"]
+      expect(shipBlockers(local, r, undefined, true, true)).toEqual(blocker)
+      expect(shipBlockers({ ...s, criteria: ["local suite", "changed"] }, r, undefined, true, true)).toEqual(blocker)
+      expect(shipBlockers({ ...s, contractState: undefined }, r, undefined, true, true)).toEqual(blocker)
+      expect(prBody(s, r, "summary")).toContain("- [ ] AC-2 (PR CI job `linux`): Linux suite")
+      writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS\nAC-2: PASS\n")
+      expect(prBody(s, r, "summary")).toContain("- [ ] AC-2 (PR CI job `linux`): Linux suite")
+    } finally {
+      rmSync(r, { recursive: true, force: true })
+    }
+  })
+
   test(".factory is git-excluded; CI and AGENTS.md checks are read", () => {
     const { r, git } = repo()
     ensureFactoryDir(r)

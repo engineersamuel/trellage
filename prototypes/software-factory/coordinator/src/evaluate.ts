@@ -16,6 +16,7 @@ import { awaitGateWorker } from "./gateWorker.ts"
 import { loadPrompt } from "./prompt.ts"
 import { geminiReachable, reviewModelFor, reviewerRoute } from "./review.ts"
 import {
+  ciCriteria,
   contractFor,
   criteriaWithChecks,
   diffFiles,
@@ -69,6 +70,7 @@ export const parseContract = (text: string, n: number): ContractItem[] => {
     const id = str(o.id)
     if (!/^AC-\d+$/.test(id)) continue
     if (str(o.check)) byId.set(id, { id, check: str(o.check), expect: str(o.expect) })
+    else if (str(o.ci)) byId.set(id, { id, ci: str(o.ci), expect: str(o.expect) })
     else if (str(o.problem)) byId.set(id, { id, problem: str(o.problem), rewrite: str(o.rewrite) })
   }
   return Array.from({ length: n }, (_, i) => `AC-${i + 1}`).flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []))
@@ -113,7 +115,9 @@ export const contractMarkdown = (criteria: string[], contract: ContractItem[]): 
         ? "- no check agreed"
         : "check" in k
           ? `- check: \`${k.check}\`\n- expect: ${k.expect || "(not given)"}`
-          : `- problem: ${k.problem}\n- rewrite: ${k.rewrite}`
+          : "ci" in k
+            ? `- ci: \`${k.ci}\`\n- expect: ${k.expect || "(not given)"}`
+            : `- problem: ${k.problem}\n- rewrite: ${k.rewrite}`
       return `## AC-${i + 1}: ${c}\n${how}`
     })
     .join("\n\n")}\n`
@@ -219,6 +223,7 @@ export const agreeContract = async (
       model,
       evaluator: out,
       task: loadPrompt("tasks/evaluate-contract", {
+        host: `${process.platform}/${process.arch}`,
         request: p.request,
         plan: p.plan,
         criteria: p.criteria.map((c, i) => `AC-${i + 1}: ${c}`).join("\n"),
@@ -262,6 +267,9 @@ export const evaluationMarkdown = (e: Evaluation): string =>
     ),
     ...e.notes.map((n) => `- note: ${n}`),
   ].join("\n")
+
+export const fixable = (verdicts: AcVerdict[], ciIds: string[]): AcVerdict[] =>
+  verdicts.filter((v) => v.verdict === "fail" && !ciIds.includes(v.id))
 
 /** Run the evaluation rounds. Never throws: an error ends it as `failed`, which does not block shipping. */
 export const evaluate = async (f: Factory, scope: Scope, s: Sdlc, c: FactoryConfig): Promise<Evaluation> => {
@@ -337,7 +345,7 @@ export const evaluate = async (f: Factory, scope: Scope, s: Sdlc, c: FactoryConf
       if (status(workdir) !== before)
         notes.push(`evaluator round ${round} changed files in the worktree; check git status`)
       set({ verdicts, notes, file: { path: file, sha256: createHash("sha256").update(text).digest("hex") } })
-      const failed = verdicts.filter((v) => v.verdict === "fail")
+      const failed = fixable(verdicts, ciCriteria(s))
       if (!failed.length || round >= c.evaluate.max_rounds) break
       set({ status: "fixing" })
       const list = failed

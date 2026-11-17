@@ -32,6 +32,7 @@ export type GradingDependencies = {
     meta: Pick<Thread, "improvementOf">,
   ) => Promise<{ info: { threadId: string }; sent: { sent: Promise<unknown> } }>
   criteria: (threadId: string) => string[]
+  ciCriteria?: (threadId: string) => string[]
   /** The independent evaluator's verdicts and their file; null when no evaluation finished (grade g1 from evidence.md). */
   evaluation?: (
     threadId: string,
@@ -126,6 +127,7 @@ class Grading {
   private readEvidence(t: Thread, base: GradeInputs): GradeInputs {
     const input = { ...base, evidence: [...base.evidence], errors: [...base.errors] }
     input.criteria = criteriaResults(this.d.criteria(t.id), readArtifact(t, "evidence.md", input))
+    input.ciCriteria = this.d.ciCriteria?.(t.id)
     // g2: the evaluator's verdicts are the criteria; the run's own evidence is kept beside them.
     const ev = this.d.evaluation?.(t.id)
     if (ev) {
