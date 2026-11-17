@@ -13,8 +13,7 @@ browser ──AG-UI SSE──► coordinator (TypeScript, Bun, @github/copilot-s
 ## Run
 
 ```sh
-mise run factory:up                    # native Copilot subscription (token from gh auth token)
-mise run factory:up proxy              # BYOK through copilot-proxy-rs at localhost:8080/v1
+mise run factory:up                    # Copilot SDK on gh auth token; every other model call via copilot-proxy-rs
 SF_MODEL=claude-haiku-5.5 mise run factory:up   # cheaper model
 mise run factory:restart coordinator   # one service (coordinator | foldkit); no name restarts all
 SF_WATCH=1 mise run factory:up          # reload the coordinator on every save (stops running workers)
@@ -201,11 +200,12 @@ omits `by` counts as the human.
 
 ## Model routing
 
-- `SF_AUTH=native`: each runtime gets the host GitHub token (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token`).
-  Model calls go to the Copilot subscription (`isByok:false`).
-- `SF_AUTH=proxy`: each session gets a `ProviderConfig` of type `openai` at `SF_PROXY_URL` (default
-  `http://localhost:8080/v1`). The runtime starts with `--no-auto-login`, so no GitHub token is passed (`isByok:true`).
-- Workers inherit the coordinator's mode. Only coordinators start workers (`spawn_worker`).
+- Copilot SDK runtimes get the host GitHub token (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token`). Model
+  calls go to the Copilot subscription (`isByok:false`).
+- Exception: a model native Copilot does not serve (e.g. `gemini-4-argon`) gets a `ProviderConfig` of type `openai` at
+  `SF_PROXY_URL` (default `http://localhost:8080/v1`), with `--no-auto-login` (`isByok:true`).
+- Every other model call goes through copilot-proxy-rs at `SF_PROXY_URL`: Claude and Pi workers, model routing,
+  decision models, titles, images, the goal page and UI judging. `factory:up` stops when the proxy is not reachable.
 
 ## Coordinator
 

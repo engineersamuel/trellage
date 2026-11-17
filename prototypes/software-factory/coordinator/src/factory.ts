@@ -596,7 +596,8 @@ export class Factory {
     this.store.importAll(this.root)
     this.repoGates = new RepoGates(this.root)
     this.seq = Math.max(Date.now() * 1000, this.store.maxSeq() + 1)
-    this.defaultAuth = env.SF_AUTH === "proxy" ? "proxy" : "native"
+    // Copilot SDK runtimes use the GitHub token; only models native Copilot does not serve go through the proxy.
+    this.defaultAuth = "native"
     this.proxyUrl = env.SF_PROXY_URL ?? "http://localhost:8080/v1"
     this.settingsFile = S.settingsPath(this.root)
     this.stored = this.loadStored()

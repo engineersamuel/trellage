@@ -80,8 +80,7 @@ run = "./scripts/azure-fresh-install.sh"
 sf_state = '{{ get_env(name="SF_STATE_DIR", default=get_env(name="XDG_STATE_HOME", default=get_env(name="HOME") ~ "/.local/state") ~ "/trellage/factory") }}'
 
 [tasks."factory:up"]
-description = "Start the software factory detached: native (default, gh auth token) or proxy (copilot-proxy-rs)"
-usage = 'arg "[mode]" default="native" help="native or proxy"'
+description = "Start the software factory detached: Copilot SDK on gh auth token, every other model call through copilot-proxy-rs"
 dir = "{{config_root}}/prototypes/software-factory"
 shell = "bash -c"
 quiet = true
@@ -89,10 +88,9 @@ env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock", SF_LOGS = "{{vars.sf_state
 run = """
 set -euo pipefail
 exec 2> >(grep -v 'process compose config home' >&2)
-export SF_AUTH=${usage_mode}
-[[ $SF_AUTH == native || $SF_AUTH == proxy ]] || { echo "mode must be native or proxy" >&2; exit 2; }
 export SF_MODEL="${SF_MODEL:-claude-sonnet-5.5}"
-if [[ $SF_AUTH == proxy ]] && ! curl -fsS "${SF_PROXY_URL:-http://localhost:8080/v1}/models" >/dev/null; then
+# Copilot SDK workers use gh auth token; Claude, Pi, routing, decisions and other model calls need copilot-proxy-rs.
+if ! curl -fsS -o /dev/null "${SF_PROXY_URL:-http://localhost:8080/v1}/models"; then
   echo "copilot-proxy-rs is not reachable at ${SF_PROXY_URL:-http://localhost:8080/v1}" >&2; exit 1
 fi
 # The coordinator imports packages/trellage-runtime, which needs the root workspace deps.
@@ -107,7 +105,7 @@ mkdir -p "$SF_LOGS"
 process-compose process list >/dev/null 2>&1 && process-compose down && sleep 2
 rm -f "$PC_SOCKET_PATH"
 process-compose up -D -L "$SF_LOGS/process-compose.log" -f process-compose.yaml
-echo "auth=$SF_AUTH model=$SF_MODEL watch=${SF_WATCH:-0}  (mise run factory:tui | factory:logs | factory:down)"
+echo "copilot=gh-token other=${SF_PROXY_URL:-http://localhost:8080/v1} model=$SF_MODEL watch=${SF_WATCH:-0}  (mise run factory:tui | factory:logs | factory:down)"
 echo "  Factory UI         : http://localhost:5174/"
 echo "  Coordinator API     : http://127.0.0.1:7700/"
 """
@@ -142,7 +140,7 @@ env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock" }
 run = """
 exec 2> >(grep -v 'process compose config home' >&2)
 process-compose process list -o wide 2>/dev/null || echo "not running"
-for u in http://127.0.0.1:7700/api/info http://localhost:5174/; do
+for u in http://127.0.0.1:7700/api/info http://localhost:5174/ "${SF_PROXY_URL:-http://localhost:8080/v1}/models"; do
   printf '%-42s %s\\n' "$u" "$(curl -s -o /dev/null -m 3 -w '%{http_code}' "$u" || true)"
 done
 """
