@@ -466,6 +466,17 @@ class RepositoryTests(unittest.TestCase):
         with self.assertRaisesRegex(checks.GateError, "expired"):
             advisories.review_findings({key}, exception)
 
+    def test_committed_advisory_exception_keys_and_fields_are_well_formed(self):
+        exceptions = json.loads(advisories.EXCEPTIONS.read_text())
+        for key, entry in exceptions.items():
+            with self.subTest(key=key):
+                parts = key.split("|")
+                self.assertEqual(len(parts), 5)
+                self.assertTrue(all(parts))
+                self.assertTrue(parts[-1].startswith("GHSA-"))
+                self.assertTrue(isinstance(entry["reason"], str) and entry["reason"])
+                dt.date.fromisoformat(entry["reviewBy"])
+
     def test_coverage_excludes_other_packages_and_rejects_regressions_or_missing_data(self):
         self.write(
             "lcov.info",
