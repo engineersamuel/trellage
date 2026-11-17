@@ -456,6 +456,8 @@ export type GradeInputs = {
   subject: Grade["subject"]
   report: Grade["report"]
   criteria: Record<string, Verdict>
+  /** Agreed criteria proven by the PR's CI checks rather than local evidence or evaluation. */
+  ciCriteria?: string[]
   /** Values from `.factory/benchmarks.json`; null when the file is absent. */
   benchmarks: Record<string, number> | null
   evidence: Grade["evidence"]
@@ -493,6 +495,9 @@ const benchmarkResults = (spec: GoalSpec | null | undefined, values: GradeInputs
 
 /** A grade for one report. Goals require what their spec expects; prompts require a PR when done, and green checks when CI reported. */
 export const buildGrade = (run: GradedRun, i: GradeInputs, spec?: GoalSpec | null): Grade => {
+  const criteria = { ...i.criteria }
+  for (const id of i.ciCriteria ?? [])
+    criteria[id] = run.pr?.checks === "SUCCESS" ? "pass" : run.pr?.checks === "FAILURE" ? "fail" : "missing"
   const prRequired = spec ? !!spec.expect.pr : i.report.status === "done"
   const prChecks = prChecksOf(run.pr, spec)
   const benchmarks = benchmarkResults(spec, i.benchmarks)
@@ -506,8 +511,8 @@ export const buildGrade = (run: GradedRun, i: GradeInputs, spec?: GoalSpec | nul
     factoryCommit: i.factoryCommit,
     gradingVersion: version,
     report: i.report,
-    status: gradeStatus({ criteria: i.criteria, prChecks, benchmarks, errors, prRequired, prFound: !!run.pr }),
-    criteria: criteriaSummary(i.criteria),
+    status: gradeStatus({ criteria, prChecks, benchmarks, errors, prRequired, prFound: !!run.pr }),
+    criteria: criteriaSummary(criteria),
     prChecks,
     benchmarks,
     evidence: [
@@ -521,8 +526,8 @@ export const buildGrade = (run: GradedRun, i: GradeInputs, spec?: GoalSpec | nul
     ...(i.selfCriteria
       ? {
           selfCriteria: i.selfCriteria,
-          disagreements: Object.keys(i.criteria).filter(
-            (id) => i.selfCriteria![id] === "pass" && i.criteria[id] === "fail",
+          disagreements: Object.keys(criteria).filter(
+            (id) => i.selfCriteria![id] === "pass" && criteria[id] === "fail",
           ),
         }
       : {}),

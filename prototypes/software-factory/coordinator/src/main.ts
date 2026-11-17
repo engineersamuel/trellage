@@ -100,7 +100,7 @@ import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, withSubagents, type Run } from "./run.ts"
 import { costReport, GOAL_PAGE_AGENT, gradeCost, rollUp, runCost, type AgentInfo } from "./costs.ts"
 import { factoryConfig } from "./config.ts"
-import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
+import { artifact, ciCriteria, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
 import { postMergeCheck } from "./postmerge.ts"
 import { ARTIFACTS_DIR, servableImage } from "./files.ts"
@@ -2012,7 +2012,7 @@ const runSdlc = (scopeId: string, workdir: string | undefined): Run["sdlc"] => {
   return {
     tier: sdlc.risk?.tier ?? null,
     criteria: sdlc.criteria,
-    unproven: unprovenCriteria(sdlc.criteria, evidence),
+    unproven: unprovenCriteria(sdlc.criteria, evidence).filter((id) => !ciCriteria(sdlc).includes(id)),
     gates: sdlc.gates,
     codeReviews: [...factory.codeReviews.values()]
       .filter((r) => r.scopeId === scopeId)
@@ -2136,6 +2136,10 @@ const {
   runRecord,
   openConversation,
   criteria: (id) => factory.sdlc.get(subId(id))?.criteria ?? [],
+  ciCriteria: (id) => {
+    const s = factory.sdlc.get(subId(id))
+    return s ? ciCriteria(s) : []
+  },
   loopManaged: (id) => !!goalStates.byThread(id),
   evaluation: (id) => {
     const e = lastEvaluation(factory.evaluations.values(), subId(id))

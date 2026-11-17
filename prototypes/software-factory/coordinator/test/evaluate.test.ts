@@ -159,11 +159,7 @@ const fakeFactory = (rounds: Record<string, "pass" | "fail">[], contract?: unkno
     const id = spec.id ?? `w-${f.spawned.length}`
     return { id, status: "idle", lastError: null, waitIdle: async () => true }
   }
-  return f as Factory & {
-    spawned: SpawnSpec[]
-    stopped: string[]
-    published: { type: string; data: unknown }[]
-  }
+  return f as Factory & { spawned: SpawnSpec[]; stopped: string[]; published: { type: string; data: unknown }[] }
 }
 
 const sdlc = (over: Partial<Sdlc> = {}): Sdlc => ({

@@ -140,12 +140,7 @@ describe("report grading orchestration", () => {
     const f = fixture()
     await f.grading.gradeThread(f.t.id, report)
     const [grade] = f.grading.gradesOf(f.t)
-    f.goals.appendRun(f.spec.id, {
-      at: 1,
-      factoryCommit: "factory",
-      threadId: f.t.id,
-      outcome: "pass",
-    })
+    f.goals.appendRun(f.spec.id, { at: 1, factoryCommit: "factory", threadId: f.t.id, outcome: "pass" })
     f.goals.appendGrade(f.spec.id, {
       at: 2,
       factoryCommit: "factory",
@@ -189,25 +184,14 @@ describe("report grading orchestration", () => {
     const grade = f.grading.gradesOf(f.t)[1]!
     expect(grade.status).toBe("error")
     expect(grade.errors[0]).toContain("benchmarks.json is not")
-    expect(grade.evidence).toContainEqual({
-      kind: "note",
-      ref: "quality.json is not a list; ignored",
-    })
+    expect(grade.evidence).toContainEqual({ kind: "note", ref: "quality.json is not a list; ignored" })
     expect(grade.quality).toEqual([])
     expect(f.approvals.list()).toHaveLength(0)
   })
 
   test("a grade records the run's cost; it never changes the status, and a failed lookup is only logged", async () => {
     const f = fixture()
-    const one = {
-      usd: 1.5,
-      aic: 150,
-      aicEstimated: 0,
-      totalTokens: 9,
-      outputTokens: 1,
-      calls: 2,
-      unpricedCalls: 0,
-    }
+    const one = { usd: 1.5, aic: 150, aicEstimated: 0, totalTokens: 9, outputTokens: 1, calls: 2, unpricedCalls: 0 }
     f.deps.cost = () => ({ total: one, byStep: { implement: one } })
     const graded = makeGrading(f.deps)
     await graded.gradeThread(f.t.id, report)
@@ -473,11 +457,7 @@ describe("settling grades and interrupted launches", () => {
     await restarted.regradePending()
     const grades = new Threads(f.root).get(t.id)!.grades!
     expect(grades.map((g) => g.status)).toEqual(["pass"])
-    expect(grades[0]).toMatchObject({
-      key: pending.key,
-      report: summary,
-      prChecks: { state: "SUCCESS" },
-    })
+    expect(grades[0]).toMatchObject({ key: pending.key, report: summary, prChecks: { state: "SUCCESS" } })
     if (saved) expect(f.goals.runs(f.spec.id).map((r) => r.grade)).toEqual(grades)
     expect(f.approvals.list()).toHaveLength(0)
     expect(f.launches).toHaveLength(0)
@@ -533,12 +513,7 @@ describe("human improvement retries", () => {
     const older = f.answer()
     await f.grading.gradeThread(f.t.id, { ...report, commit: "new" })
     const latest = f.t.improvement!
-    const unrelated = f.approvals.open({
-      threadId: "desk",
-      title: "Other",
-      summary: "",
-      options: ["Yes"],
-    })
+    const unrelated = f.approvals.open({ threadId: "desk", title: "Other", summary: "", options: ["Yes"] })
     expect(f.grading.improvementAnswered(unrelated)).toBe(false)
     await f.grading.advanceImprovement(f.t, unrelated)
     await Promise.all([f.grading.advanceImprovement(f.t, older), f.grading.advanceImprovement(f.t, older)])
