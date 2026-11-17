@@ -21,10 +21,25 @@ beforeEach(() => {
 const golden: Record<string, string> = JSON.parse(
   readFileSync(path.join(import.meta.dir, "fixtures", "prompts.golden.json"), "utf8"),
 )
-const g = (id: GateId) => ({ id, chosen: true, probability: 1, threshold: 0.5, reason: "", status: "pending" as const })
+const g = (id: GateId) => ({
+  id,
+  chosen: true,
+  probability: 1,
+  threshold: 0.5,
+  reason: "",
+  status: "pending" as const,
+})
 
 test("rendered prompts equal the text that was in the code (re-review drift fixed: 100+ lines)", () => {
   const now: Record<string, string> = {
+    evaluate_contract: loadPrompt("tasks/evaluate-contract", {
+      request: "REQ",
+      plan: "PLAN",
+      criteria: "AC-1: Linux suite passes",
+      locked: "1",
+      out: "/out",
+      host: "darwin/arm64",
+    }),
     coordinator: P.coordinatorPrompt(),
     global: P.globalPrompt(),
     research: P.researchPrompt(),
@@ -50,7 +65,11 @@ test("rendered prompts equal the text that was in the code (re-review drift fixe
       { path: "reports/s.md", file: "/w/reports/s.md", title: "T" },
       { title: "1. X", body: " body \n" },
     ),
-    verify_checks: verifyAddendum({ ...newSdlc("s", null), criteria: ["c1", "c2"], checks: ["bun test", "tsc"] }),
+    verify_checks: verifyAddendum({
+      ...newSdlc("s", null),
+      criteria: ["c1", "c2"],
+      checks: ["bun test", "tsc"],
+    }),
     verify_none: verifyAddendum({ ...newSdlc("s", null), criteria: ["c1"] }),
   }
   for (const [k, v] of Object.entries(golden)) expect({ k, v: now[k] }).toEqual({ k, v })

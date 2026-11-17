@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -104,13 +104,49 @@ describe("test-first", () => {
 const repo = () => {
   const r = mkdtempSync(path.join(tmpdir(), "sf-sdlc-"))
   const git = (...a: string[]) =>
-    execFileSync("git", ["-C", r, "-c", "user.email=t@t", "-c", "user.name=t", ...a], { encoding: "utf8" }).trim()
+    execFileSync("git", ["-C", r, "-c", "user.email=t@t", "-c", "user.name=t", ...a], {
+      encoding: "utf8",
+    }).trim()
   git("init", "-q")
   git("commit", "-q", "--allow-empty", "-m", "base")
   return { r, git, base: git("rev-parse", "HEAD") }
 }
 
 describe("worktree artifacts", () => {
+  test("only an applicable CI contract exempts missing local evidence and stays unchecked in the PR", () => {
+    const r = mkdtempSync(path.join(tmpdir(), "sf-ci-"))
+    mkdirSync(path.join(r, ".factory"))
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS\n")
+    const s: Sdlc = {
+      ...newSdlc("sub", "t"),
+      criteria: ["local suite", "Linux suite"],
+      implementDoneAt: 1,
+      verifyDoneAt: 2,
+      contract: [{ id: "AC-2", ci: "linux", expect: "exit 0" }],
+      contractState: {
+        status: "done",
+        criteria: ["local suite", "Linux suite"],
+        round: 1,
+        open: [],
+        locked: [],
+        final: false,
+      },
+    }
+    try {
+      expect(shipBlockers(s, r, undefined, true, true)).toEqual([])
+      const local = { ...s, contract: [{ id: "AC-2", check: "bun test", expect: "exit 0" }] }
+      const blocker = ["no PASS evidence in .factory/evidence.md for AC-2"]
+      expect(shipBlockers(local, r, undefined, true, true)).toEqual(blocker)
+      expect(shipBlockers({ ...s, criteria: ["local suite", "changed"] }, r, undefined, true, true)).toEqual(blocker)
+      expect(shipBlockers({ ...s, contractState: undefined }, r, undefined, true, true)).toEqual(blocker)
+      expect(prBody(s, r, "summary")).toContain("- [ ] AC-2 (PR CI job `linux`): Linux suite")
+      writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS\nAC-2: PASS\n")
+      expect(prBody(s, r, "summary")).toContain("- [ ] AC-2 (PR CI job `linux`): Linux suite")
+    } finally {
+      rmSync(r, { recursive: true, force: true })
+    }
+  })
+
   test(".factory is git-excluded; CI and AGENTS.md checks are read", () => {
     const { r, git } = repo()
     ensureFactoryDir(r)
@@ -136,7 +172,12 @@ describe("worktree artifacts", () => {
     expect(shipBlockers(undefined, r, base, true, true)).toEqual([
       "no SDLC plan: call sdlc_plan with the acceptance criteria first",
     ])
-    let s: Sdlc = { ...newSdlc("sub", "t"), criteria: ["works"], implementDoneAt: 2, verifyDoneAt: 1 }
+    let s: Sdlc = {
+      ...newSdlc("sub", "t"),
+      criteria: ["works"],
+      implementDoneAt: 2,
+      verifyDoneAt: 1,
+    }
     s = withGates(s, decide("plan", { design: 0.9, testFirst: 0.9 }, null))
     s = withGates(
       s,
@@ -201,11 +242,15 @@ describe("lessons", () => {
 describe("code review", () => {
   test("lens pick: threshold, cap, at least one, default without Jev", () => {
     expect(pickLenses(null)).toEqual(["correctness", "tests"])
-    expect(pickLenses({ correctness: 0.9, tests: 0.7, design: 0.65, performance: 0.8, operability: 0.1 })).toEqual([
-      "correctness",
-      "performance",
-      "tests",
-    ])
+    expect(
+      pickLenses({
+        correctness: 0.9,
+        tests: 0.7,
+        design: 0.65,
+        performance: 0.8,
+        operability: 0.1,
+      }),
+    ).toEqual(["correctness", "performance", "tests"])
     expect(pickLenses({ correctness: 0.1, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.3 })).toEqual([
       "operability",
     ])
@@ -220,7 +265,15 @@ describe("code review", () => {
   test("findings parse and score", () => {
     const fs = parseReviewFindings(JSON.stringify([{ title: "t", problem: "p", severity: "high" }, { nope: 1 }]))
     expect(fs).toEqual([
-      { id: "cr1", title: "t", file: "unknown", severity: "high", problem: "p", fix: "", lenses: [] },
+      {
+        id: "cr1",
+        title: "t",
+        file: "unknown",
+        severity: "high",
+        problem: "p",
+        fix: "",
+        lenses: [],
+      },
     ])
     expect(parseReviewFindings("not json")).toEqual([])
     expect(score(fs[0]!, 0.8, 0.7).keep).toBe(true)
@@ -280,7 +333,9 @@ describe("reviewer model", () => {
     const { reviewerRoute } = await import("../src/review.ts")
     expect(reviewerRoute("gemini-4-argon", "copilot")).toEqual({ auth: "proxy" })
     expect(reviewerRoute("gemini-4-argon", "auto")).toEqual({ auth: "proxy" })
-    expect(reviewerRoute("gemini-4-argon", "claude")).toEqual({ harness: { kind: "claude", profiles: ["default"] } })
+    expect(reviewerRoute("gemini-4-argon", "claude")).toEqual({
+      harness: { kind: "claude", profiles: ["default"] },
+    })
     expect(reviewerRoute("gpt-6-astra", "copilot")).toEqual({})
     expect(reviewerRoute("gemini-4-argon", "pi")).toEqual({})
     expect(reviewModelFor("gpt-6-astra", "")).toBe("claude-opus-5.5")
@@ -302,7 +357,11 @@ test("osv flags: advisories and license violations per package", () => {
             vulnerabilities: [{ id: "RUSTSEC-1" }],
             license_violations: [],
           },
-          { package: { name: "subtle", version: "2.6.1" }, vulnerabilities: [], license_violations: ["BSD-3-Clause"] },
+          {
+            package: { name: "subtle", version: "2.6.1" },
+            vulnerabilities: [],
+            license_violations: ["BSD-3-Clause"],
+          },
           { package: { name: "toml", version: "1.2.1" } },
         ],
       },
@@ -314,7 +373,9 @@ test("osv flags: advisories and license violations per package", () => {
 test("rebaseChangedLines: 0 for a clean rebase, conflict resolutions count", () => {
   const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "sf-rebase-")))
   const g = (...a: string[]) =>
-    execFileSync("git", ["-C", dir, "-c", "user.email=t@t", "-c", "user.name=t", ...a], { encoding: "utf8" }).trim()
+    execFileSync("git", ["-C", dir, "-c", "user.email=t@t", "-c", "user.name=t", ...a], {
+      encoding: "utf8",
+    }).trim()
   g("init", "-q", "-b", "main")
   writeFileSync(path.join(dir, "f.txt"), "1\n2\n3\n")
   g("add", ".")

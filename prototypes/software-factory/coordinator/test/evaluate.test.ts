@@ -82,6 +82,19 @@ test("tasks and contract.md carry each criterion's agreed check", () => {
   expect(contractMarkdown(["x works", "y works"], contract)).toContain("## AC-2: y works\n- no check agreed")
 })
 
+test("CI contracts preserve the job and expected result in both renderings; a local check wins", () => {
+  const item = { id: "AC-1", ci: "linux", expect: "exit 0" }
+  const contract = parseContract(JSON.stringify([item]), 1)
+  expect(contract).toEqual([item])
+  expect(contractMarkdown(["Linux suite passes"], contract)).toContain("- ci: `linux`\n- expect: exit 0")
+  expect(criteriaWithChecks(["Linux suite passes"], contract)).toBe(
+    "AC-1: Linux suite passes\n  ci: proven by the PR's CI job `linux` after push; no local evidence needed\n  expect: exit 0",
+  )
+  expect(parseContract(JSON.stringify([{ ...item, check: "bun test" }]), 1)).toEqual([
+    { id: "AC-1", check: "bun test", expect: "exit 0" },
+  ])
+})
+
 test("the evaluator may write only under its output folder and never change git state", () => {
   const gate = evaluatorPermissions("/state/w-1/evaluate")
   const ask = (r: object) => gate(r as never, {} as never) as { kind: string }
@@ -146,7 +159,11 @@ const fakeFactory = (rounds: Record<string, "pass" | "fail">[], contract?: unkno
     const id = spec.id ?? `w-${f.spawned.length}`
     return { id, status: "idle", lastError: null, waitIdle: async () => true }
   }
-  return f as Factory & { spawned: SpawnSpec[]; stopped: string[]; published: { type: string; data: unknown }[] }
+  return f as Factory & {
+    spawned: SpawnSpec[]
+    stopped: string[]
+    published: { type: string; data: unknown }[]
+  }
 }
 
 const sdlc = (over: Partial<Sdlc> = {}): Sdlc => ({
@@ -156,6 +173,43 @@ const sdlc = (over: Partial<Sdlc> = {}): Sdlc => ({
   verifyDoneAt: 2,
   implementerModel: "claude-sonnet-5.5",
   ...over,
+})
+
+test("contract evaluation receives the actual host", async () => {
+  const f = fakeFactory([], [{ id: "AC-1", ci: "linux", expect: "exit 0" }])
+  const contract = await agreeContract(
+    f,
+    { id: "sub-1", threadId: "t", workdir: process.cwd() },
+    { request: "Linux suite", plan: "test", criteria: ["Linux suite passes"], c: factoryConfig() },
+  )
+  expect(f.spawned[0]!.task).toContain(`You run on ${process.platform}/${process.arch}.`)
+  expect(contract).toEqual([{ id: "AC-1", ci: "linux", expect: "exit 0" }])
+})
+
+test.each([true, false])("a failed criterion starts a fix only when not CI-proven (ci=%s)", async (ci) => {
+  const f = fakeFactory([
+    { "AC-1": "pass", "AC-2": "fail" },
+    { "AC-1": "pass", "AC-2": "pass" },
+  ])
+  const s = sdlc({
+    contract: [{ id: "AC-2", ...(ci ? { ci: "linux" } : { check: "bun test" }), expect: "exit 0" }],
+    contractState: {
+      status: "done",
+      criteria: ["a works", "b works"],
+      round: 1,
+      open: [],
+      locked: [],
+      final: false,
+    },
+  })
+  const c = factoryConfig()
+  const e = await evaluate(f, { id: "sub-1", threadId: "t", workdir: process.cwd() }, s, {
+    ...c,
+    evaluate: { ...c.evaluate, max_rounds: 2 },
+  })
+  expect(e.status).toBe("done")
+  expect(f.spawned.filter((w) => w.name === "evaluate-fix")).toHaveLength(ci ? 0 : 1)
+  expect(e.round).toBe(ci ? 1 : 2)
 })
 
 test("a failed criterion gets one fix and verify round, then a new evaluation; a later fail ends it without blocking", async () => {

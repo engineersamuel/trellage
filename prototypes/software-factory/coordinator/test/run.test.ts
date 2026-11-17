@@ -112,7 +112,12 @@ const spec = decodeGoalOrThrow({
 describe("goal spec", () => {
   test("defaults fill approvals, limits, base and PR state", () => {
     expect(spec.base).toBe("main")
-    expect(spec.approvals).toEqual({ plan: "auto", findings: "auto", ship: "auto", other: "human" })
+    expect(spec.approvals).toEqual({
+      plan: "auto",
+      findings: "auto",
+      ship: "auto",
+      other: "human",
+    })
     expect(spec.limits).toEqual({ usd: 250 })
     expect(spec.expect.steps.implement).toEqual({ min: 1 })
     expect(spec.expect.pr?.state).toBe("OPEN")
@@ -149,7 +154,10 @@ describe("goalUnmet", () => {
   })
   test("untouched entries ending in / match a folder", () => {
     const pr = { ...run.pr!, files: ["src/a.rs", "reports/x/y.json"] }
-    const want = { ...spec.expect, pr: { ...spec.expect.pr!, untouched: ["reports/", "src/b.rs"] } }
+    const want = {
+      ...spec.expect,
+      pr: { ...spec.expect.pr!, untouched: ["reports/", "src/b.rs"] },
+    }
     expect(goalUnmet({ ...run, pr }, want, spec.base).filter((u) => u.includes("untouched"))).toEqual([
       "PR #7 changes reports/, expected untouched",
     ])
@@ -176,7 +184,10 @@ describe("approval policy", () => {
     answer: null,
     options,
   })
-  const withPending = { ...run, approvals: [a("p", "plan"), a("s", "ship"), a("o", "other"), a("q", "plan", [])] }
+  const withPending = {
+    ...run,
+    approvals: [a("p", "plan"), a("s", "ship"), a("o", "other"), a("q", "plan", [])],
+  }
   test("auto topics go to the runner; human topics and free-text questions stop", () => {
     const { auto, human } = splitPending(withPending, spec.approvals)
     expect(auto.map((x) => x.id)).toEqual(["p", "s"])
@@ -189,7 +200,11 @@ describe("approval policy", () => {
       code: 3,
       reason: "reported blocked: x",
     })
-    const blocked = { ...run, status: "idle", report: { status: "blocked", summary: "x", gaps: [] } }
+    const blocked = {
+      ...run,
+      status: "idle",
+      report: { status: "blocked", summary: "x", gaps: [] },
+    }
     expect(stopReason({ ...blocked, status: "running" }, spec.approvals)).toBeNull()
     expect(stopReason(blocked, spec.approvals, "x")).toBeNull()
     expect(stopReason(blocked, spec.approvals, "older")?.code).toBe(3)
@@ -209,8 +224,20 @@ describe("goal store", () => {
     g.save({ id: "demo", repo: "/r", prompt: "p", expect: { steps: { implement: {} } } })
     expect(g.get("demo")?.prompt).toBe("p")
     expect(g.get("none")).toBeNull()
-    g.appendRun("demo", { at: 1, factoryCommit: "abc", threadId: "t1", outcome: "fail", unmet: ["x"] })
-    g.appendRun("demo", { at: 2, factoryCommit: "def", threadId: "t2", outcome: "pass", prUrl: "u" })
+    g.appendRun("demo", {
+      at: 1,
+      factoryCommit: "abc",
+      threadId: "t1",
+      outcome: "fail",
+      unmet: ["x"],
+    })
+    g.appendRun("demo", {
+      at: 2,
+      factoryCommit: "def",
+      threadId: "t2",
+      outcome: "pass",
+      prUrl: "u",
+    })
     expect(g.runs("demo").map((r) => [r.factoryCommit, r.outcome])).toEqual([
       ["abc", "fail"],
       ["def", "pass"],
@@ -297,7 +324,9 @@ describe("goal form draft", () => {
       id: "latency",
       repo: "/r",
       prompt: "Keep latency low",
-      expect: { benchmarks: [{ id: "latency", baseline: 25, higherIsBetter: false, tolerance: 2 }] },
+      expect: {
+        benchmarks: [{ id: "latency", baseline: 25, higherIsBetter: false, tolerance: 2 }],
+      },
       improve: { maxRetries: 0 },
     })
     expect(draftToSpec({ ...specToDraft(saved), title: "Edited" })).toEqual({
@@ -337,7 +366,12 @@ describe("goal form draft", () => {
       finish: { min: 1 },
       review: { min: 2 },
     })
-    expect(r.spec.expect.pr).toEqual({ state: "OPEN", checks: "SUCCESS", bodyIncludes: ["18080", "OK"], untouched: [] })
+    expect(r.spec.expect.pr).toEqual({
+      state: "OPEN",
+      checks: "SUCCESS",
+      bodyIncludes: ["18080", "OK"],
+      untouched: [],
+    })
     const again = draftToSpec(specToDraft(r.spec))
     expect(again.ok && again.spec).toEqual(r.spec)
   })
@@ -425,7 +459,10 @@ const goalSpec = decodeGoalOrThrow({
   id: "demo",
   repo: "/r",
   prompt: "p",
-  expect: { pr: { checks: "SUCCESS" }, benchmarks: [{ id: "latency", baseline: 100, higherIsBetter: false }] },
+  expect: {
+    pr: { checks: "SUCCESS" },
+    benchmarks: [{ id: "latency", baseline: 100, higherIsBetter: false }],
+  },
 })
 
 describe("criteriaResults", () => {
@@ -437,7 +474,11 @@ describe("criteriaResults", () => {
   })
   test("pass, fail and missing per criterion; unprovenCriteria keeps its output", () => {
     const evidence = "AC-1: PASS — make test — ok\nAC-2: FAIL — make lint — 3 errors\n"
-    expect(criteriaResults(["a", "b", "c"], evidence)).toEqual({ "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" })
+    expect(criteriaResults(["a", "b", "c"], evidence)).toEqual({
+      "AC-1": "pass",
+      "AC-2": "fail",
+      "AC-3": "missing",
+    })
     expect(criteriaResults(["a"], null)).toEqual({ "AC-1": "missing" })
     expect(unprovenCriteria(["a", "b", "c"], evidence)).toEqual(["AC-2", "AC-3"])
   })
@@ -451,7 +492,16 @@ describe("grade evidence files", () => {
         '[{"number":3,"url":"u","state":"OPEN","headRefOid":"h","baseRefName":"main","body":null,"files":null,"statusCheckRollup":null}]',
       ),
     ).toEqual({
-      pr: { number: 3, url: "u", state: "OPEN", head: "h", base: "main", body: "", files: [], checks: "NONE" },
+      pr: {
+        number: 3,
+        url: "u",
+        state: "OPEN",
+        head: "h",
+        base: "main",
+        body: "",
+        files: [],
+        checks: "NONE",
+      },
     })
     expect("error" in parsePrList("<html>rate limited")).toBe(true)
     expect("error" in parsePrList("{}")).toBe(true)
@@ -510,6 +560,34 @@ describe("gradeStatus", () => {
 })
 
 describe("buildGrade", () => {
+  for (const version of ["g1", "g2"] as const) {
+    test.each([
+      ["SUCCESS", "pass"],
+      ["FAILURE", "fail"],
+      ["PENDING", "missing"],
+      ["NONE", "missing"],
+      [null, "missing"],
+    ] as const)(`${version}: CI criteria use PR rollup %s, not evidence or evaluator verdicts`, (checks, verdict) => {
+      const evidence = criteriaResults(["ci", "local fail", "local pass"], "AC-1: FAIL\nAC-2: FAIL\nAC-3: PASS\n")
+      const input = inputs({
+        criteria: evidence,
+        ciCriteria: ["AC-1"],
+        ...(version === "g2" ? { selfCriteria: evidence } : {}),
+      })
+      const grade = buildGrade({ ...run, pr: checks ? { ...run.pr!, checks } : null }, input)
+      expect(grade.gradingVersion).toBe(version)
+      expect(grade.criteria.results).toEqual({ "AC-1": verdict, "AC-2": "fail", "AC-3": "pass" })
+      expect(input.criteria["AC-1"]).toBe("fail")
+      if (version === "g2") expect(grade.selfCriteria).toEqual(evidence)
+      const onlyCi = buildGrade(
+        { ...run, pr: checks ? { ...run.pr!, checks } : null },
+        { ...input, criteria: { "AC-1": "pass" } },
+      )
+      expect(onlyCi.criteria.results).toEqual({ "AC-1": verdict })
+      expect(onlyCi.status).toBe(verdict === "missing" ? "unknown" : verdict)
+    })
+  }
+
   test("goal subject: linked to thread, factory commit, grading version and evidence; results reported separately", () => {
     const g = buildGrade(greenRun, inputs({ benchmarks: { latency: 90 } }), goalSpec)
     expect(g.key).toBe(`t|c0ffee|done|${GRADING_VERSION}`)
@@ -538,7 +616,10 @@ describe("buildGrade", () => {
   test("criteria rate is passed / evaluated; a regression against the fixed baseline fails", () => {
     const g = buildGrade(
       greenRun,
-      inputs({ criteria: { "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" }, benchmarks: { latency: 130 } }),
+      inputs({
+        criteria: { "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" },
+        benchmarks: { latency: 130 },
+      }),
       goalSpec,
     )
     expect(g.criteria).toMatchObject({ passed: 1, evaluated: 2, total: 3, rate: 0.5 })
@@ -570,11 +651,25 @@ describe("buildGrade", () => {
       inputs({ criteria: { "AC-1": "pass", "AC-2": "fail", "AC-3": "missing" } }),
       goalSpec,
     )
-    const base = { at: g.at, factoryCommit: "abc1234", threadId: "thread-1", unmet: [], prUrl: null }
+    const base = {
+      at: g.at,
+      factoryCommit: "abc1234",
+      threadId: "thread-1",
+      unmet: [],
+      prUrl: null,
+    }
     expect(runLine({ ...base, outcome: "fail", grade: g })).toContain("grade fail")
     expect(runLine({ ...base, outcome: "fail", grade: g })).toContain("AC 1/2 g1")
     expect(runLine({ ...base, outcome: "pass" })).not.toContain("grade")
-    const t = { usd: 12.345, aic: 1234.5, aicEstimated: 0, totalTokens: 1, outputTokens: 1, calls: 1, unpricedCalls: 0 }
+    const t = {
+      usd: 12.345,
+      aic: 1234.5,
+      aicEstimated: 0,
+      totalTokens: 1,
+      outputTokens: 1,
+      calls: 1,
+      unpricedCalls: 0,
+    }
     expect(runLine({ ...base, outcome: "fail", grade: { ...g, cost: { total: t, byStep: {} } } })).toContain(
       "AC 1/2 g1  $12.35",
     )

@@ -50,7 +50,10 @@ test("every shipped prompt declares exactly the inputs its body uses (besides co
     const f = parsePromptFile(readFileSync(path.join(defaultPromptsDir, `${name}.md`), "utf8"))
     const used = [...f.body.matchAll(/\{\{[#^/]?([\w.-]+)\}\}/g)].map((m) => m[1]!).filter((n) => !cfg.has(n))
     const declared = Array.isArray(f.meta.inputs) ? f.meta.inputs : []
-    expect({ name, inputs: [...new Set(used)].sort() }).toEqual({ name, inputs: [...declared].sort() })
+    expect({ name, inputs: [...new Set(used)].sort() }).toEqual({
+      name,
+      inputs: [...declared].sort(),
+    })
   }
 })
 
@@ -61,6 +64,18 @@ test("a caller must pass every declared input; a user copy may use only those an
   userFile("jev/lens", "Uses {{secret}}")
   expect(loadPrompt("jev/lens", { focus: "x" })).toContain("Is a review focused on x")
   expect(promptErrors.get("jev/lens")).toContain("{{secret}}")
+})
+
+test("the contract prompt requires the evaluator host", () => {
+  expect(() =>
+    loadPrompt("tasks/evaluate-contract", {
+      request: "r",
+      plan: "p",
+      criteria: "c",
+      locked: "",
+      out: "/out",
+    }),
+  ).toThrow("caller did not pass host")
 })
 
 test("a delivery run keeps the prompts and config it pinned; new runs read the edits", () => {
@@ -89,11 +104,21 @@ test("replay: shadow-pick agreement with the human's answers; other prompts coun
   setDecisionEngine("microsoft-decision-1", "http://fake/v1")
   // The fake engine picks option 0 for the current text and option 1 for any text containing "NEW".
   const fetchMock = spyOn(globalThis, "fetch").mockImplementation((async (_url: string, init: { body: string }) => {
-    const { questions } = JSON.parse(init.body) as { questions: Record<string, { text?: string; question?: string }> }
+    const { questions } = JSON.parse(init.body) as {
+      questions: Record<string, { text?: string; question?: string }>
+    }
     const answers = Object.fromEntries(
       Object.entries(questions).map(([k, q]) => {
         const isNew = JSON.stringify(q).includes("NEW")
-        return [k, { choice: isNew ? "o1" : "o0", confidence: 1, probabilities: {}, noul: isNew ? 0.9 : 0.1 }]
+        return [
+          k,
+          {
+            choice: isNew ? "o1" : "o0",
+            confidence: 1,
+            probabilities: {},
+            noul: isNew ? 0.9 : 0.1,
+          },
+        ]
       }),
     )
     return new Response(JSON.stringify({ answers }))
