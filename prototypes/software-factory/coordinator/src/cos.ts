@@ -71,6 +71,10 @@ export class Ledger {
       .get(`event decision ${id}`) as { threadId: string | null } | null
     return r ?? null
   }
+  /** True when the desk's main session (a turn in the human's chat) opened decision `id`. */
+  deskDecision(id: string): boolean {
+    return !!this.db.query("SELECT 1 FROM ledger WHERE rule = 'CoS' AND action = ? LIMIT 1").get(`desk decision ${id}`)
+  }
   list(limit = 200, threadId?: string): LedgerEntry[] {
     const sql = `SELECT seq, at, rule, thread_id AS threadId, action, result, detail FROM ledger${threadId ? " WHERE thread_id = ?" : ""} ORDER BY seq DESC LIMIT ?`
     return this.db.query(sql).all(...(threadId ? [threadId, limit] : [limit])) as LedgerEntry[]

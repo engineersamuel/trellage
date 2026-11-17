@@ -170,6 +170,7 @@ const handleMessage = (model: Model, message: Message) =>
     RequestedOpenThread: ({ threadId }) => openThread(threadId)(model),
     SelectedInboxNode: ({ maybeThreadId, maybeWorkerId }) => selectInboxNode(maybeThreadId, maybeWorkerId)(model),
     RequestedNewThread: () => newThread(model),
+    ChangedCosFilter: () => reloadOpenThread(Option.none())(model),
     RequestedOpenReport: ({ ref, maybeAgent }) => openReport(ref, maybeAgent)(model),
     PressedKey: ({ key }) =>
       Option.match(

@@ -1,6 +1,6 @@
 // Software factory coordinator: HTTP API, raw feed, and AG-UI over SSE.
 import { KEEP_PER_WORKER } from "./events.ts"
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import path from "node:path"
 import { tmpdir } from "node:os"
@@ -88,6 +88,7 @@ import {
   isOldChat,
   statusNote,
 } from "./general.ts"
+import { EVENT_KINDS, eventKind, type EventKind } from "./turnKind.ts"
 import { specView } from "./spec.ts"
 import { onTrack, steps } from "./steps.ts"
 import { findIssues, supervisorPrompt, type Issue } from "./supervisor.ts"
@@ -255,11 +256,11 @@ const globalScopeTools = (
 ]
 
 const statusOf = (threadId: string) =>
-  conversationStatus(threads.get(threadId), factory.workers.get(subId(threadId)), threads.messages(threadId).length)
+  conversationStatus(threads.get(threadId), factory.workers.get(subId(threadId)), threads.count(threadId))
 
 const lastText = (threadId: string): string | null =>
   factory.workers.get(subId(threadId))?.lastMessage ??
-  [...threads.messages(threadId)]
+  [...threads.messages(threadId, { limit: 50 })]
     .reverse()
     .flatMap((m) => (m.role === "assistant" && m.content ? [m.content] : []))[0] ??
   null
@@ -287,14 +288,26 @@ const eventSystem = () =>
 const globalSystem = (extra: string) =>
   `${coordinatorPrompt()}\n\n${cardsPrompt()}\n\n${globalPrompt()}${extra}${homeBlock(homeAll(readHome()))}\n\n${deskWhere}${instructions ? `\n\n<human-instructions>\n${instructions}\n</human-instructions>` : ""}\n\n# OpenUI Lang\n${openuiPrompt}`
 
+/** Session id of the desk's main session; a renewal (below) moves it to a new one, kept across restarts. */
+const deskSessionFile = path.join(factory.root, DESK_ID, "session-id")
+const deskSessionId = (): string => {
+  try {
+    return readFileSync(deskSessionFile, "utf8").trim() || "sf-coordinator"
+  } catch {
+    return "sf-coordinator"
+  }
+}
 // The Factory desk keeps the id "coordinator" and its runtime process; General chats open their own sessions on it.
 const coord = await factory.spawn({
   id: DESK_ID,
   name: "Chief of Staff",
   role: "coordinator",
-  sessionId: "sf-coordinator",
+  sessionId: deskSessionId(),
   system: globalSystem(`\n\n${deskPrompt()}`),
-  tools: globalScopeTools(DESK_ID, null),
+  // A decision the main session opens (in a turn of the human's chat) gets its answer back in that session.
+  tools: globalScopeTools(DESK_ID, null, {
+    opened: (approvalId) => cosLog("CoS", null, `desk decision ${approvalId}`, "done", "opened in the human's chat"),
+  }),
   permissions: factory.globalPermissions,
   // The model decides the SDK: a Claude model runs the desk in the Claude Agent SDK, any other in the Copilot SDK.
   model: factory.settings.agent.model,
@@ -598,8 +611,8 @@ const delivery = (sent: Promise<void>): Delivery => {
 const logFailure = (d: Delivery) => void d.sent.catch((e) => console.error(e instanceof Error ? e.message : String(e)))
 
 /** Save a delivered prompt and the coordinator's answering run in the conversation, so every UI shows it. */
-const recordTurn = (t: Thread, c: Worker, text: string) => {
-  threads.append(t.id, { id: crypto.randomUUID(), role: "user", content: text })
+const recordTurn = (t: Thread, c: Worker, text: string, kind: EventKind | null = eventKind(text)) => {
+  threads.append(t.id, { kind }, { id: crypto.randomUUID(), role: "user", content: text })
   if (c === coord) factory.currentThread = t.id
   const tr = new Translator(t.id, crypto.randomUUID())
   const rec = new RunRecorder()
@@ -607,7 +620,7 @@ const recordTurn = (t: Thread, c: Worker, text: string) => {
     for (const e of tr.translate(ev)) rec.add(e)
     if (tr.done) {
       off()
-      threads.append(t.id, ...rec.messages())
+      threads.append(t.id, { kind }, ...rec.messages())
       factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: t.id })
     }
   })
@@ -618,7 +631,11 @@ const recordTurn = (t: Thread, c: Worker, text: string) => {
  * Send a prompt into a conversation from outside a browser run (approval answers, the global
  * coordinator). Saved like any turn, so every UI shows it. Waits while that coordinator is busy.
  */
-const deliverToThread = async (threadId: string | null, text: string): Promise<Delivery> => {
+const deliverToThread = async (
+  threadId: string | null,
+  text: string,
+  kind: EventKind | null = eventKind(text),
+): Promise<Delivery> => {
   const t = threadId ? threads.get(threadId) : undefined
   if (t?.cleanedAt)
     return delivery(Promise.reject(new Error(`not delivered: conversation ${t.id} is merged and cleaned up`)))
@@ -627,7 +644,7 @@ const deliverToThread = async (threadId: string | null, text: string): Promise<D
       Promise.reject(new Error(`not delivered: goal ${t.goalId} is ${budgetOf(t.goalId).status} at its cost limit`)),
     )
   const c = await coordinatorFor(t)
-  const sent = sendWhenIdle(c, factory.coordinatorPrompt(text), () => t && recordTurn(t, c, text)).catch((e) => {
+  const sent = sendWhenIdle(c, factory.coordinatorPrompt(text), () => t && recordTurn(t, c, text, kind)).catch((e) => {
     throw new Error(`delivery to ${c.id} failed: ${e instanceof Error ? e.message : e}`)
   })
   return delivery(sent)
@@ -919,6 +936,8 @@ type RunOptions = {
   clientTools: Set<string>
   /** Client tool calls whose results this run delivers; their completion is not sent again. */
   delivered: string[]
+  /** Turn kind of the run's prompt (src/turnKind.ts); its answer is saved with it. */
+  kind?: EventKind | null
   /** The UI draws OpenUI Lang only: card tools also send their card as an OpenUI program. */
   openUi?: boolean
 }
@@ -960,7 +979,8 @@ const streamAguiRun = (worker: Worker, threadId: string, runId: string, o: RunOp
       offEvents()
       offFeed()
       if (activeRuns.get(threadId)?.tr === tr) activeRuns.delete(threadId)
-      threads.append(threadId, ...rec.messages())
+      if (o.kind === undefined) threads.append(threadId, ...rec.messages())
+      else threads.append(threadId, { kind: o.kind }, ...rec.messages())
       factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId })
       queueMicrotask(close)
     }
@@ -1074,6 +1094,7 @@ const aguiRun = async (id: string | null, url: URL, req: Request): Promise<Respo
     interrupts: props.interrupts === true,
     clientTools,
     delivered: results.map((m) => m.toolCallId),
+    ...(text ? { kind: eventKind(text) } : {}),
     openUi: format === "openui",
   })
 }
@@ -1168,6 +1189,15 @@ const answerApproval = (a: ReturnType<typeof factory.approvals.answer>) => {
     cosLog("R27", a.reportThreadId, `relay decision ${a.id}`, "done", `"${a.title}": ${a.answer}`)
     return deliverAndLog(a.reportThreadId, relayText(a))
   }
+  // Any other decision of the CoS conversation (a grader proposal, a decision from before event sessions) is an
+  // event: the main session holds only the human's conversation. One the main session asked comes back to it, as
+  // part of the human's chat.
+  const cos = deskThread().id
+  if (a.threadId === cos && !ledgerOf(factory.root).deskDecision(a.id)) return cosEvent(null, answerPrompt(a))
+  if (a.threadId === cos)
+    return void deliverToThread(cos, answerPrompt(a), null).then(logFailure, (e) =>
+      console.error(`not delivered: ${e instanceof Error ? e.message : e}`),
+    )
   return deliverAndLog(a.threadId, answerPrompt(a))
 }
 
@@ -1301,6 +1331,33 @@ const runCosEvent = async (caseThread: string | null, event: string): Promise<vo
     await factory.stop(id).catch(() => {})
   }
 }
+
+/**
+ * The desk's main session holds only the human's chat (events run in their own sessions). When its context is
+ * [cos] renew_context_share full and it is idle, it starts again in a new session from its own short handoff.
+ */
+loop("desk-renew", "1 minute", async () => {
+  const [used, limit] = coord.context ?? [0, 0]
+  if (!limit || used / limit < factoryConfig().cos.renew_context_share || coord.status === "running") return
+  if (activeRuns.has(deskThread().id)) return
+  const next = `sf-coordinator-${Date.now().toString(36)}`
+  if (!(await factory.renew(coord, next))) return
+  mkdirSync(path.dirname(deskSessionFile), { recursive: true })
+  writeFileSync(deskSessionFile, next)
+  cosLog("CoS", null, "renew main session", "done", `context ${Math.round((100 * used) / limit)}% -> ${next}`)
+  // Part of the human's chat (kind null), so it shows without a filter.
+  const id = deskThread().id
+  threads.append(
+    id,
+    { kind: null },
+    {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: `↻ My context was ${Math.round((100 * used) / limit)}% full, so I continue in a new session from a short handoff.`,
+    },
+  )
+  factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId: id })
+})
 
 /** Fire each enabled cron prompt at the coordinator on schedule, skipping while it is busy. */
 const lastCron = new Map<string, number>()
@@ -1501,8 +1558,8 @@ const sendSupervisionIssues = async (all: Issue[], coordinator: Worker): Promise
 
 /** The task a conversation was started with: its first user message, else its title. */
 const firstTask = (t: Thread): string => {
-  const m = threads.messages(t.id).find((x) => x.role === "user")
-  return typeof m?.content === "string" ? m.content : t.title
+  const m = threads.firstUser(t.id)
+  return typeof m === "string" ? m : t.title
 }
 
 /** R26, R29, R28: why start_conversation must not start this task now, or null. */
@@ -2766,7 +2823,23 @@ const routes: [string, RegExp, Handler][] = [
       ),
   ],
   ["GET", /^\/api\/threads\/get$/, () => json({ threads: threads.list(), folders: threads.folders() })],
-  ["GET", /^\/api\/threads\/get\/([^/]+)$/, (_req, _url, [id]) => json(threads.messages(id!))],
+  // ?view=human&show=reports,rules&limit=N on the CoS conversation: the human's own turns, plus the event kinds in
+  // show, newest N. Other conversations come back whole.
+  [
+    "GET",
+    /^\/api\/threads\/get\/([^/]+)$/,
+    (_req, url, [id]) => {
+      if (url.searchParams.get("view") !== "human" || !threads.get(id!)?.desk) return json(threads.messages(id!))
+      const show = url.searchParams.get("show")?.split(",") ?? []
+      const limit = Number(url.searchParams.get("limit"))
+      return json(
+        threads.messages(id!, {
+          show: new Set(EVENT_KINDS.filter((k) => show.includes(k))),
+          ...(limit > 0 ? { limit } : {}),
+        }),
+      )
+    },
+  ],
   // Manual test guide of a repo conversation (src/testGuide.ts): read, write again, run its setup in herdr.
   ["GET", /^\/api\/threads\/([^/]+)\/test-guide$/, (_req, _url, [id]) => json(guideView(factory, subId(id!)))],
   [

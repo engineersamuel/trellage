@@ -5,17 +5,61 @@
   --sf-text: #e5e5e5;
   --sf-muted: #a3a3a3;
   --sf-accent: #6366f1;
+  /* A theme may set the fonts and turn on the grain (settings themes.<name>.font, mono, grain). */
+  --sf-font: ui-sans-serif, system-ui, sans-serif;
+  --sf-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sf-grain-opacity: 0;
+  --sf-vignette-opacity: 0;
+}
+/* Font files of the Low-eye strain theme. The browser loads them only when the theme uses them. */
+@font-face {
+  font-family: "Switzer";
+  src: url("/fonts/switzer-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Switzer";
+  src: url("/fonts/switzer-500.woff2") format("woff2");
+  font-weight: 500 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/geist-mono-var.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
 }
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
-  font:
-    14px system-ui,
-    sans-serif;
+  font: 14px var(--sf-font);
   background: var(--sf-bg);
   color: var(--sf-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+/* Film grain and vignette over the whole page, for themes with grain. */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+}
+body::before {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E")
+    repeat;
+  background-size: 160px 160px;
+  opacity: var(--sf-grain-opacity);
+  mix-blend-mode: screen;
+}
+body::after {
+  background: radial-gradient(145% 115% at 50% 35%, transparent 58%, var(--sf-bg) 100%);
+  opacity: var(--sf-vignette-opacity);
 }
 .fk-root {
   display: flex;
@@ -227,10 +271,10 @@ kbd {
   pointer-events: none;
 }
 
-/* Native chat: system font, dark bubbles, dark composer, driven by the theme variables. */
+/* Native chat: theme font, dark bubbles, dark composer, driven by the theme variables. */
 .fk-chat .openui-agent-container,
 .fk-chat .openui-agent-container * {
-  font-family: ui-sans-serif, system-ui, sans-serif !important;
+  font-family: var(--sf-font) !important;
 }
 .fk-chat .openui-agent-container code,
 .fk-chat .openui-agent-container code *,
@@ -238,7 +282,7 @@ kbd {
 .fk-chat .openui-agent-container kbd,
 .fk-chat .openui-agent-container .dv,
 .fk-chat .openui-agent-container .dv * {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+  font-family: var(--sf-mono) !important;
 }
 .fk-chat .openui-shell-thread-message-user__content,
 .fk-chat .openui-agent-thread-message-user__content {
@@ -571,11 +615,7 @@ kbd {
   overflow: auto;
   border-right: 1px solid var(--sf-border);
   padding: 6px 0;
-  font:
-    12px ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
+  font: 12px var(--sf-mono);
 }
 .fk-diff-files section + section {
   margin-top: 4px;

@@ -29,6 +29,8 @@ export const Message = defineMessageUnion({
   /** A pick in the Inbox (conversation list or tree): its conversation, and the worker when the pick is a worker. */
   SelectedInboxNode: { maybeThreadId: Schema.Option(Schema.String), maybeWorkerId: Schema.Option(Schema.String) },
   RequestedNewThread: {},
+  /** The Chief of Staff chat filter changed (shared/cosFilter.ts): load the open conversation again. */
+  ChangedCosFilter: {},
   /** A click on a report path (reports/x.md) anywhere on the page, or the agent's open_report. */
   RequestedOpenReport: { ref: Schema.String, maybeAgent: Schema.Option(Schema.String) },
   PressedKey: { key: Schema.String },

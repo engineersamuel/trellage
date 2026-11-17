@@ -114,6 +114,8 @@ model_error_window_minutes = 5
 cost_alert_share = 0.8
 # Chief of Staff event sessions that run at the same time; more wait.
 max_parallel_events = 4
+# The Chief of Staff's main session (the human's chat) starts again from a short handoff when its context is this full.
+renew_context_share = 0.6
 
 [cos.rules]
 # R1: answer a decision with Jev's pick (never ship, merge, delete, cost, goal or config decisions).

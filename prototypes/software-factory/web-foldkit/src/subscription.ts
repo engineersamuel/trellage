@@ -2,6 +2,7 @@ import { Filter, Match, Option, Schema, Stream } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { changes as approvalChanges } from "../../shared/approvals"
 import { type FeedEvent, RESYNC } from "../../shared/feed"
+import { COS_FILTER_EVENT } from "../../shared/cosFilter"
 import { StoredEvent } from "../../shared/schemas"
 import { toGotChatMessage } from "./chat"
 import { chat } from "./chatProgram"
@@ -95,6 +96,9 @@ const appSubscriptions = Subscription.make<Model, Message>()(() => ({
   // A pick in the Inbox list or tree: the URL follows it (?thread=, ?worker=).
   inboxPick: Subscription.persistentEntry(
     windowEvents("sf:select-node").pipe(Stream.filterMap(Filter.fromPredicateOption(inboxPickToMessage))),
+  ),
+  cosFilter: Subscription.persistentEntry(
+    windowEvents(COS_FILTER_EVENT).pipe(Stream.map(() => Message.ChangedCosFilter())),
   ),
   newThread: Subscription.persistentEntry(
     windowEvents("sf:new-thread").pipe(Stream.map(() => Message.RequestedNewThread())),

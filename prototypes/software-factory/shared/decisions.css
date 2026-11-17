@@ -1,5 +1,5 @@
 /* Decision center: pill, toasts, and the deep-linked decision card. Uses the factory theme variables. */
-.sfd-root { --sfd-approval: var(--sf-accent, #6366f1); --sfd-question: #f59e0b; font: 14px system-ui, sans-serif; color: var(--sf-text, #e5e5e5); }
+.sfd-root { --sfd-approval: var(--sf-accent, #6366f1); --sfd-question: #f59e0b; font: 14px var(--sf-font, system-ui, sans-serif); color: var(--sf-text, #e5e5e5); }
 .sfd-root [hidden] { display: none !important; }
 .sfd-root button { font: inherit; cursor: pointer; }
 
@@ -51,7 +51,7 @@
 .sfd-option { position: relative; text-align: left; padding: 14px 14px 14px 44px; border-radius: 12px; font-weight: 600;
   background: var(--sf-bg, #0a0a0a); color: var(--sf-text, #e5e5e5); border: 1px solid var(--sf-border, #262626); transition: transform .1s, border-color .1s; }
 .sfd-option:hover { transform: translateY(-1px); border-color: var(--sfd-approval); }
-.sfd-option kbd { position: absolute; left: 12px; top: 13px; font: 11px ui-monospace, monospace; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--sf-border, #262626); color: var(--sf-muted, #a3a3a3); }
+.sfd-option kbd { position: absolute; left: 12px; top: 13px; font: 11px var(--sf-mono, ui-monospace, monospace); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--sf-border, #262626); color: var(--sf-muted, #a3a3a3); }
 .sfd-option em { display: block; font-style: normal; font-weight: 500; font-size: 11px; color: color-mix(in srgb, #fff 80%, transparent); margin-top: 2px; }
 .sfd-recommended { background: var(--sfd-approval); border-color: var(--sfd-approval); color: #fff; }
 .sfd-recommended kbd { color: #fff; border-color: #fff8; }
@@ -84,7 +84,7 @@
 
 .sfd-shadow:not(:empty) { margin: -6px 0 14px; padding: 8px 12px; border-radius: 8px; font-size: 12.5px; color: var(--sf-muted, #a3a3a3);
   border: 1px dashed color-mix(in srgb, #22d3ee 50%, var(--sf-border, #262626)); }
-.sfd-jev { position: absolute; right: 10px; top: 10px; font: 700 10.5px system-ui; padding: 2px 7px; border-radius: 999px; background: #22d3ee; color: #000; }
+.sfd-jev { position: absolute; right: 10px; top: 10px; font: 700 10.5px var(--sf-font, system-ui); padding: 2px 7px; border-radius: 999px; background: #22d3ee; color: #000; }
 .sfd-summary pre { background: var(--sf-surface, #171717); padding: 8px 10px; border-radius: 6px; overflow-x: auto; }
 .sfd-summary pre code { background: none; padding: 0; white-space: pre; }
 .sfd-summary table { border-collapse: collapse; margin: 6px 0; font-size: 13px; }

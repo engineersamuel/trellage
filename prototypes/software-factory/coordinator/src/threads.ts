@@ -1,8 +1,10 @@
-// Saved chat threads, so a conversation started in one place (a browser, the sf CLI)
+// Saved chat threads (SQLite, threads.db), so a conversation started in one place (a browser, the sf CLI)
 // shows its messages everywhere. Messages use agent-interface's ChatMessage shape.
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { Database } from "bun:sqlite"
+import { existsSync, readFileSync, renameSync } from "node:fs"
 import path from "node:path"
 import { addFolder, GENERAL, type Folder, type Worktree } from "./folders.ts"
+import { eventKind, type EventKind } from "./turnKind.ts"
 import type { GoalSpec, Grade, ImprovementProposal } from "../../shared/goal.ts"
 
 export type DraftAction = "council" | "debate" | "research" | "hyperresearch" | "deep-research"
@@ -69,34 +71,86 @@ type RunEvent =
   | { type: "ACTIVITY_SNAPSHOT"; messageId: string; activityType: string; content: Record<string, unknown> }
   | { type: "TOOL_CALL_RESULT"; messageId: string; toolCallId: string; content: string; error?: string }
 
-type Doc = { threads: Thread[]; messages: Record<string, ChatMessage[]>; folders: Folder[] }
+/** Which messages of a conversation to read. */
+export type MessageQuery = {
+  /** Only turns the human started, plus event turns of these kinds (src/turnKind.ts). Unset: every message. */
+  show?: ReadonlySet<EventKind>
+  /** The newest `limit` messages (after the filter). */
+  limit?: number
+}
 
+/**
+ * Conversations and their messages in SQLite (threads.db): one row per message, so an append writes one row, not the
+ * whole store. Each message keeps the kind of the turn it belongs to (null: a turn the human started), so the human's
+ * view of the Chief of Staff conversation is a query. The thread list is small and stays in memory too.
+ */
 export class Threads {
-  private doc: Doc = { threads: [], messages: {}, folders: [] }
-  private readonly file: string
+  private readonly db: Database
+  private threads: Thread[]
+  private folderList: Folder[]
+  /** Turn kind of the newest user message per conversation: the turn that later messages belong to. */
+  private readonly turn = new Map<string, EventKind | null>()
 
   constructor(root: string) {
-    this.file = path.join(root, "threads.json")
-    try {
-      if (existsSync(this.file)) this.doc = { ...this.doc, ...JSON.parse(readFileSync(this.file, "utf8")) }
-    } catch {}
-    for (const t of this.doc.threads) t.folderId ??= GENERAL.id
+    this.db = new Database(path.join(root, "threads.db"))
+    this.db.run("PRAGMA journal_mode = WAL")
+    this.db.run("CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, data TEXT NOT NULL)")
+    this.db.run("CREATE TABLE IF NOT EXISTS folders (id TEXT PRIMARY KEY, data TEXT NOT NULL)")
+    this.db.run(
+      "CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, thread_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT, data TEXT NOT NULL)",
+    )
+    this.db.run("CREATE INDEX IF NOT EXISTS messages_thread ON messages (thread_id, seq)")
+    this.importJson(path.join(root, "threads.json"))
+    // Newest first: a new conversation is inserted last.
+    this.threads = (this.db.query("SELECT data FROM threads ORDER BY rowid DESC").all() as { data: string }[]).map(
+      (r) => JSON.parse(r.data) as Thread,
+    )
+    for (const t of this.threads) t.folderId ??= GENERAL.id
+    this.folderList = (this.db.query("SELECT data FROM folders ORDER BY rowid").all() as { data: string }[]).map(
+      (r) => JSON.parse(r.data) as Folder,
+    )
   }
 
-  private save() {
-    writeFileSync(this.file, JSON.stringify(this.doc))
+  /** Move the old threads.json into the database once; the file is kept as threads.json.imported. */
+  private importJson(file: string): void {
+    if (!existsSync(file)) return
+    let doc: { threads?: Thread[]; messages?: Record<string, ChatMessage[]>; folders?: Folder[] }
+    try {
+      doc = JSON.parse(readFileSync(file, "utf8"))
+    } catch (e) {
+      console.warn(`threads: ${file} is not valid JSON, not imported: ${e}`)
+      return
+    }
+    this.db.transaction(() => {
+      for (const t of [...(doc.threads ?? [])].reverse()) this.writeThread(t)
+      for (const f of doc.folders ?? [])
+        this.db.run("INSERT OR REPLACE INTO folders VALUES (?, ?)", [f.id, JSON.stringify(f)])
+      for (const [id, msgs] of Object.entries(doc.messages ?? {})) this.insert(id, msgs)
+    })()
+    renameSync(file, `${file}.imported`)
+  }
+
+  private writeThread(t: Thread): void {
+    this.db.run(
+      "INSERT OR REPLACE INTO threads (rowid, id, data) VALUES ((SELECT rowid FROM threads WHERE id = ?), ?, ?)",
+      [t.id, t.id, JSON.stringify(t)],
+    )
+  }
+
+  private save(t: Thread | undefined): void {
+    if (t) this.writeThread(t)
   }
 
   list(): Thread[] {
-    return this.doc.threads
+    return this.threads
   }
 
   get(id: string): Thread | undefined {
-    return this.doc.threads.find((t) => t.id === id)
+    return this.threads.find((t) => t.id === id)
   }
 
   folders(): Folder[] {
-    return [GENERAL, ...this.doc.folders]
+    return [GENERAL, ...this.folderList]
   }
 
   folder(id: string): Folder | undefined {
@@ -105,16 +159,45 @@ export class Threads {
 
   /** Add the repo that contains `p` as a folder; the same repo always maps to the same folder. */
   addFolder(p: string): Folder {
-    const f = addFolder(this.doc.folders, p)
-    if (!this.doc.folders.includes(f)) {
-      this.doc.folders.push(f)
-      this.save()
+    const f = addFolder(this.folderList, p)
+    if (!this.folderList.includes(f)) {
+      this.folderList.push(f)
+      this.db.run("INSERT OR REPLACE INTO folders VALUES (?, ?)", [f.id, JSON.stringify(f)])
     }
     return f
   }
 
-  messages(id: string): ChatMessage[] {
-    return this.doc.messages[id] ?? []
+  /** Messages of a conversation, oldest first. */
+  messages(id: string, q: MessageQuery = {}): ChatMessage[] {
+    const where = ["thread_id = ?"]
+    const args: (string | number)[] = [id]
+    if (q.show) {
+      const kinds = [...q.show]
+      where.push(`(kind IS NULL${kinds.length ? ` OR kind IN (${kinds.map(() => "?").join(",")})` : ""})`)
+      args.push(...kinds)
+    }
+    const limit = q.limit ? ` LIMIT ${Math.max(1, Math.floor(q.limit))}` : ""
+    const rows = this.db
+      .query(
+        `SELECT data FROM (SELECT data, seq FROM messages WHERE ${where.join(" AND ")} ORDER BY seq DESC${limit}) ORDER BY seq`,
+      )
+      .all(...args) as { data: string }[]
+    return rows.map((r) => JSON.parse(r.data) as ChatMessage)
+  }
+
+  /** How many messages a conversation has. */
+  count(id: string): number {
+    return (this.db.query("SELECT COUNT(*) AS n FROM messages WHERE thread_id = ?").get(id) as { n: number }).n
+  }
+
+  /** The first message the human (or code) sent in a conversation. */
+  firstUser(id: string): string | undefined {
+    const r = this.db
+      .query(
+        "SELECT data FROM messages WHERE thread_id = ? AND json_extract(data, '$.role') = 'user' ORDER BY seq LIMIT 1",
+      )
+      .get(id) as { data: string } | null
+    return r ? (JSON.parse(r.data) as { content: string }).content : undefined
   }
 
   /** `worktree` makes the folder's worktree for the new thread id (repo folders only). */
@@ -123,47 +206,48 @@ export class Threads {
     const title = firstText ? [...firstText].slice(0, 48).join("") : "New chat"
     const id = crypto.randomUUID()
     const t: Thread = { id, title, createdAt: Date.now(), folderId, ...worktree?.(id) }
-    this.doc.threads.unshift(t)
-    this.save()
+    this.threads.unshift(t)
+    this.save(t)
     return t
   }
 
   /** Make sure a thread exists for a run, e.g. a browser that did not call create. */
   ensure(id: string, firstText: string, folderId = GENERAL.id, worktree?: (id: string) => Worktree): void {
-    if (this.doc.threads.some((t) => t.id === id)) return
-    this.doc.threads.unshift({
+    if (this.threads.some((t) => t.id === id)) return
+    const t: Thread = {
       id,
       title: [...firstText].slice(0, 48).join(""),
       createdAt: Date.now(),
       folderId,
       ...worktree?.(id),
-    })
-    this.save()
+    }
+    this.threads.unshift(t)
+    this.save(t)
   }
 
   update(id: string, patch: Partial<Thread>): Thread | undefined {
-    const t = this.doc.threads.find((x) => x.id === id)
+    const t = this.get(id)
     if (t) Object.assign(t, { title: patch.title ?? t.title }, patch.cleanedAt ? { cleanedAt: patch.cleanedAt } : {})
     if (t && "archivedAt" in patch) {
       if (patch.archivedAt) t.archivedAt = patch.archivedAt
       else delete t.archivedAt
     }
-    this.save()
+    this.save(t)
     return t
   }
 
   /** Set routing metadata that the UI never edits. */
   setMeta(id: string, meta: Meta): void {
-    const t = this.doc.threads.find((x) => x.id === id)
+    const t = this.get(id)
     if (t) {
       Object.assign(t, meta)
-      this.save()
+      this.save(t)
     }
   }
 
   /** Replays are no-ops; only an explicit regrade may replace an unknown grade with the same key. */
   addGrade(id: string, g: Grade, regrade = false): boolean {
-    const t = this.doc.threads.find((x) => x.id === id)
+    const t = this.get(id)
     if (!t) return false
     const grades = (t.grades ??= [])
     const index = grades.findIndex((x) => x.key === g.key)
@@ -171,32 +255,63 @@ export class Threads {
       if (!regrade || grades[index]!.status !== "unknown") return false
       grades[index] = g
     } else grades.push(g)
-    this.save()
+    this.save(t)
     return true
   }
 
   setDraft(id: string, draft: Draft): void {
-    const t = this.doc.threads.find((x) => x.id === id)
+    const t = this.get(id)
     if (t) {
       Object.assign(t, { draft })
-      this.save()
+      this.save(t)
     }
   }
 
   delete(id: string): void {
-    this.doc.threads = this.doc.threads.filter((t) => t.id !== id)
-    delete this.doc.messages[id]
-    this.save()
+    this.threads = this.threads.filter((t) => t.id !== id)
+    this.db.transaction(() => {
+      this.db.run("DELETE FROM threads WHERE id = ?", [id])
+      this.db.run("DELETE FROM messages WHERE thread_id = ?", [id])
+    })()
+    this.turn.delete(id)
   }
 
-  append(id: string, ...msgs: ChatMessage[]): void {
-    const list = (this.doc.messages[id] ??= [])
+  /**
+   * Save messages. A user message starts a turn; the others belong to the newest turn. `kind` sets the turn kind of
+   * every message in this call (a run's answer may land after a later prompt, e.g. parallel CoS events). A note that
+   * code wrote (an assistant message with an event prefix) has its own kind.
+   */
+  append(id: string, ...msgs: ChatMessage[]): void
+  append(id: string, opts: { kind: EventKind | null }, ...msgs: ChatMessage[]): void
+  append(id: string, ...rest: (ChatMessage | { kind: EventKind | null })[]): void {
+    const opts = rest[0] && !("role" in rest[0]) ? (rest.shift() as { kind: EventKind | null }) : null
+    this.db.transaction(() => this.insert(id, rest as ChatMessage[], opts ? opts.kind : undefined))()
+  }
+
+  private insert(id: string, msgs: readonly ChatMessage[], fixed?: EventKind | null): void {
     for (const m of msgs) {
-      const at = m.role === "activity" ? list.findIndex((x) => x.id === m.id) : -1
-      if (at >= 0) list[at] = m
-      else list.push(m)
+      const own = m.role === "user" || m.role === "assistant" ? eventKind(m.content) : null
+      const kind =
+        m.role === "assistant" && own ? own : fixed !== undefined ? fixed : m.role === "user" ? own : this.turnOf(id)
+      if (m.role === "user") this.turn.set(id, kind)
+      const data = JSON.stringify(m)
+      // An activity card is one per id: a later snapshot replaces it in place.
+      if (m.role === "activity" && this.db.query("SELECT 1 FROM messages WHERE thread_id = ? AND id = ?").get(id, m.id))
+        this.db.run("UPDATE messages SET data = ? WHERE thread_id = ? AND id = ?", [data, id, m.id])
+      else this.db.run("INSERT INTO messages (thread_id, id, kind, data) VALUES (?, ?, ?, ?)", [id, m.id, kind, data])
     }
-    this.save()
+  }
+
+  private turnOf(id: string): EventKind | null {
+    if (!this.turn.has(id)) {
+      const r = this.db
+        .query(
+          "SELECT kind FROM messages WHERE thread_id = ? AND json_extract(data, '$.role') = 'user' ORDER BY seq DESC LIMIT 1",
+        )
+        .get(id) as { kind: EventKind | null } | null
+      this.turn.set(id, r?.kind ?? null)
+    }
+    return this.turn.get(id)!
   }
 }
 

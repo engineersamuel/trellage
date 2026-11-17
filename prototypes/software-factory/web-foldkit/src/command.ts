@@ -4,6 +4,7 @@ import { ChatMessageSchema } from "@plana-solutions/agent-interface"
 import type { ChatMessage as ChatLine } from "@plana-solutions/agent-interface"
 import { attachSlot, setExtensionWorkers } from "../../shared/extensions"
 import { syncThreadUrl } from "../../shared/folders"
+import { cosMessagesUrl } from "../../shared/cosFilter"
 import { isOpenUi } from "../../shared/protos/core"
 import { getJson } from "./api"
 import { fetchChatThreads } from "./threads"
@@ -51,7 +52,7 @@ export const ReloadThread = Command.define("ReloadThread", {
   args: { threadId: Schema.String },
   messages: [Message.SucceededReloadThread, Message.FailedReloadThread],
   execute: ({ threadId }) =>
-    getJson(`/api/threads/get/${encodeURIComponent(threadId)}`, Schema.Array(ChatMessageSchema)).pipe(
+    getJson(cosMessagesUrl(threadId), Schema.Array(ChatMessageSchema)).pipe(
       Effect.map((messages) => Message.SucceededReloadThread({ threadId, messages: markdownAsOpenUi(messages) })),
       Effect.catch((error) => Effect.succeed(Message.FailedReloadThread({ error }))),
     ),

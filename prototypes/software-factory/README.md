@@ -179,8 +179,8 @@ dropped, so a restart never duplicates a grade):
   Grades are also saved on the thread, keeping them available through the run API if the goal log cannot be read or written.
   Regrading atomically replaces the matching grade line using a temporary file and rename; all other lines,
   including runner lines, remain byte-identical.
-- **Plain prompt**: in the thread's `grades` in `threads.json`; `subject.id` is the first 12 hex digits of the prompt's
-  sha256.
+- **Plain prompt**: in the thread's `grades` in `threads.db` (SQLite; an old `threads.json` is imported once);
+  `subject.id` is the first 12 hex digits of the prompt's sha256.
 - Each grade links the thread, the factory commit, the report commit, the grading version and its evidence (files read
   with their sha256, the PR URL, the commit). `GET /api/runs/<thread>` shows `grades`, `prError` and `improvement`.
   The Foldkit **◎ Goals** dialog charts them under **Grade history**: one chart per goal and grading version, never

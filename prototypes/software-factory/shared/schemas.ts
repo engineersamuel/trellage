@@ -175,6 +175,9 @@ export const Palette = Schema.Struct({
   text: Schema.String,
   muted: Schema.String,
   accent: Schema.String,
+  font: Schema.optionalKey(Schema.String),
+  mono: Schema.optionalKey(Schema.String),
+  grain: Schema.optionalKey(Schema.Boolean),
 })
 const Cron = Schema.Struct({ everySeconds: Schema.Number, prompt: Schema.String, enabled: Schema.Boolean })
 const Extension = Schema.Struct({
