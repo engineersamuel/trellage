@@ -421,7 +421,7 @@ shutdown handled, so a second restart does not repeat it. A crash (no shutdown r
 
 - `web-foldkit` uses npm `overrides` because `foldkit@0.169.0` peers `effect@4.0.0` but `agent-interface@0.5.0` peers
   `effect@4.0.6`.
-- The vendored `web-foldkit/repos/foldkit` workspace overrides `hono` to `>=4.13.16` (security fix).
+- Vendored `web-foldkit/repos/foldkit` security fixes: `hono` `>=4.13.16`; MCP SDK 1.32.2 (`@hono/node-server` 2.x).
 - State lives in `~/.local/state/trellage/factory/<worker-id>` (override with `SF_STATE_DIR`).
 - Ctrl-C stops the coordinator and terminates every runtime process.
 
