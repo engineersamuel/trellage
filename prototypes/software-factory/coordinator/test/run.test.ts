@@ -661,7 +661,11 @@ describe("grade persistence", () => {
           expect(threads.addGrade(t.id, settled, true)).toBe(replaced)
           expect(readFileSync(file, "utf8")).toBe(replaced ? `${before}${JSON.stringify(replacement)}${after}` : bytes)
           expect(new Threads(root).get(t.id)!.grades).toEqual([replaced ? settled : original])
-          expect(readdirSync(root).sort()).toEqual(["demo.json", "demo.runs.jsonl", "threads.json"])
+          expect(
+            readdirSync(root)
+              .filter((f) => !f.startsWith("threads.db"))
+              .sort(),
+          ).toEqual(["demo.json", "demo.runs.jsonl"])
         } finally {
           warn.mockRestore()
         }

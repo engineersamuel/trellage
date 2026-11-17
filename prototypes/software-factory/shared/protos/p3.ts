@@ -29,6 +29,8 @@ import { mountTimeline } from "./timeline-view"
 import { mountPins } from "./pins-view"
 import { mountTestGuide } from "./test-guide-view"
 import { mountTournament } from "./tournament-view"
+import { mountDigest } from "./digest-view"
+import { COS_KINDS, COS_PAGE, cosLimit, cosShows, setCosShown, showEarlier } from "../cosFilter"
 import {
   agentIdOf,
   ancestors,
@@ -138,9 +140,12 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     !!n.agent &&
     n.kind !== "worker" &&
     n.kind !== "draft" &&
-    (liveOn.has(n.id) || (n.agent.status === "running" && !liveOff.has(n.id)))
+    // The Chief of Staff always runs; its chat (with the composer) is the human's entry point, so live is opt-in there.
+    (liveOn.has(n.id) || (n.kind !== "desk" && n.agent.status === "running" && !liveOff.has(n.id)))
   let cur: string | null = null
   const opened = new Set<string>()
+  /** Dormant top-level branches are hidden until the human shows them. */
+  let showDormant = false
   let mounted: { key: string; stop: () => void } | null = null
   /** Open questions of the shown worker, between its transcript and composer. Filled on every render. */
   let askBox: HTMLElement | null = null
@@ -170,12 +175,21 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       return r
     }
     const desk = live.nodes.get("coordinator")
-    const deskRow = el("div", `p3-sv ${sel === "coordinator" && !streamOn && !ledgerOn ? "on" : ""}`)
+    const deskRow = el("button", `p3-new p3-ask-cos ${sel === "coordinator" && !streamOn && !ledgerOn ? "on" : ""}`)
+    deskRow.dataset.testid = "ask-cos"
+    deskRow.title = "Start here: tell the Chief of Staff what you want. It starts and watches the conversations."
     deskRow.append(
-      el("span", "p3-ell", "🌐 Chief of Staff"),
+      el("span", "p3-ell", "💬 Ask the Chief of Staff"),
       el("span", "p3-n", desk?.agg.needs ? `▲${desk.pending.length}` : ""),
     )
-    deskRow.onclick = () => ((autoView = false), (streamOn = ledgerOn = false), (sel = cur = "coordinator"), render())
+    deskRow.onclick = () => (
+      (autoView = false),
+      (streamOn = ledgerOn = false),
+      (sel = cur = "coordinator"),
+      liveOn.delete("coordinator"),
+      costOn.delete("coordinator"),
+      render()
+    )
     const streamRow = el("div", `p3-sv ${streamOn ? "on" : ""}`)
     streamRow.dataset.testid = "stream-row"
     streamRow.append(el("span", "p3-ell", "📡 Factory stream"))
@@ -187,10 +201,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const repos = (s?.folders ?? []).filter((f) => f.path)
     const archivedN = (s?.threads ?? []).filter((t) => t.archivedAt && !t.desk).length
     side.replaceChildren(
+      deskRow,
       draftBox,
       el("h5", "", "Views"),
       ...VIEWS.map((v) => row(v.id, v.label, count(live, v.id), v.id === "needs")),
-      deskRow,
       streamRow,
       ledgerRow,
       el("h5", "", "Repos"),
@@ -404,12 +418,28 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     root.classList.toggle("canvas", canvasOn)
     const r = sel ? m.nodes.get(rootOf(m, sel)) : undefined
     if (!r) return void (tree.replaceChildren(treeHead(), el("div", "p3-empty", "Select an item.")), pruneCritters())
-    const branches = r.children.map((id) => {
-      const k = m.nodes.get(id)!
-      const b = el("div", "p3-br")
-      b.append(linked(k.kind === "sub" || k.children.length ? subCard(k) : row(k), r.id, k))
-      return b
-    })
+    const quiet = (k: Node) =>
+      k.status === "dormant" &&
+      !k.agg.running &&
+      !k.agg.error &&
+      !k.agg.needs &&
+      !subtree(m, k.id).some((x) => x.id === cur)
+    const kidsOf = r.children.map((id) => m.nodes.get(id)!)
+    const hidden = showDormant ? 0 : kidsOf.filter(quiet).length
+    const branches = kidsOf
+      .filter((k) => showDormant || !quiet(k))
+      .map((k) => {
+        const b = el("div", "p3-br")
+        b.append(linked(k.kind === "sub" || k.children.length ? subCard(k) : row(k), r.id, k))
+        return b
+      })
+    const dormantToggle: HTMLElement[] = []
+    if (kidsOf.some(quiet)) {
+      const t = el("div", "p3-more", showDormant ? "▾ Hide dormant" : `▸ ${hidden} dormant hidden · show`)
+      t.dataset.testid = "dormant-toggle"
+      t.onclick = (e) => (e.stopPropagation(), (showDormant = !showDormant), render())
+      dormantToggle.push(t)
+    }
     const foot = el("div", "p3-foot")
     if (r.thread && !r.thread.desk)
       foot.append(
@@ -430,7 +460,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
         treeHead(),
         card(r),
         ...branches,
-        ...(branches.length ? [] : [el("div", "p3-empty", "No team yet. Ask the chat to spawn one.")]),
+        ...dormantToggle,
+        ...(branches.length || hidden ? [] : [el("div", "p3-empty", "No team yet. Ask the chat to spawn one.")]),
         foot,
       )
     pruneCritters()
@@ -451,6 +482,21 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
   /** Pinned prompt and plan of the shown sub-coordinator; kept across head redraws so open disclosures stay open. */
   let pinned: { id: string; el: HTMLElement; stop: () => void } | null = null
   const pinsOf = (n: Node): HTMLElement[] => {
+    if (n.kind === "desk") {
+      if (pinned?.id !== n.id) {
+        pinned?.stop()
+        const box = el("div", "p3-pins")
+        const stop = mountDigest(box, (threadId) => {
+          const t = s?.threads.find((x) => x.id === threadId)
+          const id = t && m.nodes.has(agentIdOf(t)) ? agentIdOf(t) : null
+          if (!id) return
+          sel = rootOf(m, id)
+          choose(id)
+        })
+        pinned = { id: n.id, el: box, stop }
+      }
+      return [pinned.el, cosFilters()]
+    }
     if (n.kind !== "sub") return (pinned?.stop(), (pinned = null), [])
     if (pinned?.id !== n.id) {
       pinned?.stop()
@@ -470,6 +516,29 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       pinned = { id: n.id, el: box, stop: () => stops.forEach((off) => off()) }
     }
     return [pinned.el]
+  }
+  /** Filter toggles of the CoS chat: by default it shows only your own turns; each toggle adds one kind of event. */
+  const cosFilters = () => {
+    const box = el("div", "p3-acts p3-cos-filter")
+    box.setAttribute("role", "group")
+    box.setAttribute("aria-label", "Show events in the chat")
+    box.dataset.testid = "cos-filter"
+    box.append(el("span", "p3-sub", "Show in chat:"))
+    for (const { kind, label } of COS_KINDS) {
+      const on = cosShows(kind)
+      const b = btn(
+        label,
+        () => (setCosShown(COS_KINDS.map((k) => k.kind).filter((k) => (k === kind ? !on : cosShows(k)))), render()),
+        on ? "on" : "",
+      )
+      b.setAttribute("aria-pressed", String(on))
+      box.append(b)
+    }
+    const earlier = btn("⇡ Load earlier", () => (showEarlier(), render()))
+    earlier.title = `The chat loads the newest ${cosLimit()} messages; this adds ${COS_PAGE} older ones`
+    earlier.dataset.testid = "cos-earlier"
+    box.append(earlier)
+    return box
   }
   const renderHead = (n: Node) => {
     const crumbs = el("div", "p3-crumbs")
@@ -536,9 +605,9 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
       acts.append(...d.acts)
       draftEls = d.body
     }
-    // A sub-coordinator's workers already show in the tree on the left.
+    // A sub-coordinator's workers and the Chief of Staff's conversations already show in the tree on the left.
     const kids = el("div", "p3-kids")
-    for (const id of n.kind === "sub" ? [] : n.children) {
+    for (const id of n.kind === "sub" || n.kind === "desk" ? [] : n.children) {
       const k = m.nodes.get(id)!
       const b = btn(
         `${ICON[k.kind]} ${k.kind === "worker" ? (k.agent?.name ?? k.title) : k.title.slice(0, 28)}`,

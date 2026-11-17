@@ -1,0 +1,1 @@
+You continue your conversation with the human in a new session: the old one grew too long. What follows is the handoff from that session; trust it as your own earlier work. Call factory_status before you act on it: the board shows the live state.

@@ -390,3 +390,37 @@ test("an implement task that Jev rates UI work gets the UI step's setup; others,
     false,
   )
 })
+
+test("renew asks the old session for a handoff, opens a new session, and sends the handoff with the next message", async () => {
+  const f = new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-w-")) })
+  const w = new Worker("coordinator", "cos", "coordinator", "native", "/tmp/h", null, as<Client>({}), "m")
+  const sent: string[] = []
+  const closed: string[] = []
+  const session = (name: string) =>
+    as<Worker["session"]>({
+      send: async (p: string) => {
+        sent.push(`${name}: ${p.slice(0, 40)}`)
+        w.lastMessage = "Goal: yank key. Open: PR #43."
+        w.status = "idle"
+      },
+      disconnect: async () => void closed.push(name),
+    })
+  w.session = session("old")
+  w.context = [170_000, 272_000]
+  w.renewSession = async (id) => {
+    const old = w.session
+    w.session = session(id)
+    w.context = null
+    await old.disconnect()
+  }
+  expect(await f.renew(w, "new")).toBe(true)
+  expect(closed).toEqual(["old"])
+  expect(w.context).toBeNull()
+  await w.send("hi")
+  expect(sent[0]).toStartWith("old: Your conversation with the human is lo")
+  expect(sent[1]).toStartWith("new: You continue your conversation with t")
+  expect(w.handoff).toBeNull()
+
+  const pi = new Worker("p", "cos", "coordinator", "native", "/tmp/h", null, as<Client>({}), "m")
+  expect(await f.renew(pi, "x")).toBe(false)
+})

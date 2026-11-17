@@ -57,6 +57,22 @@ test("the theme recolors OpenUI cards outside the chat too", () => {
   expect(css(s)).not.toContain("copilotkit")
 })
 
+test("the Low-eye strain theme sets fonts and grain; other themes keep the defaults", () => {
+  const low = css(patched(defaultSettings(), { theme: "Low-eye strain" }))
+  expect(low).toContain("--sf-bg:#0a0708;")
+  expect(low).toContain('--sf-font:"Switzer"')
+  expect(low).toContain('--sf-mono:"Geist Mono"')
+  expect(low).toContain("--sf-grain-opacity:.5;")
+  const nord = css(patched(defaultSettings(), { theme: "nord" }))
+  expect(nord).not.toContain("--sf-font")
+  expect(nord).not.toContain("--sf-grain-opacity")
+})
+
+test("a theme font must be a plain font stack", () => {
+  const t = { bg: "#000", surface: "#000", border: "#000", text: "#fff", muted: "#999", accent: "#f00" }
+  expect(() => patched(defaultSettings(), { themes: { t: { ...t, font: "x}body{display:none" } } })).toThrow()
+})
+
 test("a stored file from the retired layouts still loads, without the retired keys", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "sf-settings-"))
   const file = path.join(dir, "settings.json")

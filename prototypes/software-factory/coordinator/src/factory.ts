@@ -212,8 +212,10 @@ export class Worker {
   context: [number, number] | null = null
   lastMessage: string | null = null
   log: FeedEvent[] = []
-  /** Handoff from the session this coordinator replaces (another SDK); sent once with the next message. */
+  /** Handoff from the session this coordinator replaces (another SDK, or a renewed one); sent once with the next message. */
   handoff: string | null = null
+  /** Open a new session with this id on the same runtime and setup, and close the old one (Copilot SDK only). */
+  renewSession: ((sessionId: string) => Promise<void>) | null = null
   /** Supervisor inputs: last event time, consecutive failed tool calls, last error, result read. */
   lastActivity = Date.now()
   readonly startedAt = Date.now()
@@ -712,11 +714,14 @@ export class Factory {
       systemPrompt: spec.system ? `${spec.system.length} chars appended` : null,
       sessionId: spec.sessionId ?? null,
     }
-    worker.session = await this.openSession(
-      client,
-      spec,
-      this.sessionConfig(spec, worker, model, workdir, setup, auth, mcp.servers),
-    )
+    const config = this.sessionConfig(spec, worker, model, workdir, setup, auth, mcp.servers)
+    worker.session = await this.openSession(client, spec, config)
+    worker.renewSession = async (sessionId) => {
+      const old = worker.session
+      worker.session = await client.createSession({ ...config, model: worker.model, sessionId })
+      worker.context = null
+      await old.disconnect().catch(() => {})
+    }
     const prefix = setup.prefix
     return this.register(worker, spec.task && (prefix ? `${prefix}\n\n${spec.task}` : spec.task))
   }
@@ -1352,6 +1357,27 @@ export class Factory {
       writeFileSync(handoffFile(this.root, w.id), `${loadPrompt("handoff-start")}\n\n${body}`)
     } catch (e) {
       console.error(`handoff of ${w.id} not saved: ${e instanceof Error ? e.message : e}`)
+    }
+  }
+
+  /**
+   * Start a coordinator's conversation again in a new session (its context grew too long): the old session writes a
+   * handoff, the new one gets it with its next message. False when the SDK cannot renew or the summary failed.
+   */
+  async renew(w: Worker, sessionId: string): Promise<boolean> {
+    if (!w.renewSession || w.status === "running") return false
+    const before = w.lastMessage
+    try {
+      await w.send(loadPrompt("renew-ask"))
+      if (!(await w.waitIdle(HANDOFF_WAIT_MS)) || !w.lastMessage || w.lastMessage === before) return false
+      const summary = w.lastMessage
+      await w.renewSession(sessionId)
+      w.handoff = `${loadPrompt("renew-start")}\n\n${summary}`
+      this.publish(w.id, "factory.session_renewed", null, now(), { sessionId })
+      return true
+    } catch (e) {
+      console.error(`session renew of ${w.id} failed: ${e instanceof Error ? e.message : e}`)
+      return false
     }
   }
 

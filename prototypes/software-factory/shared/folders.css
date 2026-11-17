@@ -1,5 +1,5 @@
 /* Conversation sidebar: folders with their conversations. Uses the factory theme variables. */
-.sff-root { font: 13px system-ui, sans-serif; color: var(--sf-text, #e5e5e5); }
+.sff-root { font: 13px var(--sf-font, system-ui, sans-serif); color: var(--sf-text, #e5e5e5); }
 .sff-root [hidden] { display: none !important; }
 .sff-root button { font: inherit; cursor: pointer; color: inherit; }
 .sff-toggle { position: fixed; left: 12px; bottom: 14px; z-index: 950; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--sf-border, #262626);

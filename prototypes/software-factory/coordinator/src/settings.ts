@@ -26,6 +26,10 @@ const Palette = Schema.Struct({
   text: Schema.String,
   muted: Schema.String,
   accent: Schema.String,
+  /** Optional CSS font stacks for text and code, and a film grain plus vignette over the page. */
+  font: Schema.optionalKey(Schema.String),
+  mono: Schema.optionalKey(Schema.String),
+  grain: Schema.optionalKey(Schema.Boolean),
 })
 export type Palette = typeof Palette.Type
 
@@ -127,6 +131,13 @@ export const defaultSettings = (): Settings => ({
     nord: palette("#2e3440", "#3b4252", "#4c566a", "#eceff4", "#a3acbd", "#88c0d0"),
     forest: palette("#0d1410", "#15201a", "#22342a", "#e0efe4", "#94b39f", "#34d399"),
     ember: palette("#140d0b", "#20140f", "#3a2219", "#f5e6df", "#b99d90", "#f97316"),
+    // Colors and fonts of tej.as (dark): warm near-black, bone text, red accent, film grain.
+    "Low-eye strain": {
+      ...palette("#0a0708", "#161012", "#2a2426", "#f2efe9", "#a39b98", "#ef3340"),
+      font: '"Switzer", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif',
+      mono: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      grain: true,
+    },
   },
   navbar: ["status", "workers", "model", "context"],
   animations: true,
@@ -222,6 +233,8 @@ const validate = (s: Settings): void => {
       if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/u.test(c))
         throw new Error(`themes.${name}: '${c}' is not a #rgb or #rrggbb color`)
     }
+    for (const f of [p.font, p.mono])
+      if (f !== undefined && /[;{}<>]/u.test(f)) throw new Error(`themes.${name}: '${f}' is not a CSS font stack`)
   }
   if (s.repo !== "" && !path.isAbsolute(s.repo)) throw new Error(`repo: '${s.repo}' must be an absolute path`)
   if (s.supervisor.everySeconds < MIN_CRON_SECONDS)
@@ -264,8 +277,12 @@ export const css = (s: Settings): string => {
     ? "@keyframes sf-pulse{0%,100%{opacity:1}50%{opacity:.35}}.sf-busy{animation:sf-pulse 1.1s ease-in-out infinite}"
     : ""
   const { bg, surface, border, text, muted, accent } = p
+  const look =
+    (p.font === undefined ? "" : `--sf-font:${p.font};`) +
+    (p.mono === undefined ? "" : `--sf-mono:${p.mono};`) +
+    (p.grain === true ? "--sf-grain-opacity:.5;--sf-vignette-opacity:.55;" : "")
   return (
-    `:root{--sf-bg:${bg};--sf-surface:${surface};--sf-border:${border};--sf-text:${text};--sf-muted:${muted};--sf-accent:${accent}}` +
+    `:root{--sf-bg:${bg};--sf-surface:${surface};--sf-border:${border};--sf-text:${text};--sf-muted:${muted};--sf-accent:${accent};${look}}` +
     `html,body{background:var(--sf-bg)!important;color:var(--sf-text)!important}` +
     `:root,[data-openui-theme],.openui-agent-container,.openui-genui-card{--openui-background:${bg}!important;--openui-foreground:${surface}!important;--openui-popover-background:${surface}!important;` +
     `--openui-text-neutral-primary:${text}!important;--openui-text-neutral-secondary:${muted}!important;--openui-border-default:${border}!important;` +

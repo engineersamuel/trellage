@@ -40,7 +40,7 @@
 .sf-stream .p2-stag { font-size: 11px; color: var(--sf-muted); border: 1px solid var(--sf-border); border-radius: 4px; padding: 0 4px; white-space: nowrap; }
 .sf-stream time { color: var(--sf-muted); font-size: 11px; margin-left: auto; white-space: nowrap; }
 .sf-stream .p2-line { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; padding: 1px 0; max-height: 7.3em; overflow: hidden; }
-.sf-stream .p2-line.tool { color: var(--sf-muted); font: 12px ui-monospace, monospace; }
+.sf-stream .p2-line.tool { color: var(--sf-muted); font: 12px var(--sf-mono, ui-monospace, monospace); }
 .sf-stream .p2-line.user { color: #cbd5e1; font-style: italic; }
 .sf-stream .p2-thread { color: var(--sf-accent); font-size: 12px; }
 .sf-stream .p2-thread:hover, .sf-stream .p2-more:hover { text-decoration: underline; }
@@ -60,7 +60,7 @@
 .sf-stream .p2-report.full { max-height: none; mask-image: none; }
 .sf-stream .p2-report p, .sf-stream .p2-report ul, .sf-stream .p2-report ol, .sf-stream .p2-report h4 { margin: 0 0 6px; }
 .sf-stream .p2-report ul, .sf-stream .p2-report ol { padding-left: 20px; }
-.sf-stream .p2-report code { font: 12px ui-monospace, monospace; background: #ffffff12; padding: 1px 4px; border-radius: 4px; }
+.sf-stream .p2-report code { font: 12px var(--sf-mono, ui-monospace, monospace); background: #ffffff12; padding: 1px 4px; border-radius: 4px; }
 .sf-stream .p2-more { color: var(--sf-accent); font-size: 12px; margin-top: 4px; }
 .sf-stream .p2-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
 .sf-stream .p2-opt { font-size: 12px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--sf-border); color: var(--sf-muted); }
@@ -72,7 +72,7 @@
 .sf-stream .p2-sev.high, .sf-stream .p2-sev.critical { background: #ef444440; color: #fca5a5; }
 .sf-stream .p2-verdict { margin-left: auto; color: var(--sf-muted); }
 .sf-stream .p2-err { color: #fca5a5; font-size: 12px; margin-top: 6px; }
-.sf-stream .p2-err-full { white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; font-family: ui-monospace, monospace; }
+.sf-stream .p2-err-full { white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; font-family: var(--sf-mono, ui-monospace, monospace); }
 .sf-stream .p2-card.decision.done { padding: 5px 12px; background: none; box-shadow: none; }
 .sf-stream .p2-card.done .p2-card-head { align-items: center; }
 .sf-stream .p2-done-q { color: var(--sf-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }

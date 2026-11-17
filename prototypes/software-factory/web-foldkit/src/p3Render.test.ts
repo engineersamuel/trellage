@@ -44,7 +44,7 @@ const agent = (id: string, role: string, status: string, owner?: string, harness
   contextLimit: null,
   harness,
 })
-const threads = [
+const threads: { id: string; title: string; createdAt: number; folderId: string; [k: string]: unknown }[] = [
   { id: "aaaaaaaa", title: "chat", createdAt: 5, folderId: "general" },
   {
     id: "bbbbbbbb",
@@ -93,18 +93,29 @@ const responses = (url: string): unknown =>
                     detail: "checks are PENDING",
                   },
                 ]
-              : url.startsWith("/api/events")
+              : url.startsWith("/api/events?types=factory.report_up")
                 ? [
                     {
-                      seq: 7,
-                      workerId: "w1",
-                      type: "assistant.message",
+                      seq: 8,
+                      workerId: "sub-bbbbbbbb",
+                      type: "factory.report_up",
                       agentId: null,
-                      timestamp: "2026-01-01T00:00:00Z",
-                      data: { content: "Tests pass." },
+                      timestamp: new Date().toISOString(),
+                      data: { threadId: "bbbbbbbb", report: { status: "blocked", summary: "CI is red" } },
                     },
                   ]
-                : []
+                : url.startsWith("/api/events")
+                  ? [
+                      {
+                        seq: 7,
+                        workerId: "w1",
+                        type: "assistant.message",
+                        agentId: null,
+                        timestamp: "2026-01-01T00:00:00Z",
+                        data: { content: "Tests pass." },
+                      },
+                    ]
+                  : []
 vi.mock("../../shared/http", async (original) => ({
   ...(await original<typeof import("../../shared/http")>()),
   json: (url: string, _schema: unknown, init?: RequestInit) =>
@@ -113,6 +124,7 @@ vi.mock("../../shared/http", async (original) => ({
 }))
 
 await import("../../shared/protos/p3")
+const { COS_FILTER_EVENT, cosMessagesUrl } = await import("../../shared/cosFilter")
 const { prototypes } = await import("../../shared/protos/core")
 
 const push = (type: string, workerId = "w1") =>
@@ -314,5 +326,59 @@ test("?worker= in the URL focuses that worker on load", async () => {
   const { root, stop } = await mountInbox()
   await vi.waitFor(() => expect(root.querySelector("[data-testid=tree-row].on")?.textContent).toContain("w1"))
   history.replaceState(null, "", "/")
+  stop()
+})
+
+// A dormant branch (no live agent, nothing below running) is hidden until the human shows it.
+test("dormant conversations hide under a toggle, and the Chief of Staff button sits on top of the sidebar", async () => {
+  threads.push({
+    id: "cccccccc",
+    title: "old work",
+    createdAt: 7,
+    folderId: "trellage",
+    worktree: "/w2",
+    parentThreadId: "aaaaaaaa",
+  })
+  const { root, stop } = await mountInbox()
+  expect(root.querySelector(".p3-side")?.firstElementChild?.getAttribute("data-testid")).toBe("ask-cos")
+  const toggle = () => root.querySelector<HTMLElement>("[data-testid=dormant-toggle]")!
+  await vi.waitFor(() => expect(toggle().textContent).toBe("▸ 1 dormant hidden · show"))
+  expect(root.querySelector(".p3-card[data-id=sub-cccccccc]")).toBeNull()
+  toggle().click()
+  expect(root.querySelector(".p3-card[data-id=sub-cccccccc]")).not.toBeNull()
+  expect(toggle().textContent).toBe("▾ Hide dormant")
+  threads.pop()
+  stop()
+})
+
+// The CoS opens on its chat with the digest pinned on top; the filter toggles add event kinds to the chat.
+test("the Chief of Staff head pins the digest and the chat filter, and a digest row opens its conversation", async () => {
+  const { root, stop } = await mountInbox()
+  const shown: string[] = []
+  const listen = () => shown.push(cosMessagesUrl("t"))
+  window.addEventListener(COS_FILTER_EVENT, listen)
+  threads.push({ id: "eeeeeeee", title: "Chief of Staff", createdAt: 1, folderId: "general", desk: true })
+  push("factory.worker_updated", "coordinator")
+  await vi.waitFor(() => expect(root.querySelector("[data-testid=ask-cos]")).not.toBeNull())
+  root.querySelector<HTMLElement>("[data-testid=ask-cos]")!.click()
+  const digest = () => root.querySelector<HTMLElement>(".p3-head [data-testid=cos-digest]")
+  await vi.waitFor(() => expect(digest()?.textContent).toContain("CI is red"))
+  expect(digest()!.querySelector("summary")?.textContent).toBe(
+    "🗞 Since you last looked · so far · 1 report · 0 rule actions",
+  )
+  const filter = root.querySelector<HTMLElement>(".p3-head [data-testid=cos-filter]")!
+  expect(filter.querySelectorAll("button.on")).toHaveLength(0)
+  expect(filter.querySelector("[data-testid=cos-earlier]")).not.toBeNull()
+  ;[...filter.querySelectorAll("button")].find((b) => b.textContent === "Reports")!.click()
+  expect(shown.at(-1)).toBe("/api/threads/get/t?view=human&show=reports&limit=300")
+  expect(root.querySelector(".p3-head [data-testid=cos-filter] button.on")?.textContent).toBe("Reports")
+  root.querySelector<HTMLElement>(".p3-head [data-testid=cos-filter] button.on")!.click()
+  expect(shown.at(-1)).toBe("/api/threads/get/t?view=human&show=&limit=300")
+  root.querySelector<HTMLElement>(".p3-head [data-testid=cos-earlier]")!.click()
+  expect(shown.at(-1)).toBe("/api/threads/get/t?view=human&show=&limit=600")
+  digest()!.querySelector<HTMLElement>(".p3-digest-row")!.click()
+  await vi.waitFor(() => expect(root.querySelector(".p3-card.on")?.getAttribute("data-id")).toBe("sub-bbbbbbbb"))
+  window.removeEventListener(COS_FILTER_EVENT, listen)
+  threads.pop()
   stop()
 })

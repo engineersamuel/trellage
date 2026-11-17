@@ -145,6 +145,17 @@
   background: var(--sf-text);
   color: var(--sf-bg);
 }
+.sfp-p3 .p3-ask-cos {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  text-align: left;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.sfp-p3 .p3-ask-cos.on {
+  outline: 2px solid var(--sf-accent);
+}
 .sfp-p3 .p3-sv {
   display: flex;
   gap: 6px;
@@ -478,10 +489,7 @@
   white-space: pre-wrap;
   padding: 12px 14px;
   margin: 0;
-  font:
-    12px ui-monospace,
-    Menlo,
-    monospace;
+  font: 12px var(--sf-mono, ui-monospace, Menlo, monospace);
   overflow: auto;
 }
 /* Spawn order: siblings run oldest first and carry their step number. */
@@ -675,10 +683,7 @@
   font-size: 12px;
 }
 .sfp-p3 .p3-diff {
-  font:
-    12px ui-monospace,
-    Menlo,
-    monospace;
+  font: 12px var(--sf-mono, ui-monospace, Menlo, monospace);
   white-space: pre-wrap;
 }
 .sfp-p3 .p3-diff .del {
@@ -747,3 +752,50 @@
 .p3-tour-assets a:hover img { outline: 2px solid var(--sf-accent, #f59e42); }
 .p3-tour-dropped img { opacity: 0.45; }
 .p3-tour-mark { width: 72px; text-align: center; opacity: 0.6; }
+/* Chief of Staff: "Since you last looked" digest and the chat event filter. */
+.sfp-p3 .p3-digest-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 30vh;
+  overflow: auto;
+  padding: 4px;
+}
+.sfp-p3 .p3-digest-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+.sfp-p3 .p3-digest-row:hover {
+  background: var(--p3-sel);
+}
+.sfp-p3 .p3-digest-row b {
+  min-width: 9ch;
+  color: var(--sf-muted);
+}
+.sfp-p3 .p3-digest-row.s-blocked b,
+.sfp-p3 .p3-digest-row.s-needs-decision b {
+  color: var(--p3-needs);
+}
+.sfp-p3 .p3-digest-row .p3-ell {
+  flex: 1;
+}
+.sfp-p3 .p3-digest-mark {
+  margin: 0 8px 6px;
+  font-size: 11px;
+}
+.sfp-p3 .p3-cos-filter {
+  align-items: center;
+}
+.sfp-p3 .p3-cos-filter button {
+  font-size: 11px;
+  padding: 1px 8px;
+}
+.sfp-p3 .p3-cos-filter button.on {
+  background: var(--p3-sel);
+  color: var(--sf-text);
+}
