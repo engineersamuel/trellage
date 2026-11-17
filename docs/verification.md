@@ -214,7 +214,8 @@ trees and temporary contract fixtures do not ship in the Native npm package.
 OSV scans tracked lockfiles. Reviewed prototype advisories are scoped to a lock,
 package, version, and advisory ID in `.quality/advisory-exceptions.json`, with a
 review deadline. A new advisory, changed version, expired exception, or incomplete
-scan fails. Native workspace dependencies have no advisory exception.
+scan fails. A Native workspace (root) dependency gets an exact-key, dated exception
+only when no patched release exists.
 Dependabot is the only dependency update bot: weekly grouped compatible updates,
 limited open PRs, and a seven-day release delay. It covers Bun, npm prototypes,
 Cargo, and Actions; it does not auto-merge. Bun security-update PR support is not
