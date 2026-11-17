@@ -6,6 +6,7 @@ import { stopReason, type Run } from "../../shared/goal.ts"
 import {
   afterReport,
   childGoalId,
+  goalAcs,
   goalLoopPrompt,
   goalVerdict,
   GoalStates,
@@ -37,6 +38,42 @@ test("done needs every AC passing and a green PR; pending checks wait; no PR or 
   expect(goalVerdict(all, null)).toBe("not-done")
   expect(goalVerdict({ "AC-1": "pass", "AC-2": "missing" }, { url: "u", checks: "SUCCESS" })).toBe("not-done")
   expect(goalVerdict({}, { url: "u", checks: "SUCCESS" })).toBe("not-done")
+})
+
+test("goalAcs maps agreed CI criteria to the PR checks rollup over evaluator or evidence results", () => {
+  const sdlc = {
+    criteria: ["local", "ci"],
+    contract: [{ id: "AC-2", ci: "linux", expect: "exit 0" }] as const,
+    contractState: {
+      status: "done" as const,
+      criteria: ["local", "ci"],
+      round: 1,
+      open: [],
+      locked: [],
+      final: false,
+    },
+  }
+  const ev = {
+    verdicts: [
+      { id: "AC-1", verdict: "pass" as const },
+      { id: "AC-2", verdict: "fail" as const },
+    ],
+  } as never
+  for (const [checks, want, verdict] of [
+    ["SUCCESS", "pass", "done"],
+    ["FAILURE", "fail", "not-done"],
+    ["PENDING", "missing", "not-done"],
+    ["NONE", "missing", "not-done"],
+  ] as const) {
+    const pr = { url: "u", checks }
+    const fromEv = goalAcs(sdlc as never, ev, null, pr)
+    expect(fromEv).toEqual({ acs: { "AC-1": "pass", "AC-2": want }, acSource: "evaluator" })
+    expect(goalVerdict(fromEv.acs, pr)).toBe(verdict)
+    const fromEvidence = goalAcs(sdlc as never, undefined, "AC-1: PASS\nAC-2: FAIL\n", pr)
+    expect(fromEvidence).toEqual({ acs: { "AC-1": "pass", "AC-2": want }, acSource: "evidence" })
+  }
+  expect(goalAcs(sdlc as never, ev, null, null).acs["AC-2"]).toBe("missing")
+  expect(goalAcs(undefined, undefined, null, null)).toEqual({ acs: {}, acSource: null })
 })
 
 test("a loop that is not done starts the next loop; done ends the goal", () => {

@@ -114,11 +114,11 @@ export const r1Pick = (a: Approval, threshold: number, isProposal: boolean, cosO
  * security review and every SDLC gate were done (request_approval); R14 adds: the independent evaluator finished and
  * passed every acceptance criterion.
  */
-export const r14Blocker = (ev: Evaluation | undefined): string | null => {
+export const r14Blocker = (ev: Evaluation | undefined, ciIds: string[] = []): string | null => {
   if (!ev) return "no independent evaluation"
   if (ev.status !== "done") return `independent evaluation is ${ev.status}`
   if (!ev.verdicts.length) return "independent evaluation has no verdicts"
-  const failed = ev.verdicts.filter((v) => v.verdict !== "pass").map((v) => v.id)
+  const failed = ev.verdicts.filter((v) => v.verdict !== "pass" && !ciIds.includes(v.id)).map((v) => v.id)
   return failed.length ? `acceptance criteria failed: ${failed.join(", ")}` : null
 }
 
