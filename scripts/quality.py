@@ -135,9 +135,10 @@ def contract_selection(path: str) -> tuple[set[str], bool] | None:
 
 
 def shared_prototypes(path: str) -> set[str]:
-    if path == "mise.toml" or path.startswith(
-        (".github/", "scripts/quality", "scripts/test-offline", "scripts/install-quality")
-    ):
+    # The Swift overlay builds with the runner's Xcode toolchain; mise.toml pins none of its tools.
+    if path == "mise.toml":
+        return ALL_PROTOTYPES - {"swift"}
+    if path.startswith((".github/", "scripts/quality", "scripts/test-offline", "scripts/install-quality")):
         return ALL_PROTOTYPES
     if path in {"package.json", "bun.lock", "bunfig.toml", "tsconfig.json", "tsconfig.base.json"} or path.startswith(
         "packages/trellage-runtime/"

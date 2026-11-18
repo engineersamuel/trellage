@@ -38,6 +38,10 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("swift", quality.plan([], "base unavailable")["prototypes"])
         self.assertEqual(set(quality.plan([], complete=True)["prototypes"]), quality.ALL_PROTOTYPES)
 
+    def test_mise_toml_selects_every_prototype_but_swift(self):
+        self.assertEqual(set(quality.plan(["mise.toml"])["prototypes"]), quality.ALL_PROTOTYPES - {"swift"})
+        self.assertIn("swift", quality.plan([".github/workflows/ci.yml"])["prototypes"])
+
     def test_docs_and_independent_prototypes_avoid_native_suites(self):
         value = quality.plan(["docs/verification.md"])
         self.assertFalse(value["full"])
