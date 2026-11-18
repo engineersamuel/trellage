@@ -198,7 +198,9 @@ class Grading {
   private recordGrade(t: Thread, g: Grade, unmet: string[], regrade: boolean): void {
     const existing = this.gradesOf(t).find((x) => x.key === g.key)
     if (existing && (!regrade || existing.status !== "unknown" || g.prChecks.state === "PENDING")) return
-    const previous = proposalsOf(t).find((p) => p.sourceKey === g.key)
+    // One proposal per graded commit: a later grade of the same commit (blocked, then done) reuses it.
+    const commitOf = (key: string) => key.split("|").slice(0, 2).join("|")
+    const previous = proposalsOf(t).find((p) => commitOf(p.sourceKey) === commitOf(g.key))
     // A goal the loop driver manages opens no improvement proposal: a failed loop is followed by the next loop, and a
     // factory defect becomes a child goal (ADR 0007).
     const draft = this.d.loopManaged?.(t.id) ? null : proposeImprovement(g, "", !!t.improvementOf)

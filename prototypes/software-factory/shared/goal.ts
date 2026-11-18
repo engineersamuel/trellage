@@ -139,7 +139,7 @@ export type GoalState = {
 }
 
 /** Optional gates a goal can require to run or to be skipped (coordinator/src/sdlc.ts GATES). */
-export const SDLC_GATES = ["design", "testFirst", "codeReview", "supplyChain", "docs", "postMerge"] as const
+export const SDLC_GATES = ["design", "codeReview", "supplyChain", "docs", "postMerge"] as const
 
 export const GoalSpec = Schema.Struct({
   /** Slug; also the file name docs/goals/factory/<id>.json. */
@@ -393,7 +393,7 @@ export const goalUnmet = (run: Run, expect: Omit<Expect, "benchmarks">, base?: s
       for (const id of sd.gatesRun) {
         const g = s.gates.find((x) => x.id === id)
         if (!g?.chosen) out.push(`gate ${id} was skipped${g ? ` (${g.reason})` : ""}, expected to run`)
-        else if (g.status !== "done" && id !== "design" && id !== "testFirst" && id !== "docs" && id !== "postMerge")
+        else if (g.status !== "done" && id !== "design" && id !== "docs" && id !== "postMerge")
           out.push(`gate ${id} is ${g.status}, expected done`)
       }
       for (const id of sd.gatesSkipped)

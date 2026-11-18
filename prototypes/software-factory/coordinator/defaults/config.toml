@@ -67,7 +67,6 @@ perplexity_research_max_calls = 2
 # The Jev question of each gate is prompts/gates/<id>.md; gate ids and phases are fixed in code.
 [gates]
 design = 0.6
-testFirst = 0.5
 codeReview = 0.6
 supplyChain = 0.5
 docs = 0.5
@@ -100,7 +99,7 @@ max_rounds = 2
 # Chief of Staff rules (ADR 0008). Every rule acts live; set one to false to stop it.
 [cos]
 # R1: Jev confidence at or above which the Chief of Staff answers a decision for the human.
-auto_answer_confidence = 0.95
+auto_answer_confidence = 0.85
 # R29: factory spend today (local time) at which no new worker or conversation starts.
 daily_usd_limit = 1000
 # R25: a sub-coordinator idle this long without reporting is told to report (or archived when done).

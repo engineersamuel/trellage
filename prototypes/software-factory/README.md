@@ -48,7 +48,6 @@ per gate against its threshold, `GATES` in `coordinator/src/sdlc.ts`); a risk ti
 | Security review | always (floor) | `security.ts` |
 | Independent evaluation | `[evaluate] enabled` (default on); never blocks | `evaluate.ts`: contract at `sdlc_plan`, verdicts at the first ship request (below) |
 | Design note | Jev ≥ 0.6 | `.factory/design.md` (decision, alternatives, rollback) |
-| Tests first | Jev ≥ 0.5 | a tests-only commit before the first code commit |
 | Code review | Jev ≥ 0.6, or tier T2 | `review.ts`: Jev picks ≤3 lenses, parallel reviewers, synthesis, Jev scores each finding (real ≥ 0.7 and worth ≥ 0.6), fix + verify |
 | Supply chain | Jev ≥ 0.5, or a dependency change | betterleaks on the new commits, osv-scanner (vulnerabilities, license allowlist) on changed lockfiles |
 | Docs | Jev ≥ 0.5 | the diff changes README, docs or CHANGELOG |

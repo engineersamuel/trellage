@@ -170,9 +170,10 @@ for (const [k, s] of factory.sdlc) {
   const stopped = s.contractState?.status === "running"
   factory.sdlc.set(k, {
     ...s,
-    gates: s.gates.map((g) =>
-      g.status === "running" ? { ...g, status: "failed", detail: "coordinator restarted" } : g,
-    ),
+    // The test-first gate was removed: a saved run that still lists it neither shows nor blocks it.
+    gates: s.gates
+      .filter((g) => String(g.id) !== "testFirst")
+      .map((g) => (g.status === "running" ? { ...g, status: "failed", detail: "coordinator restarted" } : g)),
     // A contract the restart stopped does not count as a round; sdlc_plan runs it again.
     ...(stopped
       ? {
@@ -1255,7 +1256,13 @@ factory.feed.subscribe((ev) => {
       const threshold = factoryConfig().cos.auto_answer_confidence
       const pick =
         a && ruleOn("r1")
-          ? r1Pick(a, threshold, isProposal(factory.root, a.id), ledgerOf(factory.root).eventDecision(a.id) !== null)
+          ? r1Pick(
+              a,
+              threshold,
+              isProposal(factory.root, a.id),
+              // An event decision that R27 relays to its conversation never comes back to the CoS, so R1 may answer it.
+              ledgerOf(factory.root).eventDecision(a.id) !== null && !(a.reportThreadId && ruleOn("r27")),
+            )
           : null
       if (a && pick) ruleAnswer(a.id, pick, "R1", `Jev confidence ${a.shadow!.confidence.toFixed(2)} >= ${threshold}`)
     })

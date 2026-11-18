@@ -311,11 +311,11 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
   }),
 ]
 
-/** sdlc_plan: acceptance criteria plus Jev's plan-phase gates (design note, tests first). */
+/** sdlc_plan: acceptance criteria plus Jev's plan-phase gate (design note). */
 const sdlcPlanTool = (f: Factory, scope: Scope) =>
   defineTool("sdlc_plan", {
     description:
-      "Call once before the plan approval (and again if the plan changes). Saves numbered, testable acceptance criteria to .factory/acceptance.md, reads the repo's CI checks, and asks Jev which plan-phase gates this change needs (design note, tests first). Returns the gates and the checks verify will run.",
+      "Call once before the plan approval (and again if the plan changes). Saves numbered, testable acceptance criteria to .factory/acceptance.md, reads the repo's CI checks, and asks Jev which plan-phase gates this change needs (design note). Returns the gates and the checks verify will run.",
     parameters: obj(
       {
         request: { type: "string", description: "The user's request, verbatim." },
@@ -761,6 +761,14 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
       if (reportThreadId !== undefined && !scope.knownThread?.(reportThreadId))
         return json({
           error: `unknown or cleaned-up conversation ${JSON.stringify(reportThreadId)}; use an id from list_conversations`,
+        })
+      // One open decision per conversation: a second card on the same blocker gets conflicting answers.
+      const open =
+        reportThreadId !== undefined &&
+        f.approvals.pending?.().find((x) => x.threadId === reportThreadId || x.reportThreadId === reportThreadId)
+      if (open)
+        return json({
+          error: `conversation ${reportThreadId} already waits on the human's decision ${open.id} ("${open.title}"). Do not open another; its answer reaches that conversation. Add context with message_conversation, or end your turn.`,
         })
       const shipBranch = ships && a.ship === true ? gitOr(scope.workdir!, "--abbrev-ref", "HEAD") : null
       if (shipBranch !== null && !shipBranch.startsWith("factory/"))

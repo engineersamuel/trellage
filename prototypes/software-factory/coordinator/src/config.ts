@@ -43,7 +43,6 @@ const FactoryConfigSchema = Schema.Struct({
   /** Jev probability at or above which each gate runs. The question is prompts/gates/<id>.md. */
   gates: Schema.Struct({
     design: Probability,
-    testFirst: Probability,
     codeReview: Probability,
     supplyChain: Probability,
     docs: Probability,
