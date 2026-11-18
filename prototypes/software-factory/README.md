@@ -241,8 +241,10 @@ another review. While a review is unfinished (from its start until `done` or `fa
 spawn in that worktree, whatever the step. Every review, fix, and verify worker is stopped when the review ends, fails,
 or times out.
 
-- Reviewer model, first set wins: `SF_SECURITY_MODEL` (blank counts as unset), then `[models] security`, then the
-  copilot-proxy-rs routed model, else `SF_MODEL`.
+- Reviewer model, first set wins: `SF_SECURITY_MODEL` (blank counts as unset), then `[models] security`.
+  - Review after an implement step: the copilot-proxy-rs routed model, else the default worker model
+    (`SF_MODEL`, else `[models] worker`).
+  - Final security review at ship time: the `[models.review]` model of another family than the implementer.
 - Gate workers (code review, security review, evaluator, and their fix and verify workers) have **no short time
   limit**: the goal's cost limit bounds spending. `src/gateWorker.ts` replaces a worker that is **stuck**: it ended in
   error, `[workers] stuck_failed_tools` (5) tool calls failed in a row, or it was silent for `stuck_quiet_minutes` (10)
