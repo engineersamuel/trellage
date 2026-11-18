@@ -12,6 +12,9 @@ Plan:
 Acceptance criteria:
 {{criteria}}
 
+The evaluation runs before the branch is pushed, so there is no PR or CI run then.
+Give a check that runs locally; never one that needs a PR or CI run, and no CI fallback.
+
 For each criterion, read the repo as needed (do not change any file) and decide:
 - testable: give `check`, one command or action you will run on the result (e.g. a curl on a test port, a test name, a CLI call), and `expect`, the output that counts as a pass.
 - not testable as written (vague, two things in one, no observable result): give `problem` and a testable `rewrite`.
