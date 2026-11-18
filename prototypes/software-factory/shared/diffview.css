@@ -138,3 +138,9 @@
 .dv-preview-body pre { background: rgb(127 127 127 / .1); padding: 8px 10px; border-radius: 6px; overflow-x: auto; }
 .dv-preview-body pre code { background: none; padding: 0; }
 .dv-preview-body a { color: #58a6ff; }
+/* Quick look button after a local path in a card (shared/filepeek.ts). */
+.sf-peek {
+  all: unset; cursor: pointer; margin-left: 3px; padding: 0 3px; border-radius: 4px; font-size: 12px; line-height: 1;
+  opacity: .6; vertical-align: baseline;
+}
+.sf-peek:hover, .sf-peek:focus-visible { opacity: 1; background: rgb(127 127 127 / .2); outline: none; }

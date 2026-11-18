@@ -4,6 +4,7 @@ import "highlight.js/styles/github-dark.css"
 import { micromark } from "micromark"
 import { gfm, gfmHtml } from "micromark-extension-gfm"
 import { setDiffHighlighter, setMarkdownRenderer, startToolDiffs } from "../../shared/diffview"
+import { startFilePeek } from "../../shared/filepeek"
 
 setDiffHighlighter((code, language) =>
   hljs.getLanguage(language) ? hljs.highlight(code, { language, ignoreIllegals: true }).value : null,
@@ -14,3 +15,6 @@ setMarkdownRenderer((md) => micromark(md, { extensions: [gfm()], htmlExtensions:
 
 // The patched agent-interface timeline leaves a [data-sf-tool] slot per finished tool call; fill them with diffs.
 startToolDiffs()
+
+// Local paths in cards get a quick-look button (shared/filepeek.ts).
+startFilePeek()

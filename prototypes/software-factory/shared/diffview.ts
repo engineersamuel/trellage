@@ -189,18 +189,20 @@ export const newText = (f: FileDiff): string =>
     .filter((t) => t !== null)
     .join("\n")
 
-/** Open a modal with the rendered markdown of `f`. Esc or the backdrop closes it. */
-export const openPreview = (f: FileDiff): void => {
+/** Open a modal with a title, an optional note and an HTML body. Esc or the backdrop closes it. */
+export const openModal = (title: string, note: string | null, bodyHtml: string, titleHint?: string): void => {
   const d = el("dialog", "dv-preview")
   const head = el("header", "dv-preview-head")
   const close = el("button", "dv-preview-x", "✕")
   close.type = "button"
   close.setAttribute("aria-label", "Close")
   close.onclick = () => d.close()
-  head.append(el("b", "", shortPath(f.path)), close)
-  if (f.op === "edited") head.append(el("span", "dv-preview-note", "Changed parts only"))
+  const name = el("b", "", title)
+  if (titleHint) name.title = titleHint
+  head.append(name, close)
+  if (note) head.append(el("span", "dv-preview-note", note))
   const body = el("div", "dv-preview-body")
-  body.innerHTML = markdownRenderer(newText(f))
+  body.innerHTML = bodyHtml
   d.append(head, body)
   d.onclick = (e) => {
     if (e.target === d) d.close()
@@ -208,6 +210,20 @@ export const openPreview = (f: FileDiff): void => {
   d.onclose = () => d.remove()
   document.body.append(d)
   d.showModal()
+}
+
+/** Open a modal with the rendered markdown of `f`. */
+export const openPreview = (f: FileDiff): void =>
+  openModal(shortPath(f.path), f.op === "edited" ? "Changed parts only" : null, markdownRenderer(newText(f)), f.path)
+
+const escHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+
+/** A whole file as HTML: markdown rendered, code highlighted by the host's highlighter, other text plain. */
+export const fileHtml = (file: string, text: string): string => {
+  const lang = langOf(file)
+  if (lang === "markdown") return markdownRenderer(text)
+  const html = (lang && highlighter?.(text, lang)) || escHtml(text)
+  return `<pre><code class="hljs">${html}</code></pre>`
 }
 
 const previewButton = (f: FileDiff): HTMLElement => {

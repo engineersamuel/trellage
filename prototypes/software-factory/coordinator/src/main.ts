@@ -103,7 +103,7 @@ import { factoryConfig } from "./config.ts"
 import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
 import { postMergeCheck } from "./postmerge.ts"
-import { ARTIFACTS_DIR, servableImage } from "./files.ts"
+import { ARTIFACTS_DIR, peekFile, servableImage } from "./files.ts"
 import { checkoutCommit, GoalError, goalsDir, loopPrompt, makeGoals } from "./goals.ts"
 import { defineTool, type SessionEvent, type Tool } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
@@ -2667,6 +2667,23 @@ const routes: [string, RegExp, Handler][] = [
     async (_req, _url, [id]) => {
       const run = await runRecord(id!)
       return run ? json(run) : json({ error: `no thread ${id}` }, 404)
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/files\/peek$/,
+    // Quick look at a path a card names: the factory folders, the worktrees, temp folders and the registered repos.
+    (_req, url) => {
+      const roots = [
+        factory.root,
+        worktreeRoot(),
+        ARTIFACTS_DIR,
+        "/tmp",
+        tmpdir(),
+        ...threads.folders().flatMap((f) => (f.path ? [f.path] : [])),
+      ]
+      const r = peekFile(url.searchParams.get("path") ?? "", roots, url.searchParams.get("content") === "1")
+      return "error" in r ? json(r, 404) : json(r)
     },
   ],
   [
