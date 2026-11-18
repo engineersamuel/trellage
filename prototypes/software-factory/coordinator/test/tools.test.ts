@@ -490,3 +490,52 @@ test("UI tools tell every open UI what to show, and confirm_action opens a yes/n
   ])
   expect(f.published[0].data).toEqual({ path: "reports/synthesis.md", agent: "gen-1", threadId: "t1" })
 })
+
+test("the final security review uses SF_SECURITY_MODEL, then models.security, then the reviewer model", async () => {
+  const cfg = await import("../src/config.ts")
+  const repo = mkdtempSync(path.join(tmpdir(), "sf-final-sec-"))
+  execFileSync("git", ["-C", repo, "init", "-q", "-b", "factory/x"])
+  execFileSync("git", [
+    "-C",
+    repo,
+    "-c",
+    "user.email=a@b",
+    "-c",
+    "user.name=a",
+    "commit",
+    "-q",
+    "--allow-empty",
+    "-m",
+    "x",
+  ])
+  ensureFactoryDir(repo)
+  writeFileSync(artifact(repo, "evidence.md"), "AC-1: PASS — t — ok\n")
+  const store = new cfg.ConfigStore(path.join(mkdtempSync(path.join(tmpdir(), "sf-c-")), "config.toml"))
+  const savedEnv = process.env.SF_SECURITY_MODEL
+  const scope = { id: "sub-1", threadId: "t", workdir: repo, base: "HEAD" }
+  const firstSpawnModel = async (env: string | undefined, security: string) => {
+    const f = fakeFactory()
+    f.approvals = new Approvals(mkdtempSync(path.join(tmpdir(), "sf-final-sec-state-")))
+    f.sdlc.set("sub-1", { ...newSdlc("sub-1", "t"), criteria: ["works"], implementDoneAt: 1, verifyDoneAt: 2 })
+    f.routeModel = async () => null
+    f.workers.set("sub-1", { auth: "proxy" } as never)
+    f.root = mkdtempSync(path.join(tmpdir(), "sf-final-sec-root-"))
+    store.current = { ...store.current, models: { ...store.current.models, security } }
+    cfg.setConfigStore(store)
+    if (env === undefined) delete process.env.SF_SECURITY_MODEL
+    else process.env.SF_SECURITY_MODEL = env
+    startFinalSecurity(f, scope)
+    await new Promise((r) => setTimeout(r, 20))
+    return (f.spawned[0] as { model?: string } | undefined)?.model
+  }
+  try {
+    expect(await firstSpawnModel("sec-env", "sec-config")).toBe("sec-env")
+    expect(await firstSpawnModel(undefined, "sec-config")).toBe("sec-config")
+    expect(await firstSpawnModel(undefined, "")).toBe("gpt-6-astra")
+  } finally {
+    if (savedEnv === undefined) delete process.env.SF_SECURITY_MODEL
+    else process.env.SF_SECURITY_MODEL = savedEnv
+    cfg.resetConfigStore()
+    store.close()
+  }
+})

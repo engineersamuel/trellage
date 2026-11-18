@@ -225,12 +225,10 @@ const fixAndVerify = async (spawn: Spawn, set: Set, kept: TriagedFinding[], base
   }, "security verify")
 }
 
-/** Review workers run with the picked model. */
+/** Review workers run with the picked model: SF_SECURITY_MODEL, then models.security, then Jev's pick, then the default. */
 const pickReviewModel = async (f: Factory) => {
-  const env = process.env.SF_SECURITY_MODEL
-  const routed = env?.trim()
-    ? undefined
-    : (await f.routeModel("security audit / vulnerability review of a code diff"))?.id
+  const env = process.env.SF_SECURITY_MODEL?.trim() || factoryConfig().models.security
+  const routed = env ? undefined : (await f.routeModel("security audit / vulnerability review of a code diff"))?.id
   return pickModel(env, routed, f.defaultModel)
 }
 
