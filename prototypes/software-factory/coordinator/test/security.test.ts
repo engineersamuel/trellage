@@ -351,6 +351,13 @@ test("the audit model: SF_SECURITY_MODEL beats models.security, which beats the 
       // Blank env: the config key wins over the router pick and the default.
       process.env.SF_SECURITY_MODEL = "   "
       expect(await auditModel()).toBe("sec-config")
+      // Env absent and routing returns nothing: the config key still beats the default.
+      delete process.env.SF_SECURITY_MODEL
+      setSecurity("sec-config")
+      const unrouted = fakeFactory([])
+      unrouted.f.routeModel = async () => null
+      await securityReview(unrouted.f, scope, "w-impl")
+      expect(unrouted.spawned[0]!.model).toBe("sec-config")
       // Config key empty: the router pick, then the default when routing returns nothing.
       delete process.env.SF_SECURITY_MODEL
       setSecurity("")
