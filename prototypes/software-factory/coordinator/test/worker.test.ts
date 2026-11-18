@@ -424,3 +424,101 @@ test("renew asks the old session for a handoff, opens a new session, and sends t
   const pi = new Worker("p", "cos", "coordinator", "native", "/tmp/h", null, as<Client>({}), "m")
   expect(await f.renew(pi, "x")).toBe(false)
 })
+
+test("implement routing: the implement keys replace the small model only for non-UI low-complexity work", async () => {
+  type Spy = {
+    publish: (...a: unknown[]) => void
+    routeModel: () => Promise<{ id: string; confidence: number; routedBy: string } | null>
+    lowComplexity: () => Promise<{ p: number; ui: boolean } | null>
+    spawnModel: (spec: object) => Promise<{ model: string; source: unknown }>
+  }
+  const cfg = await import("../src/config.ts")
+  const f = as<Spy>(new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-m-")), SF_MODEL: "dflt" }))
+  f.publish = () => {}
+  f.routeModel = async () => ({ id: "router-pick", confidence: 0.5, routedBy: "jev" })
+  const implement = { name: "i", role: "worker", task: "build the parser", step: "implement" }
+  const verify = { ...implement, step: "verify" }
+  const store = new cfg.ConfigStore(path.join(mkdtempSync(path.join(tmpdir(), "sf-c-")), "config.toml"))
+  const saved = store.current.routing
+  const withRouting = (routing: Partial<typeof saved>) =>
+    (store.current = { ...store.current, routing: { ...saved, ...routing } })
+  cfg.setConfigStore(store)
+  try {
+    withRouting({ implement_model: "impl-sentinel", implement_small_model: "impl-small-sentinel" })
+    f.lowComplexity = async () => ({ p: 0.7, ui: false })
+    expect((await f.spawnModel(implement)).model).toBe("impl-small-sentinel")
+    f.lowComplexity = async () => ({ p: 0.95, ui: false })
+    expect((await f.spawnModel(implement)).model).toBe("impl-small-sentinel")
+    f.lowComplexity = async () => ({ p: 0.69, ui: false })
+    expect((await f.spawnModel(implement)).model).toBe("impl-sentinel")
+    f.lowComplexity = async () => ({ p: 0.95, ui: true })
+    expect((await f.spawnModel(implement)).model).toBe("impl-sentinel")
+    f.lowComplexity = async () => null
+    expect((await f.spawnModel(implement)).model).toBe("impl-sentinel")
+    // Other steps never take an implement key.
+    f.lowComplexity = async () => ({ p: 0.95, ui: false })
+    expect((await f.spawnModel(verify)).model).toBe("claude-haiku-5.5")
+    f.lowComplexity = async () => ({ p: 0.1, ui: false })
+    expect((await f.spawnModel(verify)).model).toBe("router-pick")
+    // Only one key set: the other branch keeps its existing path.
+    withRouting({ implement_model: "impl-sentinel", implement_small_model: "" })
+    f.lowComplexity = async () => ({ p: 0.95, ui: false })
+    expect((await f.spawnModel(implement)).model).toBe("claude-haiku-5.5")
+    f.lowComplexity = async () => ({ p: 0.1, ui: false })
+    expect((await f.spawnModel(implement)).model).toBe("impl-sentinel")
+    withRouting({ implement_model: "", implement_small_model: "impl-small-sentinel" })
+    f.lowComplexity = async () => ({ p: 0.1, ui: false })
+    expect((await f.spawnModel(implement)).model).toBe("router-pick")
+    // Both keys empty: today's path.
+    withRouting({ implement_model: "", implement_small_model: "" })
+    f.lowComplexity = async () => ({ p: 0.95, ui: false })
+    expect((await f.spawnModel(implement)).model).toBe("claude-haiku-5.5")
+    f.lowComplexity = async () => ({ p: 0.1, ui: false })
+    expect((await f.spawnModel(implement)).model).toBe("router-pick")
+  } finally {
+    cfg.resetConfigStore()
+    store.close()
+  }
+})
+
+test("UI implement with routing.implement_model set still launches on claude-opus-5.5 through spawn()", async () => {
+  const cfg = await import("../src/config.ts")
+  const store = new cfg.ConfigStore(path.join(mkdtempSync(path.join(tmpdir(), "sf-c-")), "config.toml"))
+  store.current = { ...store.current, routing: { ...store.current.routing, implement_model: "impl-sentinel" } }
+  cfg.setConfigStore(store)
+  type Spy = {
+    uiTask: (task: string) => Promise<number>
+    lowComplexity: (task: string) => Promise<{ p: number; ui: boolean } | null>
+    routeModel: (task: string) => Promise<{ id: string; confidence: number; routedBy: string; ranked: string[] }>
+    prepareSpawn: () => unknown
+    claudeSession: (spec: { model?: string }) => Promise<unknown>
+    register: (w: unknown) => Promise<unknown>
+    publish: () => void
+    spawn: (spec: object) => Promise<{ model: string }>
+  }
+  const f = as<Spy>(new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-ui-")) }))
+  const launched: string[] = []
+  // External runtime and skill clones stubbed; the UI-step swap, UI classification and model pinning are real.
+  f.uiTask = async () => 0.9
+  f.lowComplexity = async () => ({ p: 0.1, ui: true })
+  f.routeModel = async () => ({ id: "impl-sentinel", confidence: 0.5, routedBy: "jev", ranked: ["impl-sentinel"] })
+  f.prepareSpawn = () => ({
+    workdir: "/tmp/wt",
+    setup: { skillDirectories: [], extraPath: [], prefix: "" },
+    skills: [],
+  })
+  f.claudeSession = async (spec) => {
+    launched.push(spec.model ?? "")
+    return { session: { model: "claude-opus-5.5" }, model: "claude-opus-5.5", loaded: "stub" }
+  }
+  f.register = async (w) => w
+  f.publish = () => {}
+  try {
+    const w = await f.spawn({ name: "ui", role: "worker", task: "build the pricing page", step: "implement" })
+    expect(launched).toEqual(["claude-opus-5.5"])
+    expect(w.model).toBe("claude-opus-5.5")
+  } finally {
+    cfg.resetConfigStore()
+    store.close()
+  }
+})
