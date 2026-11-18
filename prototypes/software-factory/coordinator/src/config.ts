@@ -439,13 +439,21 @@ export const snapshotConfig = (root: string, c: FactoryConfig = factoryConfig())
   return id
 }
 
+/** Snapshots saved before these fields existed decode with empty defaults; every stored value is kept. */
+const decodeSnapshot = (raw: { models: object; routing: object }): FactoryConfig =>
+  decode({
+    ...raw,
+    models: { security: "", ...raw.models },
+    routing: { implement_model: "", implement_small_model: "", ...raw.routing },
+  })
+
 /** The pinned config of a run; no id or an unreadable snapshot gives the current config. */
 export const pinnedConfig = (root: string, id: string | undefined): FactoryConfig => {
   if (!id) return factoryConfig()
   const hit = snapshots.get(id)
   if (hit) return hit
   try {
-    const c = decode(JSON.parse(readFileSync(snapshotFile(root, id), "utf8")))
+    const c = decodeSnapshot(JSON.parse(readFileSync(snapshotFile(root, id), "utf8")))
     snapshots.set(id, c)
     return c
   } catch {

@@ -161,6 +161,23 @@ test("a step whose trx profile does not exist is refused; presets and declared p
   expect(missingProfiles("council", { kind: "claude", profiles: ["nope"] }, env)).toEqual([])
 })
 
+test("a pre-change run snapshot on disk keeps its values and gets empty defaults for new fields", () => {
+  const root = dir()
+  const current = JSON.parse(JSON.stringify(loadFactoryConfig("/nonexistent/config.toml")))
+  delete current.models.security
+  delete current.routing.implement_model
+  delete current.routing.implement_small_model
+  current.sdlc.max_fix_rounds = 41
+  mkdirSync(path.join(root, "config-snapshots"), { recursive: true })
+  writeFileSync(path.join(root, "config-snapshots", "old0000000001.json"), JSON.stringify(current))
+  const pinned = pinnedConfig(root, "old0000000001")
+  expect(pinned.sdlc.max_fix_rounds).toBe(41)
+  expect(pinned.models.security).toBe("")
+  expect(pinned.routing.implement_model).toBe("")
+  expect(pinned.routing.implement_small_model).toBe("")
+  expect(pinned.routing.small_threshold).toBe(current.routing.small_threshold)
+})
+
 test("a run keeps its pinned config after the config changes", () => {
   const root = dir()
   const f = path.join(root, "config.toml")
