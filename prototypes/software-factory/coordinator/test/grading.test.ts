@@ -366,6 +366,17 @@ describe("report grading orchestration", () => {
     expect(f.launches).toHaveLength(0)
   })
 
+  test("a later grade of the same commit (blocked, then done) reuses its proposal", async () => {
+    const f = fixture()
+    f.write("evidence.md", "AC-1: FAIL\n")
+    await f.grading.gradeThread(f.t.id, { ...report, status: "blocked" })
+    await f.grading.gradeThread(f.t.id, { ...report, status: "done" })
+    const grades = f.grading.gradesOf(f.t)
+    expect(grades).toHaveLength(2)
+    expect(grades[1]!.proposalId).toBe(grades[0]!.proposalId)
+    expect(f.approvals.list()).toHaveLength(1)
+  })
+
   test("a new failed completion after rejection opens another independently routed approval", async () => {
     const f = fixture()
     f.write("evidence.md", "AC-1: FAIL\n")

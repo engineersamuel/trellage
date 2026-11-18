@@ -52,7 +52,7 @@ const contextMeter = (maybeCoordinator: Option.Option<Worker>, h: HtmlBuilder<Me
               [
                 h.span([...attributes.label, h.Class("fk-visually-hidden")], ["Coordinator context"]),
                 h.span([...attributes.meter, h.Class("fk-ctx-bar")], [h.span([...attributes.fill])]),
-                label,
+                h.span([h.Class("fk-nav-label")], [label]),
               ],
             ),
         },
@@ -97,12 +97,15 @@ const navbarItem = (
       h.span(
         [h.Class("fk-nav-item")],
         [
-          `${Array.filter(workers, ({ role }) => role !== COORDINATOR_ID).length} workers · ${Array.filter(workers, ({ status }) => status === "running").length} running`,
+          `${Array.filter(workers, ({ role }) => role !== COORDINATOR_ID).length}`,
+          h.span([h.Class("fk-nav-label")], [" workers"]),
+          ` · ${Array.filter(workers, ({ status }) => status === "running").length}`,
+          h.span([h.Class("fk-nav-label")], [" running"]),
         ],
       ),
     ),
     Match.when("model", () =>
-      h.span([h.Class("fk-nav-item")], [`${settings.agent.model} · ${settings.agent.reasoningEffort}`]),
+      h.span([h.Class("fk-nav-item fk-nav-wide")], [`${settings.agent.model} · ${settings.agent.reasoningEffort}`]),
     ),
     Match.when("context", () => contextMeter(maybeCoordinator, h)),
     Match.when("auth", () =>
@@ -159,18 +162,27 @@ const navbar = (
       return h.nav(
         [h.Class("fk-nav sf-nav"), h.AriaLabel("Factory status")],
         [
-          h.h1([h.Class("fk-title")], ["Factory · Foldkit"]),
-          ...Array.map(settings.navbar, (item) =>
-            h.keyed("span")(
-              `nav-${item}`,
-              [h.Class("fk-nav-slot")],
-              [navbarItem(settings, maybeDelivery, workerList, item, h)],
-            ),
+          h.h1([h.Class("fk-title")], ["Trellage"]),
+          // Chief of Staff and + Draft: the Inbox (shared/protos/p3.ts) owns this element's children.
+          h.keyed("div")("p3-actions", [h.Class("p3-actions-slot")]),
+          // Status items share one group that shrinks and clips, so the bar never wraps or overflows the page.
+          h.keyed("div")(
+            "nav-status",
+            [h.Class("fk-nav-status")],
+            [
+              ...Array.map(settings.navbar, (item) =>
+                h.keyed("span")(
+                  `nav-${item}`,
+                  [h.Class("fk-nav-slot")],
+                  [navbarItem(settings, maybeDelivery, workerList, item, h)],
+                ),
+              ),
+              approvalsLink(approvals, h),
+              slot("navbar", h, "fk-nav-item"),
+              h.span([h.Class("fk-nav-item fk-muted fk-nav-wide")], [settings.theme]),
+            ],
           ),
-          approvalsLink(approvals, h),
-          slot("navbar", h, "fk-nav-item"),
           h.span([h.Class("fk-spacer")]),
-          h.span([h.Class("fk-nav-item fk-muted")], [settings.theme]),
           DiffPanel.navButton(diffPanelModel, Message.ClickedOpenChanges(), h),
           h.submodel({
             model: tournamentsModel,
@@ -269,7 +281,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
   const maybeSettings = Option.map(maybeDocument, ({ settings }) => settings)
   const banner = Option.flatMap(maybeSettings, (settings) => Option.fromNullishOr(settings.banner))
   return {
-    title: "Software Factory · Foldkit",
+    title: "Trellage",
     body: h.div(
       [h.Class("fk-root")],
       [
@@ -278,7 +290,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
         h.style([], [Option.match(maybeDocument, { onNone: () => "", onSome: ({ css }) => css })]),
         slot("page-background", h, "fk-slot-bg"),
         Option.match(maybeSettings, {
-          onNone: () => h.h1([h.Class("fk-visually-hidden")], ["Factory · Foldkit"]),
+          onNone: () => h.h1([h.Class("fk-visually-hidden")], ["Trellage"]),
           onSome: () =>
             lazyNavbar(navbar, [
               model.settings,

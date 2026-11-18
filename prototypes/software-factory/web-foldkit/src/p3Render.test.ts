@@ -173,8 +173,8 @@ test("the Factory stream view lists agent events and opens the agent it names", 
   const stop = prototypes()
     .find(({ id }) => id === 3)!
     .mount({ root, placeChat })
-  await vi.waitFor(() => expect(root.querySelector("[data-testid=stream-row]")).not.toBeNull())
-  root.querySelector<HTMLElement>("[data-testid=stream-row]")!.click()
+  await vi.waitFor(() => expect(document.querySelector("[data-testid=stream-row]")).not.toBeNull())
+  document.querySelector<HTMLElement>("[data-testid=stream-row]")!.click()
   const stream = root.querySelector("[data-testid=factory-stream]")!
   expect(placeChat).toHaveBeenLastCalledWith(null)
   await vi.waitFor(() => expect(stream.textContent).toContain("Tests pass."))
@@ -193,8 +193,8 @@ test("the Rule ledger lists rule actions and opens the conversation of a row", a
   const stop = prototypes()
     .find(({ id }) => id === 3)!
     .mount({ root, placeChat: () => {} })
-  await vi.waitFor(() => expect(root.querySelector("[data-testid=ledger-row]")).not.toBeNull())
-  root.querySelector<HTMLElement>("[data-testid=ledger-row]")!.click()
+  await vi.waitFor(() => expect(document.querySelector("[data-testid=ledger-row]")).not.toBeNull())
+  document.querySelector<HTMLElement>("[data-testid=ledger-row]")!.click()
   const ledger = root.querySelector("[data-testid=rule-ledger]")!
   await vi.waitFor(() => expect(ledger.textContent).toContain("checks are PENDING"))
   expect(ledger.querySelector("tr.sf-ledger-refused")?.textContent).toContain("R3")
@@ -204,6 +204,9 @@ test("the Rule ledger lists rule actions and opens the conversation of a row", a
 })
 
 const mountInbox = async () => {
+  // The navbar's slot for Chief of Staff and + Draft (web-foldkit/src/view.ts).
+  if (!document.querySelector(".p3-actions-slot"))
+    document.body.append(Object.assign(document.createElement("div"), { className: "p3-actions-slot" }))
   const root = document.createElement("div")
   document.body.append(root)
   const stop = prototypes()
@@ -224,9 +227,9 @@ test("the tree shows the harness icon of the chat, its sub-coordinator and its w
 })
 
 test("+ Draft creates a draft in a repo folder", async () => {
-  const { root, stop } = await mountInbox()
-  root.querySelector<HTMLElement>("[data-testid=new-draft]")!.click()
-  const form = root.querySelector<HTMLFormElement>(".p3-draft-form")!
+  const { stop } = await mountInbox()
+  document.querySelector<HTMLElement>("[data-testid=new-draft]")!.click()
+  const form = document.querySelector<HTMLFormElement>(".p3-draft-form")!
   expect(form.hidden).toBe(false)
   expect([...form.querySelectorAll("option")].map((o) => o.value)).toEqual(["trellage"])
   form.querySelector("textarea")!.value = "Add retries"
@@ -330,7 +333,7 @@ test("?worker= in the URL focuses that worker on load", async () => {
 })
 
 // A dormant branch (no live agent, nothing below running) is hidden until the human shows it.
-test("dormant conversations hide under a toggle, and the Chief of Staff button sits on top of the sidebar", async () => {
+test("dormant conversations hide under a toggle, and the Chief of Staff button leads the top-bar actions", async () => {
   threads.push({
     id: "cccccccc",
     title: "old work",
@@ -340,7 +343,7 @@ test("dormant conversations hide under a toggle, and the Chief of Staff button s
     parentThreadId: "aaaaaaaa",
   })
   const { root, stop } = await mountInbox()
-  expect(root.querySelector(".p3-side")?.firstElementChild?.getAttribute("data-testid")).toBe("ask-cos")
+  expect(document.querySelector(".p3-actions")?.firstElementChild?.getAttribute("data-testid")).toBe("ask-cos")
   const toggle = () => root.querySelector<HTMLElement>("[data-testid=dormant-toggle]")!
   await vi.waitFor(() => expect(toggle().textContent).toBe("▸ 1 dormant hidden · show"))
   expect(root.querySelector(".p3-card[data-id=sub-cccccccc]")).toBeNull()
@@ -359,8 +362,8 @@ test("the Chief of Staff head pins the digest and the chat filter, and a digest 
   window.addEventListener(COS_FILTER_EVENT, listen)
   threads.push({ id: "eeeeeeee", title: "Chief of Staff", createdAt: 1, folderId: "general", desk: true })
   push("factory.worker_updated", "coordinator")
-  await vi.waitFor(() => expect(root.querySelector("[data-testid=ask-cos]")).not.toBeNull())
-  root.querySelector<HTMLElement>("[data-testid=ask-cos]")!.click()
+  await vi.waitFor(() => expect(document.querySelector("[data-testid=ask-cos]")).not.toBeNull())
+  document.querySelector<HTMLElement>("[data-testid=ask-cos]")!.click()
   const digest = () => root.querySelector<HTMLElement>(".p3-head [data-testid=cos-digest]")
   await vi.waitFor(() => expect(digest()?.textContent).toContain("CI is red"))
   expect(digest()!.querySelector("summary")?.textContent).toBe(
@@ -381,4 +384,39 @@ test("the Chief of Staff head pins the digest and the chat filter, and a digest 
   window.removeEventListener(COS_FILTER_EVENT, listen)
   threads.pop()
   stop()
+})
+
+// The sidebar is a left popover (like ☰ Conversations); Chief of Staff and + Draft sit in the navbar slot.
+const toggleClose = (panel: HTMLElement) => {
+  document.querySelector<HTMLElement>("[data-testid=views-toggle]")!.click()
+  expect(panel.hidden).toBe(true)
+}
+
+test("the views popover opens from its toggle and closes on a pick; the actions go to the navbar slot", async () => {
+  const { root, stop } = await mountInbox()
+  const slot = document.querySelector<HTMLElement>(".p3-actions-slot")!
+  await vi.waitFor(() =>
+    expect(slot.querySelector("[data-testid=ask-cos]")?.textContent).toContain("💬 Chief of Staff"),
+  )
+  expect(slot.querySelector("[data-testid=new-draft]")).not.toBeNull()
+  expect(root.querySelector(".p3-side")).toBeNull()
+  const panel = document.querySelector<HTMLElement>(".p3-views")!
+  expect(panel.hidden).toBe(true)
+  document.querySelector<HTMLElement>("[data-testid=views-toggle]")!.click()
+  expect(panel.hidden).toBe(false)
+  // A view pick filters the list in place; a conversation pick closes the popover.
+  expect(panel.querySelector(".p3-inbox")).not.toBeNull()
+  expect(root.querySelector(".p3-inbox")).toBeNull()
+  panel.querySelector<HTMLElement>(".p3-sv")!.click()
+  expect(panel.hidden).toBe(false)
+  toggleClose(panel)
+  // A click outside closes it; a click inside does not.
+  document.querySelector<HTMLElement>("[data-testid=views-toggle]")!.click()
+  panel.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))
+  expect(panel.hidden).toBe(false)
+  root.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))
+  expect(panel.hidden).toBe(true)
+  stop()
+  expect(document.querySelector(".p3-views")).toBeNull()
+  expect(slot.querySelector(".p3-actions")).toBeNull()
 })

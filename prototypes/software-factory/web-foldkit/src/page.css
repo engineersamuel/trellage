@@ -75,6 +75,31 @@ body::after {
   background: var(--sf-surface);
   font-size: 13px;
 }
+.fk-nav > * {
+  flex: none;
+  white-space: nowrap;
+}
+.fk-nav > .fk-nav-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+/* Narrow screens (iPad portrait): icon-only buttons, short status, no model or theme. */
+@media (max-width: 1100px) {
+  .fk-nav {
+    gap: 8px;
+  }
+  .fk-nav .fk-nav-label,
+  .fk-nav .fk-nav-wide {
+    display: none;
+  }
+  .fk-nav .fk-ctx-bar {
+    width: 48px;
+  }
+}
 .fk-nav-item {
   display: inline-flex;
   gap: 6px;

@@ -39,11 +39,7 @@ test("rendered prompts equal the text that was in the code (re-review drift fixe
     research_task_named: researchTask("council", "REQ", "draft-council"),
     optimize_task: optimizeTask(OPTIMIZE_SKILLS[0]!.id, "REQ"),
     impl_all: implementAddendum(
-      withGates({ ...newSdlc("s", null), criteria: ["c1", "c2"], scopeWarning: "grew" }, [
-        g("design"),
-        g("testFirst"),
-        g("docs"),
-      ]),
+      withGates({ ...newSdlc("s", null), criteria: ["c1", "c2"], scopeWarning: "grew" }, [g("design"), g("docs")]),
     ),
     impl_none: implementAddendum({ ...newSdlc("s", null), criteria: ["c1"] }),
     finding: findingTask(

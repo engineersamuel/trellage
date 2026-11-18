@@ -203,7 +203,7 @@ export const inHistory = (workdir: string, commit: string): boolean => {
   }
 }
 
-export type GateId = "design" | "testFirst" | "codeReview" | "supplyChain" | "docs" | "postMerge"
+export type GateId = "design" | "codeReview" | "supplyChain" | "docs" | "postMerge"
 export type Phase = "plan" | "diff"
 type GateDef = { id: GateId; phase: Phase; threshold: number; question: string }
 
@@ -211,7 +211,6 @@ type GateDef = { id: GateId; phase: Phase; threshold: number; question: string }
  *  its Jev question. */
 const PHASES: Record<GateId, Phase> = {
   design: "plan",
-  testFirst: "plan",
   codeReview: "diff",
   supplyChain: "diff",
   docs: "diff",
@@ -414,7 +413,7 @@ export const settleGates = (s: Sdlc, blockers: string[]): Sdlc => ({
   gates: s.gates.map((g) => {
     if (!g.chosen || g.status === "done" || g.status === "failed" || g.status === "running") return g
     if (g.id === "postMerge") return { ...g, status: "pending", detail: "runs after the human merges" }
-    const blocked = blockers.some((b) => b.startsWith(`${g.id === "testFirst" ? "test-first" : g.id} gate`))
+    const blocked = blockers.some((b) => b.startsWith(`${g.id} gate`))
     return blocked ? g : { ...g, status: "done" }
   }),
 })
@@ -427,37 +426,12 @@ export const withGates = (s: Sdlc, gates: Gate[]): Sdlc => ({
 export const gate = (s: Sdlc, id: GateId): Gate | undefined => s.gates.find((g) => g.id === id)
 export const isOn = (s: Sdlc, id: GateId) => !!gate(s, id)?.chosen
 
-/** Commits in base..HEAD, oldest first, with the files each changed. */
-const commits = (workdir: string, base: string): { files: string[] }[] => {
-  try {
-    const out = execFileSync(
-      "git",
-      ["-C", workdir, "log", "--reverse", "--format=@@%H", "--name-only", `${base}..HEAD`],
-      { encoding: "utf8", maxBuffer: 8 << 20 },
-    )
-    return out
-      .split("@@")
-      .filter((c) => c.trim())
-      .map((c) => ({ files: c.split("\n").slice(1).filter(Boolean) }))
-  } catch {
-    return []
-  }
-}
-
 const TEST = /(^|\/)(tests?|__tests__|spec)\/|(^|\/)(tests?\.sh|test_[^/]+\.[a-z0-9]+)$|[._-](test|spec)\.[a-z0-9]+$/i
 export const isTestPath = (p: string): boolean => TEST.test(p)
 
-/** Test-first: a commit that changes only tests comes before the first commit that changes other code. */
-export const testsCameFirst = (history: { files: string[] }[]): boolean => {
-  const code = (f: string) => !TEST.test(f) && !DOC.test(f)
-  const firstCode = history.findIndex((c) => c.files.some(code))
-  const firstTest = history.findIndex((c) => c.files.length > 0 && c.files.every((f) => TEST.test(f)))
-  return firstTest !== -1 && (firstCode === -1 || firstTest < firstCode)
-}
-
 /**
  * Why the branch may not ship yet. Floors: criteria exist and each has PASS evidence; a verify ran after the last
- * implement; the security review is done. Chosen gates: design note, tests first, code review, supply chain, docs.
+ * implement; the security review is done. Chosen gates: design note, code review, supply chain, docs.
  */
 export const shipBlockers = (
   s: Sdlc | undefined,
@@ -478,8 +452,6 @@ export const shipBlockers = (
   if (!securityDone) out.push("security review not done (it runs last, when everything else is ready)")
   if (isOn(s, "design") && !existsSync(artifact(workdir, "design.md")))
     out.push("design gate: .factory/design.md missing")
-  if (isOn(s, "testFirst") && base && !testsCameFirst(commits(workdir, base)))
-    out.push("test-first gate: no tests-only commit before the first code commit")
   if (isOn(s, "codeReview") && !codeReviewDone) out.push("code review gate not done")
   const sc = gate(s, "supplyChain")
   if (sc?.chosen && sc.status !== "done") out.push(`supply-chain gate ${sc.status}${sc.detail ? `: ${sc.detail}` : ""}`)
@@ -494,7 +466,6 @@ export const implementAddendum = (s: Sdlc): string =>
   `\n\n${loadPrompt("tasks/implement-rules", {
     criteria: criteriaWithChecks(s.criteria, contractFor(s)),
     design: isOn(s, "design"),
-    testFirst: isOn(s, "testFirst"),
     docs: isOn(s, "docs"),
     scopeWarning: s.scopeWarning ?? "",
   })}`

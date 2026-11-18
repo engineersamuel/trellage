@@ -390,7 +390,6 @@ const prSection = (model: Model, h: HtmlBuilder<Message>): Html =>
 
 const GATE_HINT: Record<(typeof SDLC_GATES)[number], string> = {
   design: "design note before code",
-  testFirst: "failing tests committed first",
   codeReview: "Jev-picked review lenses, scored fixes",
   supplyChain: "secrets, vulnerabilities, licenses",
   docs: "README / docs / changelog updated",
@@ -604,7 +603,10 @@ export const navButton = Submodel.defineView<Model, Message>((_model, h) =>
     {
       onClick: Message.ClickedOpenGoals(),
       toView: (attributes) =>
-        h.button([...attributes.button, h.AriaLabel("Open factory goals"), h.Title("Factory goals")], ["◎ Goals"]),
+        h.button(
+          [...attributes.button, h.AriaLabel("Open factory goals"), h.Title("Factory goals")],
+          ["◎", h.span([h.Class("fk-nav-label")], [" Goals"])],
+        ),
     },
     h,
   ),

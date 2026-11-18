@@ -22,7 +22,6 @@ import {
   repoChecks,
   settleGates,
   shipBlockers,
-  testsCameFirst,
   unprovenCriteria,
   withGates,
   type Sdlc,
@@ -73,14 +72,7 @@ describe("criteria and evidence", () => {
   })
 })
 
-describe("test-first", () => {
-  test("a tests-only commit before the first code commit", () => {
-    expect(testsCameFirst([{ files: ["tests/a.rs"] }, { files: ["src/a.rs", "tests/a.rs"] }])).toBe(true)
-    expect(testsCameFirst([{ files: ["src/a.rs"] }, { files: ["tests/a.rs"] }])).toBe(false)
-    expect(testsCameFirst([{ files: ["src/a.test.ts", "src/a.ts"] }])).toBe(false)
-    expect(testsCameFirst([{ files: ["test.sh"] }, { files: ["hello.txt"] }])).toBe(true)
-  })
-
+describe("test paths", () => {
   test.each([
     "test.sh",
     "scripts/test.sh",
@@ -137,7 +129,7 @@ describe("worktree artifacts", () => {
       "no SDLC plan: call sdlc_plan with the acceptance criteria first",
     ])
     let s: Sdlc = { ...newSdlc("sub", "t"), criteria: ["works"], implementDoneAt: 2, verifyDoneAt: 1 }
-    s = withGates(s, decide("plan", { design: 0.9, testFirst: 0.9 }, null))
+    s = withGates(s, decide("plan", { design: 0.9 }, null))
     s = withGates(
       s,
       decide("diff", { codeReview: 0.9, supplyChain: 0.1, docs: 0.9, postMerge: 0.1 }, classify([f("src/a.ts")])),
@@ -147,7 +139,6 @@ describe("worktree artifacts", () => {
       "no verify step after the last implement",
       "security review not done (it runs last, when everything else is ready)",
       "design gate: .factory/design.md missing",
-      "test-first gate: no tests-only commit before the first code commit",
       "code review gate not done",
       "docs gate: the diff changes no README, docs or CHANGELOG",
     ])
@@ -174,13 +165,10 @@ describe("worktree artifacts", () => {
   })
 
   test("implement rules follow the chosen gates", () => {
-    const s = withGates(
-      { ...newSdlc("sub", null), criteria: ["c"] },
-      decide("plan", { design: 0.1, testFirst: 0.9 }, null),
-    )
+    const s = withGates({ ...newSdlc("sub", null), criteria: ["c"] }, decide("plan", { design: 0.1 }, null))
     const t = implementAddendum(s)
     expect(t).toContain("AC-1: c")
-    expect(t).toContain("Tests first")
+    expect(t).not.toContain("Tests first")
     expect(t).not.toContain("design note")
   })
 })
@@ -235,16 +223,15 @@ describe("code review", () => {
 describe("gate settling", () => {
   test("unblocked on-diff gates become done; postMerge waits for the merge; blocked ones stay", () => {
     const s = withGates(
-      withGates(newSdlc("sub", null), decide("plan", { design: 0.9, testFirst: 0.9 }, null)),
+      withGates(newSdlc("sub", null), decide("plan", { design: 0.9 }, null)),
       decide("diff", { codeReview: 0.1, supplyChain: 0.1, docs: 0.9, postMerge: 0.9 }, classify([f("src/a.ts")])),
     )
-    const settled = settleGates(s, ["test-first gate: no tests-only commit before the first code commit"])
+    const settled = settleGates(s, ["docs gate: the diff changes no README, docs or CHANGELOG"])
     expect(Object.fromEntries(settled.gates.map((g) => [g.id, g.status]))).toEqual({
       design: "done",
-      testFirst: "pending",
       codeReview: "skipped",
       supplyChain: "skipped",
-      docs: "done",
+      docs: "pending",
       postMerge: "pending",
     })
     expect(settled.gates.find((g) => g.id === "postMerge")?.detail).toBe("runs after the human merges")

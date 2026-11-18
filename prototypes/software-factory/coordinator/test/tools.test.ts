@@ -221,6 +221,23 @@ test("only the global coordinator's request_approval stores the report conversat
   expect(opened.map((a) => a.reportThreadId)).toEqual(["t-7", undefined, undefined])
 })
 
+test("the global coordinator opens no second decision while the conversation already waits on one", async () => {
+  const opened: Record<string, unknown>[] = []
+  const f = fakeFactory()
+  f.approvals = {
+    open: (a: Record<string, unknown>) => (opened.push(a), { id: "a1", ...a }),
+    pending: () => [{ id: "q9", title: "Gate blocks ship", threadId: "t-7" }],
+  }
+  const global = coordinatorTools(f, { id: "coordinator", threadId: null, knownThread: () => true })
+  const r = JSON.parse(
+    await tool(global, "request_approval")({ title: "Unblock?", summary: "s", options: ["A"], reportThreadId: "t-7" }),
+  )
+  expect(r.error).toContain("q9")
+  expect(opened).toEqual([])
+  await tool(global, "request_approval")({ title: "Next?", summary: "s", options: ["A"], reportThreadId: "t-8" })
+  expect(opened).toHaveLength(1)
+})
+
 test("request_approval rejects an unknown or cleaned-up report conversation", async () => {
   const opened: Record<string, unknown>[] = []
   const f = fakeFactory()

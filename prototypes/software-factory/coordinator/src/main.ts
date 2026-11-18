@@ -103,7 +103,7 @@ import { factoryConfig } from "./config.ts"
 import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
 import { postMergeCheck } from "./postmerge.ts"
-import { ARTIFACTS_DIR, servableImage } from "./files.ts"
+import { ARTIFACTS_DIR, peekFile, servableImage } from "./files.ts"
 import { checkoutCommit, GoalError, goalsDir, loopPrompt, makeGoals } from "./goals.ts"
 import { defineTool, type SessionEvent, type Tool } from "@github/copilot-sdk"
 import { messageThread, RunRecorder, subId, Threads, type DraftAction, type Thread } from "./threads.ts"
@@ -170,9 +170,10 @@ for (const [k, s] of factory.sdlc) {
   const stopped = s.contractState?.status === "running"
   factory.sdlc.set(k, {
     ...s,
-    gates: s.gates.map((g) =>
-      g.status === "running" ? { ...g, status: "failed", detail: "coordinator restarted" } : g,
-    ),
+    // The test-first gate was removed: a saved run that still lists it neither shows nor blocks it.
+    gates: s.gates
+      .filter((g) => String(g.id) !== "testFirst")
+      .map((g) => (g.status === "running" ? { ...g, status: "failed", detail: "coordinator restarted" } : g)),
     // A contract the restart stopped does not count as a round; sdlc_plan runs it again.
     ...(stopped
       ? {
@@ -1255,7 +1256,13 @@ factory.feed.subscribe((ev) => {
       const threshold = factoryConfig().cos.auto_answer_confidence
       const pick =
         a && ruleOn("r1")
-          ? r1Pick(a, threshold, isProposal(factory.root, a.id), ledgerOf(factory.root).eventDecision(a.id) !== null)
+          ? r1Pick(
+              a,
+              threshold,
+              isProposal(factory.root, a.id),
+              // An event decision that R27 relays to its conversation never comes back to the CoS, so R1 may answer it.
+              ledgerOf(factory.root).eventDecision(a.id) !== null && !(a.reportThreadId && ruleOn("r27")),
+            )
           : null
       if (a && pick) ruleAnswer(a.id, pick, "R1", `Jev confidence ${a.shadow!.confidence.toFixed(2)} >= ${threshold}`)
     })
@@ -2660,6 +2667,23 @@ const routes: [string, RegExp, Handler][] = [
     async (_req, _url, [id]) => {
       const run = await runRecord(id!)
       return run ? json(run) : json({ error: `no thread ${id}` }, 404)
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/files\/peek$/,
+    // Quick look at a path a card names: the factory folders, the worktrees, temp folders and the registered repos.
+    (_req, url) => {
+      const roots = [
+        factory.root,
+        worktreeRoot(),
+        ARTIFACTS_DIR,
+        "/tmp",
+        tmpdir(),
+        ...threads.folders().flatMap((f) => (f.path ? [f.path] : [])),
+      ]
+      const r = peekFile(url.searchParams.get("path") ?? "", roots, url.searchParams.get("content") === "1")
+      return "error" in r ? json(r, 404) : json(r)
     },
   ],
   [

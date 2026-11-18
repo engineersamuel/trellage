@@ -113,13 +113,49 @@ const archive = (n: Node, at: number | null) =>
 const mount = ({ root, placeChat }: Ctx): (() => void) => {
   root.classList.add("sfp-p3")
   const side = el("nav", "p3-side")
+  // The sidebar is a left popover, like the ☰ Conversations panel (shared/folders.ts), in <body> so no stacking
+  // context of the stage covers it. Chief of Staff and + Draft go to the top bar (.p3-actions-slot in the navbar).
+  const viewsRoot = el("div", "sff-root p3-views-root")
+  const viewsToggle = el("button", "sff-toggle p3-views-toggle")
+  viewsToggle.type = "button"
+  viewsToggle.dataset.testid = "views-toggle"
+  viewsToggle.title = "Inbox: conversations, views, repos and archive"
+  const viewsPanel = el("aside", "sfp-p3 p3-views sff-panel")
+  viewsPanel.hidden = true
+  const viewsTop = el("div", "sff-top")
+  const viewsClose = el("button", "sff-close", "✕")
+  viewsClose.type = "button"
+  viewsClose.title = "Close"
+  viewsTop.append(el("b", "", "Inbox"), viewsClose)
+  // The conversation list sits in the popover next to the views, so a view pick filters it in place.
   const inbox = el("section", "p3-inbox")
+  const viewsCols = el("div", "p3-views-cols")
+  viewsCols.append(side, inbox)
+  viewsPanel.append(viewsTop, viewsCols)
+  viewsRoot.append(viewsToggle, viewsPanel)
+  document.body.append(viewsRoot)
+  const toggleViews = () => (viewsPanel.hidden = !viewsPanel.hidden)
+  viewsToggle.onclick = toggleViews
+  viewsClose.onclick = toggleViews
+  /** A click outside the popover (and its toggle) closes it. */
+  const outsideViews = (e: PointerEvent) => {
+    if (!viewsPanel.hidden && e.target instanceof Node && !viewsRoot.contains(e.target)) viewsPanel.hidden = true
+  }
+  document.addEventListener("pointerdown", outsideViews, true)
+  const actions = el("div", "sfp-p3 p3-actions")
+  /** Put the actions in the navbar slot; the navbar may mount after the Inbox, or be drawn again. */
+  const placeActions = () => {
+    const slot = document.querySelector(".p3-actions-slot")
+    if (slot && actions.parentElement !== slot) slot.append(actions)
+  }
+  const navWatch = new MutationObserver(placeActions)
+  navWatch.observe(document.body, { childList: true, subtree: true })
   const tree = el("section", "p3-tree")
   const detail = el("section", "p3-detail")
   const head = el("header", "p3-head")
   const body = el("div", "p3-body")
   detail.append(head, body)
-  root.replaceChildren(side, inbox, tree, detail)
+  root.replaceChildren(tree, detail)
 
   let s: State | null = null
   let m: Model = { nodes: new Map(), roots: [] }
@@ -179,7 +215,7 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     deskRow.dataset.testid = "ask-cos"
     deskRow.title = "Start here: tell the Chief of Staff what you want. It starts and watches the conversations."
     deskRow.append(
-      el("span", "p3-ell", "💬 Ask the Chief of Staff"),
+      el("span", "p3-ell", "💬 Chief of Staff"),
       el("span", "p3-n", desk?.agg.needs ? `▲${desk.pending.length}` : ""),
     )
     deskRow.onclick = () => (
@@ -193,16 +229,18 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const streamRow = el("div", `p3-sv ${streamOn ? "on" : ""}`)
     streamRow.dataset.testid = "stream-row"
     streamRow.append(el("span", "p3-ell", "📡 Factory stream"))
-    streamRow.onclick = () => ((streamOn = true), (ledgerOn = false), render())
+    streamRow.onclick = () => ((streamOn = true), (ledgerOn = false), (viewsPanel.hidden = true), render())
     const ledgerRow = el("div", `p3-sv ${ledgerOn ? "on" : ""}`)
     ledgerRow.dataset.testid = "ledger-row"
     ledgerRow.append(el("span", "p3-ell", "📒 Rule ledger"))
-    ledgerRow.onclick = () => ((ledgerOn = true), (streamOn = false), render())
+    ledgerRow.onclick = () => ((ledgerOn = true), (streamOn = false), (viewsPanel.hidden = true), render())
     const repos = (s?.folders ?? []).filter((f) => f.path)
     const archivedN = (s?.threads ?? []).filter((t) => t.archivedAt && !t.desk).length
+    const needs = count(live, "needs")
+    viewsToggle.textContent = `☰ Inbox${needs ? ` · ▲${needs}` : ""}`
+    actions.replaceChildren(deskRow, draftBox)
+    placeActions()
     side.replaceChildren(
-      deskRow,
-      draftBox,
       el("h5", "", "Views"),
       ...VIEWS.map((v) => row(v.id, v.label, count(live, v.id), v.id === "needs")),
       streamRow,
@@ -251,7 +289,14 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
         // Quiet rows (idle, dormant, draft): the dot says it all.
         if (tone === "needs" || tone === "error" || tone === "running")
           r.append(el("div", "p3-sub p3-st p3-ell", reason))
-        r.onclick = () => ((autoView = false), (streamOn = false), (sel = n.id), (cur = focus.id), render())
+        r.onclick = () => (
+          (autoView = false),
+          (streamOn = false),
+          (sel = n.id),
+          (cur = focus.id),
+          (viewsPanel.hidden = true),
+          render()
+        )
         return r
       }),
       ...(list.length ? [] : [el("div", "p3-empty", view === "needs" ? "Nothing needs you. 🎉" : "Nothing here.")]),
@@ -1035,6 +1080,10 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     window.removeEventListener("pointercancel", release, true),
     mounted?.stop(),
     pinned?.stop(),
+    navWatch.disconnect(),
+    document.removeEventListener("pointerdown", outsideViews, true),
+    viewsRoot.remove(),
+    actions.remove(),
     root.classList.remove("sfp-p3")
   )
 }
