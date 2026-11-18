@@ -27,6 +27,7 @@ import {
   type ContractItem,
   type Sdlc,
 } from "../src/sdlc.ts"
+import { loadPrompt } from "../src/prompt.ts"
 import { defaultSettings } from "../src/settings.ts"
 import { buildGrade } from "../../shared/goal.ts"
 
@@ -310,4 +311,30 @@ test("the PR body shows the evaluator's verdicts; a g2 grade uses them and count
   const g1 = buildGrade(run, { ...base, criteria: { "AC-1": "pass" } })
   expect(g1.gradingVersion).toBe("g1")
   expect("disagreements" in g1).toBe(false)
+})
+
+test("the evaluator may let checks write git-ignored outputs and must not sandbox them", () => {
+  const task = loadPrompt("tasks/evaluate", {
+    contract: "AC-1: x works",
+    checks: "- `bun test`",
+    diff: "- a.ts +1 -0",
+    out: "/tmp/out-dir",
+    round: "1",
+  })
+  expect(task).toContain("git-ignored")
+  expect(task).toContain("tracked files")
+  expect(task).toContain("sandbox")
+  expect(task).toContain("no PR or CI run")
+  expect(task).toContain("/tmp/out-dir/verdicts.json")
+})
+
+test("the contract never relies on a PR or CI run that cannot exist at evaluation time", () => {
+  const contract = loadPrompt("tasks/evaluate-contract", {
+    request: "r",
+    plan: "p",
+    criteria: "AC-1: x works",
+    locked: "",
+    out: "/tmp/out-dir",
+  })
+  expect(contract).toContain("no PR or CI run")
 })

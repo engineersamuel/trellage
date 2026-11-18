@@ -316,6 +316,8 @@ directory), so they survive a restart; an old `approvals.json` is imported once.
 `src/evaluate.ts` ([ADR 0006](../../docs/adr/0006-factory-acceptance-evaluator.md)). One worker (`step=evaluate`) from a
 model family other than the builder's, in a fresh context, with a permission gate: it may build, run and call the
 deliverable, writes only its own output folder (outside the worktree), and never changes git state.
+Repo checks it runs may write their git-ignored outputs; only tracked files must stay unchanged.
+The evaluation runs before the push, so every check runs locally; there is no PR or CI fallback.
 
 1. **Contract** (`sdlc_plan`, in the background): one `check` and `expect` per criterion, or a `problem` and a testable
    `rewrite`. `sdlc_plan` returns at once; `next_step` returns `wait_contract` and a `topic=plan` approval is refused
