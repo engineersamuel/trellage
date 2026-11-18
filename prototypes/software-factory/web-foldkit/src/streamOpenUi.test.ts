@@ -69,8 +69,8 @@ test("the stream draws an OpenUI answer as a native card, and its button continu
   const stop = prototypes()
     .find(({ id }) => id === 3)!
     .mount({ root, placeChat: () => {} })
-  await vi.waitFor(() => expect(root.querySelector("[data-testid=stream-row]")).not.toBeNull())
-  root.querySelector<HTMLElement>("[data-testid=stream-row]")!.click()
+  await vi.waitFor(() => expect(document.querySelector("[data-testid=stream-row]")).not.toBeNull())
+  document.querySelector<HTMLElement>("[data-testid=stream-row]")!.click()
   await vi.waitFor(() => expect(root.querySelector(".p2-report .openui-card")).not.toBeNull(), { timeout: 5000 })
   const card = root.querySelector(".p2-report .openui-card")!
   expect(card.querySelector(".openui-header")?.textContent).toContain("Plan ready")

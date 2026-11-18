@@ -165,6 +165,14 @@ export const startFolderSidebar = (): void => {
   const toggle = () => ((panel.hidden = !panel.hidden), panel.hidden || void load())
   root.querySelector<HTMLButtonElement>(".sff-toggle")!.onclick = toggle
   root.querySelector<HTMLButtonElement>(".sff-close")!.onclick = toggle
+  // A click outside the panel (and its toggle) closes it.
+  document.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (!panel.hidden && e.target instanceof Node && !root.contains(e.target)) panel.hidden = true
+    },
+    true,
+  )
   root.querySelector("form")!.onsubmit = (e) => (e.preventDefault(), void addRepo(e.target as HTMLFormElement))
   window.addEventListener("keydown", (e) => e.altKey && e.code === "KeyB" && (e.preventDefault(), toggle()))
   window.addEventListener("sf:open-thread", (e) => ((current = (e as CustomEvent<string>).detail), render()))

@@ -11,7 +11,7 @@
   --p3-sel: color-mix(in srgb, var(--sf-accent) 28%, transparent);
   --p3-raised: color-mix(in srgb, var(--sf-surface), var(--sf-text) 5%);
   display: grid;
-  grid-template-columns: 180px 255px 340px minmax(0, 1fr);
+  grid-template-columns: minmax(340px, 38%) minmax(0, 1fr);
   background: var(--sf-bg);
   overflow: hidden;
 }
@@ -555,7 +555,7 @@
 }
 /* Canvas on: the conversation column takes the room, the detail becomes a side panel. */
 .sfp-p3.canvas {
-  grid-template-columns: 180px 255px minmax(0, 1fr) minmax(360px, 38%);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 38%);
 }
 .sfp-p3 .p3-canvas {
   overflow: auto;
@@ -798,4 +798,66 @@
 .sfp-p3 .p3-cos-filter button.on {
   background: var(--p3-sel);
   color: var(--sf-text);
+}
+
+/* Views, repos and archive: a left popover like ☰ Conversations (shared/folders.css), its toggle above that one. */
+.sff-root .sff-toggle.p3-views-toggle {
+  bottom: 58px;
+}
+.sfp-p3.p3-views {
+  display: flex;
+  overflow: hidden;
+  width: min(600px, 94vw);
+}
+.sfp-p3.p3-views > .p3-views-cols {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+.sfp-p3.p3-views > .p3-views-cols > * {
+  min-height: 0;
+  overflow: auto;
+}
+.sfp-p3.p3-views[hidden] {
+  display: none;
+}
+.sfp-p3.p3-views .p3-side {
+  border-right: 1px solid var(--sf-border);
+}
+/* Chief of Staff and + Draft in the top bar; the draft form drops down under its button. */
+.sfp-p3.p3-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: none;
+  overflow: visible;
+}
+.sfp-p3.p3-actions .p3-new {
+  width: auto;
+  margin: 0;
+  padding: 3px 10px;
+}
+.sfp-p3.p3-actions .p3-ask-cos {
+  margin: 0;
+}
+.sfp-p3.p3-actions .p3-newdraft {
+  position: relative;
+}
+.sfp-p3.p3-actions .p3-draft-form {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 960;
+  width: 340px;
+  margin: 0;
+  padding: 10px;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px #000a;
+}
+/* The top bar holds the draft form's dropdown: keep it above the Inbox stage (its chat cell is z-index 2). */
+.fk-root > .fk-nav:has(.p3-actions) {
+  z-index: 3;
 }

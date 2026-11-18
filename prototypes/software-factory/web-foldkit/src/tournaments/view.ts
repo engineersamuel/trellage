@@ -372,7 +372,7 @@ export const navButton = Submodel.defineView<Model, Message>((_model, h) =>
       toView: (attributes) =>
         h.button(
           [...attributes.button, h.AriaLabel("Open UI skill tournaments"), h.Title("UI skill tournaments")],
-          ["♛ Tournaments"],
+          ["♛", h.span([h.Class("fk-nav-label")], [" Tournaments"])],
         ),
     },
     h,
