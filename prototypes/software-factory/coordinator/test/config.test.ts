@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import {
   ConfigStore,
+  defaultsPath,
   loadFactoryConfig,
   missingProfiles,
   pinnedConfig,
@@ -160,6 +161,23 @@ test("a step whose trx profile does not exist is refused; presets and declared p
   expect(missingProfiles("council", { kind: "claude", profiles: ["nope"] }, env)).toEqual([])
 })
 
+test("a pre-change run snapshot on disk keeps its values and gets empty defaults for new fields", () => {
+  const root = dir()
+  const current = JSON.parse(JSON.stringify(loadFactoryConfig("/nonexistent/config.toml")))
+  delete current.models.security
+  delete current.routing.implement_model
+  delete current.routing.implement_small_model
+  current.sdlc.max_fix_rounds = 41
+  mkdirSync(path.join(root, "config-snapshots"), { recursive: true })
+  writeFileSync(path.join(root, "config-snapshots", "old0000000001.json"), JSON.stringify(current))
+  const pinned = pinnedConfig(root, "old0000000001")
+  expect(pinned.sdlc.max_fix_rounds).toBe(41)
+  expect(pinned.models.security).toBe("")
+  expect(pinned.routing.implement_model).toBe("")
+  expect(pinned.routing.implement_small_model).toBe("")
+  expect(pinned.routing.small_threshold).toBe(current.routing.small_threshold)
+})
+
 test("a run keeps its pinned config after the config changes", () => {
   const root = dir()
   const f = path.join(root, "config.toml")
@@ -217,4 +235,28 @@ test("values report default, file and override sources; overrides persist, valid
   expect(src("review.lens_threshold")).toMatchObject({ value: 0.45, source: "file" })
   s.setOverride("sdlc.done_below", null)
   expect(src("sdlc.done_below")).toMatchObject({ value: 0.2, source: "file" })
+})
+
+test("implement routing and the security audit model parse from TOML and default to empty", () => {
+  const f = path.join(dir(), "config.toml")
+  writeFileSync(
+    f,
+    '[routing]\nimplement_model = "impl-x"\nimplement_small_model = "impl-small-x"\n[models]\nsecurity = "sec-x"\n',
+  )
+  const c = loadFactoryConfig(f)
+  expect([c.routing.implement_model, c.routing.implement_small_model, c.models.security]).toEqual([
+    "impl-x",
+    "impl-small-x",
+    "sec-x",
+  ])
+  const shipped = loadFactoryConfig("/nonexistent/config.toml")
+  expect([shipped.routing.implement_model, shipped.routing.implement_small_model, shipped.models.security]).toEqual([
+    "",
+    "",
+    "",
+  ])
+  const text = readFileSync(defaultsPath, "utf8")
+  for (const line of ['implement_model = ""', 'implement_small_model = ""', 'security = ""']) {
+    expect(text).toContain(line)
+  }
 })

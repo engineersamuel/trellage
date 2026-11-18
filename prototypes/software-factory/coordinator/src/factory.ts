@@ -914,18 +914,16 @@ export class Factory {
   private async spawnModel(spec: SpawnSpec): Promise<{ model: string; source: ModelSource }> {
     if (spec.model) return { model: spec.model, source: { kind: "pinned" } }
     if (spec.role !== "worker" || !spec.task) return { model: this.defaultModel, source: { kind: "default" } }
-    const { small_model, small_threshold } = factoryConfig().routing
+    const { small_model, small_threshold, implement_model, implement_small_model } = factoryConfig().routing
+    const implement = spec.step === "implement"
     const low = await this.lowComplexity(spec.task)
     if (low && !low.ui && low.p >= small_threshold) {
-      this.publish("coordinator", "factory.model_routed", null, now(), {
-        worker: spec.name,
-        id: small_model,
-        confidence: low.p,
-        routedBy: "jev-low-complexity",
-        ranked: [small_model],
-      })
-      return { model: small_model, source: { kind: "routed", by: "jev-low-complexity", confidence: low.p } }
+      const override = implement ? implement_small_model : ""
+      return override
+        ? this.recordRoute(spec, override, "implement-small", low.p)
+        : this.recordRoute(spec, small_model, "jev-low-complexity", low.p)
     }
+    if (implement && implement_model) return this.recordRoute(spec, implement_model, "implement", low?.p ?? 0)
     const routed = await this.routeModel(spec.task)
     if (!routed) return { model: this.defaultModel, source: { kind: "fallback" } }
     this.publish("coordinator", "factory.model_routed", null, now(), {
@@ -936,6 +934,18 @@ export class Factory {
       model: routed.id,
       source: { kind: "routed", by: routed.routedBy, confidence: routed.confidence },
     }
+  }
+
+  /** Publish a routing decision made from a config key or Jev's low-complexity score, and return it. */
+  private recordRoute(spec: SpawnSpec, model: string, by: string, confidence: number) {
+    this.publish("coordinator", "factory.model_routed", null, now(), {
+      worker: spec.name,
+      id: model,
+      confidence,
+      routedBy: by,
+      ranked: [model],
+    })
+    return { model, source: { kind: "routed" as const, by, confidence } }
   }
 
   /** An implement task about a user interface (Jev's ui-task question), when the UI step exists and is on. */

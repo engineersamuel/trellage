@@ -205,6 +205,13 @@ omits `by` counts as the human.
   `SF_PROXY_URL` (default `http://localhost:8080/v1`), with `--no-auto-login` (`isByok:true`).
 - Every other model call goes through copilot-proxy-rs at `SF_PROXY_URL`: Claude and Pi workers, model routing,
   decision models, titles, images, the goal page and UI judging. `factory:up` stops when the proxy is not reachable.
+- Worker model, first match wins:
+  - A pinned model on the spawn spec.
+  - Implement only, low-complexity and non-UI: `[routing] implement_small_model`. Empty keeps `small_model`.
+  - Implement only, any other work: `[routing] implement_model`. Empty keeps the Jev router pick.
+  - Low-complexity work (Jev p >= `small_threshold`): `[routing] small_model`.
+  - The Jev router pick, then the default model.
+- UI implement work keeps the UI step model (claude-opus-5.5), because the UI step pins its model first.
 
 ## Coordinator
 
@@ -234,8 +241,10 @@ another review. While a review is unfinished (from its start until `done` or `fa
 spawn in that worktree, whatever the step. Every review, fix, and verify worker is stopped when the review ends, fails,
 or times out.
 
-- `SF_SECURITY_MODEL`: reviewer model (blank counts as unset). Default: the copilot-proxy-rs routed model, else
-  `SF_MODEL`.
+- Reviewer model, first set wins: `SF_SECURITY_MODEL` (blank counts as unset), then `[models] security`.
+  - Review after an implement step: the copilot-proxy-rs routed model, else the default worker model
+    (`SF_MODEL`, else `[models] worker`).
+  - Final security review at ship time: the `[models.review]` model of another family than the implementer.
 - Gate workers (code review, security review, evaluator, and their fix and verify workers) have **no short time
   limit**: the goal's cost limit bounds spending. `src/gateWorker.ts` replaces a worker that is **stuck**: it ended in
   error, `[workers] stuck_failed_tools` (5) tool calls failed in a row, or it was silent for `stuck_quiet_minutes` (10)

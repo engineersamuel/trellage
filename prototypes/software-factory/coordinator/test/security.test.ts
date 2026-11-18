@@ -330,3 +330,44 @@ test("securityReview captures the implement worker's auth when it starts", () =>
     expect(await done).toMatchObject({ status: "done", auth: "native" })
     expect(spawned[0]!.auth).toBe("native")
   }))
+
+test("the audit model: SF_SECURITY_MODEL beats models.security, which beats the router pick and the default", () =>
+  noJev(async () => {
+    const cfg = await import("../src/config.ts")
+    const store = new cfg.ConfigStore(path.join(mkdtempSync(path.join(tmpdir(), "sf-c-")), "config.toml"))
+    const setSecurity = (security: string) =>
+      (store.current = { ...store.current, models: { ...store.current.models, security } })
+    cfg.setConfigStore(store)
+    const auditModel = async () => {
+      const { f, spawned } = fakeFactory([])
+      await securityReview(f, scope, "w-impl")
+      return spawned[0]!.model
+    }
+    try {
+      // Env wins over the config key.
+      setSecurity("sec-config")
+      process.env.SF_SECURITY_MODEL = "sec-env"
+      expect(await auditModel()).toBe("sec-env")
+      // Blank env: the config key wins over the router pick and the default.
+      process.env.SF_SECURITY_MODEL = "   "
+      expect(await auditModel()).toBe("sec-config")
+      // Env absent and routing returns nothing: the config key still beats the default.
+      delete process.env.SF_SECURITY_MODEL
+      setSecurity("sec-config")
+      const unrouted = fakeFactory([])
+      unrouted.f.routeModel = async () => null
+      await securityReview(unrouted.f, scope, "w-impl")
+      expect(unrouted.spawned[0]!.model).toBe("sec-config")
+      // Config key empty: the router pick, then the default when routing returns nothing.
+      delete process.env.SF_SECURITY_MODEL
+      setSecurity("")
+      expect(await auditModel()).toBe("routed-model")
+      const { f, spawned } = fakeFactory([])
+      f.routeModel = async () => null
+      await securityReview(f, scope, "w-impl")
+      expect(spawned[0]!.model).toBe("default-model")
+    } finally {
+      cfg.resetConfigStore()
+      store.close()
+    }
+  }))

@@ -398,12 +398,15 @@ const startFinalSecurityIn = (f: Factory, scope: Scope): string | null => {
   if (last && last.status !== "done" && last.status !== "failed")
     return `final security review ${last.id} is ${last.status}; wait for it, then ask to ship again.`
   if (last?.status === "done" && last.at >= codeChangedAt(s)) return null
+  const c = pinnedConfig(f.root, s.configId)
   void securityReview(
     f,
     scope,
     s.scopeId,
     f.workers.get(scope.id)?.auth,
-    reviewModelFor(s.implementerModel, process.env.SF_SECURITY_MODEL, true, pinnedConfig(f.root, s.configId)),
+    process.env.SF_SECURITY_MODEL?.trim() ||
+      c.models.security ||
+      reviewModelFor(s.implementerModel, process.env.SF_SECURITY_MODEL, true, c),
   )
   return loadPrompt("final-security-started")
 }

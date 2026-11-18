@@ -23,9 +23,19 @@ const FactoryConfigSchema = Schema.Struct({
     review: Schema.Struct({ claude: Model, gpt: Model, gemini: Model }),
     claude_worker: Model,
     goal_page: Model,
+    /** Security audit model (SF_SECURITY_MODEL wins). Empty: the routed or default reviewer model. */
+    security: Schema.String,
   }),
   /** Small-model gate in Factory.spawnModel: Jev's low-complexity score at or above the threshold picks small_model. */
-  routing: Schema.Struct({ small_model: Model, small_threshold: Probability, ui_step: Schema.Boolean }),
+  routing: Schema.Struct({
+    small_model: Model,
+    small_threshold: Probability,
+    ui_step: Schema.Boolean,
+    /** Implement workers (not low-complexity): empty keeps the routed model. */
+    implement_model: Schema.String,
+    /** Low-complexity, non-UI implement workers: empty keeps small_model. */
+    implement_small_model: Schema.String,
+  }),
   review: Schema.Struct({
     lens_threshold: Probability,
     max_lenses: Count,
@@ -429,13 +439,21 @@ export const snapshotConfig = (root: string, c: FactoryConfig = factoryConfig())
   return id
 }
 
+/** Snapshots saved before these fields existed decode with empty defaults; every stored value is kept. */
+const decodeSnapshot = (raw: { models: object; routing: object }): FactoryConfig =>
+  decode({
+    ...raw,
+    models: { security: "", ...raw.models },
+    routing: { implement_model: "", implement_small_model: "", ...raw.routing },
+  })
+
 /** The pinned config of a run; no id or an unreadable snapshot gives the current config. */
 export const pinnedConfig = (root: string, id: string | undefined): FactoryConfig => {
   if (!id) return factoryConfig()
   const hit = snapshots.get(id)
   if (hit) return hit
   try {
-    const c = decode(JSON.parse(readFileSync(snapshotFile(root, id), "utf8")))
+    const c = decodeSnapshot(JSON.parse(readFileSync(snapshotFile(root, id), "utf8")))
     snapshots.set(id, c)
     return c
   } catch {
