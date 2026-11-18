@@ -10,5 +10,21 @@
   "prototypes/software-factory/web-foldkit/package-lock.json|npm|zod|3.25.76|GHSA-mrhx-c7xc-m3w5": {
     "reviewBy": "2026-12-09",
     "reason": "Existing AG-UI dependency requires Zod 3. The fix requires Zod 4 and must be adopted through a compatible AG-UI upgrade, not a global override. The separately used Zod 4 copy is fixed."
+  },
+  "bun.lock|npm|picomatch|4.0.5|GHSA-fc5q-39xc-vjpf": {
+    "reviewBy": "2026-12-09",
+    "reason": "No published picomatch fix (<=4.0.7 affected). Dev and test tools only; renew only after a new review."
+  },
+  "bun.lock|npm|picomatch|4.0.7|GHSA-fc5q-39xc-vjpf": {
+    "reviewBy": "2026-12-09",
+    "reason": "No published picomatch fix (<=4.0.7 affected). Dev and test tools only; renew only after a new review."
+  },
+  "prototypes/software-factory/web-foldkit/package-lock.json|npm|picomatch|2.3.2|GHSA-fc5q-39xc-vjpf": {
+    "reviewBy": "2026-12-09",
+    "reason": "No published picomatch fix (<=4.0.7 affected). Dev and test tools only; renew only after a new review."
+  },
+  "prototypes/software-factory/web-foldkit/package-lock.json|npm|picomatch|4.0.7|GHSA-fc5q-39xc-vjpf": {
+    "reviewBy": "2026-12-09",
+    "reason": "No published picomatch fix (<=4.0.7 affected). Dev and test tools only; renew only after a new review."
   }
 }
