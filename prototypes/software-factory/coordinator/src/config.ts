@@ -23,9 +23,19 @@ const FactoryConfigSchema = Schema.Struct({
     review: Schema.Struct({ claude: Model, gpt: Model, gemini: Model }),
     claude_worker: Model,
     goal_page: Model,
+    /** Security audit model (SF_SECURITY_MODEL wins). Empty: the routed or default reviewer model. */
+    security: Schema.String,
   }),
   /** Small-model gate in Factory.spawnModel: Jev's low-complexity score at or above the threshold picks small_model. */
-  routing: Schema.Struct({ small_model: Model, small_threshold: Probability, ui_step: Schema.Boolean }),
+  routing: Schema.Struct({
+    small_model: Model,
+    small_threshold: Probability,
+    ui_step: Schema.Boolean,
+    /** Implement workers (not low-complexity): empty keeps the routed model. */
+    implement_model: Schema.String,
+    /** Low-complexity, non-UI implement workers: empty keeps small_model. */
+    implement_small_model: Schema.String,
+  }),
   review: Schema.Struct({
     lens_threshold: Probability,
     max_lenses: Count,

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import {
   ConfigStore,
+  defaultsPath,
   loadFactoryConfig,
   missingProfiles,
   pinnedConfig,
@@ -217,4 +218,28 @@ test("values report default, file and override sources; overrides persist, valid
   expect(src("review.lens_threshold")).toMatchObject({ value: 0.45, source: "file" })
   s.setOverride("sdlc.done_below", null)
   expect(src("sdlc.done_below")).toMatchObject({ value: 0.2, source: "file" })
+})
+
+test("implement routing and the security audit model parse from TOML and default to empty", () => {
+  const f = path.join(dir(), "config.toml")
+  writeFileSync(
+    f,
+    '[routing]\nimplement_model = "impl-x"\nimplement_small_model = "impl-small-x"\n[models]\nsecurity = "sec-x"\n',
+  )
+  const c = loadFactoryConfig(f)
+  expect([c.routing.implement_model, c.routing.implement_small_model, c.models.security]).toEqual([
+    "impl-x",
+    "impl-small-x",
+    "sec-x",
+  ])
+  const shipped = loadFactoryConfig("/nonexistent/config.toml")
+  expect([shipped.routing.implement_model, shipped.routing.implement_small_model, shipped.models.security]).toEqual([
+    "",
+    "",
+    "",
+  ])
+  const text = readFileSync(defaultsPath, "utf8")
+  for (const line of ['implement_model = ""', 'implement_small_model = ""', 'security = ""']) {
+    expect(text).toContain(line)
+  }
 })
