@@ -58,6 +58,13 @@ describe("cards", () => {
     const r = JSON.parse(String(await (tool.handler as (args: object, invocation: object) => unknown)({}, {})))
     expect([r.decisions.length, typeof r.note]).toEqual([0, "string"])
   })
+  test("show_security_review never shows another thread's review", async () => {
+    const other = { id: "sr-other", scopeId: "sub-other", threadId: "other", status: "done", model: "m", findings: [] }
+    const f = { securityReviews: new Map([["sr-other", other]]) } as never
+    const tool = coordinatorTools(f, { id: "sub-x", threadId: "t" }).find((t) => t.name === "show_security_review")!
+    const r = JSON.parse(String(await (tool.handler as (args: object, invocation: object) => unknown)({}, {})))
+    expect(r.reviewId).toBeNull()
+  })
   describe("show_evaluation", () => {
     const ev = (id: string, scopeId: string, at: number, extra: object = {}) => ({
       id,

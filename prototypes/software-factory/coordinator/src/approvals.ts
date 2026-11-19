@@ -213,3 +213,16 @@ export const answerPrompt = (a: Approval): string => {
   const relayTo = a.reportThreadId?.replace(/[^\w-]/g, "")
   return `[${a.kind} ${a.id} answered] "${a.title}": ${a.answer}${a.note ? `\nUser note: ${a.note}` : ""}\nContinue the delivery loop accordingly.${relayTo ? `\nRelay this answer to conversation ${relayTo} with message_conversation.` : ""}`
 }
+
+/**
+ * One lesson line from the human's judgment: an answer other than the recommended first option, or a note.
+ * Null for a rule's answer (by is set) or a plain default pick. Sub-coordinators read these with the repo's lessons.
+ */
+export const judgmentLesson = (a: Approval): string | null => {
+  if (a.answeredBy || a.answer === null) return null
+  const recommended = a.options[0]
+  const differs = a.answer !== recommended
+  if (!differs && !a.note) return null
+  const pick = differs && recommended ? `chose "${a.answer}" over "${recommended}"` : `chose "${a.answer}"`
+  return `Owner on "${a.title}": ${pick}${a.note ? `; note: ${a.note}` : ""}`.replace(/\s+/g, " ").slice(0, 300)
+}
