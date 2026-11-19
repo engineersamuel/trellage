@@ -123,7 +123,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import type { Factory } from "../src/factory.ts"
-import { securityReview } from "../src/security.ts"
+import { auditProfile, securityReview } from "../src/security.ts"
 
 /** A Factory double: spawned workers finish at once; the reviewer writes `findings`. */
 const fakeFactory = (findings: unknown[] | null, idle = true) => {
@@ -187,6 +187,7 @@ test("securityReview audits the diff, then fixes and verifies kept findings", ()
     expect(r.findings.map((x) => [x.id, x.verdict])).toEqual([["sqli:api/users.ts:42", "keep"]])
     expect(spawned.map((s) => s.step)).toEqual(["security", "implement", "verify"])
     expect(spawned[0]!.task).toContain("git diff abc123")
+    expect(spawned[0]!.task).toContain("`quick` run profile")
     expect(spawned[1]!.task).toContain("SQL injection in user lookup")
     expect(spawned.every((s) => s.workdir === "/wt" && s.model === "routed-model" && s.auth === "proxy")).toBe(true)
     // No short limit: each wait is one 30 s poll of a worker that is never stuck (the backstop is 90 min).
@@ -371,3 +372,9 @@ test("the audit model: SF_SECURITY_MODEL beats models.security, which beats the 
       store.close()
     }
   }))
+
+test("auditProfile: quick for T0 and T1 diffs, standard for T2", () => {
+  expect(auditProfile("T0")).toBe("quick")
+  expect(auditProfile("T1")).toBe("quick")
+  expect(auditProfile("T2")).toBe("standard")
+})

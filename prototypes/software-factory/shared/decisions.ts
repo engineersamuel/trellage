@@ -18,7 +18,8 @@ const URGENT_MIN = 10
 const announced = new Set<string>()
 let root: HTMLElement
 
-/** Escape, then format a small safe markdown subset: headings, bullets, bold, italics, code, code fences, tables, links. */
+/** Escape, then format a small safe markdown subset: headings, bullets, bold, italics, code, code fences, tables, links,
+ * and a line-alone image of an absolute local .png/.jpg path (served by /api/files/image). */
 export const markdown = (src: string): string => {
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
   const inline = (s: string) =>
@@ -78,7 +79,12 @@ export const markdown = (src: string): string => {
       out.push(`<li>${inline((b ?? n)![1]!)}</li>`)
     } else {
       close()
+      const img = line.match(/^\s*!\[([^\]]*)\]\((\/[^)\s]+\.(?:png|jpe?g))\)\s*$/i)
       if (h) out.push(`<h4>${inline(h[1]!)}</h4>`)
+      else if (img)
+        out.push(
+          `<img class="sfd-shot" alt="${esc(img[1]!)}" src="/api/files/image?path=${encodeURIComponent(img[2]!)}">`,
+        )
       else if (line.trim()) out.push(`<p>${inline(line)}</p>`)
     }
   }

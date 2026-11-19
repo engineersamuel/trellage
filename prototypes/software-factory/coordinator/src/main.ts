@@ -92,7 +92,7 @@ import { EVENT_KINDS, eventKind, type EventKind } from "./turnKind.ts"
 import { specView } from "./spec.ts"
 import { onTrack, steps } from "./steps.ts"
 import { findIssues, supervisorPrompt, type Issue } from "./supervisor.ts"
-import { answerPrompt } from "./approvals.ts"
+import { answerPrompt, judgmentLesson } from "./approvals.ts"
 import { loop, stopLoops } from "./loops.ts"
 import { sendWhenIdle } from "./delivery.ts"
 import { freshTurn, reportNudge, reportPrompt, shouldReport, type Report } from "./report.ts"
@@ -100,7 +100,7 @@ import { pendingReview } from "./security.ts"
 import { branchPr, pastWorkers, runWorkers, withSubagents, type Run } from "./run.ts"
 import { costReport, GOAL_PAGE_AGENT, gradeCost, rollUp, runCost, type AgentInfo } from "./costs.ts"
 import { factoryConfig } from "./config.ts"
-import { artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
+import { addLessons, artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
 import { postMergeCheck } from "./postmerge.ts"
 import { ARTIFACTS_DIR, peekFile, servableImage } from "./files.ts"
@@ -2442,6 +2442,9 @@ const routes: [string, RegExp, Handler][] = [
           typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 200) : null,
         )
         factory.publish("coordinator", "factory.approval_answered", null, now(), a)
+        const folderId = a.threadId ? threads.get(a.threadId)?.folderId : undefined
+        const lesson = judgmentLesson(a)
+        if (lesson && folderId && folderId !== GENERAL.id) addLessons(factory.root, folderId, [lesson])
         if (!improvementAnswered(a) && !budgetAnswered(a) && !goalAnswered(a) && !tournamentBudgetAnswered(a))
           answerApproval(a)
         return json(a)

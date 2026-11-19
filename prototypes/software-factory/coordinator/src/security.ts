@@ -8,6 +8,7 @@ import type { Scope } from "./tools.ts"
 import { loadPrompt } from "./prompt.ts"
 import { factoryConfig } from "./config.ts"
 import { awaitGateWorker } from "./gateWorker.ts"
+import { classify, diffFiles, type Tier } from "./sdlc.ts"
 
 /** A security-audit findings.json record worth acting on (rejected records are dropped). */
 export type Finding = {
@@ -189,8 +190,19 @@ const target = (f: Factory, scope: Scope) => {
   return { workdir, base }
 }
 
+/** The security-audit skill profile for a diff: `quick` unless the risk tier is T2 (large, dependencies, sensitive paths). */
+export const auditProfile = (tier: Tier): "quick" | "standard" => (tier === "T2" ? "standard" : "quick")
+
 /** Reviewer worker: audit the diff, read its findings.json, stop it. */
-const audit = async (f: Factory, spawn: Spawn, set: Set, base: string, wait: Wait): Promise<Finding[]> => {
+const audit = async (
+  f: Factory,
+  spawn: Spawn,
+  set: Set,
+  workdir: string,
+  base: string,
+  wait: Wait,
+): Promise<Finding[]> => {
+  const profile = auditProfile(classify(diffFiles(workdir, base)).tier)
   const id = `w-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`
   const out = path.join(f.root, id, "security-audit")
   mkdirSync(out, { recursive: true })
@@ -200,7 +212,7 @@ const audit = async (f: Factory, spawn: Spawn, set: Set, base: string, wait: Wai
     const w = await spawn(
       "security-review",
       "security",
-      loadPrompt("tasks/security-audit", { base, out }),
+      loadPrompt("tasks/security-audit", { base, out, profile }),
       n++ ? undefined : id,
     )
     set({ workerId: w.id })
@@ -265,7 +277,7 @@ const run = async (f: Factory, scope: Scope, r: SecurityReview, set: Set, pinned
   }
   try {
     const wait: Wait = (start, what) => awaitGateWorker(start, what, (id) => f.stop(id), factoryConfig())
-    const found = await audit(f, spawn, set, base, wait)
+    const found = await audit(f, spawn, set, workdir, base, wait)
     set({
       status: "findings",
       findings: found.map((x) => withVerdict(x, { verdict: "keep", reason: "awaiting triage", confidence: 0 })),

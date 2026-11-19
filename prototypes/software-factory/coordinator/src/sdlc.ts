@@ -17,6 +17,18 @@ import type { Verdict } from "../../shared/goal.ts"
 export const FACTORY_DIR = ".factory"
 export const artifact = (workdir: string, name: string) => path.join(workdir, FACTORY_DIR, name)
 
+/** Markdown image lines for the UI step's screenshots (`.factory/screenshots/*.png|jpg`), newest 4; "" when none. */
+export const screenshotsMarkdown = (workdir: string): string => {
+  const dir = artifact(workdir, "screenshots")
+  const shots = existsSync(dir)
+    ? readdirSync(dir)
+        .filter((n) => /\.(png|jpe?g)$/i.test(n))
+        .sort()
+        .slice(-4)
+    : []
+  return shots.length ? `**Screenshots:**\n${shots.map((n) => `![${n}](${path.join(dir, n)})`).join("\n")}` : ""
+}
+
 /** Create `.factory/` and keep it out of git (the repo's shared info/exclude). */
 export const ensureFactoryDir = (workdir: string): void => {
   mkdirSync(path.join(workdir, FACTORY_DIR), { recursive: true })

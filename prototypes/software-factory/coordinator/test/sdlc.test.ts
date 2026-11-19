@@ -19,6 +19,7 @@ import {
   factoryThreadUrl,
   prBody,
   readLessons,
+  screenshotsMarkdown,
   repoChecks,
   settleGates,
   shipBlockers,
@@ -332,4 +333,14 @@ test("rebaseChangedLines: 0 for a clean rebase, conflict resolutions count", () 
   g("commit", "-q", "-am", "feat resolved")
   expect(rebaseChangedLines(dir, reviewed2, main2)).toBeGreaterThan(0)
   expect(inHistory(dir, main2)).toBe(true)
+})
+
+test("screenshotsMarkdown lists the newest 4 UI screenshots, or nothing", () => {
+  const wt = mkdtempSync(path.join(tmpdir(), "sf-shots-"))
+  expect(screenshotsMarkdown(wt)).toBe("")
+  mkdirSync(artifact(wt, "screenshots"), { recursive: true })
+  for (const n of ["1.png", "2.png", "3.jpg", "4.png", "5.png", "notes.txt"])
+    writeFileSync(artifact(wt, `screenshots/${n}`), "")
+  const md = screenshotsMarkdown(wt)
+  expect(md.match(/!\[[^\]]+\]/g)).toEqual(["![2.png]", "![3.jpg]", "![4.png]", "![5.png]"])
 })

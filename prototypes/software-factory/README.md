@@ -229,7 +229,8 @@ task:
 
 1. A new reviewer worker loads only Cloudflare's [security-audit](https://github.com/cloudflare/security-audit-skill)
    skill (no ub-mode, no quality-gate tools), with the implement worker's auth, audits `git diff <base>` of the
-   worktree, and writes `findings.json` outside the worktree.
+   worktree, and writes `findings.json` outside the worktree. The skill runs its `quick` profile (one hunter wave)
+   unless the diff is risk tier T2 (over 400 lines, dependency files, or sensitive paths); then it runs `standard`.
 2. `confirmed` and `needs_validation` findings are triaged by Jev (`keep`, or discard as false positive, out of scope,
    or low risk). Without a Jev key, or on error, every finding is kept.
 3. Kept findings go to a fix worker (implement) and then a verify worker. Discarded findings are logged with their

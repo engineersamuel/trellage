@@ -37,7 +37,7 @@ import {
   startEvaluation,
   startFinalSecurity,
 } from "./gates.ts"
-import { addLessons, artifact, prBody, unprovenCriteria } from "./sdlc.ts"
+import { addLessons, artifact, prBody, screenshotsMarkdown, unprovenCriteria } from "./sdlc.ts"
 import { fetchOrigin, upstreamState } from "./folders.ts"
 import { decideNext, selectableSteps, SkillPreflightError } from "./steps.ts"
 import { homeFor, readHome } from "./home.ts"
@@ -798,9 +798,13 @@ const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_
         kind: name === "ask_user" ? "question" : "approval",
         threadId: scope.threadId ?? f.currentThread,
         title: str(a, "title"),
-        summary: plan?.notes.length
-          ? `${str(a, "summary")}\n\n**Untestable criteria (independent evaluator):**\n- ${plan.notes.join("\n- ")}`
-          : str(a, "summary"),
+        summary: [
+          str(a, "summary"),
+          plan?.notes.length ? `**Untestable criteria (independent evaluator):**\n- ${plan.notes.join("\n- ")}` : "",
+          shipBranch !== null ? screenshotsMarkdown(scope.workdir!) : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
         options:
           Array.isArray(a.options) && a.options.length
             ? a.options.map(String)
@@ -1235,11 +1239,9 @@ export const cardData = (f: Factory, scope: Scope, name: string, a: Record<strin
           })),
       }
     case "show_security_review": {
-      const all = [...f.securityReviews.values()]
-      const mine = all.filter(
-        (r) => r.scopeId === scope.id || (scope.threadId !== null && r.threadId === scope.threadId),
-      )
-      const r = (mine.length ? mine : all).at(-1)
+      const r = [...f.securityReviews.values()]
+        .filter((x) => x.scopeId === scope.id || (scope.threadId !== null && x.threadId === scope.threadId))
+        .at(-1)
       if (!r) return { reviewId: null, note: "No security review yet." }
       const findings = r.findings.map((x) => ({
         title: x.title,
