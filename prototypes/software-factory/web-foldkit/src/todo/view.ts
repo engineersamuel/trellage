@@ -52,11 +52,12 @@ const content = (m: Model, r: Dialog.RenderInfo, h: HtmlBuilder<Message>): Html[
   const detail: Detail | undefined = Option.getOrUndefined(AsyncData.getData(m.detail))
   const connected = (state?.state ?? state?.status) === "connected"
   const loading =
-    AsyncData.isPending(m.status) ||
-    AsyncData.isPending(m.lists) ||
-    AsyncData.isPending(m.tasks) ||
-    AsyncData.isPending(m.detail) ||
-    AsyncData.isPending(m.folders)
+    !m.error &&
+    (AsyncData.isPending(m.status) ||
+      AsyncData.isPending(m.lists) ||
+      AsyncData.isPending(m.tasks) ||
+      AsyncData.isPending(m.detail) ||
+      AsyncData.isPending(m.folders))
   return [
     h.header(
       [],

@@ -202,6 +202,20 @@ test("todo keeps a draft pending when an unrelated request fails", () => {
   expect(clickedAgain.commands ?? []).toHaveLength(0)
 })
 
+test("todo keeps a request error when another resource finishes loading", () =>
+  story(
+    update,
+    given(init().model),
+    message(Message.ClickedOpen()),
+    Command.resolveAll(
+      [LoadStatus, Message.LoadedStatus({ value: { state: "disconnected" } })],
+      [LoadLists, Message.Failed({ error: "Todo lists unavailable" })],
+      [LoadFolders, Message.LoadedFolders({ value: [{ id: "repo", name: "Repo", path: "/repo" }] })],
+      [Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()],
+    ),
+    model((m) => expect(m.error).toBe("Todo lists unavailable")),
+  ))
+
 test("the production Draft command posts todo identity and selects the returned worker", async () => {
   let requestBody: unknown
   let requestUrl = ""

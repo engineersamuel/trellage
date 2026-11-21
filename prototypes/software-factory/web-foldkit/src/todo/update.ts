@@ -27,7 +27,6 @@ export const init = (): Update.Return<Model, Message> => ({
 const put = (m: Model, key: "status" | "lists" | "tasks" | "detail" | "folders", value: unknown): Model => ({
   ...m,
   [key]: AsyncData.succeed(value),
-  error: "",
 })
 const fail = (m: Model, error: string): Model => modifyFields(m, { error: () => error })
 const matchesListRequest = (m: Model, listId: string, requestId: number) =>
@@ -51,6 +50,7 @@ const open = (m: Model) => {
     status: () => AsyncData.Loading(),
     lists: () => AsyncData.Loading(),
     folders: () => AsyncData.Loading(),
+    error: () => "",
   })
   return {
     model: loading,

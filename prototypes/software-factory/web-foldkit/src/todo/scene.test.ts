@@ -105,5 +105,6 @@ test("todo view exposes loading and request errors", () =>
     Command.resolve(LoadStatus, Message.Failed({ error: "TickTick is unavailable" })),
     Command.resolve(LoadLists, Message.Failed({ error: "TickTick is unavailable" })),
     Command.resolve(LoadFolders, Message.Failed({ error: "TickTick is unavailable" })),
+    expect(role("dialog")).not.toContainText("Loading Todo…"),
     expect(role("alert")).toHaveText("TickTick is unavailable"),
   ))
