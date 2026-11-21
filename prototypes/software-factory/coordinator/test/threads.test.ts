@@ -47,6 +47,22 @@ test("a draft survives a restart", () => {
   expect(new Threads(root).get(th.id)?.draft).toEqual(draft)
 })
 
+test("a linked todo survives a restart", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "sf-threads-"))
+  const threads = new Threads(root)
+  const thread = threads.create("idea")
+  const todo = {
+    source: "ticktick" as const,
+    listId: "list",
+    taskId: "task",
+    title: "idea",
+    state: "claimed" as const,
+    done: ["claim"],
+  }
+  threads.setTodo(thread.id, todo)
+  expect(new Threads(root).get(thread.id)?.todo).toEqual(todo)
+})
+
 test("archivedAt is set and cleared by update, and survives a reload", () => {
   const root = mkdtempSync(path.join(tmpdir(), "sf-threads-"))
   const t = new Threads(root)

@@ -71,8 +71,13 @@ export const draftPrompt = (task: TodoTask, list: TodoList, comments: readonly T
   const ordinary = comments.map((comment) => comment.content.trim()).filter((text) => text && !text.startsWith("🏭"))
   if (ordinary.length) sections.push(["Comments:", ...ordinary.map((text) => `- ${text}`)].join("\n"))
   const tags = task.tags?.length ? task.tags.join(", ") : "none"
-  sections.push(
-    `Source: TickTick · list ${list.name} · tags ${tags} · priority ${priorityName(task.priority)} · due ${dueDate(task.dueDate)}`,
-  )
+  const metadata = [
+    `Source: TickTick`,
+    `list ${list.name}`,
+    `tags ${tags}`,
+    `priority ${priorityName(task.priority)}`,
+    `due ${dueDate(task.dueDate)}`,
+  ]
+  sections.push(metadata.join(" · "))
   return sections.join("\n\n")
 }

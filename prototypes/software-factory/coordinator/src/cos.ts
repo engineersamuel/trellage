@@ -484,8 +484,21 @@ export const prState = (state: string, checks: string): PrState =>
           : "pending"
 
 /** The typed event for a change of PR state, or null when nothing worth an event changed. */
-export const prEvent = (before: PrState | undefined, now: PrState): "pr-green" | "pr-red" | "merged" | null =>
-  before === now ? null : now === "green" ? "pr-green" : now === "red" ? "pr-red" : now === "merged" ? "merged" : null
+export const prEvent = (
+  before: PrState | undefined,
+  now: PrState,
+): "pr-green" | "pr-red" | "merged" | "closed" | null =>
+  before === now
+    ? null
+    : now === "green"
+      ? "pr-green"
+      : now === "red"
+        ? "pr-red"
+        : now === "merged"
+          ? "merged"
+          : now === "closed"
+            ? "closed"
+            : null
 
 // ---------- Persistent rule state ----------
 

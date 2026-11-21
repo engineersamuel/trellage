@@ -50,6 +50,7 @@ const FactoryConfigSchema = Schema.Struct({
   fanout: Schema.Struct({ max_workers: Count, select_threshold: Probability }),
   /** Hard limits per worker on paid MCP calls (src/mcp.ts); a call over the limit is refused. */
   mcp: Schema.Struct({ perplexity_max_calls: Count, perplexity_research_max_calls: Count }),
+  todo: Schema.Struct({ enabled: Schema.Boolean, tag: Model }),
   /** Jev probability at or above which each gate runs. The question is prompts/gates/<id>.md. */
   gates: Schema.Struct({
     design: Probability,
@@ -443,6 +444,7 @@ export const snapshotConfig = (root: string, c: FactoryConfig = factoryConfig())
 const decodeSnapshot = (raw: { models: object; routing: object }): FactoryConfig =>
   decode({
     ...raw,
+    todo: { enabled: true, tag: "factory", ...(raw as { todo?: object }).todo },
     models: { security: "", ...raw.models },
     routing: { implement_model: "", implement_small_model: "", ...raw.routing },
   })

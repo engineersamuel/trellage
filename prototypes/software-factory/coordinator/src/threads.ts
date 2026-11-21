@@ -25,6 +25,16 @@ export type Draft = {
   startedAt?: number
 }
 
+export type ThreadTodo = {
+  source: "ticktick"
+  listId: string
+  taskId: string
+  title: string
+  state: "claimed" | "completed" | "released"
+  done: string[]
+  error?: string
+}
+
 /** folderId is "general" or a repo folder id; repo conversations also have their own worktree. */
 export type Thread = {
   id: string
@@ -38,6 +48,8 @@ export type Thread = {
   draft?: Draft
   /** Saved goal this run belongs to; its grades go to the goal's run log. */ goalId?: string
   /** Validated goal configuration captured before launch. */ goalSpec?: GoalSpec
+  /** Outside task that led to this factory conversation. */
+  todo?: ThreadTodo
   /** Durable grades, including saved-goal grades if the goal log is unavailable. */ grades?: Grade[]
   /** Latest proposal, retained for existing API clients. */ improvement?: ImprovementProposal
   /** All proposals, keyed by source grade; older approvals must remain routable. */ improvements?: ImprovementProposal[]
@@ -263,6 +275,14 @@ export class Threads {
     const t = this.get(id)
     if (t) {
       Object.assign(t, { draft })
+      this.save(t)
+    }
+  }
+
+  setTodo(id: string, todo: ThreadTodo): void {
+    const t = this.get(id)
+    if (t) {
+      Object.assign(t, { todo })
       this.save(t)
     }
   }
