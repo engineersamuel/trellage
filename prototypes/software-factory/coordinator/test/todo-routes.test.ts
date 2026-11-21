@@ -135,7 +135,11 @@ const makeHarness = (options: HarnessOptions = {}) => {
     threads,
     createThread: (prompt, folderId) => {
       void prompt
-      return threads.create("Todo draft", folderId, () => ({ worktree: "/repo", branch: "topic", base: "main" }))
+      return threads.create("Todo draft", folderId, () => ({
+        worktree: "/repo",
+        branch: "topic",
+        base: "main",
+      }))
     },
     spawn: async () => ({ id: "worker" }),
     isRunning: () => false,
@@ -232,7 +236,24 @@ test("POST /api/drafts invokes the production handler and claims a stored Todo p
 })
 
 test("draft discard and thread DELETE both release before deletion through production handlers", async () => {
-  const { routes, threads, folder, calls } = makeHarness()
+  let tags = ["owner", "factory", "other"]
+  const fake = await fakeTickTick((call) => {
+    if (call.name === "get_task_by_id")
+      return { structuredContent: { task: { ...task, tags: [...tags], etag: "etag-1" } } }
+    if (call.name === "update_task") {
+      tags = (call.arguments.task as { tags?: string[] }).tags ?? []
+      return { structuredContent: {} }
+    }
+    return undefined
+  })
+  const { source, calls } = fake
+  const { routes, threads, folder } = makeHarness({
+    actions: {
+      task: async (id) => (await Effect.runPromise(source.task(id))).task,
+      claim: (value, url) => Effect.runPromise(source.claim(value, url)),
+      release: (value, reason) => Effect.runPromise(source.release(value, reason)),
+    },
+  })
   const first = await routes.create(
     new Request("http://factory.test/api/drafts", {
       method: "POST",
@@ -246,7 +267,13 @@ test("draft discard and thread DELETE both release before deletion through produ
   await Promise.resolve()
   await routes.discardDraft(draft.id)
   expect(threads.get(draft.id)).toBeUndefined()
-  expect(calls).toContain("release draft discarded")
+  expect(calls.filter((call) => call.name === "add_comment")).toContainEqual({
+    name: "add_comment",
+    arguments: { task_id: "task-1", content: "🏭 Factory stopped: draft discarded" },
+  })
+  expect(calls.filter((call) => call.name === "update_task").at(-1)?.arguments.task).toMatchObject({
+    tags: ["owner", "other"],
+  })
 
   const second = await routes.create(
     new Request("http://factory.test/api/drafts", {
@@ -262,12 +289,37 @@ test("draft discard and thread DELETE both release before deletion through produ
   const deleted = await routes.deleteThread(conversation.id)
   expect(deleted.status).toBe(204)
   expect(threads.get(conversation.id)).toBeUndefined()
-  expect(calls.filter((call) => call === "release conversation deleted")).toHaveLength(1)
+  expect(calls.filter((call) => call.name === "add_comment")).toContainEqual({
+    name: "add_comment",
+    arguments: { task_id: "task-1", content: "🏭 Factory stopped: conversation deleted" },
+  })
+  expect(calls.filter((call) => call.name === "update_task").at(-1)?.arguments.task).toMatchObject({
+    tags: ["owner", "other"],
+  })
 })
 
 test("production PR sweep shares repo reads, emits closed, and reconciles archived Todo threads", async () => {
-  const { threads, folder, lifecycle } = makeHarness()
-  const thread = threads.create("Task", folder.id, () => ({ worktree: "/repo", branch: "closed", base: "main" }))
+  const fake = await fakeTickTick((call) => {
+    if (call.name === "get_task_by_id")
+      return {
+        structuredContent: {
+          task: { ...task, tags: ["owner", "factory", "other"], etag: "etag-1" },
+        },
+      }
+    return undefined
+  })
+  const { source, calls } = fake
+  const { threads, folder, lifecycle } = makeHarness({
+    actions: {
+      task: async (id) => (await Effect.runPromise(source.task(id))).task,
+      release: (value, reason) => Effect.runPromise(source.release(value, reason)),
+    },
+  })
+  const thread = threads.create("Task", folder.id, () => ({
+    worktree: "/repo",
+    branch: "closed",
+    base: "main",
+  }))
   threads.setTodo(thread.id, {
     source: "ticktick",
     listId: "list-1",
@@ -277,7 +329,11 @@ test("production PR sweep shares repo reads, emits closed, and reconciles archiv
     done: [],
   })
   threads.update(thread.id, { archivedAt: 1, cleanedAt: 1 })
-  const live = threads.create("Live", folder.id, () => ({ worktree: "/repo", branch: "live", base: "main" }))
+  const live = threads.create("Live", folder.id, () => ({
+    worktree: "/repo",
+    branch: "live",
+    base: "main",
+  }))
   const states = new Map<string, PrState>([
     [thread.id, "pending"],
     [live.id, "pending"],
@@ -311,16 +367,32 @@ test("production PR sweep shares repo reads, emits closed, and reconciles archiv
   expect(reads).toEqual([folder.path])
   expect(events).toEqual(["closed"])
   expect(threads.get(thread.id)?.todo?.state).toBe("released")
+  expect(calls.filter((call) => call.name === "update_task").at(-1)?.arguments.task).toMatchObject({
+    tags: ["owner", "other"],
+  })
+  expect(calls.filter((call) => call.name === "add_comment")).toContainEqual({
+    name: "add_comment",
+    arguments: { task_id: "task-1", content: "🏭 Factory stopped: PR closed without merge" },
+  })
 })
 
 test("persistent timeout intent survives deletion and retry clears it", async () => {
-  let releases = 0
+  let releaseFails = true
+  const fake = await fakeTickTick((call) => {
+    if (call.name === "get_task_by_id")
+      return {
+        structuredContent: {
+          task: { ...task, tags: ["owner", "factory", "other"], etag: "etag-1" },
+        },
+      }
+    if (call.name === "update_task" && releaseFails) return { isError: true, text: "TickTick unavailable" }
+    return undefined
+  })
+  const { source, calls } = fake
   const { routes, threads, folder, pending, lifecycle } = makeHarness({
     actions: {
-      release: async () => {
-        releases++
-        if (releases === 1) await new Promise((resolve) => setTimeout(resolve, 50))
-      },
+      task: async (id) => (await Effect.runPromise(source.task(id))).task,
+      release: (value, reason) => Effect.runPromise(source.release(value, reason)),
     },
     discardTimeout: 2,
   })
@@ -337,6 +409,8 @@ test("persistent timeout intent survives deletion and retry clears it", async ()
   expect(deleted.status).toBe(204)
   expect(pending.get(thread.id)).toMatchObject({ taskId: task.id, reason: "conversation deleted" })
   expect(threads.get(thread.id)).toBeUndefined()
+  expect(calls.filter((call) => call.name === "update_task")).toHaveLength(1)
+  expect(calls.filter((call) => call.name === "add_comment")).toHaveLength(0)
   const sweep = makeTodoPrSweep({
     threads,
     prStates: new Map(),
@@ -348,9 +422,20 @@ test("persistent timeout intent survives deletion and retry clears it", async ()
       throw error
     },
   })
-  await new Promise((resolve) => setTimeout(resolve, 60))
+  releaseFails = false
   await sweep()
   expect(pending.get(thread.id)).toBeUndefined()
+  expect(calls.filter((call) => call.name === "update_task").at(-1)?.arguments.task).toMatchObject({
+    tags: ["owner", "other"],
+  })
+  expect(calls.filter((call) => call.name === "add_comment")).toEqual([
+    {
+      name: "add_comment",
+      arguments: { task_id: "task-1", content: "🏭 Factory stopped: conversation deleted" },
+    },
+  ])
+  await sweep()
+  expect(calls.filter((call) => call.name === "add_comment")).toHaveLength(1)
 })
 
 test("a failed claim keeps its warning while a later stage succeeds", async () => {
@@ -460,6 +545,69 @@ test("production routes and PR sweep reconcile TickTick through an in-memory MCP
       (call) => call.name === "add_comment" && call.arguments.content === "🏭 Merged: https://github.test/pull/7",
     ),
   ).toHaveLength(1)
+})
+
+test("run delivery succeeds when the started comment fails and the next sweep posts it once", async () => {
+  let startedAttempts = 0
+  let startedSucceeded = 0
+  const fake = await fakeTickTick((call) => {
+    const isStarted = call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."
+    if (isStarted && startedAttempts++ === 0) return { isError: true, text: "TickTick unavailable" }
+    if (isStarted) startedSucceeded++
+    return undefined
+  })
+  const { source, calls } = fake
+  const draftSource = {
+    lists: async () => [...(await Effect.runPromise(source.lists()))],
+    task: async (id: string) => Effect.runPromise(source.task(id)),
+  }
+  const { routes, threads, folder, lifecycle } = makeHarness({
+    draftSource,
+    actions: {
+      task: async (id) => (await Effect.runPromise(source.task(id))).task,
+      claim: (value, url) => Effect.runPromise(source.claim(value, url)),
+      note: (value, text) => Effect.runPromise(source.note(value, text)),
+      release: (value, reason) => Effect.runPromise(source.release(value, reason)),
+      complete: (value, url, onCommented, commentPosted) =>
+        Effect.runPromise(source.complete(value, url, { commentPosted, onCommented })),
+    },
+  })
+  const response = await routes.create(
+    new Request("http://factory.test/api/drafts", {
+      method: "POST",
+      body: JSON.stringify({
+        folderId: folder.id,
+        todo: { source: "ticktick", listId: "list-1", taskId: task.id },
+      }),
+    }),
+  )
+  expect(response.status).toBe(200)
+  const created = (await response.json()) as { id: string }
+  expect((await routes.run(created.id)).status).toBe(200)
+  await eventually(() => threads.get(created.id)?.todo?.error === "TickTick action failed")
+
+  const sweep = makeTodoPrSweep({
+    threads,
+    prStates: new Map(),
+    repoPrs: async () => new Map(),
+    onPr: () => undefined,
+    todoEnabled: () => true,
+    todoSweep: (prs) => lifecycle.sweep(prs),
+    onError: (_id, error) => {
+      throw error
+    },
+  })
+  await sweep()
+  expect(startedSucceeded).toBe(1)
+  expect(
+    calls.filter((call) => call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."),
+  ).toHaveLength(2)
+  expect(threads.get(created.id)?.todo).toMatchObject({ state: "claimed", error: undefined })
+  await sweep()
+  expect(startedSucceeded).toBe(1)
+  expect(
+    calls.filter((call) => call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."),
+  ).toHaveLength(2)
 })
 
 test("a failed claim does not reject creation and is posted by the next production sweep", async () => {
