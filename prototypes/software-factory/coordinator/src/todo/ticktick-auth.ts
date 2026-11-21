@@ -144,9 +144,9 @@ export function inMemoryTokenStore(): TokenStoreService {
 }
 
 export type TickTickAuthStatus =
-  | { status: "disconnected"; store: CredentialStore; warn?: string }
-  | { status: "expired"; expiresAt?: number; store: CredentialStore; warn?: string }
-  | { status: "connected"; expiresAt: number; store: CredentialStore; warn?: string }
+  | { status: "disconnected" }
+  | { status: "expired" }
+  | { status: "connected"; expiresAt: number; store: CredentialStore; warn: boolean }
 
 type FetchLike = (input: URL | RequestInfo, init?: RequestInit) => Promise<Response>
 interface Pending {
@@ -261,11 +261,14 @@ export function makeTickTickAuth(options: TickTickAuthOptions = {}) {
   }
   const status = async (): Promise<TickTickAuthStatus> => {
     const credential = await store.get()
-    const common = { store: store.store(), warn: store.warn() }
-    if (!credential?.accessToken) return { status: "disconnected", ...common }
-    if (unauthorized || !credential.expiresAt || credential.expiresAt <= now())
-      return { status: "expired", expiresAt: credential.expiresAt, ...common }
-    return { status: "connected", expiresAt: credential.expiresAt, ...common }
+    if (!credential?.accessToken) return { status: "disconnected" }
+    if (unauthorized || !credential.expiresAt || credential.expiresAt <= now()) return { status: "expired" }
+    return {
+      status: "connected",
+      expiresAt: credential.expiresAt,
+      store: store.store(),
+      warn: credential.expiresAt - now() < 14 * 24 * 60 * 60 * 1000,
+    }
   }
   const markUnauthorized = () => void (unauthorized = true)
   const disconnect = async () => {

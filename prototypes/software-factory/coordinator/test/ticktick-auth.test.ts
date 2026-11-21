@@ -133,7 +133,12 @@ test("OAuth connect and callback use PKCE S256 and state once", async () => {
   const expected = Buffer.from(await crypto.subtle.digest("SHA-256", verifier)).toString("base64url")
   expect(expected).toBe(url.searchParams.get("code_challenge")!)
   await expect(auth.callback("code", state)).rejects.toThrow("state")
-  expect(await auth.status()).toMatchObject({ status: "connected", store: "memory" })
+  expect(await auth.status()).toEqual({
+    status: "connected",
+    expiresAt: expect.any(Number),
+    store: "memory",
+    warn: true,
+  })
 })
 
 test("state expires after ten minutes and status redacts tokens", async () => {
