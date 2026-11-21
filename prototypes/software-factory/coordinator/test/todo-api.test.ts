@@ -23,7 +23,12 @@ const setup = (
   over: {
     status?: () => Promise<
       | { status: "disconnected" }
-      | { status: "connected"; expiresAt: number; store: "secrets" | "file" | "memory"; warn?: boolean }
+      | {
+          status: "connected"
+          expiresAt: number
+          store: "secrets" | "file" | "memory"
+          warn?: boolean
+        }
       | { status: "expired" }
     >
     lists?: () => Promise<{ id: string; name: string }[]>
@@ -100,7 +105,13 @@ test("Todo API sanitizes status success, fallback, and upstream failure sinks", 
   for (const [raw, expected] of [
     [{ status: "disconnected", accessToken: token }, { state: "disconnected" }],
     [
-      { status: "connected", expiresAt: Date.now() + 60_000, store: "file", warn: true, accessToken: token },
+      {
+        status: "connected",
+        expiresAt: Date.now() + 60_000,
+        store: "file",
+        warn: true,
+        accessToken: token,
+      },
       { state: "connected", expiresAt: expect.any(Number), store: "file", warn: true },
     ],
     [{ status: "expired", accessToken: token }, { state: "expired" }],
@@ -183,6 +194,40 @@ test("Todo API marks linked tasks and returns a prompt preview", async () => {
     listId: "list-1",
     prompt: expect.stringContaining("Source: TickTick · list Work"),
   })
+})
+
+test("Todo API refuses foreign web origins without calling TickTick", async () => {
+  let calls = 0
+  const { api } = setup({
+    lists: async () => {
+      calls++
+      return [{ id: "list-1", name: "Work" }]
+    },
+  })
+  for (const [pathname, init] of [
+    ["/api/todo/lists", undefined],
+    ["/api/todo/ticktick/connect", undefined],
+    ["/api/todo/ticktick/callback?code=c&state=s", undefined],
+    ["/api/todo/ticktick", { method: "DELETE" }],
+  ] as const) {
+    const headers = { Origin: "https://attacker.test" }
+    const response = await request(api, pathname, init ? { ...init, headers } : { headers })
+    expect(response.status).toBe(403)
+  }
+
+  expect(calls).toBe(0)
+  expect((await request(api, "/api/todo/lists", { headers: { Origin: "http://localhost:5174" } })).status).toBe(200)
+  expect((await request(api, "/api/todo/lists", { headers: { Origin: "http://127.0.0.1:7700" } })).status).toBe(200)
+  expect((await request(api, "/api/todo/lists")).status).toBe(200)
+  expect(
+    (
+      await request(api, "/api/todo/lists", {
+        headers: { Origin: "http://localhost:5174", "Sec-Fetch-Site": "cross-site" },
+      })
+    ).status,
+  ).toBe(403)
+  expect(calls).toBe(3)
+  expect((await request(api, "/api/todo/lists", { headers: { Origin: "not-an-origin" } })).status).toBe(403)
 })
 
 test("OAuth callback and disconnect use the production handler", async () => {

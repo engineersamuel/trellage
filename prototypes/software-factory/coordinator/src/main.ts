@@ -102,7 +102,7 @@ import { costReport, GOAL_PAGE_AGENT, gradeCost, rollUp, runCost, type AgentInfo
 import { factoryConfig } from "./config.ts"
 import { addLessons, artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
-import { makeTodoApi } from "./todo/api.ts"
+import { makeTodoApi, todoOriginDenied } from "./todo/api.ts"
 import { createTodoDraft } from "./todo/draft.ts"
 import { makeTodoLifecycle, type PendingTodoRelease } from "./todo/lifecycle.ts"
 import { makeTodoPrSweep } from "./todo/pr-sweep.ts"
@@ -1626,6 +1626,7 @@ const todoApi = makeTodoApi({
   enabled: () => factoryConfig().todo.enabled,
   threads,
   uiUrl: process.env.SF_UI_URL ?? "http://localhost:5174/",
+  coordinatorAddress: process.env.SF_ADDR ?? "127.0.0.1:7700",
   auth: todoAuth,
   source: {
     lists: () => Effect.runPromise(todoSource.lists()),
@@ -3071,13 +3072,22 @@ const server = Bun.serve({
   port: Number(port),
   idleTimeout: 0,
   async fetch(req) {
-    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors })
     const url = new URL(req.url)
+    const todoRequest = url.pathname === "/api/todo" || url.pathname.startsWith("/api/todo/")
+    if (todoRequest) {
+      const denied = todoOriginDenied(
+        req,
+        process.env.SF_UI_URL ?? "http://localhost:5174/",
+        process.env.SF_ADDR ?? "127.0.0.1:7700",
+      )
+      if (denied) return denied
+    }
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: todoRequest ? undefined : cors })
     for (const [method, re, handler] of routes) {
       const m = method === req.method && url.pathname.match(re)
       if (!m) continue
       const res = await handler(req, url, m.slice(1).map(decodeURIComponent))
-      for (const [k, v] of Object.entries(cors)) res.headers.set(k, v)
+      if (!todoRequest) for (const [k, v] of Object.entries(cors)) res.headers.set(k, v)
       return res
     }
     return empty(404)

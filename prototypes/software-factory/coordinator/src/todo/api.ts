@@ -16,6 +16,7 @@ export type TodoApiDeps = {
   enabled: boolean | (() => boolean)
   threads: Threads
   uiUrl: string
+  coordinatorAddress?: string
   auth: {
     status(): Promise<RawAuthStatus>
     connect(): Promise<URL>
@@ -55,6 +56,31 @@ const authStatus = (status: RawAuthStatus): TodoAuthStatus => {
   return { state: status.status }
 }
 
+const allowedTodoOrigins = (
+  uiUrl: string,
+  coordinatorAddress = process.env.SF_ADDR ?? "127.0.0.1:7700",
+): Set<string> => {
+  const origins = new Set([new URL(uiUrl, "http://localhost:5174/").origin])
+  const coordinator = new URL(coordinatorAddress.includes("://") ? coordinatorAddress : `http://${coordinatorAddress}`)
+  origins.add(coordinator.origin)
+  if (coordinator.hostname === "localhost" || coordinator.hostname === "127.0.0.1") {
+    origins.add(new URL(`http://localhost:${coordinator.port}`).origin)
+    origins.add(new URL(`http://127.0.0.1:${coordinator.port}`).origin)
+  }
+  return origins
+}
+
+export const todoOriginDenied = (req: Request, uiUrl: string, coordinatorAddress?: string): Response | undefined => {
+  const site = req.headers.get("Sec-Fetch-Site")?.toLowerCase()
+  if (site === "cross-site") return new Response(null, { status: 403 })
+  const origin = req.headers.get("Origin")
+  if (origin === null) return undefined
+  if (!URL.canParse(origin)) return new Response(null, { status: 403 })
+  return allowedTodoOrigins(uiUrl, coordinatorAddress).has(new URL(origin).origin)
+    ? undefined
+    : new Response(null, { status: 403 })
+}
+
 export const makeTodoApi = (d: TodoApiDeps) => {
   const safe = async (run: () => Promise<Response>): Promise<Response> => {
     try {
@@ -65,6 +91,8 @@ export const makeTodoApi = (d: TodoApiDeps) => {
     }
   }
   const handle = async (req: Request, url: URL): Promise<Response> => {
+    const denied = todoOriginDenied(req, d.uiUrl, d.coordinatorAddress)
+    if (denied) return denied
     const enabled = typeof d.enabled === "function" ? d.enabled() : d.enabled
     if (!enabled || !url.pathname.startsWith("/api/todo/")) return new Response(null, { status: 404 })
     if (req.method === "GET" && url.pathname === "/api/todo/status")
@@ -109,7 +137,11 @@ export const makeTodoApi = (d: TodoApiDeps) => {
         const result = await d.source.task(taskId)
         const list = (await d.source.lists()).find((row) => row.id === result.task.projectId)
         if (!list) return json({ error: "Todo list not found" }, 404)
-        return json({ ...result, listId: list.id, prompt: draftPrompt(result.task, list, result.comments) })
+        return json({
+          ...result,
+          listId: list.id,
+          prompt: draftPrompt(result.task, list, result.comments),
+        })
       })
     }
     return new Response(null, { status: 404 })

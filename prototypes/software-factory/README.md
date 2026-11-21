@@ -203,6 +203,7 @@ The Foldkit **Todo** dialog takes one TickTick task into a repo draft. The coord
 TickTick's MCP server. It preserves the owner's tags, adds the configured `factory` tag, records draft/run/PR status
 comments, completes the task after merge, and releases it after discard or a closed PR. Failed Todo calls warn on the
 thread and retry during the PR sweep without blocking drafts, delivery, or merges.
+Todo API requests allow no Origin or the UI/coordinator origin, and reject cross-site browser requests.
 
 Todo state follows one persisted lifecycle: `drafted → claimed → started → pr-opened → completed | released`.
 Every write is serialized per thread. A timed-out write remains ahead of later writes until its request settles or a
