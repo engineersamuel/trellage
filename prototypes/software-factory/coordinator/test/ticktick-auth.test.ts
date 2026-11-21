@@ -141,6 +141,34 @@ test("fallback writes an atomic private file and round trips", async () => {
   expect(store.warn()).toContain("plain-text")
 })
 
+test("a renewed fallback credential wins after the token store restarts", async () => {
+  const root = await mkdtemp(path.join(process.cwd(), ".ticktick-test-"))
+  roots.push(root)
+  process.env.XDG_CONFIG_HOME = root
+  const oldCredential = {
+    clientId: "client",
+    redirectUri: "https://factory/callback",
+    accessToken: "stale-secret-token",
+    expiresAt: 1,
+  }
+  const renewedCredential = { ...oldCredential, accessToken: "renewed-secret-token", expiresAt: Date.now() + 60_000 }
+  const secrets: SecretsAdapter = {
+    get: async () => JSON.stringify(oldCredential),
+    set: async () => {
+      throw new Error("secure store unavailable")
+    },
+    delete: async () => {
+      throw new Error("secure store unavailable")
+    },
+  }
+
+  await makeTokenStore({ secrets }).set(renewedCredential)
+  const restarted = makeTokenStore({ secrets })
+
+  expect(await restarted.get()).toEqual(renewedCredential)
+  expect(restarted.store()).toBe("file")
+})
+
 test("OAuth connect and callback use PKCE S256 and state once", async () => {
   const log: { verifier?: string } = {}
   const auth = makeTickTickAuth({

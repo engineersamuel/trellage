@@ -90,14 +90,17 @@ export function makeTokenStore(options: { secrets?: SecretsAdapter; file?: strin
     }
   }
   const fallback = () => (store = "file")
+  const expiresAt = (value: TickTickCredentials | undefined) => value?.expiresAt ?? Number.NEGATIVE_INFINITY
   const get = async () => {
     if (store === "file") return fileRead()
     try {
       const secure = decode(await secrets.get({ service: SERVICE, name: NAME }))
-      if (secure) return secure
       const disk = await fileRead()
-      if (disk) fallback()
-      return disk
+      if (disk && expiresAt(disk) > expiresAt(secure)) {
+        fallback()
+        return disk
+      }
+      return secure ?? disk
     } catch {
       fallback()
       return fileRead()
