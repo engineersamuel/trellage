@@ -46,7 +46,11 @@ export type TodoSourceApi = {
   claim(task: TodoTask, threadUrl: string): Effect.Effect<void>
   note(task: TodoTask, text: string): Effect.Effect<void>
   release(task: TodoTask, reason: string): Effect.Effect<void>
-  complete(task: TodoTask, prUrl: string): Effect.Effect<void>
+  complete(
+    task: TodoTask,
+    prUrl: string,
+    checkpoint?: { commentPosted: boolean; onCommented(): void },
+  ): Effect.Effect<void>
 }
 
 export class TodoSource extends Context.Service<TodoSource, TodoSourceApi>()("TodoSource") {}

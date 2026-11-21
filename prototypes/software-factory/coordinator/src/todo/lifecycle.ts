@@ -11,7 +11,7 @@ export type TodoLifecycleActions = {
   claim(task: TodoTask, threadUrl: string): Promise<void>
   note(task: TodoTask, text: string): Promise<void>
   release(task: TodoTask, reason: string): Promise<void>
-  complete(task: TodoTask, prUrl: string): Promise<void>
+  complete(task: TodoTask, prUrl: string, onCommented: () => void, commentPosted: boolean): Promise<void>
 }
 
 export type PendingTodoRelease = ThreadTodo & {
@@ -80,7 +80,7 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
     patch(id, (todo) => ({
       ...todo,
       done: todo.done.includes(key) ? todo.done : [...todo.done, key],
-      error: undefined,
+      error: key === "claim" || todo.done.includes("claim") ? undefined : todo.error,
     }))
 
   const withTask = async (id: string, run: (task: TodoTask, todo: ThreadTodo) => Promise<void>): Promise<void> =>
@@ -118,12 +118,10 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
   }
 
   const merge = async (id: string, task: TodoTask, url: string): Promise<void> => {
-    if (!d.threads.get(id)?.todo?.done.includes("merged")) {
-      await d.actions.note(task, `🏭 Merged: ${url}`)
-      finish(id, "merged")
-    }
+    const commentPosted = d.threads.get(id)?.todo?.done.includes("merged") ?? false
     if (d.threads.get(id)?.todo?.state !== "claimed") return
-    await d.actions.complete(task, url)
+    await d.actions.complete(task, url, () => finish(id, "merged"), commentPosted)
+    if (!commentPosted) finish(id, "merged")
     patch(id, (todo) => ({ ...todo, state: "completed", error: undefined }))
   }
 

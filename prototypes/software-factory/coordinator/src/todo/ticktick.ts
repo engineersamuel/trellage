@@ -266,8 +266,12 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
         const updated = await updateTags(task, (tags) => tags.filter((tag) => tag !== configuredTag))
         await addComment(updated, `🏭 Factory stopped: ${reason}`)
       }),
-    complete: (task, _prUrl) =>
+    complete: (task, prUrl, checkpoint) =>
       Effect.promise(async () => {
+        if (!checkpoint?.commentPosted) {
+          await addComment(task, `🏭 Merged: ${prUrl}`)
+          checkpoint?.onCommented()
+        }
         await call("complete_task", { project_id: task.projectId, task_id: task.id })
       }),
   }
