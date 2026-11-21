@@ -107,6 +107,35 @@ test("first PR observation, merged comment and completion run without duplicates
   ])
 })
 
+test("completed threads retry only missing comments", async () => {
+  const { lifecycle, thread, calls, threads, repo } = setup()
+  threads.setTodo(thread.id, {
+    ...threads.get(thread.id)!.todo!,
+    state: "completed",
+    done: ["claim"],
+  })
+  Object.assign(
+    (threads.get(thread.id)!.draft ??= {
+      versions: [],
+      current: "",
+      reports: [],
+    }),
+    { startedAt: 1 },
+  )
+  const pr = {
+    number: 1,
+    url: "https://github.test/pull/1",
+    state: "MERGED",
+    checks: "SUCCESS",
+  } as const
+  const prs = new Map([[repo, new Map([["topic", pr]])]])
+
+  await lifecycle.sweep(prs)
+  await lifecycle.sweep(prs)
+
+  expect(calls).toEqual(["🏭 Factory started work.", `🏭 PR: ${pr.url}`, `🏭 Merged: ${pr.url}`])
+})
+
 test("a failed complete retries without repeating the merged comment", async () => {
   let fail = true
   const observed: string[] = []

@@ -683,7 +683,7 @@ test("run delivery succeeds when the started comment fails and the next sweep po
   ).toHaveLength(2)
 })
 
-test("a completed thread does not retry a failed started comment or merge actions", async () => {
+test("a failed started comment is retried on a completed thread without repeating merge actions", async () => {
   let startedAvailable = false
   const fake = await fakeTickTick((call) => {
     const isStarted = call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."
@@ -740,7 +740,7 @@ test("a completed thread does not retry a failed started comment or merge action
   await sweep()
   expect(threads.get(created.id)?.todo).toMatchObject({
     state: "completed",
-    error: undefined,
+    error: "TickTick action failed",
   })
   expect(threads.get(created.id)?.todo?.done).not.toContain("run")
   expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
@@ -751,7 +751,7 @@ test("a completed thread does not retry a failed started comment or merge action
   expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
   expect(
     calls.filter((call) => call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."),
-  ).toHaveLength(2)
+  ).toHaveLength(3)
   await sweep()
   expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
 })

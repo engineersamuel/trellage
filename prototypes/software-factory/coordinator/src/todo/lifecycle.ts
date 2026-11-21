@@ -110,20 +110,21 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
 
   const runComment = async (id: string): Promise<void> =>
     withTask(id, async (task, todo) => {
-      if (terminal(todo)) return
       if (todo.done.includes("run")) return
       if (!d.threads.get(id)?.draft?.startedAt) return
       await d.actions.note(task, FACTORY_STARTED)
       finish(id, "run")
     })
 
-  const prComment = async (id: string, task: TodoTask, url: string): Promise<void> => {
-    const key = `pr:${url}`
+  const comment = async (id: string, task: TodoTask, key: string, text: string): Promise<void> => {
     if (!d.threads.get(id)?.todo?.done.includes(key)) {
-      await d.actions.note(task, `🏭 PR: ${url}`)
+      await d.actions.note(task, text)
       finish(id, key)
     }
   }
+
+  const prComment = async (id: string, task: TodoTask, url: string): Promise<void> =>
+    comment(id, task, `pr:${url}`, `🏭 PR: ${url}`)
 
   const merge = async (id: string, task: TodoTask, url: string): Promise<void> => {
     const commentPosted = d.threads.get(id)?.todo?.done.includes("merged") ?? false
@@ -133,7 +134,7 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
     patch(id, (todo) => ({
       ...todo,
       state: "completed",
-      error: undefined,
+      error: prerequisitesDone(id, todo) ? undefined : todo.error,
     }))
   }
 
@@ -145,15 +146,18 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
     patch(id, (todo) => ({
       ...todo,
       state: "released",
-      error: undefined,
+      error: prerequisitesDone(id, todo) ? undefined : todo.error,
     }))
   }
 
   const reconcile = async (id: string, pr: BranchPr): Promise<void> =>
     withTask(id, async (task, todo) => {
-      if (terminal(todo)) return
       const state: PrState = prState(pr.state, pr.checks)
       await prComment(id, task, pr.url)
+      if (terminal(todo)) {
+        if (state === "merged") await comment(id, task, "merged", `🏭 Merged: ${pr.url}`)
+        return
+      }
       if (state === "merged") await merge(id, task, pr.url)
       if (state === "closed") await release(id, task, "PR closed without merge")
     })
@@ -210,10 +214,9 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
   const sweep = async (prs: Map<string, Map<string, BranchPr>>): Promise<void> => {
     for (const thread of d.threads.list()) {
       const todo = thread.todo
-      if (!todo || terminal(todo)) continue
+      if (!todo) continue
       await claim(thread.id)
       await runComment(thread.id)
-      if (d.threads.get(thread.id)?.todo?.state !== "claimed") continue
       const repo = d.threads.folder(thread.folderId)?.path
       const pr = thread.branch && repo ? prs.get(repo)?.get(thread.branch) : undefined
       if (pr) await reconcile(thread.id, pr)
