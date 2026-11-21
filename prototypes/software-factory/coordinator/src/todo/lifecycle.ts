@@ -50,7 +50,18 @@ const timeout = <A>(promise: Promise<A>, ms: number): Promise<A> =>
   })
 
 export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
-  const inFlight = new Set<string>()
+  const inFlight = new Map<string, Promise<void>>()
+
+  const serialize = (id: string, action: () => Promise<void>): Promise<void> => {
+    const previous = inFlight.get(id) ?? Promise.resolve()
+    const current = previous.then(action, action)
+    inFlight.set(id, current)
+    const clear = () => {
+      if (inFlight.get(id) === current) inFlight.delete(id)
+    }
+    void current.then(clear, clear)
+    return current
+  }
 
   const patch = (id: string, update: (todo: ThreadTodo) => ThreadTodo): void => {
     const current = d.threads.get(id)?.todo
@@ -72,19 +83,16 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
       error: undefined,
     }))
 
-  const withTask = async (id: string, run: (task: TodoTask, todo: ThreadTodo) => Promise<void>): Promise<void> => {
-    if (inFlight.has(id)) return
-    inFlight.add(id)
-    try {
-      const todo = d.threads.get(id)?.todo
-      if (!todo || todo.state !== "claimed") return
-      await run(await d.actions.task(todo.taskId), todo)
-    } catch (error) {
-      failure(id, error)
-    } finally {
-      inFlight.delete(id)
-    }
-  }
+  const withTask = async (id: string, run: (task: TodoTask, todo: ThreadTodo) => Promise<void>): Promise<void> =>
+    serialize(id, async () => {
+      try {
+        const todo = d.threads.get(id)?.todo
+        if (!todo || todo.state !== "claimed") return
+        await run(await d.actions.task(todo.taskId), todo)
+      } catch (error) {
+        failure(id, error)
+      }
+    })
 
   const claim = async (id: string): Promise<void> =>
     withTask(id, async (task, todo) => {
@@ -136,17 +144,19 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
     })
 
   const retryReleases = async (): Promise<void> => {
-    for (const id of d.pending.keys()) {
-      const pending = d.pending.get(id)
-      if (!pending) continue
-      try {
-        const task = await d.actions.task(pending.taskId)
-        if (!pending.done.includes("released")) await d.actions.release(task, pending.reason)
-        d.pending.delete(id)
-      } catch (error) {
-        d.onError(id, ACTION_FAILED)
-        void error
-      }
+    for (const id of [...d.pending.keys()]) {
+      await serialize(id, async () => {
+        const pending = d.pending.get(id)
+        if (!pending) return
+        try {
+          const task = await d.actions.task(pending.taskId)
+          await d.actions.release(task, pending.reason)
+          d.pending.delete(id)
+        } catch (error) {
+          d.onError(id, ACTION_FAILED)
+          void error
+        }
+      })
     }
   }
 
@@ -166,14 +176,22 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
     const todo = thread.todo
     if (!todo || todo.state !== "claimed") return
     const pending: PendingTodoRelease = { ...todo, reason }
+    d.pending.set(thread.id, pending)
+    const releasing = serialize(thread.id, async () => {
+      if (!d.pending.get(thread.id)) return
+      try {
+        const task = await d.actions.task(pending.taskId)
+        await d.actions.release(task, pending.reason)
+        d.pending.delete(thread.id)
+        patch(thread.id, (current) => ({ ...current, state: "released", error: undefined }))
+      } catch (error) {
+        d.onError(thread.id, ACTION_FAILED)
+        void error
+      }
+    })
     try {
-      await timeout(
-        d.actions.task(todo.taskId).then((task) => d.actions.release(task, reason)),
-        timeoutMs,
-      )
-      d.pending.delete(thread.id)
+      await timeout(releasing, timeoutMs)
     } catch (error) {
-      d.pending.set(thread.id, pending)
       d.onError(thread.id, ACTION_FAILED)
       void error
     }

@@ -138,22 +138,19 @@ test("a note is plain text truncated to 1024 characters", async () => {
   await server.close()
 })
 
-test("complete posts the merge note before completing the project task", async () => {
+test("complete completes the project task without owning the merge note", async () => {
   const { source, server, calls } = await fixture(() => ({ structuredContent: {} }))
   await Effect.runPromise(source.complete(task(), "https://github.example/pull/7"))
-  expect(calls).toEqual([
-    {
-      name: "add_comment",
-      arguments: { task_id: "task-1", content: "🏭 Merged: https://github.example/pull/7" },
-    },
-    { name: "complete_task", arguments: { project_id: "project-1", task_id: "task-1" } },
-  ])
+  expect(calls).toEqual([{ name: "complete_task", arguments: { project_id: "project-1", task_id: "task-1" } }])
   await server.close()
 })
 
 test("401 becomes TodoAuthError and marks the injected auth status expired", async () => {
   let expired = 0
-  const { source, server } = await fixture(() => ({ isError: true, text: "HTTP 401 Unauthorized" }))
+  const { source, server } = await fixture(() => ({
+    isError: true,
+    text: "HTTP 401 Unauthorized",
+  }))
   const marked = makeTickTickTodoSource({
     accessToken: "do-not-display",
     status: {
@@ -175,6 +172,56 @@ test("401 becomes TodoAuthError and marks the injected auth status expired", asy
   expect(expired).toBe(1)
   await expect(Effect.runPromise(source.lists())).rejects.toThrow("TickTick authorization expired")
   await server.close()
+})
+
+test("a disconnected request reconnects after OAuth makes a token available", async () => {
+  let available = false
+  let connects = 0
+  const source = makeTickTickTodoSource({
+    accessToken: async () => {
+      if (!available) throw new Error("TickTick source is disconnected")
+      return "new-token"
+    },
+    clientFactory: () => ({
+      connect: async () => {
+        connects++
+      },
+      callTool: async () => ({
+        content: [],
+        structuredContent: { projects: [{ id: "project-1", name: "Work" }] },
+      }),
+    }),
+    transportFactory: () => InMemoryTransport.createLinkedPair()[0],
+  })
+
+  await expect(Effect.runPromise(source.lists())).rejects.toThrow("TickTick MCP request failed")
+  available = true
+  await expect(Effect.runPromise(source.lists())).resolves.toEqual([{ id: "project-1", name: "Work" }])
+  expect(connects).toBe(1)
+})
+
+test("a rejected MCP connect does not poison later requests", async () => {
+  let available = false
+  let connects = 0
+  const source = makeTickTickTodoSource({
+    accessToken: "secret",
+    clientFactory: () => ({
+      connect: async () => {
+        connects++
+        if (!available) throw new Error("offline")
+      },
+      callTool: async () => ({
+        content: [],
+        structuredContent: { projects: [{ id: "project-1", name: "Work" }] },
+      }),
+    }),
+    transportFactory: () => InMemoryTransport.createLinkedPair()[0],
+  })
+
+  await expect(Effect.runPromise(source.lists())).rejects.toThrow("TickTick MCP request failed")
+  available = true
+  await expect(Effect.runPromise(source.lists())).resolves.toEqual([{ id: "project-1", name: "Work" }])
+  expect(connects).toBe(2)
 })
 
 test("the HTTP transport receives the endpoint, Bearer header, and injected fetch", async () => {

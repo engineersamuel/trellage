@@ -152,8 +152,8 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
   }
 
   const connect = (): Promise<TickTickMcpClient> => {
-    if (!connection)
-      connection = (async () => {
+    if (!connection) {
+      const opening = (async () => {
         const tokenOption = options.accessToken ?? options.token
         if (tokenOption === undefined) return fail(new Error("No TickTick token"))
         const token = typeof tokenOption === "function" ? await tokenOption() : tokenOption
@@ -174,6 +174,11 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
           return fail(error)
         }
       })()
+      connection = opening
+      void opening.catch(() => {
+        if (connection === opening) connection = undefined
+      })
+    }
     return connection
   }
 
@@ -261,9 +266,8 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
         const updated = await updateTags(task, (tags) => tags.filter((tag) => tag !== configuredTag))
         await addComment(updated, `🏭 Factory stopped: ${reason}`)
       }),
-    complete: (task, prUrl) =>
+    complete: (task, _prUrl) =>
       Effect.promise(async () => {
-        await addComment(task, `🏭 Merged: ${prUrl}`)
         await call("complete_task", { project_id: task.projectId, task_id: task.id })
       }),
   }
