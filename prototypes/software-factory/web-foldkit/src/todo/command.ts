@@ -25,21 +25,21 @@ export const LoadFolders = Command.define("LoadFolders", {
   ),
 })
 export const LoadTasks = Command.define("LoadTasks", {
-  args: { id: Schema.String },
-  messages: [Message.LoadedTasks, Message.Failed],
-  execute: ({ id }) =>
+  args: { id: Schema.String, requestId: Schema.Number },
+  messages: [Message.LoadedTasks, Message.FailedTasks],
+  execute: ({ id, requestId }) =>
     getJson(`/api/todo/lists/${encodeURIComponent(id)}/tasks`, Tasks).pipe(
-      Effect.map((value) => Message.LoadedTasks({ value })),
-      Effect.catch((error) => Effect.succeed(Message.Failed({ error }))),
+      Effect.map((value) => Message.LoadedTasks({ value, listId: id, requestId })),
+      Effect.catch((error) => Effect.succeed(Message.FailedTasks({ error, listId: id, requestId }))),
     ),
 })
 export const LoadDetail = Command.define("LoadDetail", {
-  args: { id: Schema.String },
-  messages: [Message.LoadedDetail, Message.Failed],
-  execute: ({ id }) =>
+  args: { id: Schema.String, listId: Schema.String, requestId: Schema.Number },
+  messages: [Message.LoadedDetail, Message.FailedDetail],
+  execute: ({ id, listId, requestId }) =>
     getJson(`/api/todo/tasks/${encodeURIComponent(id)}`, Detail).pipe(
-      Effect.map((value) => Message.LoadedDetail({ value })),
-      Effect.catch((error) => Effect.succeed(Message.Failed({ error }))),
+      Effect.map((value) => Message.LoadedDetail({ value, listId, taskId: id, requestId })),
+      Effect.catch((error) => Effect.succeed(Message.FailedDetail({ error, listId, taskId: id, requestId }))),
     ),
 })
 export const Draft = Command.define("Draft", {

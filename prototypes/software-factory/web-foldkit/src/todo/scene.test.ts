@@ -1,4 +1,4 @@
-import { Command, Mount, Subscription, click, expect, given, label, role, scene } from "foldkit/scene"
+import { Command, Mount, Subscription, change, click, expect, given, label, role, scene } from "foldkit/scene"
 import { Dialog } from "@foldkit/ui"
 import { test } from "vitest"
 import { LoadDetail, LoadFolders, LoadLists, LoadStatus, LoadTasks } from "./command"
@@ -19,13 +19,24 @@ test("todo view shows connection, linked task badges, prompt and repo picker", (
     Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
     Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
     expect(role("link", { name: "Reconnect" })).toExist(),
+    expect(role("button", { name: "Draft" })).toBeDisabled(),
     click(role("button", { name: "Inbox" })),
-    Command.resolve(LoadTasks, Message.LoadedTasks({ value: [task] })),
+    Command.resolve(LoadTasks, Message.LoadedTasks({ value: [task], listId: "l", requestId: 1 })),
     click(role("button", { name: /Ship it/ })),
-    Command.resolve(LoadDetail, Message.LoadedDetail({ value: { task, prompt: "Server preview" } })),
+    Command.resolve(
+      LoadDetail,
+      Message.LoadedDetail({
+        value: { task, prompt: "Server preview" },
+        listId: "l",
+        taskId: "t",
+        requestId: 1,
+      }),
+    ),
     expect(role("link", { name: "Open factory thread" })).toHaveAttr("href", "?thread=thread-1"),
     expect(label("Repo")).toExist(),
     expect(role("dialog")).toContainText("Server preview"),
+    change(label("Repo"), "r"),
+    expect(role("button", { name: "Draft" })).not.toBeDisabled(),
   )
 })
 

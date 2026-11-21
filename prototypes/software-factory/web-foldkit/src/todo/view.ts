@@ -3,14 +3,15 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Button, Dialog, Select } from "@foldkit/ui"
 import { Message } from "./message"
+import { canDraft } from "./model"
 import type { Model } from "./model"
 import type { Detail, Status, Task, TodoList } from "./domain"
 import type { Folder } from "../../../shared/schemas"
 const CONNECT = "/api/todo/ticktick/connect"
 const expiry = (value: number | undefined) => (value ? new Date(value).toLocaleDateString() : "")
 const text = (x: unknown) => String(x ?? "")
-const button = (label: string, onClick: Message, h: HtmlBuilder<Message>) =>
-  Button.view({ onClick, toView: (a) => h.button([...a.button], [label]) }, h)
+const button = (label: string, onClick: Message, h: HtmlBuilder<Message>, disabled = false) =>
+  Button.view({ onClick, toView: (a) => h.button([...a.button, h.Disabled(disabled)], [label]) }, h)
 const picker = (m: Model, folders: ReadonlyArray<Folder>, h: HtmlBuilder<Message>) =>
   Select.view(
     {
@@ -118,7 +119,7 @@ const content = (m: Model, r: Dialog.RenderInfo, h: HtmlBuilder<Message>): Html[
               ? h.pre([], [text(detail.prompt ?? detail.task.prompt ?? detail.task.content ?? detail.task.desc)])
               : h.p([h.Class("fk-muted")], ["Pick a task"]),
             picker(m, folders, h),
-            button("Draft", Message.ClickedDraft(), h),
+            button("Draft", Message.ClickedDraft(), h, !canDraft(m)),
           ],
         ),
       ],
