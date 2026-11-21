@@ -179,6 +179,86 @@ const makeHarness = (options: HarnessOptions = {}) => {
   return { stateRoot, threads, folder, calls, pending, lifecycle, routes }
 }
 
+for (const terminal of ["completed", "released"] as const) {
+  test(`stale pending release is cleared without TickTick writes after ${terminal}`, async () => {
+    const fake = await fakeTickTick()
+    const { threads, folder, pending, lifecycle } = makeHarness({
+      actions: {
+        task: async (id) => (await Effect.runPromise(fake.source.task(id))).task,
+        release: (value, reason, checkpoint, marker) =>
+          Effect.runPromise(fake.source.release(value, reason, checkpoint, marker)),
+      },
+    })
+    const thread = threads.create("Stale release", folder.id)
+    const todo = {
+      source: "ticktick" as const,
+      listId: task.projectId,
+      taskId: task.id,
+      title: task.title,
+      state: terminal,
+      done: ["claim"],
+    }
+    threads.setTodo(thread.id, todo)
+    pending.set(thread.id, { ...todo, state: "claimed", reason: "prior failed deletion" })
+
+    await lifecycle.retryReleases()
+
+    expect(pending.get(thread.id)).toBeUndefined()
+    expect(fake.calls.filter((call) => ["update_task", "add_comment", "complete_task"].includes(call.name))).toEqual([])
+  })
+}
+
+test("DELETE queued behind completion starts no release after the terminal transition", async () => {
+  let finishComplete!: () => void
+  const completion = new Promise<void>((resolve) => void (finishComplete = resolve))
+  let completeStarted!: () => void
+  const started = new Promise<void>((resolve) => void (completeStarted = resolve))
+  const fake = await fakeTickTick(async (call) => {
+    if (call.name === "complete_task") {
+      completeStarted()
+      await completion
+    }
+    return undefined
+  })
+  const { threads, folder, pending, lifecycle, routes } = makeHarness({
+    actions: {
+      task: async (id) => (await Effect.runPromise(fake.source.task(id))).task,
+      note: (value, text, marker) => Effect.runPromise(fake.source.note(value, text, marker)),
+      release: (value, reason, checkpoint, marker) =>
+        Effect.runPromise(fake.source.release(value, reason, checkpoint, marker)),
+      complete: (value, prUrl, onCommented, commentPosted, marker) =>
+        Effect.runPromise(fake.source.complete(value, prUrl, { onCommented, commentPosted, marker })),
+    },
+  })
+  const thread = threads.create("Queued delete", folder.id, () => ({
+    worktree: "/repo",
+    branch: "topic",
+    base: "main",
+  }))
+  const url = "https://github.test/pull/queued"
+  threads.setTodo(thread.id, {
+    source: "ticktick",
+    listId: task.projectId,
+    taskId: task.id,
+    title: task.title,
+    state: "pr-opened",
+    done: ["claim", "run", `pr:${url}`],
+  })
+  const prs = new Map([[folder.path, new Map([["topic", { number: 1, url, state: "MERGED", checks: "SUCCESS" }]])]])
+  const sweeping = lifecycle.sweep(prs)
+  await started
+  const deleting = routes.deleteThread(thread.id)
+  finishComplete()
+
+  await Promise.all([sweeping, deleting])
+
+  expect(threads.get(thread.id)).toBeUndefined()
+  expect(pending.get(thread.id)).toBeUndefined()
+  expect(fake.calls.filter((call) => call.name === "update_task")).toHaveLength(0)
+  expect(fake.calls.filter((call) => call.name === "add_comment")).toHaveLength(1)
+  expect(fake.calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
+})
+
 test("Todo draft route redacts upstream credential failures from its response", async () => {
   const token = "distinctive-draft-route-token"
   const { routes, folder } = makeHarness({

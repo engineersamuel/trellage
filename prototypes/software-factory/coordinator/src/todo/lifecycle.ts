@@ -230,14 +230,17 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
 
   type ReleaseAttempt = ReturnType<typeof startReleaseAttempt>
 
-  const retryPending = async (id: string, pending: PendingTodoRelease, attempt: ReleaseAttempt): Promise<void> => {
+  const retryPending = async (id: string, attempt: ReleaseAttempt): Promise<void> => {
     attempt.begin()
-    if (TERMINAL.has(pending.state)) {
+    const pending = d.pending.get(id)
+    const thread = d.threads.get(id)
+    const todo = thread ? thread.todo : pending
+    if (!pending || !todo || isTerminal(todo) || !transition(todo, "release")) {
       d.pending.delete(id)
       return
     }
     try {
-      const task = await d.actions.task(pending.taskId)
+      const task = await d.actions.task(todo.taskId)
       if (!attempt.active()) return
       await d.actions.release(task, pending.reason, attempt, marker(id, "release"))
       d.pending.delete(id)
@@ -264,7 +267,7 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
           if (latest) d.pending.delete(id)
           return
         }
-        await retryPending(id, latest, startReleaseAttempt(id))
+        await retryPending(id, startReleaseAttempt(id))
       })
     }
   }
@@ -287,7 +290,7 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
     const pending: PendingTodoRelease = { ...todo, reason }
     d.pending.set(thread.id, pending)
     const attempt = startReleaseAttempt(thread.id)
-    const releasing = serialize(thread.id, () => retryPending(thread.id, pending, attempt))
+    const releasing = serialize(thread.id, () => retryPending(thread.id, attempt))
     try {
       await timeout(releasing, timeoutMs)
     } catch {
