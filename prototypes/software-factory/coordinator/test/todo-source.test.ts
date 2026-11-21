@@ -43,11 +43,23 @@ test("draftPrompt includes content, description, checklist, and ordinary comment
   )
 })
 
-test("draftPrompt maps each TickTick priority", () => {
+test("draftPrompt exactly maps each TickTick priority and defaults unknown priority", () => {
   for (const [priority, label] of [
     [1, "low"],
     [3, "medium"],
     [5, "high"],
-  ] as const)
-    expect(draftPrompt(task({ priority }), list, [])).toContain(`priority ${label}`)
+    [7, "none"],
+  ] as const) {
+    expect(draftPrompt(task({ priority }), list, [])).toBe(
+      `Ship the change\n\nSource: TickTick · list Work · tags none · priority ${label} · due none`,
+    )
+  }
+})
+
+test("draftPrompt treats null or empty tags as none and ignores blank factory comments", () => {
+  for (const tags of [null, []]) {
+    expect(draftPrompt(task({ tags }), list, [{ content: "   " }, { content: "🏭 Factory stopped: ignored" }])).toBe(
+      "Ship the change\n\nSource: TickTick · list Work · tags none · priority none · due none",
+    )
+  }
 })
