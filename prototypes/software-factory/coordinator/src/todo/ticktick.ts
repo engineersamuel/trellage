@@ -136,7 +136,6 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
   const configuredTag = options.tag ?? "factory"
   const expired = options.expired ?? options.onExpired ?? options.status ?? options.markExpired
   let connection: Promise<TickTickMcpClient> | undefined
-  const unconfirmedComments = new Map<string, Set<string>>()
 
   const fail = async (error: unknown): Promise<never> => {
     if (error instanceof TodoTickTickConflictError) throw error
@@ -221,27 +220,15 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
   const commentsById = async (id: string): Promise<readonly (typeof TodoComment.Type)[]> =>
     decode(CommentsResult, await call("get_comment", { task_id: id }), "comments").comments
 
-  const addComment = async (task: TodoTaskValue, content: string): Promise<void> => {
-    const text = textLength(content)
-    const pending = unconfirmedComments.get(task.id)
-    if (pending?.has(text)) {
+  const addComment = async (task: TodoTaskValue, content: string, marker?: string): Promise<void> => {
+    const existingPrefix = /^(🏭 \[sf:[^\]]+\])/.exec(content)?.[1]
+    const prefix = existingPrefix ?? (marker ? `🏭 [sf:${marker}]` : undefined)
+    const text = textLength(prefix && !existingPrefix ? `${prefix} ${content.replace(/^🏭\s*/, "")}` : content)
+    if (prefix) {
       const existing = await commentsById(task.id)
-      if (existing.some((comment) => comment.content === text)) {
-        pending.delete(text)
-        if (!pending.size) unconfirmedComments.delete(task.id)
-        return
-      }
+      if (existing.some((comment) => comment.content.startsWith(prefix))) return
     }
-    try {
-      await call("add_comment", { task_id: task.id, content: text })
-      pending?.delete(text)
-      if (pending && !pending.size) unconfirmedComments.delete(task.id)
-    } catch (error) {
-      const attempts = unconfirmedComments.get(task.id) ?? new Set<string>()
-      attempts.add(text)
-      unconfirmedComments.set(task.id, attempts)
-      throw error
-    }
+    await call("add_comment", { task_id: task.id, content: text })
   }
 
   const updateTags = async (
@@ -274,26 +261,28 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
         task: await taskById(id),
         comments: [...(await commentsById(id))],
       })),
-    note: (task, text) => Effect.promise(() => addComment(task, text)),
-    claim: (task, threadUrl) =>
+    note: (task, text, marker) => Effect.promise(() => addComment(task, text, marker)),
+    claim: (task, threadUrl, marker) =>
       Effect.promise(async () => {
+        const threadId = /(?:^|[?&])thread=([^&]+)/.exec(threadUrl)?.[1]?.slice(0, 8)
+        const commentMarker = marker ?? (threadId ? `${threadId}:claim` : undefined)
         const updated = await updateTags(task, (tags) =>
           tags.includes(configuredTag) ? [...tags] : [...tags, configuredTag],
         )
-        await addComment(updated, `🏭 Factory draft: ${threadUrl}`)
+        await addComment(updated, `🏭 Factory draft: ${threadUrl}`, commentMarker)
       }),
-    release: (task: TodoTaskValue, reason: string, checkpoint?: TodoReleaseCheckpoint) =>
+    release: (task: TodoTaskValue, reason: string, checkpoint?: TodoReleaseCheckpoint, marker?: string) =>
       Effect.promise(async () => {
         if (checkpoint && !checkpoint.active()) throw new Error("TickTick release canceled")
         const updated = await updateTags(task, (tags) => tags.filter((tag) => tag !== configuredTag))
         if (checkpoint && !checkpoint.active()) throw new Error("TickTick release canceled")
         checkpoint?.commentStarted?.()
-        await addComment(updated, `🏭 Factory stopped: ${reason}`)
+        await addComment(updated, `🏭 Factory stopped: ${reason}`, checkpoint?.marker ?? marker)
       }),
     complete: (task, prUrl, checkpoint) =>
       Effect.promise(async () => {
         if (!checkpoint?.commentPosted) {
-          await addComment(task, `🏭 Merged: ${prUrl}`)
+          await addComment(task, `🏭 Merged: ${prUrl}`, checkpoint?.marker)
           checkpoint?.onCommented()
         }
         await call("complete_task", { project_id: task.projectId, task_id: task.id })

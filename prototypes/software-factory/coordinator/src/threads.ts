@@ -30,7 +30,7 @@ export type ThreadTodo = {
   listId: string
   taskId: string
   title: string
-  state: "claimed" | "completed" | "released"
+  state: "drafted" | "claimed" | "started" | "pr-opened" | "completed" | "released"
   done: string[]
   error?: string
 }

@@ -29,12 +29,13 @@ const setup = (fail?: Partial<TodoLifecycleActions>) => {
   const folder = threads.addFolder(process.cwd())
   const thread = threads.create("Task", folder.id)
   Object.assign(thread, { branch: "topic", worktree: "/repo" })
+  threads.setDraft(thread.id, { versions: [], current: "", reports: [], startedAt: 1 })
   threads.setTodo(thread.id, {
     source: "ticktick",
     listId: "list-1",
     taskId: task.id,
     title: task.title,
-    state: "claimed",
+    state: "drafted",
     done: [],
   })
   const calls: string[] = []
@@ -77,7 +78,10 @@ test("claim and run are idempotent and serialized", async () => {
   )
   await lifecycle.sweep(new Map())
   await lifecycle.sweep(new Map())
-  expect(calls).toEqual([`claim http://ui/?thread=${thread.id}`, "🏭 Factory started work."])
+  expect(calls).toEqual([
+    `claim http://ui/?thread=${thread.id}`,
+    `🏭 [sf:${thread.id.slice(0, 8)}:run] Factory started work.`,
+  ])
   expect(threads.get(thread.id)!.todo!.done).toEqual(["claim", "run"])
 })
 
@@ -103,13 +107,14 @@ test("first PR observation, merged comment and completion run without duplicates
   await lifecycle.sweep(prs)
   expect(calls).toEqual([
     `claim http://ui/?thread=${thread.id}`,
-    "🏭 PR: https://github.test/pull/1",
-    "🏭 Merged: https://github.test/pull/1",
+    `🏭 [sf:${thread.id.slice(0, 8)}:run] Factory started work.`,
+    `🏭 [sf:${thread.id.slice(0, 8)}:pr-opened] PR: https://github.test/pull/1`,
+    `🏭 [sf:${thread.id.slice(0, 8)}:complete] Merged: https://github.test/pull/1`,
     "complete https://github.test/pull/1",
   ])
 })
 
-test("completed threads retry only missing comments", async () => {
+test("completed threads never start missing comments", async () => {
   const { lifecycle, thread, calls, threads, repo } = setup()
   threads.setTodo(thread.id, {
     ...threads.get(thread.id)!.todo!,
@@ -135,7 +140,7 @@ test("completed threads retry only missing comments", async () => {
   await lifecycle.sweep(prs)
   await lifecycle.sweep(prs)
 
-  expect(calls).toEqual(["🏭 Factory started work.", `🏭 PR: ${pr.url}`, `🏭 Merged: ${pr.url}`])
+  expect(calls).toEqual([])
 })
 
 test("a failed complete retries without repeating the merged comment", async () => {
@@ -159,8 +164,9 @@ test("a failed complete retries without repeating the merged comment", async () 
   await lifecycle.sweep(prs)
   expect(calls).toEqual([
     `claim http://ui/?thread=${thread.id}`,
-    "🏭 PR: https://github.test/pull/1",
-    "🏭 Merged: https://github.test/pull/1",
+    `🏭 [sf:${thread.id.slice(0, 8)}:run] Factory started work.`,
+    `🏭 [sf:${thread.id.slice(0, 8)}:pr-opened] PR: https://github.test/pull/1`,
+    `🏭 [sf:${thread.id.slice(0, 8)}:complete] Merged: https://github.test/pull/1`,
     "TickTick action failed",
   ])
   expect(observed).toEqual(["complete https://github.test/pull/1"])
@@ -392,7 +398,8 @@ test("lifecycle owns the merged comment so completion can retry without duplicat
   const url = "https://github.test/pull/1"
   threads.setTodo(thread.id, {
     ...threads.get(thread.id)!.todo!,
-    done: ["claim", `pr:${url}`],
+    state: "pr-opened",
+    done: ["claim", "run", `pr:${url}`],
   })
   const calls: string[] = []
   let completions = 0
@@ -444,10 +451,12 @@ test("a timed-out accepted merged comment is reconciled before retry", async () 
   const url = "https://github.test/pull/1"
   threads.setTodo(thread.id, {
     ...threads.get(thread.id)!.todo!,
-    done: ["claim", `pr:${url}`],
+    state: "pr-opened",
+    done: ["claim", "run", `pr:${url}`],
   })
   const server = new McpServer({ name: "lifecycle-timeout", version: "1" })
   const client = new Client({ name: "lifecycle-timeout-client", version: "1" })
+  const mergedComment = `🏭 [sf:${thread.id.slice(0, 8)}:complete] Merged: ${url}`
   const comments: string[] = []
   const calls: string[] = []
   const errors: string[] = []
@@ -460,7 +469,7 @@ test("a timed-out accepted merged comment is reconciled before retry", async () 
       if (name === "add_comment") {
         const content = String(args.content)
         comments.push(content)
-        if (content === `🏭 Merged: ${url}` && delayMergedComment) {
+        if (content === mergedComment && delayMergedComment) {
           delayMergedComment = false
           await delayedResponse
         }
@@ -506,8 +515,8 @@ test("a timed-out accepted merged comment is reconciled before retry", async () 
 
     await lifecycle.sweep(prs)
     expect(errors).toEqual(["TickTick action failed"])
-    expect(threads.get(thread.id)!.todo!.state).toBe("claimed")
-    expect(comments).toEqual([`🏭 Merged: ${url}`])
+    expect(threads.get(thread.id)!.todo!.state).toBe("pr-opened")
+    expect(comments).toEqual([mergedComment])
 
     restoreResponse()
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -515,7 +524,7 @@ test("a timed-out accepted merged comment is reconciled before retry", async () 
     expect(threads.get(thread.id)!.todo!.state).toBe("completed")
     await lifecycle.sweep(prs)
 
-    expect(comments.filter((comment) => comment === `🏭 Merged: ${url}`)).toHaveLength(1)
+    expect(comments.filter((comment) => comment === mergedComment)).toHaveLength(1)
     expect(calls.filter((name) => name === "complete_task")).toHaveLength(1)
   } finally {
     restoreResponse()
@@ -523,3 +532,250 @@ test("a timed-out accepted merged comment is reconciled before retry", async () 
     await server.close()
   }
 })
+
+test("a restarted lifecycle reconciles an accepted release comment from persisted state", async () => {
+  const root = mkdtempSync(path.join(process.cwd(), ".todo-lifecycle-restart-"))
+  roots.push(root)
+  const threads = new Threads(root)
+  const thread = threads.create("Restart release")
+  threads.setTodo(thread.id, {
+    source: "ticktick",
+    listId: task.projectId,
+    taskId: task.id,
+    title: task.title,
+    state: "claimed",
+    done: ["claim"],
+  })
+  const pending = new CosState(root).map<PendingTodoRelease>("todo-release")
+  const comments: string[] = []
+  let delayFirst = true
+  let restore!: () => void
+  const delayed = new Promise<void>((resolve) => void (restore = resolve))
+  const connections: Array<{ close(): Promise<void> }> = []
+
+  const source = async (delay = false) => {
+    const server = new McpServer({ name: "restart-source", version: "1" })
+    const client = new Client({ name: "restart-client", version: "1" })
+    connections.push(server, client)
+    for (const name of ["get_task_by_id", "get_comment", "update_task", "add_comment"]) {
+      server.registerTool(name, { inputSchema: z.looseObject({}) }, async (args) => {
+        if (name === "add_comment") {
+          comments.push(String(args.content))
+          if (delay && delayFirst) {
+            delayFirst = false
+            await delayed
+          }
+        }
+        const structuredContent =
+          name === "get_task_by_id"
+            ? { task: { ...task, tags: ["owner", "factory"], etag: "etag" } }
+            : name === "get_comment"
+              ? { comments: comments.map((content) => ({ content })) }
+              : {}
+        return { content: [{ type: "text" as const, text: "fixture" }], structuredContent }
+      })
+    }
+    const [local, remote] = InMemoryTransport.createLinkedPair()
+    await server.connect(remote)
+    return makeTickTickTodoSource({
+      accessToken: "synthetic-token",
+      transportFactory: () => local,
+      clientFactory: () => ({
+        connect: (transport) => client.connect(transport),
+        callTool: async (params) =>
+          CallToolResultSchema.parse(await client.callTool(params, CallToolResultSchema, { timeout: 20 })),
+      }),
+    })
+  }
+
+  const lifecycle = async (
+    targetThreads: Threads,
+    targetPending: typeof pending,
+    target: Awaited<ReturnType<typeof source>>,
+  ) =>
+    makeTodoLifecycle({
+      threads: targetThreads,
+      pending: targetPending,
+      threadUrl: (id) => `http://ui/?thread=${id}`,
+      changed: () => undefined,
+      onError: () => undefined,
+      actions: {
+        task: async (id) => (await Effect.runPromise(target.task(id))).task,
+        claim: (value, url) => Effect.runPromise(target.claim(value, url)),
+        note: (value, text) => Effect.runPromise(target.note(value, text)),
+        release: (value, reason, checkpoint) => Effect.runPromise(target.release(value, reason, checkpoint)),
+        complete: (value, url, onCommented, commentPosted) =>
+          Effect.runPromise(target.complete(value, url, { onCommented, commentPosted })),
+      },
+    })
+
+  try {
+    const before = await lifecycle(threads, pending, await source(true))
+    await before.discard(thread, "draft discarded", 100)
+    expect(pending.get(thread.id)).toMatchObject({ state: "claimed", reason: "draft discarded" })
+    threads.delete(thread.id)
+    restore()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await Promise.all(connections.splice(0).map((connection) => connection.close()))
+
+    const reloadedThreads = new Threads(root)
+    const reloadedPending = new CosState(root).map<PendingTodoRelease>("todo-release")
+    const after = await lifecycle(reloadedThreads, reloadedPending, await source())
+    await after.sweep(new Map())
+    await after.sweep(new Map())
+
+    expect(reloadedPending.get(thread.id)).toBeUndefined()
+    expect(comments).toHaveLength(1)
+    expect(comments[0]).toContain(`[sf:${thread.id.slice(0, 8)}:release]`)
+  } finally {
+    restore()
+    await Promise.all(connections.map((connection) => connection.close()))
+  }
+})
+
+const transitions = [
+  {
+    name: "drafted to claimed",
+    from: "drafted",
+    to: "claimed",
+    run: (value: ReturnType<typeof setup>) => value.lifecycle.claim(value.thread.id),
+  },
+  {
+    name: "claimed to started",
+    from: "claimed",
+    to: "started",
+    run: (value: ReturnType<typeof setup>) => value.lifecycle.run(value.thread.id),
+  },
+  {
+    name: "started to pr-opened",
+    from: "started",
+    to: "pr-opened",
+    run: (value: ReturnType<typeof setup>) =>
+      value.lifecycle.sweep(
+        new Map([
+          [
+            value.repo,
+            new Map([
+              [
+                "topic",
+                {
+                  number: 1,
+                  url: "https://github.test/pull/open",
+                  state: "OPEN",
+                  checks: "NONE",
+                },
+              ],
+            ]),
+          ],
+        ]),
+      ),
+  },
+  {
+    name: "pr-opened to completed",
+    from: "pr-opened",
+    to: "completed",
+    run: (value: ReturnType<typeof setup>) =>
+      value.lifecycle.sweep(
+        new Map([
+          [
+            value.repo,
+            new Map([
+              [
+                "topic",
+                {
+                  number: 1,
+                  url: "https://github.test/pull/merged",
+                  state: "MERGED",
+                  checks: "SUCCESS",
+                },
+              ],
+            ]),
+          ],
+        ]),
+      ),
+  },
+  ...(["drafted", "claimed", "started", "pr-opened"] as const).map((from) => ({
+    name: `${from} to released`,
+    from,
+    to: "released",
+    run: (value: ReturnType<typeof setup>) => value.lifecycle.discard(value.thread, "discarded"),
+  })),
+] as const
+
+for (const transitionCase of transitions) {
+  test(`transition: ${transitionCase.name}`, async () => {
+    const value = setup()
+    value.threads.setTodo(value.thread.id, {
+      ...value.threads.get(value.thread.id)!.todo!,
+      state: transitionCase.from,
+    })
+    await transitionCase.run(value)
+    expect(value.threads.get(value.thread.id)?.todo?.state as string | undefined).toBe(transitionCase.to)
+  })
+}
+
+const terminalEntries = [
+  {
+    name: "claim",
+    run: (value: ReturnType<typeof setup>) => value.lifecycle.claim(value.thread.id),
+  },
+  {
+    name: "run",
+    run: (value: ReturnType<typeof setup>) => value.lifecycle.run(value.thread.id),
+  },
+  {
+    name: "discard",
+    run: (value: ReturnType<typeof setup>) => value.lifecycle.discard(value.thread, "discarded"),
+  },
+  {
+    name: "PR sweep",
+    run: (value: ReturnType<typeof setup>) =>
+      value.lifecycle.sweep(
+        new Map([
+          [
+            value.repo,
+            new Map([
+              [
+                "topic",
+                {
+                  number: 1,
+                  url: "https://github.test/pull/terminal",
+                  state: "MERGED",
+                  checks: "SUCCESS",
+                },
+              ],
+            ]),
+          ],
+        ]),
+      ),
+  },
+  {
+    name: "pending-release retry",
+    run: async (value: ReturnType<typeof setup>) => {
+      const todo = value.threads.get(value.thread.id)!.todo!
+      value.pending.set(value.thread.id, { ...todo, reason: "persisted" })
+      await value.lifecycle.retryReleases()
+    },
+  },
+] as const
+
+for (const terminal of ["completed", "released"] as const) {
+  for (const entry of terminalEntries) {
+    test(`terminal guard: ${entry.name} cannot start from ${terminal}`, async () => {
+      const reads: string[] = []
+      const value = setup({
+        task: async () => {
+          reads.push("task")
+          return task
+        },
+      })
+      value.threads.setTodo(value.thread.id, {
+        ...value.threads.get(value.thread.id)!.todo!,
+        state: terminal,
+      })
+      await entry.run(value)
+      expect(value.calls).toEqual([])
+      expect(reads).toEqual([])
+    })
+  }
+}

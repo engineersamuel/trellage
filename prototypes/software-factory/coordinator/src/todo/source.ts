@@ -42,19 +42,20 @@ export type TodoTaskWithComments = typeof TodoTaskWithComments.Type
 export type TodoReleaseCheckpoint = {
   active(): boolean
   commentStarted?(): void
+  marker?: string
 }
 
 export type TodoSourceApi = {
   lists(): Effect.Effect<TodoList[]>
   tasks(listId: string): Effect.Effect<TodoTask[]>
   task(id: string): Effect.Effect<TodoTaskWithComments>
-  claim(task: TodoTask, threadUrl: string): Effect.Effect<void>
-  note(task: TodoTask, text: string): Effect.Effect<void>
-  release(task: TodoTask, reason: string, checkpoint?: TodoReleaseCheckpoint): Effect.Effect<void>
+  claim(task: TodoTask, threadUrl: string, marker?: string): Effect.Effect<void>
+  note(task: TodoTask, text: string, marker?: string): Effect.Effect<void>
+  release(task: TodoTask, reason: string, checkpoint?: TodoReleaseCheckpoint, marker?: string): Effect.Effect<void>
   complete(
     task: TodoTask,
     prUrl: string,
-    checkpoint?: { commentPosted: boolean; onCommented(): void },
+    checkpoint?: { commentPosted: boolean; onCommented(): void; marker?: string },
   ): Effect.Effect<void>
 }
 

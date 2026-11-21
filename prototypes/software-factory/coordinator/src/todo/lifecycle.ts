@@ -1,4 +1,4 @@
-import type { BranchPr, PrState } from "../cos.ts"
+import type { BranchPr } from "../cos.ts"
 import { prState } from "../cos.ts"
 import type { Thread, Threads, ThreadTodo } from "../threads.ts"
 import type { TodoReleaseCheckpoint, TodoTask } from "./source.ts"
@@ -6,17 +6,38 @@ import type { TodoReleaseCheckpoint, TodoTask } from "./source.ts"
 const ACTION_FAILED = "TickTick action failed"
 const FACTORY_STARTED = "🏭 Factory started work."
 
-export type TodoLifecycleActions = {
-  task(id: string): Promise<TodoTask>
-  claim(task: TodoTask, threadUrl: string): Promise<void>
-  note(task: TodoTask, text: string): Promise<void>
-  release(task: TodoTask, reason: string, checkpoint?: TodoReleaseCheckpoint): Promise<void>
-  complete(task: TodoTask, prUrl: string, onCommented: () => void, commentPosted: boolean): Promise<void>
+type TodoState = ThreadTodo["state"]
+export type TodoAction = "claim" | "run" | "pr-opened" | "complete" | "release"
+
+const TRANSITIONS: Readonly<Record<TodoState, Partial<Record<TodoAction, TodoState>>>> = {
+  drafted: { claim: "claimed", release: "released" },
+  claimed: { run: "started", release: "released" },
+  started: { "pr-opened": "pr-opened", release: "released" },
+  "pr-opened": { complete: "completed", release: "released" },
+  completed: {},
+  released: {},
 }
 
-export type PendingTodoRelease = ThreadTodo & {
-  reason: string
+const TERMINAL = new Set<TodoState>(["completed", "released"])
+const isTerminal = (todo: ThreadTodo): boolean => TERMINAL.has(todo.state)
+
+const transition = (todo: ThreadTodo, action: TodoAction): TodoState | undefined => TRANSITIONS[todo.state][action]
+
+export type TodoLifecycleActions = {
+  task(id: string): Promise<TodoTask>
+  claim(task: TodoTask, threadUrl: string, marker: string): Promise<void>
+  note(task: TodoTask, text: string, marker: string): Promise<void>
+  release(task: TodoTask, reason: string, checkpoint?: TodoReleaseCheckpoint, marker?: string): Promise<void>
+  complete(
+    task: TodoTask,
+    prUrl: string,
+    onCommented: () => void,
+    commentPosted: boolean,
+    marker: string,
+  ): Promise<void>
 }
+
+export type PendingTodoRelease = ThreadTodo & { reason: string }
 
 type PendingMap = {
   get(key: string): PendingTodoRelease | undefined
@@ -50,117 +71,145 @@ const timeout = <A>(promise: Promise<A>, ms: number): Promise<A> =>
   })
 
 export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
-  const inFlight = new Map<string, Promise<void>>()
+  const queues = new Map<string, Promise<void>>()
   const releaseAttempts = new Map<string, symbol>()
 
   const serialize = (id: string, action: () => Promise<void>): Promise<void> => {
-    const previous = inFlight.get(id) ?? Promise.resolve()
+    const previous = queues.get(id) ?? Promise.resolve()
     const current = previous.then(action, action)
-    inFlight.set(id, current)
+    queues.set(id, current)
     const clear = () => {
-      if (inFlight.get(id) === current) inFlight.delete(id)
+      if (queues.get(id) === current) queues.delete(id)
     }
     void current.then(clear, clear)
     return current
   }
 
+  const current = (id: string): ThreadTodo | undefined => d.threads.get(id)?.todo
   const patch = (id: string, update: (todo: ThreadTodo) => ThreadTodo): void => {
-    const current = d.threads.get(id)?.todo
-    if (!current) return
-    d.threads.setTodo(id, update(current))
+    const todo = current(id)
+    if (!todo) return
+    d.threads.setTodo(id, update(todo))
     d.changed(id)
   }
 
-  const failure = (id: string, error?: unknown): void => {
+  const read = (id: string): ThreadTodo | undefined => current(id)
+
+  const fail = (id: string): void => {
     patch(id, (todo) => ({ ...todo, error: ACTION_FAILED }))
     d.onError(id, ACTION_FAILED)
-    void error
   }
 
-  const prerequisitesDone = (id: string, todo: ThreadTodo): boolean =>
-    todo.done.includes("claim") && (!d.threads.get(id)?.draft?.startedAt || todo.done.includes("run"))
-
-  const terminal = (todo: ThreadTodo): boolean => todo.state === "released" || todo.state === "completed"
-
-  const finish = (id: string, key: string): void =>
+  const finish = (id: string, action: TodoAction, done: string): void =>
     patch(id, (todo) => {
-      const done = todo.done.includes(key) ? todo.done : [...todo.done, key]
-      const updated = { ...todo, done }
-      return { ...updated, error: prerequisitesDone(id, updated) ? undefined : todo.error }
-    })
-
-  const withTask = async (id: string, run: (task: TodoTask, todo: ThreadTodo) => Promise<void>): Promise<void> =>
-    serialize(id, async () => {
-      try {
-        const todo = d.threads.get(id)?.todo
-        if (!todo) return
-        await run(await d.actions.task(todo.taskId), todo)
-      } catch (error) {
-        failure(id, error)
+      const state = transition(todo, action)
+      if (!state) return todo
+      return {
+        ...todo,
+        state,
+        done: todo.done.includes(done) ? todo.done : [...todo.done, done],
+        error: undefined,
       }
     })
 
-  const claim = async (id: string): Promise<void> =>
-    withTask(id, async (task, todo) => {
-      if (terminal(todo)) return
-      if (todo.done.includes("claim")) return
-      await d.actions.claim(task, d.threadUrl(id))
-      finish(id, "claim")
-    })
+  const marker = (id: string, action: TodoAction): string => `${id.slice(0, 8)}:${action}`
+  const marked = (id: string, action: TodoAction, text: string): string =>
+    `🏭 [sf:${marker(id, action)}] ${text.replace(/^🏭\s*/, "")}`
 
-  const runComment = async (id: string): Promise<void> =>
-    withTask(id, async (task, todo) => {
-      if (todo.done.includes("run")) return
-      if (!d.threads.get(id)?.draft?.startedAt) return
-      await d.actions.note(task, FACTORY_STARTED)
-      finish(id, "run")
-    })
-
-  const comment = async (id: string, task: TodoTask, key: string, text: string): Promise<void> => {
-    if (!d.threads.get(id)?.todo?.done.includes(key)) {
-      await d.actions.note(task, text)
-      finish(id, key)
-    }
-  }
-
-  const prComment = async (id: string, task: TodoTask, url: string): Promise<void> =>
-    comment(id, task, `pr:${url}`, `🏭 PR: ${url}`)
-
-  const merge = async (id: string, task: TodoTask, url: string): Promise<void> => {
-    const commentPosted = d.threads.get(id)?.todo?.done.includes("merged") ?? false
-    if (d.threads.get(id)?.todo?.state !== "claimed") return
-    await d.actions.complete(task, url, () => finish(id, "merged"), commentPosted)
-    if (!commentPosted) finish(id, "merged")
-    patch(id, (todo) => ({
-      ...todo,
-      state: "completed",
-      error: prerequisitesDone(id, todo) ? undefined : todo.error,
-    }))
-  }
-
-  const release = async (id: string, task: TodoTask, reason: string): Promise<void> => {
-    if (!d.threads.get(id)?.todo?.done.includes("released")) {
-      await d.actions.release(task, reason)
-      finish(id, "released")
-    }
-    patch(id, (todo) => ({
-      ...todo,
-      state: "released",
-      error: prerequisitesDone(id, todo) ? undefined : todo.error,
-    }))
-  }
-
-  const reconcile = async (id: string, pr: BranchPr): Promise<void> =>
-    withTask(id, async (task, todo) => {
-      const state: PrState = prState(pr.state, pr.checks)
-      await prComment(id, task, pr.url)
-      if (terminal(todo)) {
-        if (state === "merged") await comment(id, task, "merged", `🏭 Merged: ${pr.url}`)
+  const perform = (
+    id: string,
+    action: TodoAction,
+    done: string,
+    operation: (task: TodoTask, todo: ThreadTodo) => Promise<void>,
+  ): Promise<void> =>
+    serialize(id, async () => {
+      const todo = read(id)
+      if (!todo || isTerminal(todo) || !transition(todo, action)) return
+      if (todo.done.includes(done)) {
+        finish(id, action, done)
         return
       }
-      if (state === "merged") await merge(id, task, pr.url)
-      if (state === "closed") await release(id, task, "PR closed without merge")
+      try {
+        await operation(await d.actions.task(todo.taskId), todo)
+        finish(id, action, done)
+      } catch {
+        fail(id)
+      }
     })
+
+  const claim = (id: string): Promise<void> =>
+    perform(id, "claim", "claim", (task) => d.actions.claim(task, d.threadUrl(id), marker(id, "claim")))
+
+  const run = (id: string): Promise<void> =>
+    serialize(id, async () => {
+      const todo = read(id)
+      if (!todo || isTerminal(todo) || todo.state !== "claimed") return
+      if (!d.threads.get(id)?.draft?.startedAt) return
+      await performQueued(id, "run", "run", FACTORY_STARTED)
+    })
+
+  const performQueued = async (id: string, action: TodoAction, done: string, text: string): Promise<void> => {
+    const todo = read(id)
+    if (!todo || !transition(todo, action) || todo.done.includes(done)) {
+      if (todo?.done.includes(done)) finish(id, action, done)
+      return
+    }
+    try {
+      await d.actions.note(await d.actions.task(todo.taskId), marked(id, action, text), marker(id, action))
+      finish(id, action, done)
+    } catch {
+      fail(id)
+    }
+  }
+
+  const commentPr = (id: string, task: TodoTask, url: string): Promise<void> =>
+    d.actions.note(task, marked(id, "pr-opened", `🏭 PR: ${url}`), marker(id, "pr-opened"))
+
+  const reconcile = (id: string, pr: BranchPr): Promise<void> =>
+    serialize(id, async () => {
+      const todo = read(id)
+      if (!todo || isTerminal(todo)) return
+      const state = prState(pr.state, pr.checks)
+      if (todo.state === "claimed") {
+        await performQueued(id, "run", "run", FACTORY_STARTED)
+        if (read(id)?.state !== "started") return
+      }
+      try {
+        let currentTodo = read(id)
+        if (!currentTodo || currentTodo.state === "drafted") return
+        const task = await d.actions.task(currentTodo.taskId)
+        if (currentTodo.state === "started") {
+          const prDone = `pr:${pr.url}`
+          if (!currentTodo.done.includes(prDone)) await commentPr(id, task, pr.url)
+          finish(id, "pr-opened", prDone)
+        }
+        currentTodo = read(id)
+        if (!currentTodo || currentTodo.state !== "pr-opened") return
+        if (state === "merged") {
+          if (!currentTodo.done.includes("merged")) {
+            await d.actions.note(task, marked(id, "complete", `🏭 Merged: ${pr.url}`), marker(id, "complete"))
+            patch(id, (value) => ({
+              ...value,
+              done: value.done.includes("merged") ? value.done : [...value.done, "merged"],
+            }))
+          }
+          await d.actions.complete(task, pr.url, () => undefined, true, marker(id, "complete"))
+          finish(id, "complete", "merged")
+        } else if (state === "closed") {
+          await releaseQueued(id, task, "PR closed without merge")
+        }
+      } catch {
+        fail(id)
+      }
+    })
+
+  const releaseQueued = async (id: string, task: TodoTask, reason: string): Promise<void> => {
+    const todo = read(id)
+    if (!todo || isTerminal(todo) || !transition(todo, "release")) return
+    const checkpoint = { active: () => true, marker: marker(id, "release") }
+    await d.actions.release(task, reason, checkpoint, marker(id, "release"))
+    finish(id, "release", "released")
+  }
 
   const startReleaseAttempt = (id: string) => {
     const value = Symbol(id)
@@ -172,6 +221,7 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
       started: () => started,
       commentStarted: () => void (commenting = true),
       commenting: () => commenting,
+      marker: marker(id, "release"),
       active: () => releaseAttempts.get(id) === value,
       cancel: () => {
         if (releaseAttempts.get(id) === value) releaseAttempts.delete(id)
@@ -181,19 +231,20 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
 
   type ReleaseAttempt = ReturnType<typeof startReleaseAttempt>
 
-  const releasePending = async (id: string, pending: PendingTodoRelease, attempt: ReleaseAttempt): Promise<void> => {
+  const retryPending = async (id: string, pending: PendingTodoRelease, attempt: ReleaseAttempt): Promise<void> => {
     attempt.begin()
-    if (!attempt.active() || !d.pending.get(id)) return
+    if (TERMINAL.has(pending.state)) {
+      d.pending.delete(id)
+      return
+    }
     try {
       const task = await d.actions.task(pending.taskId)
       if (!attempt.active()) return
-      await d.actions.release(task, pending.reason, attempt)
-      if (!d.pending.get(id)) return
+      await d.actions.release(task, pending.reason, attempt, marker(id, "release"))
       d.pending.delete(id)
-      patch(id, (current) => ({ ...current, state: "released", error: undefined }))
-    } catch (error) {
+      finish(id, "release", "released")
+    } catch {
       if (attempt.active()) d.onError(id, ACTION_FAILED)
-      void error
     } finally {
       attempt.cancel()
     }
@@ -201,22 +252,29 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
 
   const retryReleases = async (): Promise<void> => {
     for (const id of [...d.pending.keys()]) {
+      const pending = d.pending.get(id)
+      if (!pending) continue
+      if (TERMINAL.has(pending.state)) {
+        d.pending.delete(id)
+        continue
+      }
       if (releaseAttempts.has(id)) continue
       await serialize(id, async () => {
-        const pending = d.pending.get(id)
-        if (!pending) return
-        const attempt = startReleaseAttempt(id)
-        await releasePending(id, pending, attempt)
+        const latest = d.pending.get(id)
+        if (!latest || TERMINAL.has(latest.state)) {
+          if (latest) d.pending.delete(id)
+          return
+        }
+        await retryPending(id, latest, startReleaseAttempt(id))
       })
     }
   }
 
   const sweep = async (prs: Map<string, Map<string, BranchPr>>): Promise<void> => {
     for (const thread of d.threads.list()) {
-      const todo = thread.todo
-      if (!todo) continue
+      if (!thread.todo || isTerminal(thread.todo)) continue
       await claim(thread.id)
-      await runComment(thread.id)
+      await run(thread.id)
       const repo = d.threads.folder(thread.folderId)?.path
       const pr = thread.branch && repo ? prs.get(repo)?.get(thread.branch) : undefined
       if (pr) await reconcile(thread.id, pr)
@@ -226,19 +284,18 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
 
   const discard = async (thread: Thread, reason: string, timeoutMs = 10_000): Promise<void> => {
     const todo = thread.todo
-    if (!todo || todo.state !== "claimed") return
+    if (!todo || isTerminal(todo)) return
     const pending: PendingTodoRelease = { ...todo, reason }
     d.pending.set(thread.id, pending)
     const attempt = startReleaseAttempt(thread.id)
-    const releasing = serialize(thread.id, () => releasePending(thread.id, pending, attempt))
+    const releasing = serialize(thread.id, () => retryPending(thread.id, pending, attempt))
     try {
       await timeout(releasing, timeoutMs)
-    } catch (error) {
+    } catch {
       if (attempt.started() && !attempt.commenting()) attempt.cancel()
       d.onError(thread.id, ACTION_FAILED)
-      void error
     }
   }
 
-  return { claim, run: runComment, discard, sweep, retryReleases }
+  return { claim, run, discard, sweep, retryReleases }
 }

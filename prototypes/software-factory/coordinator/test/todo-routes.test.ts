@@ -46,6 +46,7 @@ type DraftSource = {
 
 const fakeTickTick = async (handle?: (call: ToolCall, index: number) => ToolReply | Promise<ToolReply>) => {
   const calls: ToolCall[] = []
+  const postedComments = ["Keep the checklist"]
   const server = new SdkMcpServer({ name: "todo-routes", version: "1" })
   for (const name of [
     "list_projects",
@@ -59,16 +60,18 @@ const fakeTickTick = async (handle?: (call: ToolCall, index: number) => ToolRepl
     server.registerTool(name, { inputSchema: z.looseObject({}) }, async (args) => {
       const call = { name, arguments: args as Record<string, unknown> }
       calls.push(call)
-      const reply = (await handle?.(call, calls.length - 1)) ?? {
+      const handled = await handle?.(call, calls.length - 1)
+      const reply = handled ?? {
         structuredContent:
           name === "list_projects"
             ? { projects: [{ id: "list-1", name: "Work" }] }
             : name === "get_task_by_id"
               ? { task }
               : name === "get_comment"
-                ? { comments: [{ content: "Keep the checklist" }] }
+                ? { comments: postedComments.map((content) => ({ content })) }
                 : {},
       }
+      if (name === "add_comment" && !("isError" in reply)) postedComments.push(String(args.content))
       if ("isError" in reply) {
         return { isError: true as const, content: [{ type: "text" as const, text: reply.text }] }
       }
@@ -227,7 +230,7 @@ test("POST /api/drafts invokes the production handler and claims a stored Todo p
   expect(threads.get(created.id)?.draft?.versions[0]?.prompt).toContain("Keep the checklist")
   expect(threads.get(created.id)?.todo).toMatchObject({
     taskId: task.id,
-    state: "claimed",
+    state: "drafted",
     done: [],
   })
   await Promise.resolve()
@@ -269,7 +272,10 @@ test("draft discard and thread DELETE both release before deletion through produ
   expect(threads.get(draft.id)).toBeUndefined()
   expect(calls.filter((call) => call.name === "add_comment")).toContainEqual({
     name: "add_comment",
-    arguments: { task_id: "task-1", content: "🏭 Factory stopped: draft discarded" },
+    arguments: {
+      task_id: "task-1",
+      content: expect.stringContaining("Factory stopped: draft discarded"),
+    },
   })
   expect(calls.filter((call) => call.name === "update_task").at(-1)?.arguments.task).toMatchObject({
     tags: ["owner", "other"],
@@ -291,7 +297,10 @@ test("draft discard and thread DELETE both release before deletion through produ
   expect(threads.get(conversation.id)).toBeUndefined()
   expect(calls.filter((call) => call.name === "add_comment")).toContainEqual({
     name: "add_comment",
-    arguments: { task_id: "task-1", content: "🏭 Factory stopped: conversation deleted" },
+    arguments: {
+      task_id: "task-1",
+      content: expect.stringContaining("Factory stopped: conversation deleted"),
+    },
   })
   expect(calls.filter((call) => call.name === "update_task").at(-1)?.arguments.task).toMatchObject({
     tags: ["owner", "other"],
@@ -372,7 +381,10 @@ test("production PR sweep shares repo reads, emits closed, and reconciles archiv
   })
   expect(calls.filter((call) => call.name === "add_comment")).toContainEqual({
     name: "add_comment",
-    arguments: { task_id: "task-1", content: "🏭 Factory stopped: PR closed without merge" },
+    arguments: {
+      task_id: "task-1",
+      content: expect.stringContaining("Factory stopped: PR closed without merge"),
+    },
   })
 })
 
@@ -444,7 +456,10 @@ test("timed-out release survives deletion, retries once, and ignores the late an
   expect(calls.filter((call) => call.name === "add_comment")).toEqual([
     {
       name: "add_comment",
-      arguments: { task_id: "task-1", content: "🏭 Factory stopped: conversation deleted" },
+      arguments: {
+        task_id: "task-1",
+        content: expect.stringContaining("Factory stopped: conversation deleted"),
+      },
     },
   ])
   await sweep()
@@ -506,12 +521,15 @@ test("sweep waits for an outstanding late release response without posting anoth
   expect(calls.filter((call) => call.name === "add_comment")).toEqual([
     {
       name: "add_comment",
-      arguments: { task_id: "task-1", content: "🏭 Factory stopped: conversation deleted" },
+      arguments: {
+        task_id: "task-1",
+        content: expect.stringContaining("Factory stopped: conversation deleted"),
+      },
     },
   ])
 })
 
-test("a failed claim keeps its warning while a later stage succeeds", async () => {
+test("a failed claim keeps its state so later stages cannot start", async () => {
   const { threads, folder, lifecycle } = makeHarness({
     actions: {
       claim: async () => {
@@ -526,12 +544,13 @@ test("a failed claim keeps its warning while a later stage succeeds", async () =
     listId: task.projectId,
     taskId: task.id,
     title: task.title,
-    state: "claimed",
+    state: "drafted",
     done: [],
   })
   await lifecycle.sweep(new Map())
   expect(threads.get(thread.id)?.todo).toMatchObject({
-    done: ["run"],
+    state: "drafted",
+    done: [],
     error: "TickTick action failed",
   })
 })
@@ -574,13 +593,15 @@ test("production routes and PR sweep reconcile TickTick through an in-memory MCP
     calls.some(
       (call) =>
         call.name === "add_comment" &&
-        call.arguments.content === `🏭 Factory draft: http://factory.test/?thread=${created.id}`,
+        String(call.arguments.content).endsWith(`Factory draft: http://factory.test/?thread=${created.id}`),
     ),
   )
 
   expect((await routes.run(created.id)).status).toBe(200)
   await eventually(() =>
-    calls.some((call) => call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."),
+    calls.some(
+      (call) => call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work."),
+    ),
   )
 
   const pr = {
@@ -604,18 +625,20 @@ test("production routes and PR sweep reconcile TickTick through an in-memory MCP
   await sweep()
   expect(
     calls.filter(
-      (call) => call.name === "add_comment" && call.arguments.content === "🏭 PR: https://github.test/pull/7",
+      (call) =>
+        call.name === "add_comment" && String(call.arguments.content).endsWith("PR: https://github.test/pull/7"),
     ),
   ).toHaveLength(1)
 
   pr.state = "MERGED"
   await sweep()
-  expect(threads.get(created.id)?.todo?.state).toBe("claimed")
+  expect(threads.get(created.id)?.todo?.state).toBe("pr-opened")
   await sweep()
   expect(threads.get(created.id)?.todo?.state).toBe("completed")
   expect(
     calls.filter(
-      (call) => call.name === "add_comment" && call.arguments.content === "🏭 Merged: https://github.test/pull/7",
+      (call) =>
+        call.name === "add_comment" && String(call.arguments.content).endsWith("Merged: https://github.test/pull/7"),
     ),
   ).toHaveLength(1)
 })
@@ -624,7 +647,7 @@ test("run delivery succeeds when the started comment fails and the next sweep po
   let startedAttempts = 0
   let startedSucceeded = 0
   const fake = await fakeTickTick((call) => {
-    const isStarted = call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."
+    const isStarted = call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work.")
     if (isStarted && startedAttempts++ === 0) return { isError: true, text: "TickTick unavailable" }
     if (isStarted) startedSucceeded++
     return undefined
@@ -673,20 +696,24 @@ test("run delivery succeeds when the started comment fails and the next sweep po
   await sweep()
   expect(startedSucceeded).toBe(1)
   expect(
-    calls.filter((call) => call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."),
+    calls.filter(
+      (call) => call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work."),
+    ),
   ).toHaveLength(2)
-  expect(threads.get(created.id)?.todo).toMatchObject({ state: "claimed", error: undefined })
+  expect(threads.get(created.id)?.todo).toMatchObject({ state: "started", error: undefined })
   await sweep()
   expect(startedSucceeded).toBe(1)
   expect(
-    calls.filter((call) => call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."),
+    calls.filter(
+      (call) => call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work."),
+    ),
   ).toHaveLength(2)
 })
 
-test("a failed started comment is retried on a completed thread without repeating merge actions", async () => {
+test("a failed started comment blocks merge until the next valid transition", async () => {
   let startedAvailable = false
   const fake = await fakeTickTick((call) => {
-    const isStarted = call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."
+    const isStarted = call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work.")
     if (isStarted && !startedAvailable) return { isError: true, text: "TickTick unavailable" }
     return undefined
   })
@@ -739,19 +766,21 @@ test("a failed started comment is retried on a completed thread without repeatin
 
   await sweep()
   expect(threads.get(created.id)?.todo).toMatchObject({
-    state: "completed",
+    state: "claimed",
     error: "TickTick action failed",
   })
   expect(threads.get(created.id)?.todo?.done).not.toContain("run")
-  expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
+  expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(0)
 
   startedAvailable = true
   await sweep()
   expect(threads.get(created.id)?.todo).toMatchObject({ state: "completed", error: undefined })
   expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
   expect(
-    calls.filter((call) => call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."),
-  ).toHaveLength(3)
+    calls.filter(
+      (call) => call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work."),
+    ),
+  ).toHaveLength(4)
   await sweep()
   expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
 })
@@ -761,7 +790,7 @@ test("a failed claim does not reject creation and is posted by the next producti
   const { source, calls } = await fakeTickTick((call) => {
     if (
       call.name === "add_comment" &&
-      String(call.arguments.content).startsWith("🏭 Factory draft:") &&
+      String(call.arguments.content).includes("Factory draft:") &&
       claimAttempts++ === 0
     )
       return { isError: true, text: "TickTick unavailable" }
@@ -808,9 +837,46 @@ test("a failed claim does not reject creation and is posted by the next producti
   })
   await sweep()
   expect(
-    calls.filter(
-      (call) => call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory draft:"),
-    ),
+    calls.filter((call) => call.name === "add_comment" && String(call.arguments.content).includes("Factory draft:")),
   ).toHaveLength(2)
   expect(threads.get(created.id)?.todo).toMatchObject({ state: "claimed", error: undefined })
 })
+
+for (const terminal of ["completed", "released"] as const) {
+  test(`production draft discard cannot start TickTick work from ${terminal}`, async () => {
+    const { routes, threads, folder, calls } = makeHarness()
+    const thread = threads.create("Terminal task", folder.id)
+    threads.setDraft(thread.id, {
+      versions: [{ id: "current", prompt: "Terminal task", source: "human", at: 1 }],
+      current: "current",
+      reports: [],
+    })
+    threads.setTodo(thread.id, {
+      source: "ticktick",
+      listId: task.projectId,
+      taskId: task.id,
+      title: task.title,
+      state: terminal,
+      done: [],
+    })
+
+    expect((await routes.discardDraft(thread.id)).status).toBe(204)
+    expect(calls).toEqual([])
+  })
+
+  test(`production thread DELETE cannot start TickTick work from ${terminal}`, async () => {
+    const { routes, threads, folder, calls } = makeHarness()
+    const thread = threads.create("Terminal task", folder.id)
+    threads.setTodo(thread.id, {
+      source: "ticktick",
+      listId: task.projectId,
+      taskId: task.id,
+      title: task.title,
+      state: terminal,
+      done: [],
+    })
+
+    expect((await routes.deleteThread(thread.id)).status).toBe(204)
+    expect(calls).toEqual([])
+  })
+}

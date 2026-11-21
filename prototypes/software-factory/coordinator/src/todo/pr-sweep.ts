@@ -26,7 +26,14 @@ export const makeTodoPrSweep = (d: TodoPrSweepDeps) => async (): Promise<void> =
     if (!repo) continue
     if (thread.worktree && thread.branch && !thread.cleanedAt && !thread.archivedAt)
       byRepo.set(repo, [...(byRepo.get(repo) ?? []), thread])
-    if (d.todoEnabled() && thread.todo?.state === "claimed" && !byRepo.has(repo)) byRepo.set(repo, [])
+    if (
+      d.todoEnabled() &&
+      thread.todo &&
+      thread.todo.state !== "completed" &&
+      thread.todo.state !== "released" &&
+      !byRepo.has(repo)
+    )
+      byRepo.set(repo, [])
   }
   for (const id of d.prStates.keys()) {
     if (!d.threads.get(id) || d.threads.get(id)!.archivedAt) d.prStates.delete(id)

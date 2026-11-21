@@ -202,13 +202,18 @@ omits `by` counts as the human.
 The Foldkit **Todo** dialog takes one TickTick task into a repo draft. The coordinator, not a worker or agent, calls
 TickTick's MCP server. It preserves the owner's tags, adds the configured `factory` tag, records draft/run/PR status
 comments, completes the task after merge, and releases it after discard or a closed PR. Failed Todo calls warn on the
-thread and retry during the PR sweep without blocking drafts, delivery, or merges. A timed-out release stays
-serialized while its response is outstanding, so a sweep cannot repeat its comment. A comment whose request times
-out is checked against the task's existing comments before retry, so an accepted response is not duplicated. Once a
-thread is completed or released, the sweep retries only missing run, PR, or merged comments and records each
-successful comment in `done`. It never retries the claim or its draft comment, completion, or release, so a terminal
-task cannot regain the factory tag. The Todo dialog also keeps a resource error visible when another request succeeds
-and stops showing a stale loading message.
+thread and retry during the PR sweep without blocking drafts, delivery, or merges.
+
+Todo state follows one persisted lifecycle: `drafted → claimed → started → pr-opened → completed | released`.
+Every write is serialized per thread. A timed-out write remains ahead of later writes until its request settles or a
+sweep reconciles it. Completed and released are terminal: no claim, comment, tag change, completion, discard, delete,
+sweep, or pending-release retry starts a TickTick action from either state.
+
+Every factory comment includes a stable `🏭 [sf:<threadId8>:<action>]` marker and is limited to 1024 characters.
+Before posting a marked comment, the coordinator reads the task's comments and skips an existing marker. This durable
+retry rule survives coordinator restarts and prevents an accepted comment whose response timed out from being
+duplicated. The Todo dialog also keeps a resource error visible when another request succeeds and stops showing a
+stale loading message.
 
 Connect uses OAuth dynamic registration and PKCE. Credentials default to `Bun.secrets` (`trellage.factory`, `ticktick`).
 When that store throws, the coordinator uses `$XDG_CONFIG_HOME/trellage/factory/ticktick.json` (or `~/.config/...`)

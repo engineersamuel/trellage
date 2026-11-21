@@ -34,8 +34,20 @@ const fixture = async (
         return { isError: true as const, content: [{ type: "text" as const, text: reply.text }] }
       }
       return {
-        structuredContent: reply.structuredContent,
-        content: [{ type: "text" as const, text: JSON.stringify(reply.structuredContent) }],
+        structuredContent:
+          name === "get_comment" && !("comments" in reply.structuredContent)
+            ? { comments: [] }
+            : reply.structuredContent,
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              name === "get_comment" && !("comments" in reply.structuredContent)
+                ? { comments: [] }
+                : reply.structuredContent,
+            ),
+          },
+        ],
       }
     })
   }
@@ -131,9 +143,13 @@ test("claim preserves tags, handles null and empty tags, and posts once with the
           task: task({ tags: [...expectedTags], etag: "fresh-etag" }),
         },
       },
+      { name: "get_comment", arguments: { task_id: "task-1" } },
       {
         name: "add_comment",
-        arguments: { task_id: "task-1", content: "🏭 Factory draft: http://ui/?thread=abc" },
+        arguments: {
+          task_id: "task-1",
+          content: "🏭 [sf:abc:claim] Factory draft: http://ui/?thread=abc",
+        },
       },
     ])
     await server.close()

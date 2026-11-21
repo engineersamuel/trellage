@@ -51,7 +51,7 @@ test("a Todo draft stores the source prompt and claims after creation", async ()
     listId: "list",
     taskId: "task",
     title: "Ship it",
-    state: "claimed",
+    state: "drafted",
     done: [],
   })
   expect(claims).toEqual([thread.id])
@@ -75,5 +75,5 @@ test("a claim failure never rejects a created Todo draft", async () => {
     "general",
     { source: "ticktick", listId: "list", taskId: "task" },
   )
-  expect(threads.get(thread.id)?.todo?.state).toBe("claimed")
+  expect(threads.get(thread.id)?.todo?.state).toBe("drafted")
 })

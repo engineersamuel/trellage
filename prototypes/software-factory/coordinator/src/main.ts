@@ -1593,7 +1593,9 @@ const startHold = (folder: string, task: string, fresh = false): string | null =
 
 /** R24: the same blocker twice stops the conversation's workers and asks the human. */
 const cosState = new CosState(factory.root)
-const todoAuth = makeTickTickAuth({ uiUrl: () => process.env.SF_UI_URL ?? "http://localhost:5174/" })
+const todoAuth = makeTickTickAuth({
+  uiUrl: () => process.env.SF_UI_URL ?? "http://localhost:5174/",
+})
 const todoSource = makeTickTickTodoSource({
   accessToken: async () => {
     const token = await todoAuth.accessToken()
@@ -1612,11 +1614,12 @@ const todoLifecycle = makeTodoLifecycle({
   onError: (id, message) => cosLog("TODO", id, message, "failed", "TickTick lifecycle will retry"),
   actions: {
     task: async (id) => (await Effect.runPromise(todoSource.task(id))).task,
-    claim: (task, url) => Effect.runPromise(todoSource.claim(task, url)),
-    note: (task, text) => Effect.runPromise(todoSource.note(task, text)),
-    release: (task, reason, checkpoint) => Effect.runPromise(todoSource.release(task, reason, checkpoint)),
-    complete: (task, url, onCommented, commentPosted) =>
-      Effect.runPromise(todoSource.complete(task, url, { commentPosted, onCommented })),
+    claim: (task, url, marker) => Effect.runPromise(todoSource.claim(task, url, marker)),
+    note: (task, text, marker) => Effect.runPromise(todoSource.note(task, text, marker)),
+    release: (task, reason, checkpoint, marker) =>
+      Effect.runPromise(todoSource.release(task, reason, checkpoint, marker)),
+    complete: (task, url, onCommented, commentPosted, marker) =>
+      Effect.runPromise(todoSource.complete(task, url, { commentPosted, onCommented, marker })),
   },
 })
 const todoApi = makeTodoApi({

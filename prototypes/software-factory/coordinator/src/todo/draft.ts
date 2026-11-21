@@ -45,7 +45,7 @@ export const createTodoDraft = async (d: TodoDraftDeps, folderId: string, link: 
     listId: list.id,
     taskId: detail.task.id,
     title: detail.task.title,
-    state: "claimed",
+    state: "drafted",
     done: [],
   })
   void d.claim(thread.id).catch(() => undefined)
