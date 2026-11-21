@@ -1,13 +1,18 @@
 import { afterEach, expect, test } from "bun:test"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { mkdtempSync, rmSync } from "node:fs"
 import path from "node:path"
 import { Effect } from "effect"
+import { z } from "zod"
+import { CosState } from "../src/cos.ts"
 import { makeTodoLifecycle, type PendingTodoRelease, type TodoLifecycleActions } from "../src/todo/lifecycle.ts"
 import { Threads } from "../src/threads.ts"
 import type { BranchPr } from "../src/cos.ts"
 import type { TodoTask } from "../src/todo/source.ts"
 import { makeTickTickTodoSource } from "../src/todo/ticktick.ts"
+import { inMemoryTokenStore } from "../src/todo/ticktick-auth.ts"
+import { makeTodoPrSweep } from "../src/todo/pr-sweep.ts"
 
 const task: TodoTask = { id: "task-1", projectId: "list-1", title: "Task" }
 const roots: string[] = []
@@ -226,6 +231,129 @@ test("retry does not bypass a release queued behind an outstanding claim", async
   finishRelease()
   await Promise.all([claim, discard, retry])
   expect(releases).toBe(1)
+})
+
+test("released archived and cleaned threads never retry claim or run comments", async () => {
+  const root = mkdtempSync(path.join(process.cwd(), ".todo-lifecycle-released-test-"))
+  roots.push(root)
+  const threads = new Threads(root)
+  const folder = threads.addFolder(process.cwd())
+  const thread = threads.create("Closed task", folder.id, () => ({
+    worktree: "/not-used",
+    branch: "topic",
+    base: "main",
+  }))
+  threads.setTodo(thread.id, {
+    source: "ticktick",
+    listId: "list-1",
+    taskId: task.id,
+    title: task.title,
+    state: "claimed",
+    done: [],
+  })
+  threads.update(thread.id, { archivedAt: 1, cleanedAt: 1 })
+
+  const server = new McpServer({ name: "lifecycle-regression", version: "1" })
+  let available = false
+  let tags = ["owner", "other"]
+  const mutations: Array<{ name: string; arguments: Record<string, unknown> }> = []
+  for (const name of ["get_task_by_id", "get_comment", "update_task", "add_comment", "complete_task"]) {
+    server.registerTool(name, { inputSchema: z.looseObject({}) }, async (args) => {
+      mutations.push({ name, arguments: args })
+      if (name === "update_task") {
+        const taskArgs = args as { task: { tags: string[] } }
+        if (taskArgs.task.tags.includes("factory") && !available)
+          return { isError: true, content: [{ type: "text", text: "temporary TickTick failure" }] }
+        tags = [...taskArgs.task.tags]
+      }
+      const structuredContent =
+        name === "get_task_by_id"
+          ? { task: { ...task, projectId: "list-1", tags, etag: "current" } }
+          : name === "get_comment"
+            ? { comments: [] }
+            : {}
+      return { structuredContent, content: [{ type: "text", text: "fixture" }] }
+    })
+  }
+
+  try {
+    const [client, remote] = InMemoryTransport.createLinkedPair()
+    await server.connect(remote)
+    const tokens = inMemoryTokenStore()
+    await tokens.set({
+      clientId: "fixture",
+      redirectUri: "http://fixture/callback",
+      accessToken: "synthetic",
+    })
+    const source = makeTickTickTodoSource({
+      accessToken: async () => (await tokens.get())?.accessToken ?? "",
+      transportFactory: () => client,
+    })
+    const lifecycle = makeTodoLifecycle({
+      threads,
+      pending: new CosState(root).map("todo-release"),
+      threadUrl: (id) => `http://fixture/?thread=${id}`,
+      changed: () => undefined,
+      onError: () => undefined,
+      actions: {
+        task: async (id) => (await Effect.runPromise(source.task(id))).task,
+        claim: (value, url) => Effect.runPromise(source.claim(value, url)),
+        note: (value, text) => Effect.runPromise(source.note(value, text)),
+        release: (value, reason, checkpoint) => Effect.runPromise(source.release(value, reason, checkpoint)),
+        complete: (value, prUrl, onCommented, commentPosted) =>
+          Effect.runPromise(source.complete(value, prUrl, { onCommented, commentPosted })),
+      },
+    })
+    const sweep = makeTodoPrSweep({
+      threads,
+      prStates: new Map(),
+      repoPrs: async () =>
+        new Map([
+          [
+            "topic",
+            {
+              number: 1,
+              url: "https://github.test/pull/1",
+              state: "CLOSED",
+              checks: "NONE",
+            },
+          ],
+        ]),
+      onPr: () => undefined,
+      todoEnabled: () => true,
+      todoSweep: (prs) => lifecycle.sweep(prs),
+      onError: (_id, error) => {
+        throw error
+      },
+    })
+
+    await sweep()
+    expect(threads.get(thread.id)!.todo!.state).toBe("released")
+    expect(tags).toEqual(["owner", "other"])
+    const postReleaseMutationCount = mutations.length
+
+    available = true
+    await sweep()
+    await sweep()
+
+    expect(tags).toEqual(["owner", "other"])
+    expect(
+      mutations
+        .slice(postReleaseMutationCount)
+        .filter(
+          (call) =>
+            call.name === "update_task" &&
+            (call.arguments as { task: { tags: string[] } }).task.tags.includes("factory"),
+        ),
+    ).toHaveLength(0)
+    expect(
+      mutations
+        .slice(postReleaseMutationCount)
+        .filter((call) => call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory draft")),
+    ).toHaveLength(0)
+  } finally {
+    await server.close()
+  }
 })
 
 test("lifecycle owns the merged comment so completion can retry without duplicating it", async () => {
