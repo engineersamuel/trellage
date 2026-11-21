@@ -56,7 +56,11 @@ function oauthFetch(log: { request?: URL; verifier?: string } = {}) {
     if (url.pathname === "/register") {
       const body = JSON.parse(String(init?.body))
       expect(body.redirect_uris[0]).toContain("callback")
-      return Response.json({ ...body, client_id: "client-one", token_endpoint_auth_method: "none" })
+      return Response.json({
+        ...body,
+        client_id: "client-one",
+        token_endpoint_auth_method: "none",
+      })
     }
     if (url.pathname === "/token") {
       log.verifier = new URLSearchParams(String(init?.body)).get("code_verifier") ?? undefined
@@ -71,9 +75,18 @@ function oauthFetch(log: { request?: URL; verifier?: string } = {}) {
 }
 
 test("secure store uses the TickTick service and never accepts another secret shape", async () => {
+  const root = await mkdtemp(path.join(process.cwd(), ".ticktick-test-"))
+  roots.push(root)
   const fake = fakeSecrets()
-  const store = makeTokenStore({ secrets: fake.adapter })
-  await store.set({ clientId: "client", redirectUri: "https://factory/callback", accessToken: "secret" })
+  const store = makeTokenStore({
+    secrets: fake.adapter,
+    file: path.join(root, "explicit-ticktick.json"),
+  })
+  await store.set({
+    clientId: "client",
+    redirectUri: "https://factory/callback",
+    accessToken: "secret",
+  })
   expect(fake.calls[0]).toEqual(["set", expect.objectContaining({ service: "trellage.factory", name: "ticktick" })])
   expect(await store.get()).toEqual({
     clientId: "client",
@@ -104,7 +117,11 @@ test("fallback writes an atomic private file and round trips", async () => {
     },
   }
   const store = makeTokenStore({ secrets: adapter })
-  const credential = { clientId: "client", redirectUri: "https://factory/callback", accessToken: "secret-token" }
+  const credential = {
+    clientId: "client",
+    redirectUri: "https://factory/callback",
+    accessToken: "secret-token",
+  }
   await store.set(credential)
   const dir = path.join(root, "trellage", "factory")
   const file = path.join(dir, "ticktick.json")
