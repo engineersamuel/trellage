@@ -33,8 +33,18 @@ export type TodoApiDeps = {
 const json = (value: unknown, status = 200): Response =>
   Response.json(value, { status, headers: { "cache-control": "no-store" } })
 const unavailable = (): Response => json({ error: "Todo source unavailable" }, 502)
+const safeError = (): Error => new Error("Todo source unavailable")
 const authStatus = (status: RawAuthStatus): TodoAuthStatus => {
-  if ("state" in status) return status
+  if ("state" in status) {
+    if (status.state === "connected")
+      return {
+        state: "connected",
+        expiresAt: status.expiresAt,
+        store: status.store,
+        warn: status.warn,
+      }
+    return { state: status.state }
+  }
   if (status.status === "connected")
     return {
       state: "connected",
@@ -49,8 +59,8 @@ export const makeTodoApi = (d: TodoApiDeps) => {
   const safe = async (run: () => Promise<Response>): Promise<Response> => {
     try {
       return await run()
-    } catch (error) {
-      d.onError?.(error)
+    } catch {
+      d.onError?.(safeError())
       return unavailable()
     }
   }

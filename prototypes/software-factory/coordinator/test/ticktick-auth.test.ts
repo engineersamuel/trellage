@@ -1,7 +1,11 @@
 import { afterEach, expect, test } from "bun:test"
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises"
+import { Effect } from "effect"
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises"
 import path from "node:path"
+import { Threads } from "../src/threads.ts"
+import { makeTodoApi } from "../src/todo/api.ts"
 import { makeTickTickAuth, makeTokenStore, inMemoryTokenStore, type SecretsAdapter } from "../src/todo/ticktick-auth.ts"
+import { TodoAuthError, makeTickTickTodoSource } from "../src/todo/ticktick.ts"
 
 const roots: string[] = []
 const originalXdg = process.env.XDG_CONFIG_HOME
@@ -129,6 +133,10 @@ test("fallback writes an atomic private file and round trips", async () => {
   expect((await stat(file)).mode & 0o777).toBe(0o600)
   expect(await store.get()).toEqual(credential)
   expect(JSON.parse(await readFile(file, "utf8"))).toEqual(credential)
+  const firstInode = (await stat(file)).ino
+  await store.set({ ...credential, accessToken: "replacement-token" })
+  expect((await stat(file)).ino).not.toBe(firstInode)
+  expect(await readdir(dir)).toEqual(["ticktick.json"])
   expect(store.store()).toBe("file")
   expect(store.warn()).toContain("plain-text")
 })
@@ -199,4 +207,69 @@ test("upstream OAuth errors are sanitized", async () => {
   }
   expect(error).not.toContain("secret-token")
   expect(error).toContain("TickTick OAuth request failed")
+})
+
+test("the production TickTick HTTP transport turns an injected 401 into expired status", async () => {
+  const token = "distinctive-transport-token"
+  const root = await mkdtemp(path.join(process.cwd(), ".ticktick-auth-api-"))
+  roots.push(root)
+  const auth = makeTickTickAuth({ store: inMemoryTokenStore() })
+  await auth.tokenStore.set({
+    clientId: "client",
+    redirectUri: "https://factory/callback",
+    accessToken: token,
+    expiresAt: Date.now() + 60_000,
+  })
+  const requests: Request[] = []
+  const source = makeTickTickTodoSource({
+    accessToken: async () => (await auth.accessToken()) ?? "",
+    expired: auth.markUnauthorized,
+    fetch: (async (input, init) => {
+      requests.push(new Request(input, init))
+      return new Response(`Unauthorized: Authorization: Bearer ${token}`, {
+        status: 401,
+        headers: { "content-type": "text/plain" },
+      })
+    }) as typeof globalThis.fetch,
+  })
+
+  let failure: unknown
+  try {
+    await Effect.runPromise(source.lists())
+  } catch (error) {
+    failure = error
+  }
+  expect(failure).toBeInstanceOf(TodoAuthError)
+  const status = await auth.status()
+  expect(status).toEqual({ status: "expired" })
+  const api = makeTodoApi({
+    enabled: true,
+    threads: new Threads(root),
+    uiUrl: "http://factory.test/",
+    auth: {
+      ...auth,
+      connect: async () => new URL("http://ticktick.test/connect"),
+      callback: async () => undefined,
+    },
+    source: {
+      lists: async () => [],
+      tasks: async () => [],
+      task: async () => {
+        throw new Error("not used")
+      },
+    },
+  })
+  const response = await api.handle(
+    new Request("http://factory.test/api/todo/status"),
+    new URL("http://factory.test/api/todo/status"),
+  )
+  const body = await response.text()
+  expect(response.status).toBe(200)
+  expect(JSON.parse(body)).toEqual({ state: "expired" })
+  for (const output of [String(failure), JSON.stringify(status), body]) {
+    expect(output).not.toContain(token)
+    expect(output.toLowerCase()).not.toContain("bearer")
+  }
+  expect(requests.length).toBeGreaterThan(0)
+  expect(requests[0]!.headers.get("authorization")).toBe(`Bearer ${token}`)
 })
