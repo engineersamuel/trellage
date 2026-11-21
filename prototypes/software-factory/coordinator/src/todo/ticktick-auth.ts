@@ -116,14 +116,12 @@ export function makeTokenStore(options: { secrets?: SecretsAdapter; file?: strin
     }
   }
   const remove = async () => {
-    if (store === "file") return rm(file, { force: true })
     try {
       await secrets.delete({ service: SERVICE, name: NAME })
-      await rm(file, { force: true })
     } catch {
       fallback()
-      await rm(file, { force: true })
     }
+    await rm(file, { force: true })
   }
   const service = {
     get,

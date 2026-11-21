@@ -169,6 +169,44 @@ test("a renewed fallback credential wins after the token store restarts", async 
   expect(restarted.store()).toBe("file")
 })
 
+test("disconnect removes an older secure credential after falling back to the file", async () => {
+  const root = await mkdtemp(path.join(process.cwd(), ".ticktick-test-"))
+  roots.push(root)
+  process.env.XDG_CONFIG_HOME = root
+  const oldCredential = {
+    clientId: "client",
+    redirectUri: "https://factory/callback",
+    accessToken: "stale-secret-token",
+    expiresAt: Date.now() + 60_000,
+  }
+  let secureValue: string | null = JSON.stringify(oldCredential)
+  const secrets: SecretsAdapter = {
+    get: async () => secureValue,
+    set: async () => {
+      throw new Error("secure store unavailable")
+    },
+    delete: async () => {
+      secureValue = null
+      return true
+    },
+  }
+  const renewedCredential = {
+    ...oldCredential,
+    accessToken: "renewed-secret-token",
+    expiresAt: Date.now() + 120_000,
+  }
+
+  await makeTokenStore({ secrets }).set(renewedCredential)
+  const auth = makeTickTickAuth({ store: makeTokenStore({ secrets }) })
+  expect(await auth.status()).toMatchObject({ status: "connected", store: "file" })
+
+  await auth.disconnect()
+  expect(await auth.status()).toEqual({ status: "disconnected" })
+
+  const restarted = makeTickTickAuth({ store: makeTokenStore({ secrets }) })
+  expect(await restarted.status()).toEqual({ status: "disconnected" })
+})
+
 test("OAuth connect and callback use PKCE S256 and state once", async () => {
   const log: { verifier?: string } = {}
   const auth = makeTickTickAuth({
