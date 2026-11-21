@@ -136,6 +136,7 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
   const configuredTag = options.tag ?? "factory"
   const expired = options.expired ?? options.onExpired ?? options.status ?? options.markExpired
   let connection: Promise<TickTickMcpClient> | undefined
+  const unconfirmedComments = new Map<string, Set<string>>()
 
   const fail = async (error: unknown): Promise<never> => {
     if (error instanceof TodoTickTickConflictError) throw error
@@ -221,7 +222,26 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
     decode(CommentsResult, await call("get_comment", { task_id: id }), "comments").comments
 
   const addComment = async (task: TodoTaskValue, content: string): Promise<void> => {
-    await call("add_comment", { task_id: task.id, content: textLength(content) })
+    const text = textLength(content)
+    const pending = unconfirmedComments.get(task.id)
+    if (pending?.has(text)) {
+      const existing = await commentsById(task.id)
+      if (existing.some((comment) => comment.content === text)) {
+        pending.delete(text)
+        if (!pending.size) unconfirmedComments.delete(task.id)
+        return
+      }
+    }
+    try {
+      await call("add_comment", { task_id: task.id, content: text })
+      pending?.delete(text)
+      if (pending && !pending.size) unconfirmedComments.delete(task.id)
+    } catch (error) {
+      const attempts = unconfirmedComments.get(task.id) ?? new Set<string>()
+      attempts.add(text)
+      unconfirmedComments.set(task.id, attempts)
+      throw error
+    }
   }
 
   const updateTags = async (

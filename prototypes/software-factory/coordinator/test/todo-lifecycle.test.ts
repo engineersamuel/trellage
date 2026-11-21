@@ -1,6 +1,8 @@
 import { afterEach, expect, test } from "bun:test"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
 import { mkdtempSync, rmSync } from "node:fs"
 import path from "node:path"
 import { Effect } from "effect"
@@ -435,4 +437,89 @@ test("lifecycle owns the merged comment so completion can retry without duplicat
   expect(calls.filter((name) => name === "add_comment")).toHaveLength(1)
   expect(calls.filter((name) => name === "complete_task")).toHaveLength(2)
   expect(threads.get(thread.id)!.todo!.state).toBe("completed")
+})
+
+test("a timed-out accepted merged comment is reconciled before retry", async () => {
+  const { threads, thread, pending, repo } = setup()
+  const url = "https://github.test/pull/1"
+  threads.setTodo(thread.id, {
+    ...threads.get(thread.id)!.todo!,
+    done: ["claim", `pr:${url}`],
+  })
+  const server = new McpServer({ name: "lifecycle-timeout", version: "1" })
+  const client = new Client({ name: "lifecycle-timeout-client", version: "1" })
+  const comments: string[] = []
+  const calls: string[] = []
+  const errors: string[] = []
+  let restoreResponse!: () => void
+  const delayedResponse = new Promise<void>((resolve) => void (restoreResponse = resolve))
+  let delayMergedComment = true
+  for (const name of ["get_task_by_id", "get_comment", "add_comment", "complete_task"]) {
+    server.registerTool(name, { inputSchema: z.looseObject({}) }, async (args) => {
+      calls.push(name)
+      if (name === "add_comment") {
+        const content = String(args.content)
+        comments.push(content)
+        if (content === `🏭 Merged: ${url}` && delayMergedComment) {
+          delayMergedComment = false
+          await delayedResponse
+        }
+      }
+      const structuredContent =
+        name === "get_task_by_id"
+          ? { task }
+          : name === "get_comment"
+            ? { comments: comments.map((content) => ({ content })) }
+            : {}
+      return { content: [{ type: "text" as const, text: "fixture" }], structuredContent }
+    })
+  }
+
+  try {
+    const [local, remote] = InMemoryTransport.createLinkedPair()
+    await server.connect(remote)
+    const source = makeTickTickTodoSource({
+      accessToken: "synthetic-token",
+      transportFactory: () => local,
+      clientFactory: () => ({
+        connect: (transport) => client.connect(transport),
+        callTool: async (params) =>
+          CallToolResultSchema.parse(await client.callTool(params, CallToolResultSchema, { timeout: 20 })),
+      }),
+    })
+    const lifecycle = makeTodoLifecycle({
+      threads,
+      pending,
+      threadUrl: (id) => `http://ui/?thread=${id}`,
+      changed: () => undefined,
+      onError: (_id, message) => void errors.push(message),
+      actions: {
+        task: async (id) => (await Effect.runPromise(source.task(id))).task,
+        claim: (value, threadUrl) => Effect.runPromise(source.claim(value, threadUrl)),
+        note: (value, text) => Effect.runPromise(source.note(value, text)),
+        release: (value, reason) => Effect.runPromise(source.release(value, reason)),
+        complete: (value, prUrl, onCommented, commentPosted) =>
+          Effect.runPromise(source.complete(value, prUrl, { commentPosted, onCommented })),
+      },
+    })
+    const prs = new Map([[repo, new Map([["topic", { number: 1, url, state: "MERGED", checks: "SUCCESS" }]])]])
+
+    await lifecycle.sweep(prs)
+    expect(errors).toEqual(["TickTick action failed"])
+    expect(threads.get(thread.id)!.todo!.state).toBe("claimed")
+    expect(comments).toEqual([`🏭 Merged: ${url}`])
+
+    restoreResponse()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await lifecycle.sweep(prs)
+    expect(threads.get(thread.id)!.todo!.state).toBe("completed")
+    await lifecycle.sweep(prs)
+
+    expect(comments.filter((comment) => comment === `🏭 Merged: ${url}`)).toHaveLength(1)
+    expect(calls.filter((name) => name === "complete_task")).toHaveLength(1)
+  } finally {
+    restoreResponse()
+    await client.close()
+    await server.close()
+  }
 })
