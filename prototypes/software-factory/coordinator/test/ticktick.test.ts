@@ -73,16 +73,19 @@ const fixture = async (
 }
 
 test("TickTick source proves structured MCP lists, tasks, and task plus comments", async () => {
-  const { source, server, calls } = await fixture((call) => {
-    if (call.name === "list_projects") {
-      return { structuredContent: { projects: [{ id: "project-1", name: "Work" }] } }
-    }
-    if (call.name === "get_project_with_undone_tasks") {
-      return { structuredContent: { project: {}, tasks: [task()] } }
-    }
-    if (call.name === "get_task_by_id") return { structuredContent: { task: task() } }
-    return { structuredContent: { comments: [{ content: "hello" }] } }
-  }, { token: "secret" })
+  const { source, server, calls } = await fixture(
+    (call) => {
+      if (call.name === "list_projects") {
+        return { structuredContent: { projects: [{ id: "project-1", name: "Work" }] } }
+      }
+      if (call.name === "get_project_with_undone_tasks") {
+        return { structuredContent: { project: {}, tasks: [task()] } }
+      }
+      if (call.name === "get_task_by_id") return { structuredContent: { task: task() } }
+      return { structuredContent: { comments: [{ content: "hello" }] } }
+    },
+    { token: "secret" },
+  )
 
   expect(await Effect.runPromise(source.lists())).toEqual([{ id: "project-1", name: "Work" }])
   expect(await Effect.runPromise(source.tasks("project-1"))).toEqual([task()])
@@ -101,16 +104,22 @@ test("TickTick source proves structured MCP lists, tasks, and task plus comments
 
 test("claim preserves tags, handles null and empty tags, and posts once with the fresh etag", async () => {
   for (const [freshTags, expectedTags] of [
-    [["owner", "two"], ["owner", "two", "factory"]],
+    [
+      ["owner", "two"],
+      ["owner", "two", "factory"],
+    ],
     [null, ["factory"]],
     [[], ["factory"]],
   ] as const) {
-    const { source, server, calls } = await fixture((call) => {
-      if (call.name === "get_task_by_id") {
-        return { structuredContent: { task: task({ tags: freshTags, etag: "fresh-etag" }) } }
-      }
-      return { structuredContent: {} }
-    }, { token: "secret" })
+    const { source, server, calls } = await fixture(
+      (call) => {
+        if (call.name === "get_task_by_id") {
+          return { structuredContent: { task: task({ tags: freshTags, etag: "fresh-etag" }) } }
+        }
+        return { structuredContent: {} }
+      },
+      { token: "secret" },
+    )
 
     await Effect.runPromise(source.claim(task({ tags: ["stale"] }), "http://ui/?thread=abc"))
     expect(calls).toEqual([
@@ -132,11 +141,16 @@ test("claim preserves tags, handles null and empty tags, and posts once with the
 })
 
 test("claim keeps a configured tag unique", async () => {
-  const { source, server, calls } = await fixture((call) => {
-    if (call.name === "get_task_by_id")
-      return { structuredContent: { task: task({ tags: ["owner", "work"], etag: "fresh-etag" }) } }
-    return { structuredContent: {} }
-  }, { tag: "work", token: "secret" })
+  const { source, server, calls } = await fixture(
+    (call) => {
+      if (call.name === "get_task_by_id")
+        return {
+          structuredContent: { task: task({ tags: ["owner", "work"], etag: "fresh-etag" }) },
+        }
+      return { structuredContent: {} }
+    },
+    { tag: "work", token: "secret" },
+  )
 
   await Effect.runPromise(source.claim(task(), "http://ui/?thread=abc"))
   expect(calls[1]).toMatchObject({
@@ -147,11 +161,18 @@ test("claim keeps a configured tag unique", async () => {
 })
 
 test("release preserves owner tags and posts the stopped transcript once", async () => {
-  const { source, server, calls } = await fixture((call) => {
-    if (call.name === "get_task_by_id")
-      return { structuredContent: { task: task({ tags: ["one", "factory", "two"], etag: "fresh-etag" }) } }
-    return { structuredContent: {} }
-  }, { token: "secret" })
+  const { source, server, calls } = await fixture(
+    (call) => {
+      if (call.name === "get_task_by_id")
+        return {
+          structuredContent: {
+            task: task({ tags: ["one", "factory", "two"], etag: "fresh-etag" }),
+          },
+        }
+      return { structuredContent: {} }
+    },
+    { token: "secret" },
+  )
 
   await Effect.runPromise(source.release(task(), "Draft discarded"))
   expect(calls).toEqual([
@@ -173,21 +194,24 @@ test("release preserves owner tags and posts the stopped transcript once", async
 
 test("claim retries a conflict once with newly observed owner tags and surfaces a second conflict", async () => {
   let reads = 0
-  const { source, server, calls } = await fixture((call) => {
-    if (call.name === "get_task_by_id") {
-      reads++
-      return {
-        structuredContent: {
-          task: task({
-            tags: reads === 1 ? ["one"] : ["one", "new-owner"],
-            etag: `etag-${reads}`,
-          }),
-        },
+  const { source, server, calls } = await fixture(
+    (call) => {
+      if (call.name === "get_task_by_id") {
+        reads++
+        return {
+          structuredContent: {
+            task: task({
+              tags: reads === 1 ? ["one"] : ["one", "new-owner"],
+              etag: `etag-${reads}`,
+            }),
+          },
+        }
       }
-    }
-    if (call.name === "update_task") return { isError: true, text: "etag conflict" }
-    return { structuredContent: {} }
-  }, { token: "secret" })
+      if (call.name === "update_task") return { isError: true, text: "etag conflict" }
+      return { structuredContent: {} }
+    },
+    { token: "secret" },
+  )
 
   await expect(Effect.runPromise(source.claim(task(), "http://ui/?thread=abc"))).rejects.toThrow(
     "TickTick task changed",
@@ -205,14 +229,21 @@ test("claim retries a conflict once with newly observed owner tags and surfaces 
 
 test("tag edits retry an etag conflict once and then comment on success", async () => {
   let reads = 0
-  const { source, server, calls } = await fixture((call) => {
-    if (call.name === "get_task_by_id") {
-      reads++
-      return { structuredContent: { task: task({ tags: ["one", "factory", "two"], etag: `etag-${reads}` }) } }
-    }
-    if (call.name === "update_task" && reads === 1) return { isError: true, text: "etag conflict" }
-    return { structuredContent: {} }
-  }, { token: "secret" })
+  const { source, server, calls } = await fixture(
+    (call) => {
+      if (call.name === "get_task_by_id") {
+        reads++
+        return {
+          structuredContent: {
+            task: task({ tags: ["one", "factory", "two"], etag: `etag-${reads}` }),
+          },
+        }
+      }
+      if (call.name === "update_task" && reads === 1) return { isError: true, text: "etag conflict" }
+      return { structuredContent: {} }
+    },
+    { token: "secret" },
+  )
 
   await Effect.runPromise(source.release(task(), "Draft discarded"))
   expect(calls.filter((call) => call.name === "update_task").map((call) => call.arguments.task)).toMatchObject([
@@ -227,14 +258,18 @@ test("tag edits retry an etag conflict once and then comment on success", async 
 })
 
 test("a note is plain text truncated to 1024 characters", async () => {
-  const { source, server, calls } = await fixture(() => ({ structuredContent: {} }), { token: "secret" })
+  const { source, server, calls } = await fixture(() => ({ structuredContent: {} }), {
+    token: "secret",
+  })
   await Effect.runPromise(source.note(task(), "x".repeat(1100)))
   expect(calls).toEqual([{ name: "add_comment", arguments: { task_id: "task-1", content: "x".repeat(1024) } }])
   await server.close()
 })
 
 test("complete posts the exact PR URL before completing the project task", async () => {
-  const { source, server, calls } = await fixture(() => ({ structuredContent: {} }), { token: "secret" })
+  const { source, server, calls } = await fixture(() => ({ structuredContent: {} }), {
+    token: "secret",
+  })
   await Effect.runPromise(source.complete(task(), "https://github.example/pull/7"))
   expect(calls).toEqual([
     {
