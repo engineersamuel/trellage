@@ -29,6 +29,7 @@ type ToolResult = Pick<CallToolResult, "content" | "structuredContent" | "isErro
 export interface TickTickMcpClient {
   connect(transport: Transport): Promise<void>
   callTool(params: { name: string; arguments?: Record<string, unknown> }): Promise<ToolResult>
+  close?(): Promise<void>
 }
 
 export interface TickTickExpiredStatus {
@@ -131,16 +132,39 @@ const markExpired = async (marker: TickTickExpiredMarker | undefined): Promise<v
   if ("expired" in marker && marker.expired) return marker.expired()
 }
 
-export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): TodoSourceApi => {
+type TickTickTodoSource = TodoSourceApi & { resetConnection(): Promise<void> }
+
+export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): TickTickTodoSource => {
   const endpoint = options.endpoint instanceof URL ? options.endpoint : new URL(options.endpoint ?? TICKTICK_MCP_URL)
   const configuredTag = options.tag ?? "factory"
   const expired = options.expired ?? options.onExpired ?? options.status ?? options.markExpired
   let connection: Promise<TickTickMcpClient> | undefined
+  let connectionToken: string | undefined
+  let resetInProgress: Promise<void> | undefined
+
+  const resetConnection = (): Promise<void> => {
+    if (resetInProgress) return resetInProgress
+    const current = connection
+    connection = undefined
+    connectionToken = undefined
+    if (!current) return Promise.resolve()
+    const closing = current.then(
+      async (client) => {
+        await client.close?.()
+      },
+      () => undefined,
+    )
+    const tracked = closing.finally(() => {
+      if (resetInProgress === tracked) resetInProgress = undefined
+    })
+    resetInProgress = tracked
+    return tracked
+  }
 
   const fail = async (error: unknown): Promise<never> => {
     if (error instanceof TodoTickTickConflictError) throw error
     if (authError(error)) {
-      connection = undefined
+      await resetConnection()
       try {
         await markExpired(expired)
       } catch {
@@ -152,35 +176,44 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
     throw new TodoTickTickError("TickTick MCP request failed")
   }
 
-  const connect = (): Promise<TickTickMcpClient> => {
-    if (!connection) {
-      const opening = (async () => {
-        const tokenOption = options.accessToken ?? options.token
-        if (tokenOption === undefined) return fail(new Error("No TickTick token"))
-        const token = typeof tokenOption === "function" ? await tokenOption() : tokenOption
-        const transportOptions: TickTickTransportOptions = {
-          fetch: options.fetch,
-          requestInit: { headers: { Authorization: `Bearer ${token}` } },
-        }
-        const transport = options.transportFactory
-          ? options.transportFactory(endpoint, transportOptions)
-          : new StreamableHTTPClientTransport(endpoint, transportOptions)
-        const client = options.clientFactory
-          ? options.clientFactory()
-          : (new Client({ name: "trellage-factory", version: "1.0.0" }) as TickTickMcpClient)
-        try {
-          await client.connect(transport)
-          return client
-        } catch (error) {
-          return fail(error)
-        }
-      })()
-      connection = opening
-      void opening.catch(() => {
-        if (connection === opening) connection = undefined
-      })
+  const connect = async (): Promise<TickTickMcpClient> => {
+    const tokenOption = options.accessToken ?? options.token
+    let token: string
+    try {
+      if (tokenOption === undefined) throw new Error("No TickTick token")
+      token = typeof tokenOption === "function" ? await tokenOption() : tokenOption
+      if (!token) throw new Error("No TickTick token")
+    } catch (error) {
+      await resetConnection()
+      throw error
     }
-    return connection
+    if (connection && connectionToken === token) return connection
+    if (connection) await resetConnection()
+    if (resetInProgress) await resetInProgress
+    if (connection && connectionToken === token) return connection
+    const opening = (async () => {
+      const transportOptions: TickTickTransportOptions = {
+        fetch: options.fetch,
+        requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      }
+      const transport = options.transportFactory
+        ? options.transportFactory(endpoint, transportOptions)
+        : new StreamableHTTPClientTransport(endpoint, transportOptions)
+      const client = options.clientFactory
+        ? options.clientFactory()
+        : (new Client({ name: "trellage-factory", version: "1.0.0" }) as TickTickMcpClient)
+      await client.connect(transport)
+      return client
+    })()
+    connection = opening
+    connectionToken = token
+    void opening.catch(() => {
+      if (connection === opening) {
+        connection = undefined
+        connectionToken = undefined
+      }
+    })
+    return opening
   }
 
   const call = async (name: string, args: Record<string, unknown> = {}): Promise<unknown> => {
@@ -255,6 +288,7 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
   }
 
   return {
+    resetConnection,
     lists: () => Effect.promise(() => listProjects().then((lists) => [...lists])),
     tasks: (listId) => Effect.promise(() => projectTasks(listId).then((tasks) => [...tasks])),
     task: (id) =>

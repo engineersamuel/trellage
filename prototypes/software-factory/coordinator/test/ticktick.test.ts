@@ -365,3 +365,63 @@ test("the HTTP transport receives the endpoint, Bearer header, and injected fetc
   expect(new Headers(seenHeaders).get("Authorization")).toBe("Bearer token-value")
   await server.close()
 })
+
+test("the HTTP transport drops a disconnected or replaced account bearer", async () => {
+  const store = inMemoryTokenStore()
+  await store.set({
+    clientId: "client-1",
+    redirectUri: "http://localhost/callback",
+    accessToken: "account-a",
+    expiresAt: Date.now() + 60_000,
+  })
+  const auth = makeTickTickAuth({ store })
+  const requests: Request[] = []
+  const fetch = (async (input, init) => {
+    const request = new Request(input, init)
+    requests.push(request)
+    if (request.method === "GET") return new Response(null, { status: 405 })
+    const message = JSON.parse(await request.text()) as { id?: string | number; method?: string }
+    if (message.id === undefined) return new Response(null, { status: 202 })
+    const result =
+      message.method === "initialize"
+        ? {
+            protocolVersion: "2025-06-18",
+            capabilities: { tools: {} },
+            serverInfo: { name: "ticktick-test", version: "1" },
+          }
+        : {
+            content: [{ type: "text", text: "ok" }],
+            structuredContent: { projects: [{ id: "project-1", name: "Work" }] },
+          }
+    return Response.json({ jsonrpc: "2.0", id: message.id, result })
+  }) as typeof globalThis.fetch
+  const source = makeTickTickTodoSource({
+    accessToken: async () => {
+      const token = await auth.accessToken()
+      if (!token) throw new Error("TickTick source is disconnected")
+      return token
+    },
+    fetch,
+  })
+
+  await expect(Effect.runPromise(source.lists())).resolves.toEqual([{ id: "project-1", name: "Work" }])
+  const connectedRequests = requests.length
+  await auth.disconnect()
+  await expect(Effect.runPromise(source.lists())).rejects.toThrow()
+  expect(requests).toHaveLength(connectedRequests)
+  await store.set({
+    clientId: "client-2",
+    redirectUri: "http://localhost/callback",
+    accessToken: "account-b",
+    expiresAt: Date.now() + 60_000,
+  })
+  const reconnectAt = requests.length
+  await expect(Effect.runPromise(source.lists())).resolves.toEqual([{ id: "project-1", name: "Work" }])
+
+  const toolRequests = requests.filter((request) => request.url === TICKTICK_MCP_URL && request.method === "POST")
+  expect(toolRequests.map((request) => request.headers.get("authorization"))).not.toContain("Bearer ")
+  expect(toolRequests.some((request) => request.headers.get("authorization") === "Bearer account-a")).toBe(true)
+  expect(
+    requests.slice(reconnectAt).every((request) => request.headers.get("authorization") === "Bearer account-b"),
+  ).toBe(true)
+})

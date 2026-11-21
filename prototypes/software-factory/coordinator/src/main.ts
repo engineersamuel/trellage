@@ -1627,6 +1627,7 @@ const todoApi = makeTodoApi({
   threads,
   uiUrl: process.env.SF_UI_URL ?? "http://localhost:5174/",
   coordinatorAddress: process.env.SF_ADDR ?? "127.0.0.1:7700",
+  resetSource: () => todoSource.resetConnection(),
   auth: todoAuth,
   source: {
     lists: () => Effect.runPromise(todoSource.lists()),

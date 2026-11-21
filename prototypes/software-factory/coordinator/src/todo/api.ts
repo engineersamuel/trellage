@@ -28,6 +28,7 @@ export type TodoApiDeps = {
     tasks(listId: string): Promise<TodoTask[]>
     task(id: string): Promise<TodoTaskWithComments>
   }
+  resetSource?: () => Promise<void>
   onError?: (error: unknown) => void
 }
 
@@ -105,6 +106,7 @@ export const makeTodoApi = (d: TodoApiDeps) => {
       if (!code || !state) return json({ error: "Missing OAuth callback parameters" }, 400)
       return safe(async () => {
         await d.auth.callback(code, state)
+        await d.resetSource?.()
         const target = new URL(d.uiUrl)
         target.searchParams.set("todo", "open")
         return Response.redirect(target.toString(), 302)
@@ -113,6 +115,7 @@ export const makeTodoApi = (d: TodoApiDeps) => {
     if (req.method === "DELETE" && url.pathname === "/api/todo/ticktick")
       return safe(async () => {
         await d.auth.disconnect()
+        await d.resetSource?.()
         return new Response(null, { status: 204 })
       })
     if (req.method === "GET" && url.pathname === "/api/todo/lists")
