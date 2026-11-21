@@ -202,7 +202,8 @@ omits `by` counts as the human.
 The Foldkit **Todo** dialog takes one TickTick task into a repo draft. The coordinator, not a worker or agent, calls
 TickTick's MCP server. It preserves the owner's tags, adds the configured `factory` tag, records draft/run/PR status
 comments, completes the task after merge, and releases it after discard or a closed PR. Failed Todo calls warn on the
-thread and retry during the PR sweep without blocking drafts, delivery, or merges.
+thread and retry during the PR sweep without blocking drafts, delivery, or merges. A release that succeeds after its
+timeout is reconciled from the late response, so the next sweep does not repeat its comment.
 
 Connect uses OAuth dynamic registration and PKCE. Credentials default to `Bun.secrets` (`trellage.factory`, `ticktick`).
 When that store throws, the coordinator uses `$XDG_CONFIG_HOME/trellage/factory/ticktick.json` (or `~/.config/...`)

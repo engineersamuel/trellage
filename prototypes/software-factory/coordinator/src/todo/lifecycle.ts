@@ -165,7 +165,7 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
       const task = await d.actions.task(pending.taskId)
       if (!attempt.active()) return
       await d.actions.release(task, pending.reason, attempt)
-      if (!attempt.active()) return
+      if (!d.pending.get(id)) return
       d.pending.delete(id)
       patch(id, (current) => ({ ...current, state: "released", error: undefined }))
     } catch (error) {

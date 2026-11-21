@@ -452,6 +452,60 @@ test("timed-out release survives deletion, retries once, and ignores the late an
   expect(calls.filter((call) => call.name === "add_comment")).toHaveLength(1)
 })
 
+test("late successful release comment clears the pending intent without a duplicate", async () => {
+  let finishComment!: () => void
+  const firstComment = new Promise<void>((resolve) => void (finishComment = resolve))
+  let firstCommentStarted!: () => void
+  const started = new Promise<void>((resolve) => void (firstCommentStarted = resolve))
+  const fake = await fakeTickTick(async (call) => {
+    if (call.name === "get_task_by_id")
+      return {
+        structuredContent: {
+          task: { ...task, tags: ["owner", "factory", "other"], etag: "etag-1" },
+        },
+      }
+    if (call.name === "add_comment") {
+      firstCommentStarted()
+      await firstComment
+    }
+    return undefined
+  })
+  const { source, calls } = fake
+  const { routes, threads, folder, pending, lifecycle } = makeHarness({
+    actions: {
+      task: async (id) => (await Effect.runPromise(source.task(id))).task,
+      release: (value, reason, checkpoint) => Effect.runPromise(source.release(value, reason, checkpoint)),
+    },
+    discardTimeout: 5,
+  })
+  const thread = threads.create("Task", folder.id)
+  threads.setTodo(thread.id, {
+    source: "ticktick",
+    listId: task.projectId,
+    taskId: task.id,
+    title: task.title,
+    state: "claimed",
+    done: ["claim"],
+  })
+
+  expect((await routes.deleteThread(thread.id)).status).toBe(204)
+  await started
+  expect(pending.get(thread.id)).toMatchObject({ taskId: task.id, reason: "conversation deleted" })
+
+  finishComment()
+  await eventually(() => pending.get(thread.id) === undefined)
+  await lifecycle.sweep(new Map())
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(calls.filter((call) => call.name === "update_task")).toHaveLength(1)
+  expect(calls.filter((call) => call.name === "add_comment")).toEqual([
+    {
+      name: "add_comment",
+      arguments: { task_id: "task-1", content: "🏭 Factory stopped: conversation deleted" },
+    },
+  ])
+})
+
 test("a failed claim keeps its warning while a later stage succeeds", async () => {
   const { threads, folder, lifecycle } = makeHarness({
     actions: {
