@@ -197,6 +197,22 @@ A run started to improve the Factory never opens a proposal of its own, and
 merging its PR stays human. Risk: the approval API is unauthenticated, as for every approval; any local caller that
 omits `by` counts as the human.
 
+## Todo sources
+
+The Foldkit **Todo** dialog takes one TickTick task into a repo draft. The coordinator, not a worker or agent, calls
+TickTick's MCP server. It preserves the owner's tags, adds the configured `factory` tag, records draft/run/PR status
+comments, completes the task after merge, and releases it after discard or a closed PR. Failed Todo calls warn on the
+thread and retry during the PR sweep without blocking drafts, delivery, or merges.
+
+Connect uses OAuth dynamic registration and PKCE. Credentials default to `Bun.secrets` (`trellage.factory`, `ticktick`).
+When that store throws, the coordinator uses `$XDG_CONFIG_HOME/trellage/factory/ticktick.json` (or `~/.config/...`)
+with a 0600 file. It also chmods the containing `trellage/factory` folder to 0700 because the credential is plain text
+there; this is the user's factory config folder. TickTick tokens have no refresh token, so the UI asks for a re-login
+when the token expires after about 180 days.
+
+Todo support is enabled by `[todo] enabled = true` in `coordinator/defaults/config.toml`; `tag` chooses the marker tag.
+No TickTick tool is included in a worker's MCP configuration.
+
 ## Model routing
 
 - Copilot SDK runtimes get the host GitHub token (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token`). Model
