@@ -37,7 +37,13 @@ const setup = (fail?: Partial<TodoLifecycleActions>) => {
     claim: async (_task, url) => void calls.push(`claim ${url}`),
     note: async (_task, text) => void calls.push(text),
     release: async (_task, reason) => void calls.push(`release ${reason}`),
-    complete: async (_task, url) => void calls.push(`complete ${url}`),
+    complete: async (_task, url, onCommented, commentPosted) => {
+      if (!commentPosted) {
+        calls.push(`🏭 Merged: ${url}`)
+        onCommented()
+      }
+      calls.push(`complete ${url}`)
+    },
     ...fail,
   }
   const lifecycle = makeTodoLifecycle({
@@ -100,7 +106,11 @@ test("a failed complete retries without repeating the merged comment", async () 
   let fail = true
   const observed: string[] = []
   const { lifecycle, thread, calls, repo } = setup({
-    complete: async (_task, url) => {
+    complete: async (_task, url, onCommented, commentPosted) => {
+      if (!commentPosted) {
+        calls.push(`🏭 Merged: ${url}`)
+        onCommented()
+      }
       if (fail) throw new Error("secret upstream token")
       observed.push(`complete ${url}`)
     },
@@ -253,7 +263,8 @@ test("lifecycle owns the merged comment so completion can retry without duplicat
       claim: (value, threadUrl) => Effect.runPromise(source.claim(value, threadUrl)),
       note: (value, text) => Effect.runPromise(source.note(value, text)),
       release: (value, reason) => Effect.runPromise(source.release(value, reason)),
-      complete: (value, prUrl) => Effect.runPromise(source.complete(value, prUrl)),
+      complete: (value, prUrl, onCommented, commentPosted) =>
+        Effect.runPromise(source.complete(value, prUrl, { commentPosted, onCommented })),
     },
   })
   const prs = new Map([[repo, new Map([["topic", { number: 1, url, state: "MERGED", checks: "SUCCESS" }]])]])
