@@ -77,18 +77,21 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
     void error
   }
 
+  const prerequisitesDone = (id: string, todo: ThreadTodo): boolean =>
+    todo.done.includes("claim") && (!d.threads.get(id)?.draft?.startedAt || todo.done.includes("run"))
+
   const finish = (id: string, key: string): void =>
-    patch(id, (todo) => ({
-      ...todo,
-      done: todo.done.includes(key) ? todo.done : [...todo.done, key],
-      error: key === "claim" || todo.done.includes("claim") ? undefined : todo.error,
-    }))
+    patch(id, (todo) => {
+      const done = todo.done.includes(key) ? todo.done : [...todo.done, key]
+      const updated = { ...todo, done }
+      return { ...updated, error: prerequisitesDone(id, updated) ? undefined : todo.error }
+    })
 
   const withTask = async (id: string, run: (task: TodoTask, todo: ThreadTodo) => Promise<void>): Promise<void> =>
     serialize(id, async () => {
       try {
         const todo = d.threads.get(id)?.todo
-        if (!todo || todo.state !== "claimed") return
+        if (!todo) return
         await run(await d.actions.task(todo.taskId), todo)
       } catch (error) {
         failure(id, error)
@@ -123,7 +126,11 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
     if (d.threads.get(id)?.todo?.state !== "claimed") return
     await d.actions.complete(task, url, () => finish(id, "merged"), commentPosted)
     if (!commentPosted) finish(id, "merged")
-    patch(id, (todo) => ({ ...todo, state: "completed", error: undefined }))
+    patch(id, (todo) => ({
+      ...todo,
+      state: "completed",
+      error: prerequisitesDone(id, todo) ? undefined : todo.error,
+    }))
   }
 
   const release = async (id: string, task: TodoTask, reason: string): Promise<void> => {
@@ -131,7 +138,11 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
       await d.actions.release(task, reason)
       finish(id, "released")
     }
-    patch(id, (todo) => ({ ...todo, state: "released", error: undefined }))
+    patch(id, (todo) => ({
+      ...todo,
+      state: "released",
+      error: prerequisitesDone(id, todo) ? undefined : todo.error,
+    }))
   }
 
   const reconcile = async (id: string, pr: BranchPr): Promise<void> =>
@@ -193,9 +204,11 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
 
   const sweep = async (prs: Map<string, Map<string, BranchPr>>): Promise<void> => {
     for (const thread of d.threads.list()) {
-      if (thread.todo?.state !== "claimed") continue
+      const todo = thread.todo
+      if (!todo || (todo.state !== "claimed" && prerequisitesDone(thread.id, todo))) continue
       await claim(thread.id)
       await runComment(thread.id)
+      if (d.threads.get(thread.id)?.todo?.state !== "claimed") continue
       const repo = d.threads.folder(thread.folderId)?.path
       const pr = thread.branch && repo ? prs.get(repo)?.get(thread.branch) : undefined
       if (pr) await reconcile(thread.id, pr)

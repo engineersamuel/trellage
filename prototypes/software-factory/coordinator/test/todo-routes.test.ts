@@ -683,6 +683,79 @@ test("run delivery succeeds when the started comment fails and the next sweep po
   ).toHaveLength(2)
 })
 
+test("a failed started comment is retried on a completed thread without repeating merge actions", async () => {
+  let startedAvailable = false
+  const fake = await fakeTickTick((call) => {
+    const isStarted = call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."
+    if (isStarted && !startedAvailable) return { isError: true, text: "TickTick unavailable" }
+    return undefined
+  })
+  const { source, calls } = fake
+  const { routes, threads, folder, lifecycle } = makeHarness({
+    draftSource: {
+      lists: async () => [...(await Effect.runPromise(source.lists()))],
+      task: async (id: string) => Effect.runPromise(source.task(id)),
+    },
+    actions: {
+      task: async (id) => (await Effect.runPromise(source.task(id))).task,
+      claim: (value, url) => Effect.runPromise(source.claim(value, url)),
+      note: (value, text) => Effect.runPromise(source.note(value, text)),
+      release: (value, reason) => Effect.runPromise(source.release(value, reason)),
+      complete: (value, url, onCommented, commentPosted) =>
+        Effect.runPromise(source.complete(value, url, { commentPosted, onCommented })),
+    },
+  })
+  const response = await routes.create(
+    new Request("http://factory.test/api/drafts", {
+      method: "POST",
+      body: JSON.stringify({
+        folderId: folder.id,
+        todo: { source: "ticktick", listId: "list-1", taskId: task.id },
+      }),
+    }),
+  )
+  expect(response.status).toBe(200)
+  const created = (await response.json()) as { id: string }
+  expect((await routes.run(created.id)).status).toBe(200)
+  await eventually(() => threads.get(created.id)?.todo?.error === "TickTick action failed")
+
+  const pr = {
+    number: 1,
+    url: "https://github.test/pull/1",
+    state: "MERGED",
+    checks: "SUCCESS",
+  }
+  const sweep = makeTodoPrSweep({
+    threads,
+    prStates: new Map(),
+    repoPrs: async () => new Map([["topic", pr]]),
+    onPr: () => undefined,
+    todoEnabled: () => true,
+    todoSweep: (prs) => lifecycle.sweep(prs),
+    onError: (_id, error) => {
+      throw error
+    },
+  })
+
+  await sweep()
+  expect(threads.get(created.id)?.todo).toMatchObject({
+    state: "completed",
+    error: "TickTick action failed",
+  })
+  expect(threads.get(created.id)?.todo?.done).not.toContain("run")
+  expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
+
+  startedAvailable = true
+  await sweep()
+  expect(threads.get(created.id)?.todo).toMatchObject({ state: "completed", error: undefined })
+  expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
+  expect(
+    calls.filter((call) => call.name === "add_comment" && call.arguments.content === "🏭 Factory started work."),
+  ).toHaveLength(3)
+  await sweep()
+  expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
+})
+
 test("a failed claim does not reject creation and is posted by the next production sweep", async () => {
   let claimAttempts = 0
   const { source, calls } = await fakeTickTick((call) => {
