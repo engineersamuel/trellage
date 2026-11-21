@@ -10,8 +10,18 @@ import type { Folder } from "../../../shared/schemas"
 const CONNECT = "/api/todo/ticktick/connect"
 const expiry = (value: number | undefined) => (value ? new Date(value).toLocaleDateString() : "")
 const text = (x: unknown) => String(x ?? "")
-const button = (label: string, onClick: Message, h: HtmlBuilder<Message>, disabled = false) =>
-  Button.view({ onClick, toView: (a) => h.button([...a.button, h.Disabled(disabled)], [label]) }, h)
+const button = (label: string, onClick: Message, h: HtmlBuilder<Message>, disabled = false, selected = false) =>
+  Button.view(
+    {
+      onClick,
+      toView: (a) =>
+        h.button(
+          [...a.button, h.Disabled(disabled), ...(selected ? [h.AriaCurrent("true"), h.Class("is-selected")] : [])],
+          [label],
+        ),
+    },
+    h,
+  )
 const picker = (m: Model, folders: ReadonlyArray<Folder>, h: HtmlBuilder<Message>) =>
   Select.view(
     {
@@ -74,7 +84,13 @@ const content = (m: Model, r: Dialog.RenderInfo, h: HtmlBuilder<Message>): Html[
             h.h3([], ["Lists"]),
             h.ul(
               [h.Class("fk-list")],
-              lists.map((l) => h.keyed("li")(l.id, [], [button(l.name, Message.PickedList({ value: l.id }), h)])),
+              lists.map((l) =>
+                h.keyed("li")(
+                  l.id,
+                  [],
+                  [button(l.name, Message.PickedList({ value: l.id }), h, false, m.listId === l.id)],
+                ),
+              ),
             ),
           ],
         ),
@@ -98,6 +114,8 @@ const content = (m: Model, r: Dialog.RenderInfo, h: HtmlBuilder<Message>): Html[
                       ].join(""),
                       Message.PickedTask({ value: t.id }),
                       h,
+                      false,
+                      m.taskId === t.id,
                     ),
                     t.threadId
                       ? h.a(
@@ -116,10 +134,13 @@ const content = (m: Model, r: Dialog.RenderInfo, h: HtmlBuilder<Message>): Html[
           [
             h.h3([], ["Task"]),
             detail
-              ? h.pre([], [text(detail.prompt ?? detail.task.prompt ?? detail.task.content ?? detail.task.desc)])
+              ? h.pre(
+                  [h.Role("region"), h.AriaLabel("Draft prompt preview")],
+                  [text(detail.prompt ?? detail.task.prompt ?? detail.task.content ?? detail.task.desc)],
+                )
               : h.p([h.Class("fk-muted")], ["Pick a task"]),
             picker(m, folders, h),
-            button("Draft", Message.ClickedDraft(), h, !canDraft(m)),
+            button(m.drafting ? "Drafting…" : "Draft", Message.ClickedDraft(), h, !canDraft(m)),
           ],
         ),
       ],

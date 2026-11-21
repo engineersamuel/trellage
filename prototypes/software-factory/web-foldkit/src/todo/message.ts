@@ -28,5 +28,6 @@ export const Message = defineMessageUnion({
   PickedFolder: { value: Schema.String },
   ClickedDraft: {},
   Drafted: { id: Schema.String },
+  FailedDraft: { error: Schema.String },
 })
 export type Message = typeof Message.Type

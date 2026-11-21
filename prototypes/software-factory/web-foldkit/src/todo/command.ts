@@ -43,13 +43,19 @@ export const LoadDetail = Command.define("LoadDetail", {
     ),
 })
 export const Draft = Command.define("Draft", {
-  args: { folderId: Schema.String, listId: Schema.String, taskId: Schema.String },
-  messages: [Message.Drafted, Message.Failed],
+  args: {
+    folderId: Schema.String,
+    prompt: Schema.optionalKey(Schema.String),
+    listId: Schema.String,
+    taskId: Schema.String,
+  },
+  messages: [Message.Drafted, Message.FailedDraft],
   execute: (args) =>
     postJson(
       "/api/drafts",
       {
         folderId: args.folderId,
+        ...(args.prompt === undefined ? {} : { prompt: args.prompt }),
         todo: { source: "ticktick", listId: args.listId, taskId: args.taskId },
       },
       Schema.Struct({ id: Schema.String }),
@@ -58,6 +64,6 @@ export const Draft = Command.define("Draft", {
         window.dispatchEvent(new CustomEvent("sf:select-worker", { detail: `draft-${id.slice(0, 8)}` }))
         return Message.Drafted({ id })
       }),
-      Effect.catch((error) => Effect.succeed(Message.Failed({ error }))),
+      Effect.catch((error) => Effect.succeed(Message.FailedDraft({ error }))),
     ),
 })

@@ -21,6 +21,7 @@ export const init = (): Update.Return<Model, Message> => ({
     detailRequestId: 0,
     detailListId: "",
     error: "",
+    drafting: false,
   },
 })
 const put = (m: Model, key: "status" | "lists" | "tasks" | "detail" | "folders", value: unknown): Model => ({
@@ -113,9 +114,20 @@ export const update = (m: Model, x: Message): Update.Return<Model, Message> =>
       }
     },
     PickedFolder: ({ value }) => ({ model: modifyFields(m, { folderId: () => value }) }),
-    ClickedDraft: () => ({
-      model: m,
-      commands: canDraft(m) ? [Draft({ folderId: m.folderId, listId: m.listId, taskId: m.taskId })] : [],
-    }),
-    Drafted: () => dialog(m, Dialog.close),
+    ClickedDraft: () =>
+      canDraft(m)
+        ? {
+            model: modifyFields(m, { drafting: () => true, error: () => "" }),
+            commands: [
+              Draft({
+                folderId: m.folderId,
+                prompt: Option.getOrUndefined(AsyncData.getData(m.detail))?.prompt,
+                listId: m.listId,
+                taskId: m.taskId,
+              }),
+            ],
+          }
+        : { model: m },
+    Drafted: () => dialog(modifyFields(m, { drafting: () => false }), Dialog.close),
+    FailedDraft: ({ error }) => ({ model: modifyFields(fail(m, error), { drafting: () => false }) }),
   })

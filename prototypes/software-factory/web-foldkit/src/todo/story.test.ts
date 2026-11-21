@@ -1,12 +1,14 @@
 import { Option } from "effect"
+import { Effect } from "effect"
 import { AsyncData } from "foldkit"
 import { Command, given, message, model, story } from "foldkit/story"
 import { Dialog } from "@foldkit/ui"
-import { expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 import { Draft, LoadDetail, LoadFolders, LoadLists, LoadStatus, LoadTasks } from "./command"
 import { Message } from "./message"
 import { init, update } from "./update"
 const task = { id: "t", title: "Ship it" }
+afterEach(() => vi.unstubAllGlobals())
 test("todo selects a task and drafts it into the picked repo", () =>
   story(
     update,
@@ -26,14 +28,17 @@ test("todo selects a task and drafts it into the picked repo", () =>
       }),
     ),
     message(Message.ClickedDraft()),
-    Command.expectHas(Draft({ folderId: "r", listId: "l", taskId: "t" })),
-    Command.resolve(Draft, Message.Failed({ error: "offline" })),
+    Command.expectHas(Draft({ folderId: "r", prompt: "Server preview", listId: "l", taskId: "t" })),
+    model((m) => expect([m.listId, m.taskId, m.folderId]).toEqual(["l", "t", "r"])),
+    model((m) => expect(m.drafting).toBe(true)),
+    Command.resolve(Draft, Message.FailedDraft({ error: "offline" })),
     model((m) =>
-      expect([m.folderId, m.listId, m.taskId, AsyncData.isSuccess(m.detail), m.error]).toEqual([
+      expect([m.folderId, m.listId, m.taskId, AsyncData.isSuccess(m.detail), m.drafting, m.error]).toEqual([
         "r",
         "l",
         "t",
         true,
+        false,
         "offline",
       ]),
     ),
@@ -41,7 +46,7 @@ test("todo selects a task and drafts it into the picked repo", () =>
 test("todo closes after a draft succeeds", () =>
   story(
     update,
-    given(init().model),
+    given({ ...init().model, drafting: true }),
     message(Message.ClickedOpen()),
     model((m) => expect(m.dialog.isOpen).toBe(true)),
     Command.resolveAll(
@@ -52,7 +57,7 @@ test("todo closes after a draft succeeds", () =>
     ),
     message(Message.Drafted({ id: "12345678-abcd" })),
     Command.resolve(Dialog.CloseDialog, Dialog.Message.CompletedCloseDialog()),
-    model((m) => expect(m.dialog.isOpen).toBe(false)),
+    model((m) => expect([m.dialog.isOpen, m.drafting]).toEqual([false, false])),
   ))
 
 test("todo ignores task-list responses from a previously selected list", () =>
@@ -139,8 +144,8 @@ test("todo ignores task detail responses from a previously selected task", () =>
       }),
     ),
     message(Message.ClickedDraft()),
-    Command.expectHas(Draft({ folderId: "repo", listId: "list", taskId: "task-b" })),
-    Command.resolve(Draft, Message.Failed({ error: "offline" })),
+    Command.expectHas(Draft({ folderId: "repo", prompt: "Prompt B", listId: "list", taskId: "task-b" })),
+    Command.resolve(Draft, Message.FailedDraft({ error: "offline" })),
     message(
       Message.FailedDetail({
         error: "stale failure",
@@ -173,4 +178,69 @@ test("todo drafts only from a fully matching loaded selection", () => {
 
   expect(invalid).toHaveLength(6)
   for (const candidate of invalid) story(update, given(candidate), message(Message.ClickedDraft()))
+})
+
+test("todo keeps a draft pending when an unrelated request fails", () => {
+  const detail = { task: { id: "task", title: "Task" }, prompt: "Prompt" }
+  const started = update(
+    {
+      ...init().model,
+      folderId: "repo",
+      listId: "list",
+      taskId: "task",
+      detailListId: "list",
+      detail: AsyncData.succeed(detail),
+    },
+    Message.ClickedDraft(),
+  )
+  expect(started.commands).toHaveLength(1)
+
+  const afterFailure = update(started.model, Message.Failed({ error: "status unavailable" }))
+  expect([afterFailure.model.drafting, afterFailure.model.error]).toEqual([true, "status unavailable"])
+
+  const clickedAgain = update(afterFailure.model, Message.ClickedDraft())
+  expect(clickedAgain.commands ?? []).toHaveLength(0)
+})
+
+test("the production Draft command posts todo identity and selects the returned worker", async () => {
+  let requestBody: unknown
+  let requestUrl = ""
+  let requestMethod = ""
+  vi.stubGlobal("fetch", async (url: string, requestInit: RequestInit) => {
+    requestUrl = String(url)
+    requestMethod = requestInit.method ?? ""
+    requestBody = JSON.parse(String(requestInit.body))
+    return new Response(JSON.stringify({ id: "12345678-abcd" }), {
+      headers: { "content-type": "application/json" },
+    })
+  })
+  let selected: string | undefined
+  window.addEventListener(
+    "sf:select-worker",
+    (event) => {
+      if (event instanceof CustomEvent) selected = String(event.detail)
+    },
+    { once: true },
+  )
+
+  vi.resetModules()
+  const { Draft: ProductionDraft } = await import("./command")
+  const result = await Effect.runPromise(
+    ProductionDraft({
+      folderId: "repo",
+      prompt: "Saved draft prompt",
+      listId: "list",
+      taskId: "task",
+    }).effect,
+  )
+
+  expect(requestUrl).toContain("/api/drafts")
+  expect(requestMethod).toBe("POST")
+  expect(requestBody).toEqual({
+    folderId: "repo",
+    prompt: "Saved draft prompt",
+    todo: { source: "ticktick", listId: "list", taskId: "task" },
+  })
+  expect(result).toEqual(Message.Drafted({ id: "12345678-abcd" }))
+  expect(selected).toBe("draft-12345678")
 })
