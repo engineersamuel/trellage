@@ -39,13 +39,17 @@ export const TodoTaskWithComments = Schema.Struct({
 })
 export type TodoTaskWithComments = typeof TodoTaskWithComments.Type
 
+export type TodoReleaseCheckpoint = {
+  active(): boolean
+}
+
 export type TodoSourceApi = {
   lists(): Effect.Effect<TodoList[]>
   tasks(listId: string): Effect.Effect<TodoTask[]>
   task(id: string): Effect.Effect<TodoTaskWithComments>
   claim(task: TodoTask, threadUrl: string): Effect.Effect<void>
   note(task: TodoTask, text: string): Effect.Effect<void>
-  release(task: TodoTask, reason: string): Effect.Effect<void>
+  release(task: TodoTask, reason: string, checkpoint?: TodoReleaseCheckpoint): Effect.Effect<void>
   complete(
     task: TodoTask,
     prUrl: string,

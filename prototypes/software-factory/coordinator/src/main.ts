@@ -1614,7 +1614,7 @@ const todoLifecycle = makeTodoLifecycle({
     task: async (id) => (await Effect.runPromise(todoSource.task(id))).task,
     claim: (task, url) => Effect.runPromise(todoSource.claim(task, url)),
     note: (task, text) => Effect.runPromise(todoSource.note(task, text)),
-    release: (task, reason) => Effect.runPromise(todoSource.release(task, reason)),
+    release: (task, reason, checkpoint) => Effect.runPromise(todoSource.release(task, reason, checkpoint)),
     complete: (task, url, onCommented, commentPosted) =>
       Effect.runPromise(todoSource.complete(task, url, { commentPosted, onCommented })),
   },

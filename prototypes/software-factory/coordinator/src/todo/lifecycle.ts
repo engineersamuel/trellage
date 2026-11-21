@@ -1,7 +1,7 @@
 import type { BranchPr, PrState } from "../cos.ts"
 import { prState } from "../cos.ts"
 import type { Thread, Threads, ThreadTodo } from "../threads.ts"
-import type { TodoTask } from "./source.ts"
+import type { TodoReleaseCheckpoint, TodoTask } from "./source.ts"
 
 const ACTION_FAILED = "TickTick action failed"
 const FACTORY_STARTED = "🏭 Factory started work."
@@ -10,7 +10,7 @@ export type TodoLifecycleActions = {
   task(id: string): Promise<TodoTask>
   claim(task: TodoTask, threadUrl: string): Promise<void>
   note(task: TodoTask, text: string): Promise<void>
-  release(task: TodoTask, reason: string): Promise<void>
+  release(task: TodoTask, reason: string, checkpoint?: TodoReleaseCheckpoint): Promise<void>
   complete(task: TodoTask, prUrl: string, onCommented: () => void, commentPosted: boolean): Promise<void>
 }
 
@@ -51,6 +51,7 @@ const timeout = <A>(promise: Promise<A>, ms: number): Promise<A> =>
 
 export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
   const inFlight = new Map<string, Promise<void>>()
+  const releaseAttempts = new Map<string, symbol>()
 
   const serialize = (id: string, action: () => Promise<void>): Promise<void> => {
     const previous = inFlight.get(id) ?? Promise.resolve()
@@ -141,19 +142,47 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
       if (state === "closed") await release(id, task, "PR closed without merge")
     })
 
+  const startReleaseAttempt = (id: string) => {
+    const value = Symbol(id)
+    let started = false
+    releaseAttempts.set(id, value)
+    return {
+      begin: () => void (started = true),
+      started: () => started,
+      active: () => releaseAttempts.get(id) === value,
+      cancel: () => {
+        if (releaseAttempts.get(id) === value) releaseAttempts.delete(id)
+      },
+    }
+  }
+
+  type ReleaseAttempt = ReturnType<typeof startReleaseAttempt>
+
+  const releasePending = async (id: string, pending: PendingTodoRelease, attempt: ReleaseAttempt): Promise<void> => {
+    attempt.begin()
+    if (!attempt.active() || !d.pending.get(id)) return
+    try {
+      const task = await d.actions.task(pending.taskId)
+      if (!attempt.active()) return
+      await d.actions.release(task, pending.reason, attempt)
+      if (!attempt.active()) return
+      d.pending.delete(id)
+      patch(id, (current) => ({ ...current, state: "released", error: undefined }))
+    } catch (error) {
+      if (attempt.active()) d.onError(id, ACTION_FAILED)
+      void error
+    } finally {
+      attempt.cancel()
+    }
+  }
+
   const retryReleases = async (): Promise<void> => {
     for (const id of [...d.pending.keys()]) {
       await serialize(id, async () => {
         const pending = d.pending.get(id)
         if (!pending) return
-        try {
-          const task = await d.actions.task(pending.taskId)
-          await d.actions.release(task, pending.reason)
-          d.pending.delete(id)
-        } catch (error) {
-          d.onError(id, ACTION_FAILED)
-          void error
-        }
+        const attempt = startReleaseAttempt(id)
+        await releasePending(id, pending, attempt)
       })
     }
   }
@@ -175,21 +204,15 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
     if (!todo || todo.state !== "claimed") return
     const pending: PendingTodoRelease = { ...todo, reason }
     d.pending.set(thread.id, pending)
-    const releasing = serialize(thread.id, async () => {
-      if (!d.pending.get(thread.id)) return
-      try {
-        const task = await d.actions.task(pending.taskId)
-        await d.actions.release(task, pending.reason)
-        d.pending.delete(thread.id)
-        patch(thread.id, (current) => ({ ...current, state: "released", error: undefined }))
-      } catch (error) {
-        d.onError(thread.id, ACTION_FAILED)
-        void error
-      }
-    })
+    const attempt = startReleaseAttempt(thread.id)
+    const releasing = serialize(thread.id, () => releasePending(thread.id, pending, attempt))
     try {
       await timeout(releasing, timeoutMs)
     } catch (error) {
+      if (attempt.started()) {
+        attempt.cancel()
+        if (inFlight.get(thread.id) === releasing) inFlight.delete(thread.id)
+      }
       d.onError(thread.id, ACTION_FAILED)
       void error
     }

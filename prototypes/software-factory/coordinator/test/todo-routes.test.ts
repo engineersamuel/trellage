@@ -376,25 +376,32 @@ test("production PR sweep shares repo reads, emits closed, and reconciles archiv
   })
 })
 
-test("persistent timeout intent survives deletion and retry clears it", async () => {
-  let releaseFails = true
-  const fake = await fakeTickTick((call) => {
+test("timed-out release survives deletion, retries once, and ignores the late answer", async () => {
+  let finishFirstUpdate!: () => void
+  const firstUpdate = new Promise<void>((resolve) => void (finishFirstUpdate = resolve))
+  let firstUpdateStarted!: () => void
+  const started = new Promise<void>((resolve) => void (firstUpdateStarted = resolve))
+  let updateAttempts = 0
+  const fake = await fakeTickTick(async (call) => {
     if (call.name === "get_task_by_id")
       return {
         structuredContent: {
           task: { ...task, tags: ["owner", "factory", "other"], etag: "etag-1" },
         },
       }
-    if (call.name === "update_task" && releaseFails) return { isError: true, text: "TickTick unavailable" }
+    if (call.name === "update_task" && updateAttempts++ === 0) {
+      firstUpdateStarted()
+      await firstUpdate
+    }
     return undefined
   })
   const { source, calls } = fake
   const { routes, threads, folder, pending, lifecycle } = makeHarness({
     actions: {
       task: async (id) => (await Effect.runPromise(source.task(id))).task,
-      release: (value, reason) => Effect.runPromise(source.release(value, reason)),
+      release: (value, reason, checkpoint) => Effect.runPromise(source.release(value, reason, checkpoint)),
     },
-    discardTimeout: 2,
+    discardTimeout: 5,
   })
   const thread = threads.create("Task", folder.id)
   threads.setTodo(thread.id, {
@@ -405,12 +412,16 @@ test("persistent timeout intent survives deletion and retry clears it", async ()
     state: "claimed",
     done: ["claim"],
   })
+  const beforeDelete = performance.now()
   const deleted = await routes.deleteThread(thread.id)
+  expect(performance.now() - beforeDelete).toBeLessThan(100)
   expect(deleted.status).toBe(204)
   expect(pending.get(thread.id)).toMatchObject({ taskId: task.id, reason: "conversation deleted" })
   expect(threads.get(thread.id)).toBeUndefined()
+  await started
   expect(calls.filter((call) => call.name === "update_task")).toHaveLength(1)
   expect(calls.filter((call) => call.name === "add_comment")).toHaveLength(0)
+
   const sweep = makeTodoPrSweep({
     threads,
     prStates: new Map(),
@@ -422,12 +433,14 @@ test("persistent timeout intent survives deletion and retry clears it", async ()
       throw error
     },
   })
-  releaseFails = false
+  finishFirstUpdate()
+  await new Promise((resolve) => setTimeout(resolve, 0))
   await sweep()
   expect(pending.get(thread.id)).toBeUndefined()
-  expect(calls.filter((call) => call.name === "update_task").at(-1)?.arguments.task).toMatchObject({
-    tags: ["owner", "other"],
-  })
+  expect(calls.filter((call) => call.name === "update_task")).toHaveLength(2)
+  for (const update of calls.filter((call) => call.name === "update_task")) {
+    expect(update.arguments.task).toMatchObject({ tags: ["owner", "other"] })
+  }
   expect(calls.filter((call) => call.name === "add_comment")).toEqual([
     {
       name: "add_comment",
@@ -435,6 +448,7 @@ test("persistent timeout intent survives deletion and retry clears it", async ()
     },
   ])
   await sweep()
+  await new Promise((resolve) => setTimeout(resolve, 0))
   expect(calls.filter((call) => call.name === "add_comment")).toHaveLength(1)
 })
 

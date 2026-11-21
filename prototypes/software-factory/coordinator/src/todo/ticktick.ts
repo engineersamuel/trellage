@@ -8,6 +8,7 @@ import {
   TodoList,
   TodoSource,
   TodoTask,
+  type TodoReleaseCheckpoint,
   type TodoSourceApi,
   type TodoTask as TodoTaskValue,
 } from "./source.ts"
@@ -261,9 +262,11 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
         )
         await addComment(updated, `🏭 Factory draft: ${threadUrl}`)
       }),
-    release: (task, reason) =>
+    release: (task: TodoTaskValue, reason: string, checkpoint?: TodoReleaseCheckpoint) =>
       Effect.promise(async () => {
+        if (checkpoint && !checkpoint.active()) return
         const updated = await updateTags(task, (tags) => tags.filter((tag) => tag !== configuredTag))
+        if (checkpoint && !checkpoint.active()) return
         await addComment(updated, `🏭 Factory stopped: ${reason}`)
       }),
     complete: (task, prUrl, checkpoint) =>
