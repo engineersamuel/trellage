@@ -452,7 +452,7 @@ test("timed-out release survives deletion, retries once, and ignores the late an
   expect(calls.filter((call) => call.name === "add_comment")).toHaveLength(1)
 })
 
-test("late successful release comment clears the pending intent without a duplicate", async () => {
+test("sweep waits for an outstanding late release response without posting another comment", async () => {
   let finishComment!: () => void
   const firstComment = new Promise<void>((resolve) => void (finishComment = resolve))
   let firstCommentStarted!: () => void
@@ -492,10 +492,15 @@ test("late successful release comment clears the pending intent without a duplic
   await started
   expect(pending.get(thread.id)).toMatchObject({ taskId: task.id, reason: "conversation deleted" })
 
-  finishComment()
+  const retry = lifecycle.sweep(new Map())
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls.filter((call) => call.name === "add_comment")).toHaveLength(1)
+  } finally {
+    finishComment()
+    await retry
+  }
   await eventually(() => pending.get(thread.id) === undefined)
-  await lifecycle.sweep(new Map())
-  await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(calls.filter((call) => call.name === "update_task")).toHaveLength(1)
   expect(calls.filter((call) => call.name === "add_comment")).toEqual([

@@ -41,6 +41,7 @@ export type TodoTaskWithComments = typeof TodoTaskWithComments.Type
 
 export type TodoReleaseCheckpoint = {
   active(): boolean
+  commentStarted?(): void
 }
 
 export type TodoSourceApi = {

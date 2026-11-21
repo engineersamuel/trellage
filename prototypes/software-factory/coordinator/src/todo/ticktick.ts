@@ -267,6 +267,7 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
         if (checkpoint && !checkpoint.active()) throw new Error("TickTick release canceled")
         const updated = await updateTags(task, (tags) => tags.filter((tag) => tag !== configuredTag))
         if (checkpoint && !checkpoint.active()) throw new Error("TickTick release canceled")
+        checkpoint?.commentStarted?.()
         await addComment(updated, `🏭 Factory stopped: ${reason}`)
       }),
     complete: (task, prUrl, checkpoint) =>

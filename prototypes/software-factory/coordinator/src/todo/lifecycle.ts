@@ -145,10 +145,13 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
   const startReleaseAttempt = (id: string) => {
     const value = Symbol(id)
     let started = false
+    let commenting = false
     releaseAttempts.set(id, value)
     return {
       begin: () => void (started = true),
       started: () => started,
+      commentStarted: () => void (commenting = true),
+      commenting: () => commenting,
       active: () => releaseAttempts.get(id) === value,
       cancel: () => {
         if (releaseAttempts.get(id) === value) releaseAttempts.delete(id)
@@ -178,6 +181,7 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
 
   const retryReleases = async (): Promise<void> => {
     for (const id of [...d.pending.keys()]) {
+      if (releaseAttempts.has(id)) continue
       await serialize(id, async () => {
         const pending = d.pending.get(id)
         if (!pending) return
@@ -209,10 +213,7 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
     try {
       await timeout(releasing, timeoutMs)
     } catch (error) {
-      if (attempt.started()) {
-        attempt.cancel()
-        if (inFlight.get(thread.id) === releasing) inFlight.delete(thread.id)
-      }
+      if (attempt.started() && !attempt.commenting()) attempt.cancel()
       d.onError(thread.id, ACTION_FAILED)
       void error
     }
