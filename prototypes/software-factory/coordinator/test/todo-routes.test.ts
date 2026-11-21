@@ -593,14 +593,14 @@ test("production routes and PR sweep reconcile TickTick through an in-memory MCP
     calls.some(
       (call) =>
         call.name === "add_comment" &&
-        String(call.arguments.content).endsWith(`Factory draft: http://factory.test/?thread=${created.id}`),
+        String(call.arguments.content).startsWith(`🏭 Factory draft: http://factory.test/?thread=${created.id}`),
     ),
   )
 
   expect((await routes.run(created.id)).status).toBe(200)
   await eventually(() =>
     calls.some(
-      (call) => call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work."),
+      (call) => call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work."),
     ),
   )
 
@@ -626,7 +626,7 @@ test("production routes and PR sweep reconcile TickTick through an in-memory MCP
   expect(
     calls.filter(
       (call) =>
-        call.name === "add_comment" && String(call.arguments.content).endsWith("PR: https://github.test/pull/7"),
+        call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 PR: https://github.test/pull/7"),
     ),
   ).toHaveLength(1)
 
@@ -638,7 +638,8 @@ test("production routes and PR sweep reconcile TickTick through an in-memory MCP
   expect(
     calls.filter(
       (call) =>
-        call.name === "add_comment" && String(call.arguments.content).endsWith("Merged: https://github.test/pull/7"),
+        call.name === "add_comment" &&
+        String(call.arguments.content).startsWith("🏭 Merged: https://github.test/pull/7"),
     ),
   ).toHaveLength(1)
 })
@@ -647,7 +648,8 @@ test("run delivery succeeds when the started comment fails and the next sweep po
   let startedAttempts = 0
   let startedSucceeded = 0
   const fake = await fakeTickTick((call) => {
-    const isStarted = call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work.")
+    const isStarted =
+      call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work.")
     if (isStarted && startedAttempts++ === 0) return { isError: true, text: "TickTick unavailable" }
     if (isStarted) startedSucceeded++
     return undefined
@@ -697,7 +699,7 @@ test("run delivery succeeds when the started comment fails and the next sweep po
   expect(startedSucceeded).toBe(1)
   expect(
     calls.filter(
-      (call) => call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work."),
+      (call) => call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work."),
     ),
   ).toHaveLength(2)
   expect(threads.get(created.id)?.todo).toMatchObject({ state: "started", error: undefined })
@@ -705,7 +707,7 @@ test("run delivery succeeds when the started comment fails and the next sweep po
   expect(startedSucceeded).toBe(1)
   expect(
     calls.filter(
-      (call) => call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work."),
+      (call) => call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work."),
     ),
   ).toHaveLength(2)
 })
@@ -713,7 +715,8 @@ test("run delivery succeeds when the started comment fails and the next sweep po
 test("a failed started comment blocks merge until the next valid transition", async () => {
   let startedAvailable = false
   const fake = await fakeTickTick((call) => {
-    const isStarted = call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work.")
+    const isStarted =
+      call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work.")
     if (isStarted && !startedAvailable) return { isError: true, text: "TickTick unavailable" }
     return undefined
   })
@@ -778,7 +781,7 @@ test("a failed started comment blocks merge until the next valid transition", as
   expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
   expect(
     calls.filter(
-      (call) => call.name === "add_comment" && String(call.arguments.content).endsWith("Factory started work."),
+      (call) => call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work."),
     ),
   ).toHaveLength(4)
   await sweep()

@@ -221,12 +221,13 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Todo
     decode(CommentsResult, await call("get_comment", { task_id: id }), "comments").comments
 
   const addComment = async (task: TodoTaskValue, content: string, marker?: string): Promise<void> => {
-    const existingPrefix = /^(🏭 \[sf:[^\]]+\])/.exec(content)?.[1]
-    const prefix = existingPrefix ?? (marker ? `🏭 [sf:${marker}]` : undefined)
-    const text = textLength(prefix && !existingPrefix ? `${prefix} ${content.replace(/^🏭\s*/, "")}` : content)
-    if (prefix) {
+    const existingMarker = /🏭 \[sf:[^\]]+\]/.exec(content)?.[0]
+    const stableMarker = existingMarker ?? (marker ? `🏭 [sf:${marker}]` : undefined)
+    const body = existingMarker ? content.replace(existingMarker, "").trimEnd() : content
+    const text = stableMarker ? `${body.slice(0, 1024 - stableMarker.length - 1)} ${stableMarker}` : textLength(body)
+    if (stableMarker) {
       const existing = await commentsById(task.id)
-      if (existing.some((comment) => comment.content.startsWith(prefix))) return
+      if (existing.some((comment) => comment.content.includes(stableMarker))) return
     }
     await call("add_comment", { task_id: task.id, content: text })
   }

@@ -80,7 +80,7 @@ test("claim and run are idempotent and serialized", async () => {
   await lifecycle.sweep(new Map())
   expect(calls).toEqual([
     `claim http://ui/?thread=${thread.id}`,
-    `🏭 [sf:${thread.id.slice(0, 8)}:run] Factory started work.`,
+    `🏭 Factory started work. 🏭 [sf:${thread.id.slice(0, 8)}:run]`,
   ])
   expect(threads.get(thread.id)!.todo!.done).toEqual(["claim", "run"])
 })
@@ -107,9 +107,9 @@ test("first PR observation, merged comment and completion run without duplicates
   await lifecycle.sweep(prs)
   expect(calls).toEqual([
     `claim http://ui/?thread=${thread.id}`,
-    `🏭 [sf:${thread.id.slice(0, 8)}:run] Factory started work.`,
-    `🏭 [sf:${thread.id.slice(0, 8)}:pr-opened] PR: https://github.test/pull/1`,
-    `🏭 [sf:${thread.id.slice(0, 8)}:complete] Merged: https://github.test/pull/1`,
+    `🏭 Factory started work. 🏭 [sf:${thread.id.slice(0, 8)}:run]`,
+    `🏭 PR: https://github.test/pull/1 🏭 [sf:${thread.id.slice(0, 8)}:pr-opened]`,
+    `🏭 Merged: https://github.test/pull/1 🏭 [sf:${thread.id.slice(0, 8)}:complete]`,
     "complete https://github.test/pull/1",
   ])
 })
@@ -164,9 +164,9 @@ test("a failed complete retries without repeating the merged comment", async () 
   await lifecycle.sweep(prs)
   expect(calls).toEqual([
     `claim http://ui/?thread=${thread.id}`,
-    `🏭 [sf:${thread.id.slice(0, 8)}:run] Factory started work.`,
-    `🏭 [sf:${thread.id.slice(0, 8)}:pr-opened] PR: https://github.test/pull/1`,
-    `🏭 [sf:${thread.id.slice(0, 8)}:complete] Merged: https://github.test/pull/1`,
+    `🏭 Factory started work. 🏭 [sf:${thread.id.slice(0, 8)}:run]`,
+    `🏭 PR: https://github.test/pull/1 🏭 [sf:${thread.id.slice(0, 8)}:pr-opened]`,
+    `🏭 Merged: https://github.test/pull/1 🏭 [sf:${thread.id.slice(0, 8)}:complete]`,
     "TickTick action failed",
   ])
   expect(observed).toEqual(["complete https://github.test/pull/1"])
@@ -456,7 +456,7 @@ test("a timed-out accepted merged comment is reconciled before retry", async () 
   })
   const server = new McpServer({ name: "lifecycle-timeout", version: "1" })
   const client = new Client({ name: "lifecycle-timeout-client", version: "1" })
-  const mergedComment = `🏭 [sf:${thread.id.slice(0, 8)}:complete] Merged: ${url}`
+  const mergedComment = `🏭 Merged: ${url} 🏭 [sf:${thread.id.slice(0, 8)}:complete]`
   const comments: string[] = []
   const calls: string[] = []
   const errors: string[] = []

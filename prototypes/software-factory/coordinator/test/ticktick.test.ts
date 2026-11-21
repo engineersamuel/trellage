@@ -148,7 +148,7 @@ test("claim preserves tags, handles null and empty tags, and posts once with the
         name: "add_comment",
         arguments: {
           task_id: "task-1",
-          content: "🏭 [sf:abc:claim] Factory draft: http://ui/?thread=abc",
+          content: "🏭 Factory draft: http://ui/?thread=abc 🏭 [sf:abc:claim]",
         },
       },
     ])
@@ -279,6 +279,17 @@ test("a note is plain text truncated to 1024 characters", async () => {
   })
   await Effect.runPromise(source.note(task(), "x".repeat(1100)))
   expect(calls).toEqual([{ name: "add_comment", arguments: { task_id: "task-1", content: "x".repeat(1024) } }])
+  await server.close()
+})
+
+test("a marked note keeps the marker intact inside the 1024 character limit", async () => {
+  const { source, server, calls } = await fixture(() => ({ structuredContent: {} }), {
+    token: "secret",
+  })
+  await Effect.runPromise(source.note(task(), "x".repeat(1100), "thread-1:run"))
+  const posted = calls.find((call) => call.name === "add_comment")?.arguments.content
+  expect(String(posted)).toHaveLength(1024)
+  expect(String(posted).endsWith("🏭 [sf:thread-1:run]")).toBe(true)
   await server.close()
 })
 

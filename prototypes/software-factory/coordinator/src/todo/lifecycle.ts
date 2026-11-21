@@ -113,8 +113,7 @@ export const makeTodoLifecycle = (d: TodoLifecycleDeps) => {
     })
 
   const marker = (id: string, action: TodoAction): string => `${id.slice(0, 8)}:${action}`
-  const marked = (id: string, action: TodoAction, text: string): string =>
-    `🏭 [sf:${marker(id, action)}] ${text.replace(/^🏭\s*/, "")}`
+  const marked = (id: string, action: TodoAction, text: string): string => `${text} 🏭 [sf:${marker(id, action)}]`
 
   const perform = (
     id: string,
