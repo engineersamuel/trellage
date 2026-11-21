@@ -19,6 +19,7 @@ import type { Model } from "./model"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
 import * as Goals from "./goals"
+import * as Todo from "./todo"
 import * as Tournaments from "./tournaments"
 import * as Settings from "./settings"
 import * as Workers from "./workers"
@@ -29,6 +30,7 @@ type Step = Update.Step<Model, Message, ChatBackend>
 export const toGotWorkersMessage = (message: Workers.Message): Message => Message.GotWorkersMessage({ message })
 export const toGotSettingsMessage = (message: Settings.Message): Message => Message.GotSettingsMessage({ message })
 export const toGotGoalsMessage = (message: Goals.Message): Message => Message.GotGoalsMessage({ message })
+export const toGotTodoMessage = (message: Todo.Message): Message => Message.GotTodoMessage({ message })
 export const toGotTournamentsMessage = (message: Tournaments.Message): Message =>
   Message.GotTournamentsMessage({ message })
 export const toGotDiffPanelMessage = (message: DiffPanel.Message): Message => Message.GotDiffPanelMessage({ message })
@@ -72,6 +74,12 @@ const foldGoals = Update.foldChild({
     next === model.goals ? model : modifyFields(model, { goals: () => next }),
   toParentMessage: toGotGoalsMessage,
   update: Goals.update,
+})
+const foldTodo = Update.foldChild({
+  read: (m: Model) => Option.some(m.todo),
+  write: (m: Model, n: Todo.Model) => (n === m.todo ? m : modifyFields(m, { todo: () => n })),
+  toParentMessage: toGotTodoMessage,
+  update: Todo.update,
 })
 
 const foldTournaments = Update.foldChild({
@@ -144,7 +152,10 @@ const reloadOpenThread =
       onSome: (threadId) =>
         // eslint-disable-next-line no-underscore-dangle -- run state is a tagged union
         model.chat.run._tag === "Idle" &&
-        Option.match(maybeChangedThreadId, { onNone: () => true, onSome: (changed) => changed === threadId })
+        Option.match(maybeChangedThreadId, {
+          onNone: () => true,
+          onSome: (changed) => changed === threadId,
+        })
           ? [ReloadThread({ threadId })]
           : [],
     }),
@@ -158,6 +169,7 @@ const handleMessage = (model: Model, message: Message) =>
     GotWorkersMessage: ({ message: childMessage }) => foldWorkers(model, childMessage),
     GotSettingsMessage: ({ message: childMessage }) => foldSettings(model, childMessage),
     GotGoalsMessage: ({ message: childMessage }) => foldGoals(model, childMessage),
+    GotTodoMessage: ({ message: childMessage }) => foldTodo(model, childMessage),
     GotTournamentsMessage: ({ message: childMessage }) => foldTournaments(model, childMessage),
     GotDiffPanelMessage: ({ message: childMessage }) => foldDiffPanel(model, childMessage),
     GotReportViewerMessage: ({ message: childMessage }) => foldReportViewer(model, childMessage),
@@ -270,7 +282,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 const openThreadFromUrl =
   (maybeThreadId: Option.Option<string>): Step =>
   (model) =>
-    Option.match(maybeThreadId, { onNone: () => ({ model }), onSome: (threadId) => openThread(threadId)(model) })
+    Option.match(maybeThreadId, {
+      onNone: () => ({ model }),
+      onSome: (threadId) => openThread(threadId)(model),
+    })
 
 export const init = (
   flags: Flags,
@@ -280,6 +295,7 @@ export const init = (
   const workers = Workers.init()
   const settings = Settings.init()
   const goals = Goals.init()
+  const todo = Todo.init()
   const tournaments = Tournaments.init()
   const diffPanel = DiffPanel.init()
   const reportViewer = ReportViewer.init()
@@ -290,6 +306,7 @@ export const init = (
       workers: workers.model,
       settings: settings.model,
       goals: goals.model,
+      todo: todo.model,
       tournaments: tournaments.model,
       diffPanel: diffPanel.model,
       reportViewer: reportViewer.model,

@@ -5,6 +5,7 @@ import { Decision as Approval } from "../../shared/approvals"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
 import * as Goals from "./goals"
+import * as Todo from "./todo"
 import * as Tournaments from "./tournaments"
 import * as Settings from "./settings"
 import * as Workers from "./workers"
@@ -14,6 +15,7 @@ export const Message = defineMessageUnion({
   GotWorkersMessage: { message: Workers.Message },
   GotSettingsMessage: { message: Settings.Message },
   GotGoalsMessage: { message: Goals.Message },
+  GotTodoMessage: { message: Todo.Message },
   GotTournamentsMessage: { message: Tournaments.Message },
   GotDiffPanelMessage: { message: DiffPanel.Message },
   GotReportViewerMessage: { message: ReportViewer.Message },
@@ -27,7 +29,10 @@ export const Message = defineMessageUnion({
   // Window and shared-module events
   RequestedOpenThread: { threadId: Schema.String },
   /** A pick in the Inbox (conversation list or tree): its conversation, and the worker when the pick is a worker. */
-  SelectedInboxNode: { maybeThreadId: Schema.Option(Schema.String), maybeWorkerId: Schema.Option(Schema.String) },
+  SelectedInboxNode: {
+    maybeThreadId: Schema.Option(Schema.String),
+    maybeWorkerId: Schema.Option(Schema.String),
+  },
   RequestedNewThread: {},
   /** The Chief of Staff chat filter changed (shared/cosFilter.ts): load the open conversation again. */
   ChangedCosFilter: {},
