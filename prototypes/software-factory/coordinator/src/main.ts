@@ -105,6 +105,8 @@ import { makeGrading } from "./grading.ts"
 import { makeTodoApi } from "./todo/api.ts"
 import { createTodoDraft } from "./todo/draft.ts"
 import { makeTodoLifecycle, type PendingTodoRelease } from "./todo/lifecycle.ts"
+import { makeTodoPrSweep } from "./todo/pr-sweep.ts"
+import { makeTodoRoutes } from "./todo/routes.ts"
 import { makeTickTickAuth } from "./todo/ticktick-auth.ts"
 import { makeTickTickTodoSource } from "./todo/ticktick.ts"
 import { postMergeCheck } from "./postmerge.ts"
@@ -1613,7 +1615,8 @@ const todoLifecycle = makeTodoLifecycle({
     claim: (task, url) => Effect.runPromise(todoSource.claim(task, url)),
     note: (task, text) => Effect.runPromise(todoSource.note(task, text)),
     release: (task, reason) => Effect.runPromise(todoSource.release(task, reason)),
-    complete: (task, url) => Effect.runPromise(todoSource.complete(task, url)),
+    complete: (task, url, onCommented, commentPosted) =>
+      Effect.runPromise(todoSource.complete(task, url, { commentPosted, onCommented })),
   },
 })
 const todoApi = makeTodoApi({
@@ -1849,37 +1852,8 @@ const holdSweep = () => {
 }
 loop("cos-holds", "1 minute", holdSweep)
 
-/** Open repo conversations with a worktree (PR events). */
-const openRepoThreads = () => threads.list().filter((t) => t.worktree && t.branch && !t.cleanedAt && !t.archivedAt)
-
 /** Typed PR events (ADR 0008 step 1): pr-green, pr-red, merged, from each conversation's PR state. */
 const prStates = cosState.map<PrState>("pr-state")
-const prSweep = async () => {
-  // One gh call per repo, shared by PR events and Todo lifecycle.
-  const byRepo = new Map<string, Thread[]>()
-  for (const t of openRepoThreads()) {
-    const repo = threads.folder(t.folderId)?.path
-    if (repo) byRepo.set(repo, [...(byRepo.get(repo) ?? []), t])
-  }
-  if (factoryConfig().todo.enabled)
-    for (const t of threads.list()) {
-      if (t.todo?.state !== "claimed") continue
-      const repo = threads.folder(t.folderId)?.path
-      if (repo && !byRepo.has(repo)) byRepo.set(repo, [])
-    }
-  for (const k of prStates.keys()) if (!threads.get(k) || threads.get(k)!.archivedAt) prStates.delete(k)
-  const prsByRepo = new Map<string, Map<string, BranchPr>>()
-  for (const [repo, list] of byRepo) {
-    const prs = await repoPrs(repo)
-    if (!prs) continue
-    prsByRepo.set(repo, prs)
-    for (const t of list) {
-      const pr: BranchPr | undefined = prs.get(t.branch!)
-      if (pr) prEventFor(t, pr)
-    }
-  }
-  if (factoryConfig().todo.enabled) await todoLifecycle.sweep(prsByRepo)
-}
 const prEventFor = (t: Thread, pr: BranchPr) => {
   const state = prState(pr.state, pr.checks)
   const ev = prEvent(prStates.get(t.id), state)
@@ -1895,6 +1869,15 @@ const prEventFor = (t: Thread, pr: BranchPr) => {
   if (ev === "pr-green" && ruleOn("r3"))
     deliverAndLog(t.id, `[Chief of Staff · rule R3] ${pr.url} is green. Call merge_pr now.`)
 }
+const prSweep = makeTodoPrSweep({
+  threads,
+  prStates,
+  repoPrs,
+  onPr: prEventFor,
+  todoEnabled: () => factoryConfig().todo.enabled,
+  todoSweep: (prs) => todoLifecycle.sweep(prs),
+  onError: (id) => cosLog("TODO", id, "PR sweep request", "failed", "TickTick lifecycle request failed"),
+})
 loop("cos-pr-events", "2 minutes", prSweep)
 
 const supervise = async () => {
@@ -1968,6 +1951,15 @@ const draftFromTodo = (folderId: string, link: typeof TodoLinkBody.Type) =>
     link,
   )
 
+const todoRoutes = makeTodoRoutes({
+  enabled: () => factoryConfig().todo.enabled,
+  threads,
+  drafts,
+  createTodoDraft: draftFromTodo,
+  discard: (thread, reason) => todoLifecycle.discard(thread, reason),
+  deleteThread,
+})
+
 /** Read one payload shape from a feed event; a payload of another shape gives None. */
 const decodeOwner = Schema.decodeUnknownOption(Schema.Struct({ owner: Schema.NullOr(Schema.String) }))
 const decodeId = Schema.decodeUnknownOption(Schema.Struct({ id: Schema.String }))
@@ -1980,11 +1972,6 @@ const TodoLinkBody = Schema.Struct({
   source: Schema.Literal("ticktick"),
   listId: Schema.String,
   taskId: Schema.String,
-})
-const CreateBody = Schema.Struct({
-  folderId: Schema.String,
-  prompt: Schema.optionalKey(Schema.String),
-  todo: Schema.optionalKey(TodoLinkBody),
 })
 const VersionBody = Schema.Struct({ prompt: Schema.String })
 const CurrentBody = Schema.Struct({ versionId: Schema.String })
@@ -3037,30 +3024,8 @@ const routes: [string, RegExp, Handler][] = [
       return json(t ?? null)
     },
   ],
-  [
-    "DELETE",
-    /^\/api\/threads\/delete\/([^/]+)$/,
-    async (_req, _url, [id]) => {
-      const thread = threads.get(id!)
-      if (thread?.todo && factoryConfig().todo.enabled) await todoLifecycle.discard(thread, "conversation deleted")
-      await deleteThread(id!)
-      return empty(204)
-    },
-  ],
-  [
-    "POST",
-    /^\/api\/drafts$/,
-    (req) =>
-      draftReply(async () => {
-        const b = await draftBody(req, CreateBody)
-        if (!b.todo) {
-          if (!b.prompt) throw new DraftError(400, "prompt is required")
-          return drafts.create(b.folderId, b.prompt)
-        }
-        if (!factoryConfig().todo.enabled) throw new DraftError(404, "Todo sources are disabled")
-        return draftFromTodo(b.folderId, b.todo)
-      }),
-  ],
+  ["DELETE", /^\/api\/threads\/delete\/([^/]+)$/, (_req, _url, [id]) => todoRoutes.deleteThread(id!)],
+  ["POST", /^\/api\/drafts$/, (req) => todoRoutes.create(req)],
   [
     "POST",
     /^\/api\/drafts\/([^/]+)\/versions$/,
@@ -3083,8 +3048,8 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/drafts\/([^/]+)\/(council|debate|research|hyperresearch|deep-research)$/,
     (_req, _url, [id, action]) => draftReply(() => drafts.act(id!, action as DraftAction)),
   ],
-  ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => draftReply(() => drafts.run(id!))],
-  ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => draftReply(() => drafts.remove(id!))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => todoRoutes.run(id!)],
+  ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => todoRoutes.discardDraft(id!)],
   ["GET", /^\/api\/todo(?:\/.*)?$/, (req, url) => todoApi.handle(req, url)],
   ["DELETE", /^\/api\/todo(?:\/.*)?$/, (req, url) => todoApi.handle(req, url)],
   ["GET", /^\/api\/artifacts$/, () => json({ artifacts: [] })],
