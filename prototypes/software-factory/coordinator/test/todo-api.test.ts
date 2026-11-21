@@ -32,6 +32,7 @@ const setup = (
       | { status: "expired" }
     >
     lists?: () => Promise<{ id: string; name: string }[]>
+    callback?: (code: string, state: string) => Promise<void>
     onError?: (error: unknown) => void
   } = {},
 ) => {
@@ -54,7 +55,7 @@ const setup = (
     auth: {
       status: over.status ?? (async () => ({ status: "disconnected" as const })),
       connect: async () => new URL("https://ticktick.test/auth?state=s"),
-      callback: async () => undefined,
+      callback: over.callback ?? (async () => undefined),
       disconnect: async () => undefined,
     },
     source: {
@@ -228,6 +229,35 @@ test("Todo API refuses foreign web origins without calling TickTick", async () =
   ).toBe(403)
   expect(calls).toBe(3)
   expect((await request(api, "/api/todo/lists", { headers: { Origin: "not-an-origin" } })).status).toBe(403)
+})
+
+test("TickTick callback allows cross-site navigation only with a valid state", async () => {
+  let exchanges = 0
+  let consumed = false
+  const { api } = setup({
+    callback: async (_code, state) => {
+      if (state !== "valid-state" || consumed) throw new Error("Invalid or expired OAuth state")
+      consumed = true
+      exchanges++
+    },
+  })
+  const valid = await request(api, "/api/todo/ticktick/callback?code=c&state=valid-state", {
+    headers: { "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate" },
+  })
+  expect(valid.status).toBe(302)
+  expect(exchanges).toBe(1)
+
+  const unknown = await request(api, "/api/todo/ticktick/callback?code=c&state=unknown", {
+    headers: { "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate" },
+  })
+  expect(unknown.status).toBe(502)
+  expect(exchanges).toBe(1)
+
+  const reused = await request(api, "/api/todo/ticktick/callback?code=c&state=valid-state", {
+    headers: { "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate" },
+  })
+  expect(reused.status).toBe(502)
+  expect(exchanges).toBe(1)
 })
 
 test("OAuth callback and disconnect use the production handler", async () => {

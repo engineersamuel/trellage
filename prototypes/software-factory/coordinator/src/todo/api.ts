@@ -73,7 +73,8 @@ const allowedTodoOrigins = (
 
 export const todoOriginDenied = (req: Request, uiUrl: string, coordinatorAddress?: string): Response | undefined => {
   const site = req.headers.get("Sec-Fetch-Site")?.toLowerCase()
-  if (site === "cross-site") return new Response(null, { status: 403 })
+  const callback = req.method === "GET" && new URL(req.url).pathname === "/api/todo/ticktick/callback"
+  if (site === "cross-site" && !callback) return new Response(null, { status: 403 })
   const origin = req.headers.get("Origin")
   if (origin === null) return undefined
   if (!URL.canParse(origin)) return new Response(null, { status: 403 })
