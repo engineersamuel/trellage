@@ -102,7 +102,8 @@ import { costReport, GOAL_PAGE_AGENT, gradeCost, rollUp, runCost, type AgentInfo
 import { factoryConfig } from "./config.ts"
 import { addLessons, artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
-import { makeTodoApi, todoOriginDenied } from "./todo/api.ts"
+import { makeTodoApi } from "./todo/api.ts"
+import { makeHttpHandler, type Handler } from "./http.ts"
 import { createTodoDraft } from "./todo/draft.ts"
 import { makeTodoLifecycle, type PendingTodoRelease } from "./todo/lifecycle.ts"
 import { makeTodoPrSweep } from "./todo/pr-sweep.ts"
@@ -2020,7 +2021,6 @@ const draftReply = async (run: () => unknown): Promise<Response> => {
 
 // ---------- routes ----------
 
-type Handler = (req: Request, url: URL, params: string[]) => Response | Promise<Response>
 /** The repo conversation an agent works in: its own (sub-coordinator), its owner's, or the one whose worktree it uses. */
 const threadOfAgent = (w: Worker): Thread | undefined =>
   threads
@@ -3062,37 +3062,15 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/api\/goal-page\/([a-z]+(?:\/[a-z]+)?)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
 ]
 
-const cors = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "*",
-  "access-control-allow-headers": "*",
-}
-
 const server = Bun.serve({
   hostname,
   port: Number(port),
   idleTimeout: 0,
-  async fetch(req) {
-    const url = new URL(req.url)
-    const todoRequest = url.pathname === "/api/todo" || url.pathname.startsWith("/api/todo/")
-    if (todoRequest) {
-      const denied = todoOriginDenied(
-        req,
-        process.env.SF_UI_URL ?? "http://localhost:5174/",
-        process.env.SF_ADDR ?? "127.0.0.1:7700",
-      )
-      if (denied) return denied
-    }
-    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: todoRequest ? undefined : cors })
-    for (const [method, re, handler] of routes) {
-      const m = method === req.method && url.pathname.match(re)
-      if (!m) continue
-      const res = await handler(req, url, m.slice(1).map(decodeURIComponent))
-      if (!todoRequest) for (const [k, v] of Object.entries(cors)) res.headers.set(k, v)
-      return res
-    }
-    return empty(404)
-  },
+  fetch: makeHttpHandler(
+    routes,
+    process.env.SF_UI_URL ?? "http://localhost:5174/",
+    process.env.SF_ADDR ?? "127.0.0.1:7700",
+  ),
 })
 console.error(`software-factory coordinator on http://${server.hostname}:${server.port}`)
 

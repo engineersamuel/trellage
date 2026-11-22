@@ -203,9 +203,12 @@ The Foldkit **Todo** dialog takes one TickTick task into a repo draft. The coord
 TickTick's MCP server. It preserves the owner's tags, adds the configured `factory` tag, records draft/run/PR status
 comments, completes the task after merge, and releases it after discard or a closed PR. Failed Todo calls warn on the
 thread and retry during the PR sweep without blocking drafts, delivery, or merges.
-Todo API requests allow no Origin or the UI/coordinator origin, and reject cross-site browser requests. The TickTick
+Todo, draft, and conversation-delete API requests allow no Origin or the UI/coordinator origin, reject cross-site
+browser requests before any lifecycle action, and do not advertise wildcard CORS. The TickTick
 OAuth callback permits its top-level cross-site return navigation, while requiring a valid single-use PKCE state and
 still rejecting a foreign Origin header.
+PR sweeps associate branches only with PRs whose head repository matches the queried repository. Fork PRs and PRs
+without confirmed repository identity cannot replace a Factory PR or release its linked task.
 
 Todo state follows one persisted lifecycle: `drafted → claimed → started → pr-opened → completed | released`.
 Every write is serialized per thread. A timed-out write remains ahead of later writes until its request settles or a
@@ -446,7 +449,7 @@ Judging a model with an image limit: `judge_max_images` caps the images per requ
 keeps the first shot of every page and drops extra whole-page tiles first. An unlisted model that refuses a request
 as too big (400/413) is retried once with 10.
 
-Limits: one tournament is one brief; scores say what works for *this* brief. LLM judges share biases; the baseline and
+Limits: one tournament is one brief; scores say what works for _this_ brief. LLM judges share biases; the baseline and
 three judge families reduce them but do not remove them.
 
 ## Restart resume

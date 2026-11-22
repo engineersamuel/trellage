@@ -2,17 +2,18 @@ import { afterEach, expect, test } from "bun:test"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import { McpServer as SdkMcpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { z } from "zod"
 import { makeDrafts } from "../src/drafts.ts"
+import { makeHttpHandler } from "../src/http.ts"
 import { Threads, type Thread } from "../src/threads.ts"
 import { CosState } from "../src/cos.ts"
 import { createTodoDraft } from "../src/todo/draft.ts"
 import { makeTodoLifecycle, type PendingTodoRelease, type TodoLifecycleActions } from "../src/todo/lifecycle.ts"
 import { makeTodoRoutes } from "../src/todo/routes.ts"
 import { makeTodoPrSweep } from "../src/todo/pr-sweep.ts"
-import { prEvent, prState, type PrState } from "../src/cos.ts"
+import { prEvent, prState, repoPrs, type PrState } from "../src/cos.ts"
 import type { TodoTask, TodoTaskWithComments } from "../src/todo/source.ts"
 import { inMemoryTokenStore } from "../src/todo/ticktick-auth.ts"
 import { makeTickTickTodoSource } from "../src/todo/ticktick.ts"
@@ -176,7 +177,182 @@ const makeHarness = (options: HarnessOptions = {}) => {
     discard: (thread, reason) => lifecycle.discard(thread, reason, options.discardTimeout),
     deleteThread: async (id) => void threads.delete(id),
   })
-  return { stateRoot, threads, folder, calls, pending, lifecycle, routes }
+  const handle = makeHttpHandler(
+    [
+      ["POST", /^\/api\/drafts$/, (req) => routes.create(req)],
+      ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => routes.run(id!)],
+      ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => routes.discardDraft(id!)],
+      ["DELETE", /^\/api\/threads\/delete\/([^/]+)$/, (_req, _url, [id]) => routes.deleteThread(id!)],
+    ],
+    "http://localhost:5174/",
+    "127.0.0.1:7700",
+  )
+  return { stateRoot, threads, folder, calls, pending, lifecycle, routes, handle }
+}
+
+test("HTTP draft mutations reject foreign origins before creating, claiming, running, or releasing", async () => {
+  const { threads, folder, calls, handle } = makeHarness()
+  const thread = threads.create("Linked draft", folder.id)
+  threads.setTodo(thread.id, {
+    source: "ticktick",
+    listId: task.projectId,
+    taskId: task.id,
+    title: task.title,
+    state: "claimed",
+    done: ["claim"],
+  })
+  const before = JSON.stringify(threads.list())
+  const provenances: Record<string, string>[] = [
+    { Origin: "https://attacker.test" },
+    { Origin: "null" },
+    { Origin: "http://localhost:5174", "Sec-Fetch-Site": "cross-site" },
+    { "Sec-Fetch-Site": "cross-site" },
+  ]
+  for (const provenance of provenances) {
+    for (const [method, pathname] of [
+      ["POST", "/api/drafts"],
+      ["POST", `/api/drafts/${thread.id}/run`],
+      ["DELETE", `/api/drafts/${thread.id}`],
+      ["DELETE", `/api/threads/delete/${thread.id}`],
+      ["OPTIONS", "/api/drafts"],
+      ["OPTIONS", `/api/threads/delete/${thread.id}`],
+    ]) {
+      const response = await handle(
+        new Request(`http://127.0.0.1:7700${pathname}`, {
+          method,
+          headers: { ...provenance, "Content-Type": "text/plain" },
+          ...(method === "POST"
+            ? {
+                body: JSON.stringify({
+                  folderId: folder.id,
+                  todo: { source: "ticktick", listId: task.projectId, taskId: task.id },
+                }),
+              }
+            : {}),
+        }),
+      )
+      expect(response.status).toBe(403)
+      expect(response.headers.has("access-control-allow-origin")).toBe(false)
+    }
+  }
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(JSON.stringify(threads.list())).toBe(before)
+  expect(calls).toEqual([])
+})
+
+test("HTTP draft mutations preserve trusted UI and no-Origin CLI calls without wildcard CORS", async () => {
+  for (const origin of [undefined, "http://localhost:5174", "http://127.0.0.1:7700", "http://localhost:7700"]) {
+    const { threads, folder, calls, handle } = makeHarness()
+    const headers = origin ? { Origin: origin } : undefined
+    const created = await handle(
+      new Request("http://127.0.0.1:7700/api/drafts", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          folderId: folder.id,
+          todo: { source: "ticktick", listId: task.projectId, taskId: task.id },
+        }),
+      }),
+    )
+    expect(created.status).toBe(200)
+    expect(created.headers.has("access-control-allow-origin")).toBe(false)
+    const thread = (await created.json()) as Thread
+    await eventually(() => threads.get(thread.id)?.todo?.state === "claimed")
+    expect(calls.some((call) => call.startsWith("claim "))).toBe(true)
+    const deleted = await handle(
+      new Request(`http://127.0.0.1:7700/api/drafts/${thread.id}`, {
+        method: "DELETE",
+        headers,
+      }),
+    )
+    expect(deleted.status).toBe(204)
+    expect(threads.get(thread.id)).toBeUndefined()
+    expect(calls).toContain("release draft discarded")
+    const preflight = await handle(
+      new Request("http://127.0.0.1:7700/api/drafts", {
+        method: "OPTIONS",
+        headers,
+      }),
+    )
+    expect(preflight.status).toBe(204)
+    expect(preflight.headers.has("access-control-allow-origin")).toBe(false)
+  }
+})
+
+for (const state of ["started", "pr-opened"] as const) {
+  test(`PR sweep ignores foreign and unknown head repositories for ${state} Todo tasks`, async () => {
+    const { stateRoot, threads, folder, calls, lifecycle } = makeHarness()
+    const thread = threads.create("Active task", folder.id, () => ({
+      worktree: folder.path,
+      branch: "topic",
+      base: "main",
+    }))
+    threads.setTodo(thread.id, {
+      source: "ticktick",
+      listId: task.projectId,
+      taskId: task.id,
+      title: task.title,
+      state,
+      done: ["claim", "run"],
+    })
+    const row = (number: number, headRefName: string, isCrossRepository?: boolean | null) => ({
+      number,
+      headRefName,
+      isCrossRepository,
+      url: `https://github.test/owner/repo/pull/${number}`,
+      state: number === 1 ? "OPEN" : "CLOSED",
+      statusCheckRollup: null,
+    })
+    const listing = [
+      row(2, "topic", true),
+      row(1, "topic", false),
+      row(3, "topic", true),
+      row(4, "topic"),
+      row(5, "topic", null),
+      row(6, "foreign-only", true),
+      row(7, "unknown-only"),
+    ]
+    writeFileSync(
+      path.join(stateRoot, "gh"),
+      `#!/bin/sh\nprintf '%s\\n' "$@" > '${stateRoot}/args'\ncat '${stateRoot}/prs.json'\n`,
+      { mode: 0o700 },
+    )
+    writeFileSync(path.join(stateRoot, "prs.json"), JSON.stringify(listing))
+    const originalPath = process.env.PATH
+    const events: string[] = []
+    const sweep = makeTodoPrSweep({
+      threads,
+      prStates: new Map(),
+      repoPrs,
+      onPr: (_thread, pr) => void events.push(pr.state),
+      todoEnabled: () => true,
+      todoSweep: (prs) => lifecycle.sweep(prs),
+      onError: (_id, error) => {
+        throw error
+      },
+    })
+    try {
+      process.env.PATH = `${stateRoot}:${originalPath}`
+      await sweep()
+      expect(threads.get(thread.id)?.todo?.state).toBe("pr-opened")
+      expect(calls.some((call) => call.startsWith("release "))).toBe(false)
+      expect(events).toEqual(["OPEN"])
+      const prs = await repoPrs(folder.path)
+      expect([...prs!.keys()]).toEqual(["topic"])
+      expect(prs!.get("topic")?.number).toBe(1)
+      expect(readFileSync(path.join(stateRoot, "args"), "utf8")).toContain("isCrossRepository")
+      writeFileSync(
+        path.join(stateRoot, "prs.json"),
+        JSON.stringify([...listing, { ...row(8, "topic", false), statusCheckRollup: [] }]),
+      )
+      await sweep()
+      expect(threads.get(thread.id)?.todo?.state).toBe("released")
+      expect(calls).toContain("release PR closed without merge")
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH
+      else process.env.PATH = originalPath
+    }
+  })
 }
 
 for (const terminal of ["completed", "released"] as const) {
