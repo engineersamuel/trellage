@@ -7,7 +7,6 @@ import {
   TodoComment,
   TodoList,
   TodoSource,
-  TodoTask,
   type TodoReleaseCheckpoint,
   type TodoSourceApi,
   type TodoTask as TodoTaskValue,
@@ -15,14 +14,44 @@ import {
 
 export const TICKTICK_MCP_URL = "https://mcp.ticktick.com/"
 
-const ProjectsResult = Schema.Struct({ projects: Schema.Array(TodoList) })
-const ListsResult = Schema.Struct({ lists: Schema.Array(TodoList) })
-const ProjectTasksResult = Schema.Struct({
-  project: Schema.optionalKey(Schema.Unknown),
-  tasks: Schema.Array(TodoTask),
+// structuredContent of the live server (checked 2026-11-22): list and single results sit under `result`; a task
+// sends null for every unset field; a comment's text is `title`.
+const nullable = <S extends Schema.Top>(s: S) => Schema.optionalKey(Schema.NullOr(s))
+const WireTask = Schema.Struct({
+  id: Schema.String,
+  projectId: Schema.String,
+  title: Schema.String,
+  content: nullable(Schema.String),
+  desc: nullable(Schema.String),
+  items: nullable(Schema.Array(Schema.Struct({ title: Schema.NullOr(Schema.String), status: Schema.Number }))),
+  tags: nullable(Schema.Array(Schema.String)),
+  priority: nullable(Schema.Number),
+  dueDate: nullable(Schema.String),
+  etag: nullable(Schema.String),
+  status: nullable(Schema.Number),
 })
-const TaskResult = Schema.Struct({ task: TodoTask })
-const CommentsResult = Schema.Struct({ comments: Schema.Array(TodoComment) })
+type WireTask = typeof WireTask.Type
+const ProjectsResult = Schema.Struct({ result: Schema.Array(TodoList) })
+const ProjectTasksResult = Schema.Struct({ tasks: Schema.Array(WireTask) })
+const TaskResult = Schema.Struct({ result: WireTask })
+const CommentsResult = Schema.Struct({
+  result: Schema.Array(
+    Schema.Struct({
+      id: Schema.optionalKey(Schema.String),
+      title: Schema.NullOr(Schema.String),
+      createdTime: nullable(Schema.String),
+    }),
+  ),
+})
+
+/** A wire task as the factory's TodoTask: nulls become absent keys. */
+const toTask = (w: WireTask): TodoTaskValue => {
+  const out: Record<string, unknown> = { id: w.id, projectId: w.projectId, title: w.title }
+  for (const key of ["content", "desc", "priority", "dueDate", "etag", "status", "tags"] as const)
+    if (w[key] !== null && w[key] !== undefined) out[key] = w[key]
+  if (w.items) out.items = w.items.map((i) => ({ title: i.title ?? "", status: i.status }))
+  return out as TodoTaskValue
+}
 
 type ToolResult = Pick<CallToolResult, "content" | "structuredContent" | "isError">
 
@@ -233,25 +262,29 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Tick
     }
   }
 
-  const listProjects = async (): Promise<readonly TodoList[]> => {
-    const value = await call("list_projects")
-    const projects = Schema.decodeUnknownOption(ProjectsResult)(value)
-    if (Option.isSome(projects)) return projects.value.projects
-    const lists = decode(ListsResult, value, "project list")
-    return lists.lists
-  }
+  const listProjects = async (): Promise<readonly TodoList[]> =>
+    decode(ProjectsResult, await call("list_projects"), "project list").result.map((p) => ({ id: p.id, name: p.name }))
 
   const projectTasks = async (listId: string): Promise<readonly TodoTaskValue[]> =>
-    decode(ProjectTasksResult, await call("get_project_with_undone_tasks", { projectId: listId }), "task list").tasks
+    decode(
+      ProjectTasksResult,
+      await call("get_project_with_undone_tasks", { project_id: listId }),
+      "task list",
+    ).tasks.map(toTask)
 
-  const taskById = async (id: string): Promise<TodoTaskValue> => {
-    const value = await call("get_task_by_id", { task_id: id })
-    const wrapped = Schema.decodeUnknownOption(TaskResult)(value)
-    return Option.isSome(wrapped) ? wrapped.value.task : decode(TodoTask, value, "task")
-  }
+  const taskById = async (id: string): Promise<TodoTaskValue> =>
+    toTask(decode(TaskResult, await call("get_task_by_id", { task_id: id }), "task").result)
 
-  const commentsById = async (id: string): Promise<readonly (typeof TodoComment.Type)[]> =>
-    decode(CommentsResult, await call("get_comment", { task_id: id }), "comments").comments
+  const commentsOf = async (task: Pick<TodoTaskValue, "id" | "projectId">): Promise<(typeof TodoComment.Type)[]> =>
+    decode(
+      CommentsResult,
+      await call("get_comment", { project_id: task.projectId, task_id: task.id }),
+      "comments",
+    ).result.map((c) => ({
+      ...(c.id ? { id: c.id } : {}),
+      content: c.title ?? "",
+      ...(c.createdTime ? { createdAt: c.createdTime } : {}),
+    }))
 
   const addComment = async (task: TodoTaskValue, content: string, marker?: string): Promise<void> => {
     const existingMarker = /🏭 \[sf:[^\]]+\]/.exec(content)?.[0]
@@ -259,10 +292,10 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Tick
     const body = existingMarker ? content.replace(existingMarker, "").trimEnd() : content
     const text = stableMarker ? `${body.slice(0, 1024 - stableMarker.length - 1)} ${stableMarker}` : textLength(body)
     if (stableMarker) {
-      const existing = await commentsById(task.id)
+      const existing = await commentsOf(task)
       if (existing.some((comment) => comment.content.includes(stableMarker))) return
     }
-    await call("add_comment", { task_id: task.id, content: text })
+    await call("add_comment", { project_id: task.projectId, task_id: task.id, title: text })
   }
 
   const updateTags = async (
@@ -274,9 +307,10 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Tick
       const tags = change(fresh.tags ?? [])
       const updated = { ...fresh, tags }
       try {
+        // Send only what changes: update_task keeps omitted fields, and tags replaces the whole list.
         await call("update_task", {
           task_id: fresh.id,
-          task: { ...updated, etag: fresh.etag },
+          task: { id: fresh.id, projectId: fresh.projectId, tags, ...(fresh.etag ? { etag: fresh.etag } : {}) },
         })
         return updated
       } catch (error) {
@@ -292,10 +326,10 @@ export const makeTickTickTodoSource = (options: TickTickTodoSourceOptions): Tick
     lists: () => Effect.promise(() => listProjects().then((lists) => [...lists])),
     tasks: (listId) => Effect.promise(() => projectTasks(listId).then((tasks) => [...tasks])),
     task: (id) =>
-      Effect.promise(async () => ({
-        task: await taskById(id),
-        comments: [...(await commentsById(id))],
-      })),
+      Effect.promise(async () => {
+        const task = await taskById(id)
+        return { task, comments: await commentsOf(task) }
+      }),
     note: (task, text, marker) => Effect.promise(() => addComment(task, text, marker)),
     claim: (task, threadUrl, marker) =>
       Effect.promise(async () => {
