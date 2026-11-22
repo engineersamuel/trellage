@@ -195,6 +195,7 @@ const makeHarness = (options: HarnessOptions = {}) => {
   })
   const handle = makeHttpHandler(
     [
+      ["GET", /^\/api\/threads\/get$/, () => Response.json({ threads: threads.list(), folders: threads.folders() })],
       ["POST", /^\/api\/drafts$/, (req) => routes.create(req)],
       ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => routes.run(id!)],
       ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => routes.discardDraft(id!)],
@@ -206,6 +207,56 @@ const makeHarness = (options: HarnessOptions = {}) => {
   )
   return { stateRoot, threads, folder, calls, pending, lifecycle, drafts, routes, handle }
 }
+
+test("thread-list reads protect imported TickTick content while preserving trusted reads", async () => {
+  const { folder, handle } = makeHarness()
+  const created = await handle(
+    new Request("http://127.0.0.1:7700/api/drafts", {
+      method: "POST",
+      headers: { Origin: "http://localhost:5174" },
+      body: JSON.stringify({
+        folderId: folder.id,
+        todo: { source: "ticktick", listId: task.projectId, taskId: task.id },
+      }),
+    }),
+  )
+  expect(created.status).toBe(200)
+  const thread = (await created.json()) as Thread
+  const prompt = thread.draft!.versions[0]!.prompt
+  expect(prompt).toContain(task.title)
+  expect(prompt).toContain(task.content!)
+  expect(prompt).toContain("Keep the checklist")
+
+  const request = (headers: Record<string, string>, method = "GET") =>
+    handle(new Request("http://127.0.0.1:7700/api/threads/get", { method, headers }))
+  const provenances: Record<string, string>[] = [
+    { Origin: "https://attacker.test" },
+    { Origin: "null" },
+    { Origin: "http://localhost:5174", "Sec-Fetch-Site": "cross-site" },
+    { "Sec-Fetch-Site": "cross-site" },
+  ]
+  for (const provenance of provenances) {
+    for (const method of ["GET", "OPTIONS"]) {
+      const response = await request(provenance, method)
+      expect(response.status).toBe(403)
+      expect(response.headers.has("access-control-allow-origin")).toBe(false)
+      expect(await response.text()).toBe("")
+    }
+  }
+  for (const origin of [undefined, "http://localhost:5174", "http://127.0.0.1:7700", "http://localhost:7700"]) {
+    const headers: Record<string, string> = origin ? { Origin: origin } : {}
+    const response = await request(headers)
+    expect(response.status).toBe(200)
+    expect(response.headers.has("access-control-allow-origin")).toBe(false)
+    const listing = (await response.json()) as { threads: Thread[] }
+    const imported = listing.threads.find((item) => item.id === thread.id)
+    expect(imported?.draft?.versions[0]?.prompt).toBe(prompt)
+    expect(imported?.todo?.title).toBe(task.title)
+    const preflight = await request(headers, "OPTIONS")
+    expect(preflight.status).toBe(204)
+    expect(preflight.headers.has("access-control-allow-origin")).toBe(false)
+  }
+})
 
 test("goal-page cancellation guards TickTick release while preserving trusted cancellation", async () => {
   for (const origin of [undefined, "http://localhost:5174", "http://127.0.0.1:7700", "http://localhost:7700"]) {

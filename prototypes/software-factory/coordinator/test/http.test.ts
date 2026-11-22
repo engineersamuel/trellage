@@ -29,13 +29,13 @@ test("HTTP dispatcher preserves routing and CORS outside the protected Todo rout
   expect((await request("/unknown")).status).toBe(404)
 })
 
-test("HTTP dispatcher keeps Todo reads guarded and permits the OAuth return navigation", async () => {
+test("HTTP dispatcher guards Todo and thread reads and permits the OAuth return navigation", async () => {
   let calls = 0
   const handle = makeHttpHandler(
     [
       [
         "GET",
-        /^\/api\/todo\/.*$/,
+        /^\/api\/(?:todo\/.*|threads\/get(?:\/.*)?)$/,
         () => {
           calls++
           return Response.json({ ok: true })
@@ -45,7 +45,13 @@ test("HTTP dispatcher keeps Todo reads guarded and permits the OAuth return navi
     "http://localhost:5174/",
     "127.0.0.1:7700",
   )
-  for (const pathname of ["/api/todo", "/api/todo/status", "/api/todo/ticktick/callback?code=c&state=s"]) {
+  for (const pathname of [
+    "/api/todo",
+    "/api/todo/status",
+    "/api/todo/ticktick/callback?code=c&state=s",
+    "/api/threads/get",
+    "/api/threads/get/imported",
+  ]) {
     const denied = await handle(
       new Request(`http://127.0.0.1:7700${pathname}`, {
         headers: { Origin: "https://foreign.test" },
