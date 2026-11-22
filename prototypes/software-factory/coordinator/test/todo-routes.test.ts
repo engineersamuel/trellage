@@ -6,6 +6,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { z } from "zod"
 import { makeDrafts } from "../src/drafts.ts"
+import { makeGoalPage } from "../src/goalPage.ts"
+import { makeGoals } from "../src/goals.ts"
 import { makeHttpHandler } from "../src/http.ts"
 import { Threads, type Thread } from "../src/threads.ts"
 import { CosState } from "../src/cos.ts"
@@ -177,18 +179,94 @@ const makeHarness = (options: HarnessOptions = {}) => {
     discard: (thread, reason) => lifecycle.discard(thread, reason, options.discardTimeout),
     deleteThread: async (id) => void threads.delete(id),
   })
+  const goalPage = makeGoalPage({
+    proxyUrl: () => "http://127.0.0.1:1/v1",
+    folders: () => threads.folders(),
+    knownSteps: () => [],
+    goals: makeGoals(path.join(stateRoot, "goals"), []),
+    startResearch: async () => {
+      throw new Error("not in this test")
+    },
+    workerState: () => undefined,
+    removeDraft: (id) => drafts.remove(id),
+    startRun: async () => {
+      throw new Error("not in this test")
+    },
+  })
   const handle = makeHttpHandler(
     [
       ["POST", /^\/api\/drafts$/, (req) => routes.create(req)],
       ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => routes.run(id!)],
       ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => routes.discardDraft(id!)],
       ["DELETE", /^\/api\/threads\/delete\/([^/]+)$/, (_req, _url, [id]) => routes.deleteThread(id!)],
+      ["POST", /^\/api\/goal-page\/([a-z]+(?:\/[a-z]+)?)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
     ],
     "http://localhost:5174/",
     "127.0.0.1:7700",
   )
-  return { stateRoot, threads, folder, calls, pending, lifecycle, routes, handle }
+  return { stateRoot, threads, folder, calls, pending, lifecycle, drafts, routes, handle }
 }
+
+test("goal-page cancellation guards TickTick release while preserving trusted cancellation", async () => {
+  for (const origin of [undefined, "http://localhost:5174", "http://127.0.0.1:7700", "http://localhost:7700"]) {
+    const fake = await fakeTickTick((call) =>
+      call.name === "get_task_by_id"
+        ? { structuredContent: { task: { ...task, tags: ["keep", "factory"] } } }
+        : undefined,
+    )
+    const { threads, folder, drafts, handle } = makeHarness({
+      actions: {
+        task: (id) => Effect.runPromise(fake.source.task(id)).then((value) => value.task),
+        release: (value, reason) => Effect.runPromise(fake.source.release(value, reason)),
+      },
+    })
+    // This linked draft is not a goal-page deep run.
+    const thread = drafts.create(folder.id, "Linked task")
+    threads.setTodo(thread.id, {
+      source: "ticktick",
+      listId: task.projectId,
+      taskId: task.id,
+      title: task.title,
+      state: "claimed",
+      done: ["claim"],
+    })
+    const before = JSON.stringify(threads.list())
+    const request = (headers: Record<string, string>, method = "POST") =>
+      handle(
+        new Request("http://127.0.0.1:7700/api/goal-page/deep/cancel", {
+          method,
+          headers: { ...headers, "Content-Type": "text/plain" },
+          ...(method === "POST" ? { body: JSON.stringify({ threadId: thread.id }) } : {}),
+        }),
+      )
+    const provenances: Record<string, string>[] = [
+      { Origin: "https://attacker.test" },
+      { Origin: "null" },
+      { Origin: "http://localhost:5174", "Sec-Fetch-Site": "cross-site" },
+      { "Sec-Fetch-Site": "cross-site" },
+    ]
+    for (const provenance of provenances) {
+      for (const method of ["POST", "OPTIONS"]) {
+        const response = await request(provenance, method)
+        expect(response.status).toBe(403)
+        expect(response.headers.has("access-control-allow-origin")).toBe(false)
+        expect(JSON.stringify(threads.list())).toBe(before)
+        expect(fake.calls).toEqual([])
+      }
+    }
+    const headers: Record<string, string> = origin ? { Origin: origin } : {}
+    const preflight = await request(headers, "OPTIONS")
+    expect(preflight.status).toBe(204)
+    expect(preflight.headers.has("access-control-allow-origin")).toBe(false)
+    const cancelled = await request(headers)
+    expect(cancelled.status).toBe(200)
+    expect(await cancelled.json()).toEqual({ ok: true })
+    expect(cancelled.headers.has("access-control-allow-origin")).toBe(false)
+    expect(threads.get(thread.id)).toBeUndefined()
+    expect(fake.calls.find((call) => call.name === "update_task")?.arguments.task).toMatchObject({ tags: ["keep"] })
+    expect(fake.calls.find((call) => call.name === "add_comment")?.arguments.content).toContain("draft discarded")
+  }
+})
 
 test("HTTP draft mutations reject foreign origins before creating, claiming, running, or releasing", async () => {
   const { threads, folder, calls, handle } = makeHarness()

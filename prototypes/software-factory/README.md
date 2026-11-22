@@ -203,8 +203,8 @@ The Foldkit **Todo** dialog takes one TickTick task into a repo draft. The coord
 TickTick's MCP server. It preserves the owner's tags, adds the configured `factory` tag, records draft/run/PR status
 comments, completes the task after merge, and releases it after discard or a closed PR. Failed Todo calls warn on the
 thread and retry during the PR sweep without blocking drafts, delivery, or merges.
-Todo, draft, and conversation-delete API requests allow no Origin or the UI/coordinator origin, reject cross-site
-browser requests before any lifecycle action, and do not advertise wildcard CORS. The TickTick
+Todo, draft, conversation-delete, and goal-page deep-cancel API requests allow no Origin or the UI/coordinator
+origin, reject cross-site browser requests before any lifecycle action, and do not advertise wildcard CORS. The TickTick
 OAuth callback permits its top-level cross-site return navigation, while requiring a valid single-use PKCE state and
 still rejecting a foreign Origin header.
 PR sweeps associate branches only with PRs whose head repository matches the queried repository. Fork PRs and PRs

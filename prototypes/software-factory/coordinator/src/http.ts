@@ -22,7 +22,7 @@ export const makeHttpHandler =
   (routes: Routes, uiUrl: string, coordinatorAddress: string) =>
   async (req: Request): Promise<Response> => {
     const url = new URL(req.url)
-    const todoRequest = /^\/api\/(?:todo|drafts|threads\/delete)(?:\/|$)/.test(url.pathname)
+    const todoRequest = /^\/api\/(?:todo|drafts|threads\/delete|goal-page\/deep\/cancel)(?:\/|$)/.test(url.pathname)
     if (todoRequest) {
       const denied = todoOriginDenied(req, uiUrl, coordinatorAddress)
       if (denied) return denied
