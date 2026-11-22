@@ -49,7 +49,7 @@ export type TodoRouteDeps = {
     run(id: string): unknown
     remove(id: string): Promise<void>
   }
-  createTodoDraft(folderId: string, link: TodoDraftLink): Promise<Thread>
+  createTodoDraft(folderId: string, link: TodoDraftLink, prompt?: string): Promise<Thread>
   discard(thread: Thread, reason: string): Promise<void>
   deleteThread(id: string): Promise<void>
 }
@@ -64,7 +64,7 @@ export const makeTodoRoutes = (d: TodoRouteDeps) => ({
         return d.drafts.create(body.folderId, body.prompt)
       }
       if (!d.enabled()) throw new DraftError(404, "Todo sources are disabled")
-      return d.createTodoDraft(body.folderId, body.todo)
+      return d.createTodoDraft(body.folderId, body.todo, body.prompt)
     }),
   run: (id: string): Promise<Response> => draftReply(() => d.drafts.run(id)),
   discardDraft: (id: string): Promise<Response> => draftReply(() => d.drafts.remove(id)),

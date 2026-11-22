@@ -1943,7 +1943,7 @@ const drafts = makeDrafts({
     factoryConfig().todo.enabled ? todoLifecycle.discard(thread, "draft discarded") : Promise.resolve(),
 })
 
-const draftFromTodo = (folderId: string, link: typeof TodoLinkBody.Type) =>
+const draftFromTodo = (folderId: string, link: typeof TodoLinkBody.Type, prompt?: string) =>
   createTodoDraft(
     {
       threads,
@@ -1956,6 +1956,7 @@ const draftFromTodo = (folderId: string, link: typeof TodoLinkBody.Type) =>
     },
     folderId,
     link,
+    prompt,
   )
 
 const todoRoutes = makeTodoRoutes({
