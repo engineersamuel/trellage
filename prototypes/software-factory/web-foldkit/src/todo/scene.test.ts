@@ -1,110 +1,125 @@
-import { Command, Mount, Subscription, change, click, expect, given, label, role, scene } from "foldkit/scene"
+import {
+  Command,
+  Mount,
+  Subscription,
+  change,
+  click,
+  expect,
+  given,
+  label,
+  role,
+  scene,
+  text,
+  type,
+} from "foldkit/scene"
 import { Dialog } from "@foldkit/ui"
 import { test } from "vitest"
-import { LoadDetail, LoadFolders, LoadLists, LoadStatus, LoadTasks } from "./command"
+import {
+  FocusSearch,
+  LoadDetail,
+  LoadFolders,
+  LoadLastFolder,
+  LoadLists,
+  LoadStatus,
+  LoadTasks,
+  ReadTime,
+  ScrollToTask,
+} from "./command"
 import { Message } from "./message"
 import { init, update } from "./update"
 import { view } from "./view"
-test("todo view shows connection, linked task badges, prompt and repo picker", () => {
-  const task = {
-    id: "t",
-    title: "Ship it",
-    dueDate: "2026-12-01",
-    priority: 3,
-    tags: ["next", "work"],
-    threadId: "thread-1",
-  }
-  scene(
-    { update, view },
-    given(init().model),
+const hex = (ms: number) =>
+  Math.floor(ms / 1000)
+    .toString(16)
+    .padStart(8, "0") + "0000000000000000"
+const NOW = new Date(2026, 10, 22, 15).getTime()
+const today = {
+  id: hex(NOW - 3600e3),
+  title: "Factory loop idea",
+  projectId: "ai",
+  priority: 5,
+  threadId: "th-1",
+}
+const old = {
+  id: hex(new Date(2026, 5, 10).getTime()),
+  title: "Loop library",
+  projectId: "ai",
+  tags: ["loops"],
+}
+const ms = { id: hex(NOW - 864e5), title: "Pfizer meeting", projectId: "ms" }
+
+const opened = (status: Record<string, unknown>) =>
+  [
     Subscription.emit(Message.ClickedOpen()),
     Command.resolveAll(
-      [LoadStatus, Message.LoadedStatus({ value: { state: "expired" } })],
-      [LoadLists, Message.LoadedLists({ value: [{ id: "l", name: "Inbox" }] })],
+      [ReadTime, Message.CompletedReadTime({ now: NOW })],
+      [LoadStatus, Message.LoadedStatus({ value: status })],
       [LoadFolders, Message.LoadedFolders({ value: [{ id: "r", name: "repo", path: "/r" }] })],
-    ),
-    Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
-    Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
-    expect(role("link", { name: "Reconnect" })).toExist(),
-    expect(role("button", { name: "Draft" })).toBeDisabled(),
-    click(role("button", { name: "Inbox" })),
-    expect(role("button", { name: "Inbox" })).toHaveAttr("aria-current", "true"),
-    Command.resolve(LoadTasks, Message.LoadedTasks({ value: [task], listId: "l", requestId: 1 })),
-    expect(role("button", { name: /Ship it.*2026-12-01.*priority 3.*next, work/ })).toExist(),
-    click(role("button", { name: /Ship it/ })),
-    expect(role("button", { name: /Ship it/ })).toHaveAttr("aria-current", "true"),
-    Command.resolve(
-      LoadDetail,
-      Message.LoadedDetail({
-        value: { task, prompt: "Server preview" },
-        listId: "l",
-        taskId: "t",
-        requestId: 1,
-      }),
-    ),
-    expect(role("link", { name: "Open factory thread" })).toHaveAttr("href", "?thread=thread-1"),
-    expect(label("Repo")).toExist(),
-    expect(role("region", { name: "Draft prompt preview" })).toHaveText("Server preview"),
-    change(label("Repo"), "r"),
-    expect(label("Repo")).toHaveValue("r"),
-    expect(role("button", { name: "Draft" })).not.toBeDisabled(),
-  )
-})
-
-test("todo view shows Connect for a disconnected account", () =>
-  scene(
-    { update, view },
-    given(init().model),
-    Subscription.emit(Message.ClickedOpen()),
-    Command.resolveAll(
-      [LoadStatus, Message.LoadedStatus({ value: { state: "disconnected" } })],
-      [LoadLists, Message.LoadedLists({ value: [] })],
-      [LoadFolders, Message.LoadedFolders({ value: [] })],
-    ),
-    Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
-    Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
-    expect(role("link", { name: "Connect" })).toHaveAttr("href", "/api/todo/ticktick/connect"),
-  ))
-
-test("todo view shows connected expiry and active store", () =>
-  scene(
-    { update, view },
-    given(init().model),
-    Subscription.emit(Message.ClickedOpen()),
-    Command.resolveAll(
+      [LoadLastFolder, Message.LoadedLastFolder({ value: "" })],
+      [FocusSearch, Message.Completed()],
       [
-        LoadStatus,
-        Message.LoadedStatus({
-          value: {
-            state: "connected",
-            expiresAt: Date.UTC(2026, 11, 1),
-            store: "file",
-            warn: true,
-          },
+        LoadLists,
+        Message.LoadedLists({
+          value: [
+            { id: "ai", name: "🧠AI" },
+            { id: "ms", name: "🇺🇸Microsoft" },
+          ],
         }),
       ],
-      [LoadLists, Message.LoadedLists({ value: [] })],
-      [LoadFolders, Message.LoadedFolders({ value: [] })],
     ),
     Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
     Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
-    expect(role("link", { name: "Reconnect" })).toExist(),
-    expect(role("dialog")).toContainText(`expires ${new Date(Date.UTC(2026, 11, 1)).toLocaleDateString()}`),
-    expect(role("dialog")).toContainText("store file"),
-    expect(role("dialog")).toContainText("(soon)"),
-  ))
+    Command.resolveAll(
+      [LoadTasks, Message.LoadedTasks({ value: [old, today], listId: "ai" })],
+      [LoadTasks, Message.LoadedTasks({ value: [ms], listId: "ms" })],
+    ),
+  ] as const
 
-test("todo view exposes loading and request errors", () =>
+test("the Todo view shows lists, a newest-first timeline and the connection", () =>
   scene(
     { update, view },
     given(init().model),
-    Subscription.emit(Message.ClickedOpen()),
-    Command.resolve(Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()),
-    Mount.resolve(Dialog.AcquireResources, Dialog.Message.SucceededAcquireResources()),
-    expect(role("dialog")).toContainText("Loading Todo…"),
-    Command.resolve(LoadStatus, Message.Failed({ error: "TickTick is unavailable" })),
-    Command.resolve(LoadLists, Message.Failed({ error: "TickTick is unavailable" })),
-    Command.resolve(LoadFolders, Message.Failed({ error: "TickTick is unavailable" })),
-    expect(role("dialog")).not.toContainText("Loading Todo…"),
-    expect(role("alert")).toHaveText("TickTick is unavailable"),
+    ...opened({ state: "connected", expiresAt: Date.UTC(2027, 4, 21), store: "keychain" }),
+    expect(role("link", { name: "Reconnect" })).toExist(),
+    expect(role("button", { name: /All lists\s*3/ })).toHaveAttr("aria-current", "true"),
+    expect(text("3 tasks · newest first")).toExist(),
+    expect(text("Today")).toExist(),
+    expect(text("Yesterday")).toExist(),
+    expect(text("June 2026")).toExist(),
+    expect(role("link", { name: "in factory" })).toHaveAttr("href", "?thread=th-1"),
+    expect(text("high")).toExist(),
+    expect(text("Pick a task. ↑ ↓ move, / searches.")).toExist(),
+  ))
+
+test("search filters with highlights, a list narrows it, and a task shows its editable prompt", () =>
+  scene(
+    { update, view },
+    given(init().model),
+    ...opened({ state: "disconnected" }),
+    expect(role("link", { name: "Connect" })).toExist(),
+    type(label("Search tasks"), "loop"),
+    expect(text("2 tasks · newest first")).toExist(),
+    expect(text("Pfizer meeting")).not.toExist(),
+    type(label("Search tasks"), "loop @micro"),
+    expect(text("No task matches “loop @micro”.")).toExist(),
+    type(label("Search tasks"), ""),
+    click(role("button", { name: /Microsoft\s*1/ })),
+    expect(text("1 tasks · newest first")).toExist(),
+    click(role("button", { name: /Pfizer meeting/ })),
+    expect(role("button", { name: /Pfizer meeting/ })).toHaveAttr("aria-current", "true"),
+    Command.resolveAll(
+      [
+        LoadDetail,
+        Message.LoadedDetail({
+          value: { task: ms, prompt: "Pfizer meeting\n\nSource: TickTick" },
+          taskId: ms.id,
+          requestId: 1,
+        }),
+      ],
+      [ScrollToTask, Message.Completed()],
+    ),
+    expect(label("Draft prompt · edit before you draft")).toHaveValue("Pfizer meeting\n\nSource: TickTick"),
+    expect(role("button", { name: "Draft" })).toBeDisabled(),
+    change(label("Repo"), "r"),
+    expect(role("button", { name: "Draft" })).toBeEnabled(),
   ))

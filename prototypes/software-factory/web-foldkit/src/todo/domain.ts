@@ -30,6 +30,7 @@ export const Task = Schema.Struct({
   dueDate: Text,
   threadId: Text,
   prompt: Text,
+  projectId: Text,
 })
 export const Detail = Schema.Struct({
   task: Task,

@@ -1,38 +1,46 @@
-import { Option } from "effect"
+import { Array, Option } from "effect"
 import { AsyncData, Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import { Dialog } from "@foldkit/ui"
-import { Draft, LoadDetail, LoadFolders, LoadLists, LoadStatus, LoadTasks } from "./command"
+import {
+  Draft,
+  FocusSearch,
+  LoadDetail,
+  LoadFolders,
+  LoadLastFolder,
+  LoadLists,
+  LoadStatus,
+  LoadTasks,
+  ReadTime,
+  SaveLastFolder,
+  ScrollToTask,
+} from "./command"
 import { Message } from "./message"
-import { canDraft } from "./model"
+import { canDraft, detailOf, listOfTask } from "./model"
 import type { Model } from "./model"
+import { rows } from "./timeline"
 export const init = (): Update.Return<Model, Message> => ({
   model: {
     dialog: Dialog.init({ id: "todo" }),
     status: AsyncData.Idle(),
     lists: AsyncData.Idle(),
-    tasks: AsyncData.Idle(),
+    tasks: {},
+    failedLists: [],
     detail: AsyncData.Idle(),
     folders: AsyncData.Idle(),
     listId: "",
     taskId: "",
     folderId: "",
-    listRequestId: 0,
+    query: "",
+    prompt: "",
+    expanded: [],
+    now: 0,
     detailRequestId: 0,
-    detailListId: "",
     error: "",
     drafting: false,
   },
 })
-const put = (m: Model, key: "status" | "lists" | "tasks" | "detail" | "folders", value: unknown): Model => ({
-  ...m,
-  [key]: AsyncData.succeed(value),
-})
 const fail = (m: Model, error: string): Model => modifyFields(m, { error: () => error })
-const matchesListRequest = (m: Model, listId: string, requestId: number) =>
-  m.listId === listId && m.listRequestId === requestId
-const matchesDetailRequest = (m: Model, listId: string, taskId: string, requestId: number) =>
-  m.listId === listId && m.taskId === taskId && m.detailRequestId === requestId
 const dialog = (model: Model, f: (d: Dialog.Model) => ReturnType<typeof Dialog.open>) =>
   Update.foldChildStep({
     update: f,
@@ -46,18 +54,49 @@ const dialog = (model: Model, f: (d: Dialog.Model) => ReturnType<typeof Dialog.o
   })(model)
 const open = (m: Model) => {
   const n = dialog(m, Dialog.open)
-  const loading = modifyFields(n.model, {
-    status: () => AsyncData.Loading(),
-    lists: () => AsyncData.Loading(),
-    folders: () => AsyncData.Loading(),
-    error: () => "",
-  })
   return {
-    model: loading,
-    commands: [LoadStatus(), LoadLists(), LoadFolders(), ...(n.commands ?? [])],
+    model: modifyFields(n.model, {
+      status: () => AsyncData.Loading(),
+      lists: () => AsyncData.Loading(),
+      folders: () => AsyncData.Loading(),
+      tasks: () => ({}),
+      failedLists: () => [],
+      error: () => "",
+    }),
+    commands: [
+      ReadTime(),
+      LoadStatus(),
+      LoadLists(),
+      LoadFolders(),
+      LoadLastFolder(),
+      FocusSearch(),
+      ...(n.commands ?? []),
+    ],
   }
 }
 const closed = (m: Model) => ({ model: m })
+/** Select a task: load its detail (the draft prompt) and scroll it into view. */
+const pick = (m: Model, taskId: string): Update.Return<Model, Message> => {
+  if (!taskId || taskId === m.taskId) return { model: m }
+  const requestId = m.detailRequestId + 1
+  return {
+    model: modifyFields(m, {
+      taskId: () => taskId,
+      detail: () => AsyncData.Loading(),
+      prompt: () => "",
+      detailRequestId: () => requestId,
+    }),
+    commands: [LoadDetail({ id: taskId, requestId }), ScrollToTask({ id: taskId })],
+  }
+}
+/** The task before or after the selected one in the visible timeline. */
+const step = (m: Model, by: 1 | -1): Update.Return<Model, Message> => {
+  const lists = Option.getOrElse(AsyncData.getData(m.lists), () => [])
+  const shown = rows(lists, m.tasks, m.listId, m.query)
+  const at = shown.findIndex((r) => r.task.id === m.taskId)
+  const next = shown[at < 0 ? (by === 1 ? 0 : -1) : at + by]
+  return next ? pick(m, next.task.id) : { model: m }
+}
 export const update = (m: Model, x: Message): Update.Return<Model, Message> =>
   Message.match(x, {
     ClickedOpen: () => (m.dialog.isOpen ? dialog(m, Dialog.close) : open(m)),
@@ -69,65 +108,78 @@ export const update = (m: Model, x: Message): Update.Return<Model, Message> =>
         toParentMessage: (b) => Message.GotDialogMessage({ message: b }),
         foldOutMessage: Dialog.OutMessage.match({ Opened: () => closed, Closed: () => closed }),
       })(m, message),
-    LoadedStatus: ({ value }) => ({ model: put(m, "status", value) }),
-    LoadedLists: ({ value }) => ({ model: put(m, "lists", value) }),
-    LoadedTasks: ({ value, listId, requestId }) => ({
-      model: matchesListRequest(m, listId, requestId) ? put(m, "tasks", value) : m,
+    CompletedReadTime: ({ now }) => ({ model: modifyFields(m, { now: () => now }) }),
+    LoadedStatus: ({ value }) => ({
+      model: modifyFields(m, { status: () => AsyncData.succeed(value) }),
     }),
-    FailedTasks: ({ error, listId, requestId }) => ({
-      model: matchesListRequest(m, listId, requestId) ? fail(m, error) : m,
+    // Every list loads at once, so search and All lists cover every task.
+    LoadedLists: ({ value }) => ({
+      model: modifyFields(m, { lists: () => AsyncData.succeed(value) }),
+      commands: value.map((l) => LoadTasks({ id: l.id })),
     }),
-    LoadedDetail: ({ value, listId, taskId, requestId }) => ({
-      model: matchesDetailRequest(m, listId, taskId, requestId)
-        ? modifyFields(put(m, "detail", value), { detailListId: () => listId })
-        : m,
+    LoadedTasks: ({ value, listId }) => ({
+      model: modifyFields(m, {
+        tasks: (t) => ({ ...t, [listId]: value }),
+        failedLists: Array.filter((id) => id !== listId),
+      }),
     }),
-    FailedDetail: ({ error, listId, taskId, requestId }) => ({
-      model: matchesDetailRequest(m, listId, taskId, requestId) ? fail(m, error) : m,
+    FailedTasks: ({ error, listId }) => ({
+      model: modifyFields(fail(m, error), {
+        failedLists: (f) => (f.includes(listId) ? f : [...f, listId]),
+      }),
     }),
-    LoadedFolders: ({ value }) => ({ model: put(m, "folders", value) }),
+    LoadedDetail: ({ value, taskId, requestId }) => ({
+      model:
+        m.taskId === taskId && m.detailRequestId === requestId
+          ? modifyFields(m, {
+              detail: () => AsyncData.succeed(value),
+              prompt: () => value.prompt ?? "",
+            })
+          : m,
+    }),
+    FailedDetail: ({ error, taskId, requestId }) => ({
+      model: m.taskId === taskId && m.detailRequestId === requestId ? fail(m, error) : m,
+    }),
+    LoadedFolders: ({ value }) => ({
+      model: modifyFields(m, { folders: () => AsyncData.succeed(value) }),
+    }),
+    LoadedLastFolder: ({ value }) => ({
+      model: m.folderId ? m : modifyFields(m, { folderId: () => value }),
+    }),
     Failed: ({ error }) => ({ model: fail(m, error) }),
-    PickedList: ({ value }) => {
-      const requestId = m.listRequestId + 1
-      return {
-        model: modifyFields(m, {
-          listId: () => value,
-          taskId: () => "",
-          tasks: () => AsyncData.Loading(),
-          detail: () => AsyncData.Idle(),
-          listRequestId: () => requestId,
-          detailListId: () => "",
-        }),
-        commands: [LoadTasks({ id: value, requestId })],
-      }
-    },
-    PickedTask: ({ value }) => {
-      const requestId = m.detailRequestId + 1
-      return {
-        model: modifyFields(m, {
-          taskId: () => value,
-          detail: () => AsyncData.Loading(),
-          detailRequestId: () => requestId,
-          detailListId: () => "",
-        }),
-        commands: [LoadDetail({ id: value, listId: m.listId, requestId })],
-      }
-    },
+    PickedList: ({ value }) => ({
+      model: modifyFields(m, { listId: () => value, query: (q) => q.replace(/@\S*\s?/g, "") }),
+    }),
+    PickedTask: ({ value }) => pick(m, value),
     PickedFolder: ({ value }) => ({ model: modifyFields(m, { folderId: () => value }) }),
-    ClickedDraft: () =>
-      canDraft(m)
-        ? {
-            model: modifyFields(m, { drafting: () => true, error: () => "" }),
-            commands: [
-              Draft({
-                folderId: m.folderId,
-                prompt: Option.getOrUndefined(AsyncData.getData(m.detail))?.prompt,
-                listId: m.listId,
-                taskId: m.taskId,
-              }),
-            ],
-          }
-        : { model: m },
+    ChangedQuery: ({ value }) => ({ model: modifyFields(m, { query: () => value }) }),
+    ChangedPrompt: ({ value }) => ({ model: modifyFields(m, { prompt: () => value }) }),
+    ClickedMore: ({ group }) => ({ model: modifyFields(m, { expanded: (e) => [...e, group] }) }),
+    PressedNext: () => step(m, 1),
+    PressedPrevious: () => step(m, -1),
+    PressedSearch: () => ({ model: m, commands: [FocusSearch()] }),
+    PressedClear: () => ({ model: modifyFields(m, { query: () => "" }) }),
+    ClickedDraft: () => {
+      const detail = detailOf(m)
+      if (!canDraft(m) || !detail) return { model: m }
+      const listId = detail.task.projectId ?? listOfTask(m, m.taskId)
+      const edited = m.prompt.trim() && m.prompt !== detail.prompt ? m.prompt : undefined
+      return {
+        model: modifyFields(m, { drafting: () => true, error: () => "" }),
+        commands: [
+          Draft({
+            folderId: m.folderId,
+            listId,
+            taskId: m.taskId,
+            ...(edited ? { prompt: edited } : {}),
+          }),
+          SaveLastFolder({ id: m.folderId }),
+        ],
+      }
+    },
     Drafted: () => dialog(modifyFields(m, { drafting: () => false }), Dialog.close),
-    FailedDraft: ({ error }) => ({ model: modifyFields(fail(m, error), { drafting: () => false }) }),
+    FailedDraft: ({ error }) => ({
+      model: modifyFields(fail(m, error), { drafting: () => false }),
+    }),
+    Completed: () => ({ model: m }),
   })
