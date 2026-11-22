@@ -53,3 +53,8 @@ test("plain, splitEmoji and ago", () => {
   expect(ago(NOW - 7 * 3600e3, NOW)).toBe("7h")
   expect(ago(NOW - 3 * 864e5, NOW)).toBe("3d")
 })
+
+test("match positions count code points, so emoji titles highlight the right letters", () => {
+  expect(match("🚀 ship it", ["ship"])).toEqual([2, 3, 4, 5])
+  expect([..."🚀 ship it"].filter((_, i) => [2, 3, 4, 5].includes(i)).join("")).toBe("ship")
+})

@@ -43,14 +43,15 @@ export const atList = (lists: readonly TodoList[], query: string): TodoList | un
   return at ? lists.find((l) => l.name.toLowerCase().includes(at)) : undefined
 }
 
-/** Every word must appear in the title, in any order; returns the matched character positions. */
+/** Every word must appear in the title, in any order; returns the matched code-point positions. */
 export const match = (title: string, words: readonly string[]): readonly number[] | undefined => {
-  const lower = title.toLowerCase()
+  const chars = [...title].map((c) => (c.toLowerCase().length === c.length ? c.toLowerCase() : c))
   const hits: number[] = []
   for (const w of words) {
-    const k = lower.indexOf(w)
+    const need = [...w]
+    const k = chars.findIndex((_, i) => need.every((c, j) => chars[i + j] === c))
     if (k < 0) return undefined
-    for (let i = 0; i < w.length; i++) hits.push(k + i)
+    for (let i = 0; i < need.length; i++) hits.push(k + i)
   }
   return hits
 }
@@ -115,3 +116,6 @@ export const dateLabel = (ms: number): string =>
   new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 
 export const PRIORITY: Readonly<Record<number, string>> = { 1: "low", 3: "medium", 5: "high" }
+
+/** The group a row is in, for opening a collapsed group the keyboard moves into. */
+export const groupOf = (r: Row, now: number): string => bucket(createdAt(r.task.id), now)

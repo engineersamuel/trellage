@@ -18,7 +18,7 @@ import {
 import { Message } from "./message"
 import { canDraft, detailOf, listOfTask } from "./model"
 import type { Model } from "./model"
-import { rows } from "./timeline"
+import { atList, groupOf, rows } from "./timeline"
 export const init = (): Update.Return<Model, Message> => ({
   model: {
     dialog: Dialog.init({ id: "todo" }),
@@ -61,6 +61,11 @@ const open = (m: Model) => {
       folders: () => AsyncData.Loading(),
       tasks: () => ({}),
       failedLists: () => [],
+      taskId: () => "",
+      detail: () => AsyncData.Idle(),
+      prompt: () => "",
+      query: () => "",
+      expanded: () => [],
       error: () => "",
     }),
     commands: [
@@ -77,7 +82,7 @@ const open = (m: Model) => {
 const closed = (m: Model) => ({ model: m })
 /** Select a task: load its detail (the draft prompt) and scroll it into view. */
 const pick = (m: Model, taskId: string): Update.Return<Model, Message> => {
-  if (!taskId || taskId === m.taskId) return { model: m }
+  if (!taskId || (taskId === m.taskId && !AsyncData.isFailure(m.detail))) return { model: m }
   const requestId = m.detailRequestId + 1
   return {
     model: modifyFields(m, {
@@ -89,13 +94,16 @@ const pick = (m: Model, taskId: string): Update.Return<Model, Message> => {
     commands: [LoadDetail({ id: taskId, requestId }), ScrollToTask({ id: taskId })],
   }
 }
-/** The task before or after the selected one in the visible timeline. */
+/** The task before or after the selected one in the timeline; moving into a collapsed group opens it. */
 const step = (m: Model, by: 1 | -1): Update.Return<Model, Message> => {
   const lists = Option.getOrElse(AsyncData.getData(m.lists), () => [])
-  const shown = rows(lists, m.tasks, m.listId, m.query)
+  const shown = rows(lists, m.tasks, atList(lists, m.query)?.id ?? m.listId, m.query)
   const at = shown.findIndex((r) => r.task.id === m.taskId)
-  const next = shown[at < 0 ? (by === 1 ? 0 : -1) : at + by]
-  return next ? pick(m, next.task.id) : { model: m }
+  const next = at < 0 ? (by === 1 ? shown.at(0) : shown.at(-1)) : shown.at(at + by)
+  if (!next) return { model: m }
+  const group = groupOf(next, m.now)
+  const opened = m.expanded.includes(group) ? m : modifyFields(m, { expanded: (e) => [...e, group] })
+  return pick(opened, next.task.id)
 }
 export const update = (m: Model, x: Message): Update.Return<Model, Message> =>
   Message.match(x, {
@@ -138,7 +146,10 @@ export const update = (m: Model, x: Message): Update.Return<Model, Message> =>
           : m,
     }),
     FailedDetail: ({ error, taskId, requestId }) => ({
-      model: m.taskId === taskId && m.detailRequestId === requestId ? fail(m, error) : m,
+      model:
+        m.taskId === taskId && m.detailRequestId === requestId
+          ? modifyFields(fail(m, error), { detail: () => AsyncData.fail(error) })
+          : m,
     }),
     LoadedFolders: ({ value }) => ({
       model: modifyFields(m, { folders: () => AsyncData.succeed(value) }),

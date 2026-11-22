@@ -274,21 +274,31 @@ const content = (m: Model, r: Dialog.RenderInfo, h: HtmlBuilder<Message>): Html[
   ]
 }
 
-const NAVIGATION = new Set(["ArrowDown", "ArrowUp", "Enter", "Escape"])
-
 /**
- * Keys on the Todo panel. In the search box ↑ ↓ move, Enter drafts, Escape clears; other typing stays in it.
- * Outside text fields `/` focuses search. The prompt and the repo picker keep every key.
+ * Keys on the Todo panel. In the search box ↑ ↓ move, Enter drafts the selected task when it is shown, Escape
+ * clears; other typing stays in it. Elsewhere `/` focuses search and ↑ ↓ move; Enter keeps its normal action on
+ * buttons and links. The prompt and the repo picker keep every key.
  */
 const panelKey = (m: Model, key: string, isModified: boolean): Option.Option<Message> => {
   const focused = globalThis.document?.activeElement
+  const tag = focused?.tagName ?? ""
   const inSearch = focused?.id === SEARCH_ID
-  const inField = !inSearch && ["INPUT", "TEXTAREA", "SELECT"].includes(focused?.tagName ?? "")
-  if (isModified || inField || (inSearch && !NAVIGATION.has(key))) return Option.none()
+  if (isModified) return Option.none()
+  if (inSearch) {
+    if (key === "Escape") return m.query ? Option.some(Message.PressedClear()) : Option.none()
+    if (key === "Enter") return isVisible(m) && canDraft(m) ? Option.some(Message.ClickedDraft()) : Option.none()
+    return keyToMessage(key)
+  }
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return Option.none()
   if (key === "/") return Option.some(Message.PressedSearch())
   if (key === "Escape") return m.query ? Option.some(Message.PressedClear()) : Option.none()
-  if (key === "Enter") return canDraft(m) ? Option.some(Message.ClickedDraft()) : Option.none()
   return keyToMessage(key)
+}
+
+/** The selected task is in the timeline the search and list show. */
+const isVisible = (m: Model): boolean => {
+  const lists = Option.getOrElse(AsyncData.getData(m.lists), () => [])
+  return rows(lists, m.tasks, atList(lists, m.query)?.id ?? m.listId, m.query).some((r) => r.task.id === m.taskId)
 }
 
 export const view = Submodel.defineView<Model, Message>((m, h) =>

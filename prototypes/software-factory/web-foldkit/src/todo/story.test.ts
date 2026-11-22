@@ -266,3 +266,53 @@ test("the production Draft command posts todo identity and selects the returned 
   expect(result).toEqual(Message.Drafted({ id: "12345678-abcd" }))
   expect(selected).toBe("draft-12345678")
 })
+
+test("ArrowUp with nothing selected picks the oldest; moving into a collapsed group opens it", () =>
+  story(
+    update,
+    given(loaded),
+    message(Message.PressedPrevious()),
+    Command.resolveAll(
+      [LoadDetail, Message.LoadedDetail({ value: { task: older, prompt: "P" }, taskId: older.id, requestId: 1 })],
+      [ScrollToTask, Message.Completed()],
+    ),
+    model((m) => expect([m.taskId, m.expanded]).toEqual([older.id, ["This week"]])),
+  ))
+
+test("a failed detail can be retried by picking the task again", () =>
+  story(
+    update,
+    given(loaded),
+    message(Message.PickedTask({ value: older.id })),
+    Command.resolveAll(
+      [LoadDetail, Message.FailedDetail({ error: "down", taskId: older.id, requestId: 1 })],
+      [ScrollToTask, Message.Completed()],
+    ),
+    model((m) => expect([AsyncData.isFailure(m.detail), m.error]).toEqual([true, "down"])),
+    message(Message.PickedTask({ value: older.id })),
+    Command.expectHas(LoadDetail({ id: older.id, requestId: 2 })),
+    Command.resolveAll(
+      [LoadDetail, Message.LoadedDetail({ value: { task: older, prompt: "P" }, taskId: older.id, requestId: 2 })],
+      [ScrollToTask, Message.Completed()],
+    ),
+    model((m) => expect(m.prompt).toBe("P")),
+  ))
+
+test("reopening starts with no task selected, so nothing drafts twice", () =>
+  story(
+    update,
+    given({ ...loaded, taskId: older.id, prompt: "old", query: "x", expanded: ["June 2026"] }),
+    message(Message.ClickedOpen()),
+    model((m) =>
+      expect([m.taskId, m.prompt, m.query, m.expanded, AsyncData.isIdle(m.detail)]).toEqual(["", "", "", [], true]),
+    ),
+    Command.resolveAll(
+      [ReadTime, Message.CompletedReadTime({ now: NOW })],
+      [LoadStatus, Message.Failed({ error: "x" })],
+      [LoadLists, Message.Failed({ error: "x" })],
+      [LoadFolders, Message.Failed({ error: "x" })],
+      [LoadLastFolder, Message.LoadedLastFolder({ value: "" })],
+      [FocusSearch, Message.Completed()],
+      [Dialog.ShowDialog, Dialog.Message.SucceededShowDialog()],
+    ),
+  ))

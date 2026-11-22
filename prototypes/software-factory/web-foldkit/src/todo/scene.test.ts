@@ -123,3 +123,20 @@ test("search filters with highlights, a list narrows it, and a task shows its ed
     change(label("Repo"), "r"),
     expect(role("button", { name: "Draft" })).toBeEnabled(),
   ))
+
+test("Enter on a list button selects the list and does not draft", () =>
+  scene(
+    { update, view },
+    given(init().model),
+    ...opened({ state: "connected" }),
+    click(role("button", { name: /Pfizer meeting/ })),
+    Command.resolveAll(
+      [LoadDetail, Message.LoadedDetail({ value: { task: ms, prompt: "P" }, taskId: ms.id, requestId: 1 })],
+      [ScrollToTask, Message.Completed()],
+    ),
+    change(label("Repo"), "r"),
+    expect(role("button", { name: "Draft" })).toBeEnabled(),
+    click(role("button", { name: /Microsoft\s*1/ })),
+    expect(text("1 tasks · newest first")).toExist(),
+    expect(role("button", { name: "Draft" })).toBeEnabled(),
+  ))
