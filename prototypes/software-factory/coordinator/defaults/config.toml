@@ -69,6 +69,11 @@ select_threshold = 0.65
 perplexity_max_calls = 15
 perplexity_research_max_calls = 2
 
+# Todo sources (ADR 0009). TickTick OAuth is performed by the coordinator, never by a worker.
+[todo]
+enabled = true
+tag = "factory"
+
 # SDLC gates: Jev probability at or above which each gate runs.
 # The Jev question of each gate is prompts/gates/<id>.md; gate ids and phases are fixed in code.
 [gates]

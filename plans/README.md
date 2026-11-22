@@ -12,7 +12,7 @@ honor its STOP conditions, and update its status when done.
 | 002 | [Replace named Native launchers with harness-based trx commands](002-unify-native-launchers.md) | P1 | L | - | IMPLEMENTED — host timing check fails; installed-host matrix needs updated trx |
 | 003 | [Drive the software factory from config files](003-factory-config-driven.md) | P1 | L | - | DONE |
 | 004 | [Goals that change more than one repo](004-factory-multi-repo-goals.md) | P2 | L | - | TODO |
-| 005 | [Take factory work from TickTick (Todo view)](005-factory-todo-ticktick.md) | P2 | M | ADR 0009 | TODO |
+| 005 | [Take factory work from TickTick (Todo view)](005-factory-todo-ticktick.md) | P2 | M | ADR 0009 | DONE |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason,
 or `REJECTED` with a one-line rationale.

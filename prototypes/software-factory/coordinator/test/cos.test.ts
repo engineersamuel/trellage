@@ -307,6 +307,8 @@ test("typed PR events fire on a change of state only", () => {
   expect(prEvent("green", "green")).toBeNull()
   expect(prEvent("pending", "red")).toBe("pr-red")
   expect(prEvent("green", "merged")).toBe("merged")
+  expect(prEvent("pending", "closed")).toBe("closed")
+  expect(prEvent("closed", "closed")).toBeNull()
   expect(prEvent("red", "pending")).toBeNull()
 })
 

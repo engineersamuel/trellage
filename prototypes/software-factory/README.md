@@ -197,6 +197,42 @@ A run started to improve the Factory never opens a proposal of its own, and
 merging its PR stays human. Risk: the approval API is unauthenticated, as for every approval; any local caller that
 omits `by` counts as the human.
 
+## Todo sources
+
+The Foldkit **Todo** dialog takes one TickTick task into a repo draft. The coordinator, not a worker or agent, calls
+TickTick's MCP server. It preserves the owner's tags, adds the configured `factory` tag, records draft/run/PR status
+comments, completes the task after merge, and releases it after discard or a closed PR. Failed Todo calls warn on the
+thread and retry during the PR sweep without blocking drafts, delivery, or merges.
+Todo, draft, conversation-read/delete, and goal-page deep-cancel API requests allow no Origin or the UI/coordinator
+origin, reject cross-site browser requests before reading imported task content or taking any lifecycle action, and
+do not advertise wildcard CORS. The TickTick
+OAuth callback permits its top-level cross-site return navigation, while requiring a valid single-use PKCE state and
+still rejecting a foreign Origin header.
+PR sweeps associate branches only with PRs whose head repository matches the queried repository. Fork PRs and PRs
+without confirmed repository identity cannot replace a Factory PR or release its linked task.
+
+Todo state follows one persisted lifecycle: `drafted → claimed → started → pr-opened → completed | released`.
+Every write is serialized per thread. A timed-out write remains ahead of later writes until its request settles or a
+sweep reconciles it. Completed and released are terminal: no claim, comment, tag change, completion, discard, delete,
+sweep, or pending-release retry starts a TickTick action from either state.
+
+Every factory comment includes a stable `🏭 [sf:<threadId8>:<action>]` marker and is limited to 1024 characters.
+Before posting a marked comment, the coordinator reads the task's comments and skips an existing marker. This durable
+retry rule survives coordinator restarts and prevents an accepted comment whose response timed out from being
+duplicated. The Todo dialog also keeps a resource error visible when another request succeeds and stops showing a
+stale loading message.
+
+Connect uses OAuth dynamic registration and PKCE. Credentials default to `Bun.secrets` (`trellage.factory`, `ticktick`).
+When that store throws, the coordinator uses `$XDG_CONFIG_HOME/trellage/factory/ticktick.json` (or `~/.config/...`)
+with a 0600 file. It also chmods the containing `trellage/factory` folder to 0700 because the credential is plain text
+there; this is the user's factory config folder. Once a fallback write succeeds, that file remains authoritative after
+restart until a later secure write succeeds. Disconnect removes both storage locations and reports a failure if the
+secure credential cannot be deleted, rather than claiming success while that credential can return after a restart.
+TickTick tokens have no refresh token, so the UI asks for a re-login when the token expires after about 180 days.
+
+Todo support is enabled by `[todo] enabled = true` in `coordinator/defaults/config.toml`; `tag` chooses the marker tag.
+No TickTick tool is included in a worker's MCP configuration.
+
 ## Model routing
 
 - Copilot SDK runtimes get the host GitHub token (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token`). Model
@@ -415,7 +451,7 @@ Judging a model with an image limit: `judge_max_images` caps the images per requ
 keeps the first shot of every page and drops extra whole-page tiles first. An unlisted model that refuses a request
 as too big (400/413) is retried once with 10.
 
-Limits: one tournament is one brief; scores say what works for *this* brief. LLM judges share biases; the baseline and
+Limits: one tournament is one brief; scores say what works for _this_ brief. LLM judges share biases; the baseline and
 three judge families reduce them but do not remove them.
 
 ## Restart resume
