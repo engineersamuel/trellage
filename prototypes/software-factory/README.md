@@ -224,9 +224,10 @@ stale loading message.
 Connect uses OAuth dynamic registration and PKCE. Credentials default to `Bun.secrets` (`trellage.factory`, `ticktick`).
 When that store throws, the coordinator uses `$XDG_CONFIG_HOME/trellage/factory/ticktick.json` (or `~/.config/...`)
 with a 0600 file. It also chmods the containing `trellage/factory` folder to 0700 because the credential is plain text
-there; this is the user's factory config folder. Disconnect removes both storage locations so an older secure-store
-credential cannot reappear after a restart. TickTick tokens have no refresh token, so the UI asks for a re-login when
-the token expires after about 180 days.
+there; this is the user's factory config folder. Once a fallback write succeeds, that file remains authoritative after
+restart until a later secure write succeeds. Disconnect removes both storage locations and reports a failure if the
+secure credential cannot be deleted, rather than claiming success while that credential can return after a restart.
+TickTick tokens have no refresh token, so the UI asks for a re-login when the token expires after about 180 days.
 
 Todo support is enabled by `[todo] enabled = true` in `coordinator/defaults/config.toml`; `tag` chooses the marker tag.
 No TickTick tool is included in a worker's MCP configuration.

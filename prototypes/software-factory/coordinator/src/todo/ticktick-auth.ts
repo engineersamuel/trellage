@@ -90,17 +90,15 @@ export function makeTokenStore(options: { secrets?: SecretsAdapter; file?: strin
     }
   }
   const fallback = () => (store = "file")
-  const expiresAt = (value: TickTickCredentials | undefined) => value?.expiresAt ?? Number.NEGATIVE_INFINITY
   const get = async () => {
     if (store === "file") return fileRead()
+    const disk = await fileRead()
+    if (disk) {
+      fallback()
+      return disk
+    }
     try {
-      const secure = decode(await secrets.get({ service: SERVICE, name: NAME }))
-      const disk = await fileRead()
-      if (disk && expiresAt(disk) > expiresAt(secure)) {
-        fallback()
-        return disk
-      }
-      return secure ?? disk
+      return decode(await secrets.get({ service: SERVICE, name: NAME }))
     } catch {
       fallback()
       return fileRead()
@@ -110,17 +108,14 @@ export function makeTokenStore(options: { secrets?: SecretsAdapter; file?: strin
     if (store === "file") return fileWrite(value)
     try {
       await secrets.set({ service: SERVICE, name: NAME, value: JSON.stringify(value) })
+      await rm(file, { force: true })
     } catch {
       fallback()
       await fileWrite(value)
     }
   }
   const remove = async () => {
-    try {
-      await secrets.delete({ service: SERVICE, name: NAME })
-    } catch {
-      fallback()
-    }
+    await secrets.delete({ service: SERVICE, name: NAME })
     await rm(file, { force: true })
   }
   const service = {

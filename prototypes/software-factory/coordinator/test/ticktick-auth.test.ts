@@ -149,7 +149,7 @@ test("a renewed fallback credential wins after the token store restarts", async 
     clientId: "client",
     redirectUri: "https://factory/callback",
     accessToken: "stale-secret-token",
-    expiresAt: 1,
+    expiresAt: Date.now() + 120_000,
   }
   const renewedCredential = { ...oldCredential, accessToken: "renewed-secret-token", expiresAt: Date.now() + 60_000 }
   const secrets: SecretsAdapter = {
@@ -167,6 +167,56 @@ test("a renewed fallback credential wins after the token store restarts", async 
 
   expect(await restarted.get()).toEqual(renewedCredential)
   expect(restarted.store()).toBe("file")
+})
+
+test("a later secure write removes the authoritative fallback credential", async () => {
+  const root = await mkdtemp(path.join(process.cwd(), ".ticktick-test-"))
+  roots.push(root)
+  const file = path.join(root, "ticktick.json")
+  const fallbackCredential = {
+    clientId: "client",
+    redirectUri: "https://factory/callback",
+    accessToken: "fallback-secret-token",
+  }
+  const unavailable: SecretsAdapter = {
+    get: async () => null,
+    set: async () => {
+      throw new Error("secure store unavailable")
+    },
+    delete: async () => true,
+  }
+  await makeTokenStore({ secrets: unavailable, file }).set(fallbackCredential)
+
+  const secure = fakeSecrets()
+  const renewedCredential = { ...fallbackCredential, accessToken: "secure-secret-token" }
+  await makeTokenStore({ secrets: secure.adapter, file }).set(renewedCredential)
+
+  const restarted = makeTokenStore({ secrets: secure.adapter, file })
+  expect(await restarted.get()).toEqual(renewedCredential)
+  expect(restarted.store()).toBe("secrets")
+})
+
+test("disconnect fails when the secure credential cannot be deleted", async () => {
+  const root = await mkdtemp(path.join(process.cwd(), ".ticktick-test-"))
+  roots.push(root)
+  const file = path.join(root, "ticktick.json")
+  const secureCredential = {
+    clientId: "client",
+    redirectUri: "https://factory/callback",
+    accessToken: "secure-secret-token",
+    expiresAt: Date.now() + 60_000,
+  }
+  const secrets: SecretsAdapter = {
+    get: async () => JSON.stringify(secureCredential),
+    set: async () => undefined,
+    delete: async () => {
+      throw new Error("delete denied")
+    },
+  }
+  const auth = makeTickTickAuth({ store: makeTokenStore({ secrets, file }) })
+
+  await expect(auth.disconnect()).rejects.toThrow("delete denied")
+  expect(await makeTokenStore({ secrets, file }).get()).toEqual(secureCredential)
 })
 
 test("disconnect removes an older secure credential after falling back to the file", async () => {
