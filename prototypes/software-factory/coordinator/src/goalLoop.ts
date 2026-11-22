@@ -11,6 +11,16 @@ export type { GoalState, GoalLoop }
 /** Loops in a row with no progress before the goal pauses and asks the human. */
 export const NO_PROGRESS_LIMIT = 2
 
+/**
+ * What starting a goal does: a goal with a live worktree resumes its conversation; one whose first prompt never
+ * arrived (a failed delivery leaves no message) gets the prompt again, or it would wait forever as "not started".
+ */
+export const startAction = (p: {
+  hasState: boolean
+  liveWorktree: boolean
+  messageCount: number
+}): "new" | "resume" | "resend" => (!p.hasState || !p.liveWorktree ? "new" : p.messageCount > 0 ? "resume" : "resend")
+
 /** One file per goal under `$SF_STATE_DIR/goal-state/`, written atomically. */
 export class GoalStates {
   private readonly dir: string

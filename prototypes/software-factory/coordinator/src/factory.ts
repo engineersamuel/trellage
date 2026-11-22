@@ -205,6 +205,9 @@ export class Channel<T> {
 
 export const now = (): string => String(Date.now())
 
+/** Local event that ends waits on a worker the factory stopped. */
+const WORKER_STOPPED = "factory.worker_stopped"
+
 export class Worker {
   status = "idle"
   model: string
@@ -386,8 +389,12 @@ export class Worker {
         resolve(false)
       }, timeoutMs)
       const off = this.events.subscribe((ev) => {
-        // A session.error ends the turn too (a dead runtime sends no idle).
-        if (ev.type === "session.idle" || (ev.type === "session.error" && this.status !== "running")) {
+        // A session.error ends the turn too (a dead runtime sends no idle), and so does a stop.
+        if (
+          ev.type === "session.idle" ||
+          (ev.type as string) === WORKER_STOPPED ||
+          (ev.type === "session.error" && this.status !== "running")
+        ) {
           clearTimeout(timer)
           off()
           resolve(true)
@@ -1451,6 +1458,9 @@ export class Factory {
   async stop(id: string): Promise<void> {
     const w = this.get(id)
     this.workers.delete(id)
+    // Release every read_worker wait on it: a stopped session sends no idle.
+    w.status = "stopped"
+    w.events.send({ type: WORKER_STOPPED, timestamp: new Date().toISOString(), data: {} } as unknown as SessionEvent)
     await w.session.disconnect().catch(() => {})
     if (!w.sharedRuntime) await w.client.stop().catch(() => {})
     this.publish(id, "factory.worker_stopped", null, now(), { id })
