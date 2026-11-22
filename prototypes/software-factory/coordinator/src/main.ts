@@ -66,6 +66,7 @@ import {
   OPEN_CHILD,
   RESUME,
   RUN_AGAIN,
+  startAction,
   STOP_GOAL,
   type GoalState,
 } from "./goalLoop.ts"
@@ -3212,7 +3213,16 @@ const startGoal = async (goalId: string, parentGoalId?: string): Promise<{ threa
   }
   const s = goalStates.get(goalId)
   const live = s && threads.get(s.threadId)
-  if (s && live?.worktree && !live.cleanedAt) {
+  const action = startAction({
+    hasState: !!s,
+    liveWorktree: !!live?.worktree && !live.cleanedAt,
+    messageCount: s ? threads.count(s.threadId) : 0,
+  })
+  if (s && action === "resend") {
+    logFailure(await deliverToThread(s.threadId, spec.prompt))
+    return { threadId: s.threadId, resumed: true }
+  }
+  if (s && action === "resume") {
     // A stopped goal started again continues with its next loop.
     if (s.status === "stopped") goalStates.set({ ...s, status: "running", next: true, reason: undefined })
     return { threadId: s.threadId, resumed: true }

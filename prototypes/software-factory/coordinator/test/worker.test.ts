@@ -522,3 +522,17 @@ test("UI implement with routing.implement_model set still launches on claude-opu
     store.close()
   }
 })
+
+test("waitIdle ends when the factory stops the worker, not at its timeout", async () => {
+  const f = new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-w-")) })
+  const w = new Worker("w-3", "verify", "worker", "native", "/tmp/h", null, as<Client>({ stop: async () => {} }), "m")
+  w.session = { disconnect: async () => {} } as unknown as Worker["session"]
+  await f.register(w)
+  w.observe(f, ev("assistant.turn_start"))
+  const started = Date.now()
+  const waiting = w.waitIdle(60_000)
+  await f.stop("w-3")
+  expect(await waiting).toBe(true)
+  expect(w.status).toBe("stopped")
+  expect(Date.now() - started).toBeLessThan(1_000)
+})

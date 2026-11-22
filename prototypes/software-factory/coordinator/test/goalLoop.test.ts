@@ -10,6 +10,7 @@ import {
   goalVerdict,
   GoalStates,
   loopSessionId,
+  startAction,
   madeProgress,
   newGoalState,
   type ReportFacts,
@@ -149,4 +150,11 @@ test("a stopped goal ends the watch even while a question is open; a goal's bloc
     reason: "goal stopped: by you",
   })
   expect(stopReason({ ...run, approvals: [], goal: newGoalState("g", "t") })).toBeNull()
+})
+
+test("startAction: a live goal thread is resumed, one whose first prompt never arrived gets it again", () => {
+  expect(startAction({ hasState: false, liveWorktree: false, messageCount: 0 })).toBe("new")
+  expect(startAction({ hasState: true, liveWorktree: false, messageCount: 3 })).toBe("new")
+  expect(startAction({ hasState: true, liveWorktree: true, messageCount: 3 })).toBe("resume")
+  expect(startAction({ hasState: true, liveWorktree: true, messageCount: 0 })).toBe("resend")
 })
