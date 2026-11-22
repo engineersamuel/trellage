@@ -6,6 +6,7 @@ import { Effect } from "effect"
 import type { TodoTask } from "../src/todo/source.ts"
 import { inMemoryTokenStore, makeTickTickAuth } from "../src/todo/ticktick-auth.ts"
 import { TICKTICK_MCP_URL, TodoAuthError, makeTickTickTodoSource } from "../src/todo/ticktick.ts"
+import { TOOL_INPUTS, toWire, type ToolName } from "./ticktick-wire.ts"
 
 type ToolCall = { name: string; arguments: Record<string, unknown> }
 type ToolReply = { structuredContent: Record<string, unknown> } | { isError: true; text: string }
@@ -25,33 +26,23 @@ const fixture = async (
 ) => {
   const calls: ToolCall[] = []
   const server = new SdkMcpServer({ name: "ticktick-test", version: "1" })
-  const register = (name: string) => {
-    server.registerTool(name, { inputSchema: z.looseObject({}) }, async (args) => {
+  const register = (name: ToolName) => {
+    server.registerTool(name, { inputSchema: TOOL_INPUTS[name] }, async (args: Record<string, unknown>) => {
       const call = { name, arguments: args as Record<string, unknown> }
       calls.push(call)
       const reply = await handler(call, calls.length - 1)
       if ("isError" in reply) {
         return { isError: true as const, content: [{ type: "text" as const, text: reply.text }] }
       }
-      return {
-        structuredContent:
-          name === "get_comment" && !("comments" in reply.structuredContent)
-            ? { comments: [] }
-            : reply.structuredContent,
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              name === "get_comment" && !("comments" in reply.structuredContent)
-                ? { comments: [] }
-                : reply.structuredContent,
-            ),
-          },
-        ],
-      }
+      const structuredContent = toWire(
+        name,
+        name === "get_comment" && !("comments" in reply.structuredContent) ? { comments: [] } : reply.structuredContent,
+      )
+      return { structuredContent, content: [{ type: "text" as const, text: JSON.stringify(structuredContent) }] }
     })
   }
-  ;[
+  ;(Object.keys(TOOL_INPUTS) as ToolName[]).forEach(register)
+  void [
     "list_projects",
     "get_project_with_undone_tasks",
     "get_task_by_id",
@@ -59,7 +50,7 @@ const fixture = async (
     "add_comment",
     "update_task",
     "complete_task",
-  ].forEach(register)
+  ]
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
   const tokenStore = inMemoryTokenStore()
@@ -107,9 +98,9 @@ test("TickTick source proves structured MCP lists, tasks, and task plus comments
   })
   expect(calls).toEqual([
     { name: "list_projects", arguments: {} },
-    { name: "get_project_with_undone_tasks", arguments: { projectId: "project-1" } },
+    { name: "get_project_with_undone_tasks", arguments: { project_id: "project-1" } },
     { name: "get_task_by_id", arguments: { task_id: "task-1" } },
-    { name: "get_comment", arguments: { task_id: "task-1" } },
+    { name: "get_comment", arguments: { project_id: "project-1", task_id: "task-1" } },
   ])
   await server.close()
 })
@@ -140,15 +131,16 @@ test("claim preserves tags, handles null and empty tags, and posts once with the
         name: "update_task",
         arguments: {
           task_id: "task-1",
-          task: task({ tags: [...expectedTags], etag: "fresh-etag" }),
+          task: { id: "task-1", projectId: "project-1", tags: [...expectedTags], etag: "fresh-etag" },
         },
       },
-      { name: "get_comment", arguments: { task_id: "task-1" } },
+      { name: "get_comment", arguments: { project_id: "project-1", task_id: "task-1" } },
       {
         name: "add_comment",
         arguments: {
+          project_id: "project-1",
           task_id: "task-1",
-          content: "🏭 Factory draft: http://ui/?thread=abc 🏭 [sf:abc:claim]",
+          title: "🏭 Factory draft: http://ui/?thread=abc 🏭 [sf:abc:claim]",
         },
       },
     ])
@@ -197,12 +189,12 @@ test("release preserves owner tags and posts the stopped transcript once", async
       name: "update_task",
       arguments: {
         task_id: "task-1",
-        task: task({ tags: ["one", "two"], etag: "fresh-etag" }),
+        task: { id: "task-1", projectId: "project-1", tags: ["one", "two"], etag: "fresh-etag" },
       },
     },
     {
       name: "add_comment",
-      arguments: { task_id: "task-1", content: "🏭 Factory stopped: Draft discarded" },
+      arguments: { project_id: "project-1", task_id: "task-1", title: "🏭 Factory stopped: Draft discarded" },
     },
   ])
   await server.close()
@@ -268,7 +260,7 @@ test("tag edits retry an etag conflict once and then comment on success", async 
   ])
   expect(calls.at(-1)).toEqual({
     name: "add_comment",
-    arguments: { task_id: "task-1", content: "🏭 Factory stopped: Draft discarded" },
+    arguments: { project_id: "project-1", task_id: "task-1", title: "🏭 Factory stopped: Draft discarded" },
   })
   await server.close()
 })
@@ -278,7 +270,9 @@ test("a note is plain text truncated to 1024 characters", async () => {
     token: "secret",
   })
   await Effect.runPromise(source.note(task(), "x".repeat(1100)))
-  expect(calls).toEqual([{ name: "add_comment", arguments: { task_id: "task-1", content: "x".repeat(1024) } }])
+  expect(calls).toEqual([
+    { name: "add_comment", arguments: { project_id: "project-1", task_id: "task-1", title: "x".repeat(1024) } },
+  ])
   await server.close()
 })
 
@@ -287,7 +281,7 @@ test("a marked note keeps the marker intact inside the 1024 character limit", as
     token: "secret",
   })
   await Effect.runPromise(source.note(task(), "x".repeat(1100), "thread-1:run"))
-  const posted = calls.find((call) => call.name === "add_comment")?.arguments.content
+  const posted = calls.find((call) => call.name === "add_comment")?.arguments.title
   expect(String(posted)).toHaveLength(1024)
   expect(String(posted).endsWith("🏭 [sf:thread-1:run]")).toBe(true)
   await server.close()
@@ -301,7 +295,7 @@ test("complete posts the exact PR URL before completing the project task", async
   expect(calls).toEqual([
     {
       name: "add_comment",
-      arguments: { task_id: "task-1", content: "🏭 Merged: https://github.example/pull/7" },
+      arguments: { project_id: "project-1", task_id: "task-1", title: "🏭 Merged: https://github.example/pull/7" },
     },
     { name: "complete_task", arguments: { project_id: "project-1", task_id: "task-1" } },
   ])
@@ -319,7 +313,7 @@ test("401 becomes TodoAuthError and marks the injected auth status expired", asy
 
 test("a disconnected request reconnects after OAuth makes a token available", async () => {
   const { source, server, tokenStore } = await fixture(() => ({
-    structuredContent: { projects: [{ id: "project-1", name: "Work" }] },
+    structuredContent: { result: [{ id: "project-1", name: "Work" }] },
   }))
 
   await expect(Effect.runPromise(source.lists())).rejects.toThrow("TickTick MCP request failed")
@@ -345,7 +339,7 @@ test("the HTTP transport receives the endpoint, Bearer header, and injected fetc
   const auth = makeTickTickAuth({ store })
   const server = new SdkMcpServer({ name: "ticktick-test", version: "1" })
   server.registerTool("list_projects", { inputSchema: z.looseObject({}) }, async () => ({
-    structuredContent: { projects: [{ id: "project-1", name: "Work" }] },
+    structuredContent: { result: [{ id: "project-1", name: "Work" }] },
     content: [{ type: "text" as const, text: "ok" }],
   }))
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -391,7 +385,7 @@ test("the HTTP transport drops a disconnected or replaced account bearer", async
           }
         : {
             content: [{ type: "text", text: "ok" }],
-            structuredContent: { projects: [{ id: "project-1", name: "Work" }] },
+            structuredContent: { result: [{ id: "project-1", name: "Work" }] },
           }
     return Response.json({ jsonrpc: "2.0", id: message.id, result })
   }) as typeof globalThis.fetch

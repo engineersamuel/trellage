@@ -1,10 +1,10 @@
 import { afterEach, expect, test } from "bun:test"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import { McpServer as SdkMcpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { TOOL_INPUTS, toWire, type ToolName } from "./ticktick-wire.ts"
 import { Effect } from "effect"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { z } from "zod"
 import { makeDrafts } from "../src/drafts.ts"
 import { makeGoalPage } from "../src/goalPage.ts"
 import { makeGoals } from "../src/goals.ts"
@@ -51,16 +51,8 @@ const fakeTickTick = async (handle?: (call: ToolCall, index: number) => ToolRepl
   const calls: ToolCall[] = []
   const postedComments = ["Keep the checklist"]
   const server = new SdkMcpServer({ name: "todo-routes", version: "1" })
-  for (const name of [
-    "list_projects",
-    "get_project_with_undone_tasks",
-    "get_task_by_id",
-    "get_comment",
-    "add_comment",
-    "update_task",
-    "complete_task",
-  ]) {
-    server.registerTool(name, { inputSchema: z.looseObject({}) }, async (args) => {
+  for (const name of Object.keys(TOOL_INPUTS) as ToolName[]) {
+    server.registerTool(name, { inputSchema: TOOL_INPUTS[name] }, async (args: Record<string, unknown>) => {
       const call = { name, arguments: args as Record<string, unknown> }
       calls.push(call)
       const handled = await handle?.(call, calls.length - 1)
@@ -74,14 +66,12 @@ const fakeTickTick = async (handle?: (call: ToolCall, index: number) => ToolRepl
                 ? { comments: postedComments.map((content) => ({ content })) }
                 : {},
       }
-      if (name === "add_comment" && !("isError" in reply)) postedComments.push(String(args.content))
+      if (name === "add_comment" && !("isError" in reply)) postedComments.push(String(args.title))
       if ("isError" in reply) {
         return { isError: true as const, content: [{ type: "text" as const, text: reply.text }] }
       }
-      return {
-        structuredContent: reply.structuredContent,
-        content: [{ type: "text" as const, text: JSON.stringify(reply.structuredContent) }],
-      }
+      const structuredContent = toWire(name, reply.structuredContent)
+      return { structuredContent, content: [{ type: "text" as const, text: JSON.stringify(structuredContent) }] }
     })
   }
   const [client, remote] = InMemoryTransport.createLinkedPair()
@@ -315,7 +305,7 @@ test("goal-page cancellation guards TickTick release while preserving trusted ca
     expect(cancelled.headers.has("access-control-allow-origin")).toBe(false)
     expect(threads.get(thread.id)).toBeUndefined()
     expect(fake.calls.find((call) => call.name === "update_task")?.arguments.task).toMatchObject({ tags: ["keep"] })
-    expect(fake.calls.find((call) => call.name === "add_comment")?.arguments.content).toContain("draft discarded")
+    expect(fake.calls.find((call) => call.name === "add_comment")?.arguments.title).toContain("draft discarded")
   }
 })
 
@@ -658,8 +648,9 @@ test("draft discard and thread DELETE both release before deletion through produ
   expect(calls.filter((call) => call.name === "add_comment")).toContainEqual({
     name: "add_comment",
     arguments: {
+      project_id: "list-1",
       task_id: "task-1",
-      content: expect.stringContaining("Factory stopped: draft discarded"),
+      title: expect.stringContaining("Factory stopped: draft discarded"),
     },
   })
   expect(calls.filter((call) => call.name === "update_task").at(-1)?.arguments.task).toMatchObject({
@@ -683,8 +674,9 @@ test("draft discard and thread DELETE both release before deletion through produ
   expect(calls.filter((call) => call.name === "add_comment")).toContainEqual({
     name: "add_comment",
     arguments: {
+      project_id: "list-1",
       task_id: "task-1",
-      content: expect.stringContaining("Factory stopped: conversation deleted"),
+      title: expect.stringContaining("Factory stopped: conversation deleted"),
     },
   })
   expect(calls.filter((call) => call.name === "update_task").at(-1)?.arguments.task).toMatchObject({
@@ -767,8 +759,9 @@ test("production PR sweep shares repo reads, emits closed, and reconciles archiv
   expect(calls.filter((call) => call.name === "add_comment")).toContainEqual({
     name: "add_comment",
     arguments: {
+      project_id: "list-1",
       task_id: "task-1",
-      content: expect.stringContaining("Factory stopped: PR closed without merge"),
+      title: expect.stringContaining("Factory stopped: PR closed without merge"),
     },
   })
 })
@@ -842,8 +835,9 @@ test("timed-out release survives deletion, retries once, and ignores the late an
     {
       name: "add_comment",
       arguments: {
+        project_id: "list-1",
         task_id: "task-1",
-        content: expect.stringContaining("Factory stopped: conversation deleted"),
+        title: expect.stringContaining("Factory stopped: conversation deleted"),
       },
     },
   ])
@@ -907,8 +901,9 @@ test("sweep waits for an outstanding late release response without posting anoth
     {
       name: "add_comment",
       arguments: {
+        project_id: "list-1",
         task_id: "task-1",
-        content: expect.stringContaining("Factory stopped: conversation deleted"),
+        title: expect.stringContaining("Factory stopped: conversation deleted"),
       },
     },
   ])
@@ -978,14 +973,14 @@ test("production routes and PR sweep reconcile TickTick through an in-memory MCP
     calls.some(
       (call) =>
         call.name === "add_comment" &&
-        String(call.arguments.content).startsWith(`🏭 Factory draft: http://factory.test/?thread=${created.id}`),
+        String(call.arguments.title).startsWith(`🏭 Factory draft: http://factory.test/?thread=${created.id}`),
     ),
   )
 
   expect((await routes.run(created.id)).status).toBe(200)
   await eventually(() =>
     calls.some(
-      (call) => call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work."),
+      (call) => call.name === "add_comment" && String(call.arguments.title).startsWith("🏭 Factory started work."),
     ),
   )
 
@@ -1011,7 +1006,7 @@ test("production routes and PR sweep reconcile TickTick through an in-memory MCP
   expect(
     calls.filter(
       (call) =>
-        call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 PR: https://github.test/pull/7"),
+        call.name === "add_comment" && String(call.arguments.title).startsWith("🏭 PR: https://github.test/pull/7"),
     ),
   ).toHaveLength(1)
 
@@ -1023,8 +1018,7 @@ test("production routes and PR sweep reconcile TickTick through an in-memory MCP
   expect(
     calls.filter(
       (call) =>
-        call.name === "add_comment" &&
-        String(call.arguments.content).startsWith("🏭 Merged: https://github.test/pull/7"),
+        call.name === "add_comment" && String(call.arguments.title).startsWith("🏭 Merged: https://github.test/pull/7"),
     ),
   ).toHaveLength(1)
 })
@@ -1033,8 +1027,7 @@ test("run delivery succeeds when the started comment fails and the next sweep po
   let startedAttempts = 0
   let startedSucceeded = 0
   const fake = await fakeTickTick((call) => {
-    const isStarted =
-      call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work.")
+    const isStarted = call.name === "add_comment" && String(call.arguments.title).startsWith("🏭 Factory started work.")
     if (isStarted && startedAttempts++ === 0) return { isError: true, text: "TickTick unavailable" }
     if (isStarted) startedSucceeded++
     return undefined
@@ -1084,7 +1077,7 @@ test("run delivery succeeds when the started comment fails and the next sweep po
   expect(startedSucceeded).toBe(1)
   expect(
     calls.filter(
-      (call) => call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work."),
+      (call) => call.name === "add_comment" && String(call.arguments.title).startsWith("🏭 Factory started work."),
     ),
   ).toHaveLength(2)
   expect(threads.get(created.id)?.todo).toMatchObject({ state: "started", error: undefined })
@@ -1092,7 +1085,7 @@ test("run delivery succeeds when the started comment fails and the next sweep po
   expect(startedSucceeded).toBe(1)
   expect(
     calls.filter(
-      (call) => call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work."),
+      (call) => call.name === "add_comment" && String(call.arguments.title).startsWith("🏭 Factory started work."),
     ),
   ).toHaveLength(2)
 })
@@ -1100,8 +1093,7 @@ test("run delivery succeeds when the started comment fails and the next sweep po
 test("a failed started comment blocks merge until the next valid transition", async () => {
   let startedAvailable = false
   const fake = await fakeTickTick((call) => {
-    const isStarted =
-      call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work.")
+    const isStarted = call.name === "add_comment" && String(call.arguments.title).startsWith("🏭 Factory started work.")
     if (isStarted && !startedAvailable) return { isError: true, text: "TickTick unavailable" }
     return undefined
   })
@@ -1166,7 +1158,7 @@ test("a failed started comment blocks merge until the next valid transition", as
   expect(calls.filter((call) => call.name === "complete_task")).toHaveLength(1)
   expect(
     calls.filter(
-      (call) => call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory started work."),
+      (call) => call.name === "add_comment" && String(call.arguments.title).startsWith("🏭 Factory started work."),
     ),
   ).toHaveLength(4)
   await sweep()
@@ -1176,11 +1168,7 @@ test("a failed started comment blocks merge until the next valid transition", as
 test("a failed claim does not reject creation and is posted by the next production sweep", async () => {
   let claimAttempts = 0
   const { source, calls } = await fakeTickTick((call) => {
-    if (
-      call.name === "add_comment" &&
-      String(call.arguments.content).includes("Factory draft:") &&
-      claimAttempts++ === 0
-    )
+    if (call.name === "add_comment" && String(call.arguments.title).includes("Factory draft:") && claimAttempts++ === 0)
       return { isError: true, text: "TickTick unavailable" }
     return undefined
   })
@@ -1225,7 +1213,7 @@ test("a failed claim does not reject creation and is posted by the next producti
   })
   await sweep()
   expect(
-    calls.filter((call) => call.name === "add_comment" && String(call.arguments.content).includes("Factory draft:")),
+    calls.filter((call) => call.name === "add_comment" && String(call.arguments.title).includes("Factory draft:")),
   ).toHaveLength(2)
   expect(threads.get(created.id)?.todo).toMatchObject({ state: "claimed", error: undefined })
 })

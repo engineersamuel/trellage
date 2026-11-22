@@ -6,7 +6,7 @@ import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
 import { mkdtempSync, rmSync } from "node:fs"
 import path from "node:path"
 import { Effect } from "effect"
-import { z } from "zod"
+import { TOOL_INPUTS, toWire, type ToolName } from "./ticktick-wire.ts"
 import { CosState } from "../src/cos.ts"
 import { makeTodoLifecycle, type PendingTodoRelease, type TodoLifecycleActions } from "../src/todo/lifecycle.ts"
 import { Threads } from "../src/threads.ts"
@@ -295,12 +295,12 @@ test("released archived and cleaned threads never retry claim or run comments", 
   let tags = ["owner", "other"]
   const mutations: Array<{ name: string; arguments: Record<string, unknown> }> = []
   for (const name of ["get_task_by_id", "get_comment", "update_task", "add_comment", "complete_task"]) {
-    server.registerTool(name, { inputSchema: z.looseObject({}) }, async (args) => {
+    server.registerTool(name, { inputSchema: TOOL_INPUTS[name as ToolName] }, async (args: Record<string, unknown>) => {
       mutations.push({ name, arguments: args })
       if (name === "update_task") {
         const taskArgs = args as { task: { tags: string[] } }
         if (taskArgs.task.tags.includes("factory") && !available)
-          return { isError: true, content: [{ type: "text", text: "temporary TickTick failure" }] }
+          return { isError: true, content: [{ type: "text" as const, text: "temporary TickTick failure" }] }
         tags = [...taskArgs.task.tags]
       }
       const structuredContent =
@@ -309,7 +309,10 @@ test("released archived and cleaned threads never retry claim or run comments", 
           : name === "get_comment"
             ? { comments: [] }
             : {}
-      return { structuredContent, content: [{ type: "text", text: "fixture" }] }
+      return {
+        structuredContent: toWire(name as ToolName, structuredContent),
+        content: [{ type: "text" as const, text: "fixture" }],
+      }
     })
   }
 
@@ -386,7 +389,7 @@ test("released archived and cleaned threads never retry claim or run comments", 
     expect(
       mutations
         .slice(postReleaseMutationCount)
-        .filter((call) => call.name === "add_comment" && String(call.arguments.content).startsWith("🏭 Factory draft")),
+        .filter((call) => call.name === "add_comment" && String(call.arguments.title).startsWith("🏭 Factory draft")),
     ).toHaveLength(0)
   } finally {
     await server.close()
@@ -409,8 +412,8 @@ test("lifecycle owns the merged comment so completion can retry without duplicat
       connect: async () => {},
       callTool: async ({ name }) => {
         calls.push(name)
-        if (name === "get_task_by_id") return { content: [], structuredContent: { task } }
-        if (name === "get_comment") return { content: [], structuredContent: { comments: [] } }
+        if (name === "get_task_by_id") return { content: [], structuredContent: toWire(name, { task }) }
+        if (name === "get_comment") return { content: [], structuredContent: toWire(name, { comments: [] }) }
         if (name === "complete_task" && completions++ === 0)
           return { content: [{ type: "text", text: "completion failed" }], isError: true }
         return { content: [], structuredContent: {} }
@@ -464,10 +467,10 @@ test("a timed-out accepted merged comment is reconciled before retry", async () 
   const delayedResponse = new Promise<void>((resolve) => void (restoreResponse = resolve))
   let delayMergedComment = true
   for (const name of ["get_task_by_id", "get_comment", "add_comment", "complete_task"]) {
-    server.registerTool(name, { inputSchema: z.looseObject({}) }, async (args) => {
+    server.registerTool(name, { inputSchema: TOOL_INPUTS[name as ToolName] }, async (args: Record<string, unknown>) => {
       calls.push(name)
       if (name === "add_comment") {
-        const content = String(args.content)
+        const content = String(args.title)
         comments.push(content)
         if (content === mergedComment && delayMergedComment) {
           delayMergedComment = false
@@ -480,7 +483,10 @@ test("a timed-out accepted merged comment is reconciled before retry", async () 
           : name === "get_comment"
             ? { comments: comments.map((content) => ({ content })) }
             : {}
-      return { content: [{ type: "text" as const, text: "fixture" }], structuredContent }
+      return {
+        content: [{ type: "text" as const, text: "fixture" }],
+        structuredContent: toWire(name as ToolName, structuredContent),
+      }
     })
   }
 
@@ -558,22 +564,29 @@ test("a restarted lifecycle reconciles an accepted release comment from persiste
     const client = new Client({ name: "restart-client", version: "1" })
     connections.push(server, client)
     for (const name of ["get_task_by_id", "get_comment", "update_task", "add_comment"]) {
-      server.registerTool(name, { inputSchema: z.looseObject({}) }, async (args) => {
-        if (name === "add_comment") {
-          comments.push(String(args.content))
-          if (delay && delayFirst) {
-            delayFirst = false
-            await delayed
+      server.registerTool(
+        name,
+        { inputSchema: TOOL_INPUTS[name as ToolName] },
+        async (args: Record<string, unknown>) => {
+          if (name === "add_comment") {
+            comments.push(String(args.title))
+            if (delay && delayFirst) {
+              delayFirst = false
+              await delayed
+            }
           }
-        }
-        const structuredContent =
-          name === "get_task_by_id"
-            ? { task: { ...task, tags: ["owner", "factory"], etag: "etag" } }
-            : name === "get_comment"
-              ? { comments: comments.map((content) => ({ content })) }
-              : {}
-        return { content: [{ type: "text" as const, text: "fixture" }], structuredContent }
-      })
+          const structuredContent =
+            name === "get_task_by_id"
+              ? { task: { ...task, tags: ["owner", "factory"], etag: "etag" } }
+              : name === "get_comment"
+                ? { comments: comments.map((content) => ({ content })) }
+                : {}
+          return {
+            content: [{ type: "text" as const, text: "fixture" }],
+            structuredContent: toWire(name as ToolName, structuredContent),
+          }
+        },
+      )
     }
     const [local, remote] = InMemoryTransport.createLinkedPair()
     await server.connect(remote)
