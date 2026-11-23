@@ -409,7 +409,8 @@ export const goalUnmet = (run: Run, expect: Omit<Expect, "benchmarks">, base?: s
     if (!pr) out.push(run.prError ? `PR lookup failed: ${run.prError}` : "no PR for the branch")
     else {
       const tag = `PR #${pr.number}`
-      if (pr.state !== want.state) out.push(`${tag} is ${pr.state}, expected ${want.state}`)
+      if (pr.state !== want.state && !(want.state === "OPEN" && pr.state === "MERGED"))
+        out.push(`${tag} is ${pr.state}, expected ${want.state}`)
       if (want.checks && pr.checks !== want.checks) out.push(`${tag} checks ${pr.checks}, expected ${want.checks}`)
       const wantBase = want.base ?? base
       if (wantBase && pr.base !== wantBase) out.push(`${tag} targets ${pr.base}, expected ${wantBase}`)

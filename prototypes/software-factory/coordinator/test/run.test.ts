@@ -137,6 +137,20 @@ describe("goal spec", () => {
 })
 
 describe("goalUnmet", () => {
+  test("MERGED satisfies OPEN PR state", () => {
+    const want = { steps: {}, skills: [], pr: { state: "OPEN", bodyIncludes: [], untouched: [] } } as const
+    expect(goalUnmet({ ...run, pr: { ...run.pr!, state: "MERGED" } }, want, "main")).toEqual([])
+  })
+  test("CLOSED does not satisfy OPEN PR state", () => {
+    const want = { steps: {}, skills: [], pr: { state: "OPEN", bodyIncludes: [], untouched: [] } } as const
+    expect(goalUnmet({ ...run, pr: { ...run.pr!, state: "CLOSED" } }, want, "main")).toEqual([
+      "PR #7 is CLOSED, expected OPEN",
+    ])
+  })
+  test("OPEN does not satisfy MERGED PR state", () => {
+    const want = { steps: {}, skills: [], pr: { state: "MERGED", bodyIncludes: [], untouched: [] } } as const
+    expect(goalUnmet(run, want, "main")).toEqual(["PR #7 is OPEN, expected MERGED"])
+  })
   test("step counts, skills, PR checks, base, body and untouched files", () => {
     expect(goalUnmet(run, spec.expect, spec.base)).toEqual([
       "step verify ran 2x, expected at most 1",
