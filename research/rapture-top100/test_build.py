@@ -339,6 +339,57 @@ class BuildTest(unittest.TestCase):
         self.write_logs()
         self.assert_fails("invalid urls_checked")
 
+    def test_excluded_log_without_steps_fails(self) -> None:
+        excluded_log = next(entry for entry in self.logs if entry["rank"] == 100)
+        excluded_log.pop("steps")
+        self.write_logs()
+        self.assert_fails("missing steps")
+
+    def test_excluded_null_beliefs_page_fails(self) -> None:
+        excluded_log = next(entry for entry in self.logs if entry["rank"] == 100)
+        excluded_log["steps"]["beliefs_page"] = None
+        self.write_logs()
+        self.assert_fails("invalid beliefs_page")
+
+    def test_excluded_empty_linked_pdfs_fails(self) -> None:
+        excluded_log = next(entry for entry in self.logs if entry["rank"] == 100)
+        excluded_log["steps"]["linked_pdfs"] = []
+        self.write_logs()
+        self.assert_fails("invalid linked_pdfs")
+
+    def test_excluded_whitespace_site_search_fails(self) -> None:
+        excluded_log = next(entry for entry in self.logs if entry["rank"] == 100)
+        excluded_log["steps"]["site_search"] = ["  "]
+        self.write_logs()
+        self.assert_fails("invalid site_search")
+
+    def test_extra_log_rank_fails(self) -> None:
+        self.logs.append(
+            {
+                "rank": 999,
+                "urls_checked": ["https://extra.example/beliefs"],
+                "terms_searched": ["rapture"],
+            }
+        )
+        self.write_logs()
+        self.assert_fails("extra rank 999")
+
+    def test_duplicate_log_rank_fails(self) -> None:
+        self.logs.append(
+            {
+                "rank": 1,
+                "urls_checked": ["https://duplicate.example/beliefs"],
+                "terms_searched": ["rapture"],
+            }
+        )
+        self.write_logs()
+        self.assert_fails("repeats rank 1")
+
+    def test_non_integer_log_rank_fails(self) -> None:
+        self.logs[0]["rank"] = "1"
+        self.write_logs()
+        self.assert_fails("integer rank values")
+
     def test_invalid_log_json_reports_line(self) -> None:
         (self.root / "search-log.jsonl").write_text("{broken\n", encoding="utf-8")
         with self.assertRaisesRegex(self.build.ValidationError, "line 1"):
