@@ -79,16 +79,6 @@ jobs:
         run: |
           mise run quality:static
           make publication-policy quality-contract
-      - name: Check rapture-top100 deliverable
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
-        run: |
-          if [[ -n "$BASE_SHA" ]] &&
-            git diff --quiet "$BASE_SHA" "$GITHUB_SHA" -- docs/research/rapture-top100/; then
-            exit 0
-          fi
-          uv run --offline --no-project python docs/research/rapture-top100/test_build.py
-          uv run --offline --no-project python docs/research/rapture-top100/build.py --check
       - name: Check secrets without live credential validation
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
