@@ -124,3 +124,21 @@ test("adoptDraftTodo moves the TickTick link to the goal thread and archives the
   adoptDraftTodo(threads, plain.id, goal.id, 6)
   expect([threads.get(plain.id)!.archivedAt, threads.get(goal.id)!.todo?.taskId]).toEqual([6, "t"])
 })
+
+test("a Todo draft uses the human's edited prompt when one is sent", async () => {
+  const threads = new Threads(mkdtempSync(path.join(tmpdir(), "sf-todo-draft-")))
+  const deps = {
+    threads,
+    source: {
+      lists: async () => [{ id: "list", name: "Work" }],
+      task: async () => ({ task: { id: "task", projectId: "list", title: "Ship it" }, comments: [] }),
+    },
+    drafts: { create: (folderId: string, prompt: string) => createDraft(threads, folderId, prompt) },
+    claim: async () => {},
+  }
+  const link = { source: "ticktick" as const, listId: "list", taskId: "task" }
+  const edited = await createTodoDraft(deps, "general", link, "Ship it, and add a changelog entry")
+  expect(threads.get(edited.id)!.draft?.versions[0]?.prompt).toBe("Ship it, and add a changelog entry")
+  const blank = await createTodoDraft(deps, "general", link, "   ")
+  expect(threads.get(blank.id)!.draft?.versions[0]?.prompt).toContain("Source: TickTick")
+})
