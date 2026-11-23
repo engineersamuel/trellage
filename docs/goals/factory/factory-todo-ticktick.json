@@ -1,0 +1,41 @@
+{
+  "id": "factory-todo-ticktick",
+  "title": "Factory: take work from TickTick (Todo view)",
+  "repo": "/Users/smendenh/.herdr/worktrees/trellage/worktree-silver-river-50c7",
+  "base": "worktree/silver-river-50c7",
+  "prompt": "Implement plan 005 (plans/005-factory-todo-ticktick.md) under ADR 0009 (docs/adr/0009-factory-todo-sources.md) in the software factory (prototypes/software-factory). Read both files first; they are the spec. Summary: a TodoSource Effect service in coordinator/src/todo/ with TickTick as the first source, reached by the coordinator as an MCP client of https://mcp.ticktick.com/ (OAuth dynamic client registration + PKCE, token in Bun.secrets service trellage.factory name ticktick, file fallback ~/.config/trellage/factory/ticktick.json 0600); a Thread.todo link; drafts created from a task (prompt = title, content/desc, checklist, comments without factory comments, metadata line); lifecycle on draft, run, PR opened, merged (complete_task), discarded or PR closed (remove only the factory tag, comment); a Foldkit Todo view in web-foldkit/src/todo/ laid out like goals/. No worker or agent may get TickTick tools. A TickTick failure never blocks a draft, run or merge.\n\nFacts from the 2026-11-21 spike (live server): tools list_projects, get_project_with_undone_tasks, get_task_by_id, get_comment, add_comment (plain text, max 1024 chars), update_task (args {task_id, task:{id, projectId, tags, status, etag,...}}; tags REPLACES the whole list, [] clears it to null), complete_task {project_id, task_id}. Results: use structuredContent (content has one text item per object). Token expires_in 15551999 s, no refresh token. Tests must use an in-process fake MCP server and an in-memory TokenStore; no test may call TickTick or the real Keychain.\n\nAcceptance criteria:\nAC-1: The TodoSource service and the TickTick implementation exist; unit tests against a fake MCP server prove list, tasks, task with comments, and the draftPrompt format (title only; content plus checklist with done and open items; factory comments left out; metadata line).\nAC-2: claim adds the factory tag and keeps the owner's other tags, sends the etag, retries once on an etag conflict, and adds a comment with the thread link; release removes only the factory tag and comments the reason; complete calls complete_task and comments the PR URL. Tests prove each.\nAC-3: POST /api/drafts with todo {source, listId, taskId} builds the prompt, creates the draft and claims; discard releases; prSweep emits closed, and merged completes / closed releases threads that have todo; a TickTick failure does not block and is retried on the next sweep without a duplicate comment. Tests prove each.\nAC-4: The token store uses Bun.secrets and falls back to the 0600 file when it throws; the token never appears in /api/todo/status, logs or events; a 401 gives status expired. Tests prove each.\nAC-5: The Foldkit Todo view exists (navbar button, Connect/Reconnect with expiry, lists, tasks with factory badge, task panel with prompt preview, repo picker, Draft), with update tests like the goals submodel.\nAC-6: README has a Todo sources section; make factory-test passes; bun run check and bun test pass in prototypes/software-factory/coordinator and the web-foldkit tests pass.",
+  "expect": {
+    "steps": {
+      "implement": {
+        "min": 1
+      },
+      "verify": {
+        "min": 1
+      },
+      "finish": {
+        "min": 1
+      }
+    },
+    "skills": [],
+    "pr": {
+      "state": "OPEN",
+      "checks": "SUCCESS",
+      "bodyIncludes": [],
+      "untouched": []
+    },
+    "benchmarks": []
+  },
+  "approvals": {
+    "plan": "auto",
+    "findings": "auto",
+    "ship": "auto",
+    "other": "human"
+  },
+  "limits": {
+    "usd": 250
+  },
+  "improve": {
+    "approval": "human",
+    "maxRetries": 1
+  }
+}

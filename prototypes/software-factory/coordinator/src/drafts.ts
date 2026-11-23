@@ -60,6 +60,10 @@ export type DraftDeps = {
   stopEnhance?: (threadId: string) => Promise<void>
   /** Publishes factory.thread_updated. */
   changed: (threadId: string) => void
+  /** Non-blocking lifecycle hook after a run was delivered. */
+  onRun?: (threadId: string) => Promise<void>
+  /** Release external work before the thread is deleted. */
+  beforeDiscard?: (thread: Thread) => Promise<void>
   now?: () => number
 }
 
@@ -239,12 +243,14 @@ export const makeDrafts = (d: DraftDeps) => {
         }
         throw e
       }
+      if (d.onRun) void d.onRun(id)
       return started
     },
 
     async remove(id: string): Promise<void> {
       const t = find(id)
       await d.stopOwned(draftNodeId(id))
+      await d.beforeDiscard?.(t)
       await d.discard(t)
       d.changed(id)
     },

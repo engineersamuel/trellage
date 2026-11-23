@@ -484,8 +484,21 @@ export const prState = (state: string, checks: string): PrState =>
           : "pending"
 
 /** The typed event for a change of PR state, or null when nothing worth an event changed. */
-export const prEvent = (before: PrState | undefined, now: PrState): "pr-green" | "pr-red" | "merged" | null =>
-  before === now ? null : now === "green" ? "pr-green" : now === "red" ? "pr-red" : now === "merged" ? "merged" : null
+export const prEvent = (
+  before: PrState | undefined,
+  now: PrState,
+): "pr-green" | "pr-red" | "merged" | "closed" | null =>
+  before === now
+    ? null
+    : now === "green"
+      ? "pr-green"
+      : now === "red"
+        ? "pr-red"
+        : now === "merged"
+          ? "merged"
+          : now === "closed"
+            ? "closed"
+            : null
 
 // ---------- Persistent rule state ----------
 
@@ -531,11 +544,20 @@ export class CosState {
 
 export type BranchPr = { number: number; url: string; state: string; checks: string }
 
-/** The newest PR of every branch in a repo, in one `gh pr list` call; null when gh fails. */
+/** The newest same-repository PR of every branch, in one `gh pr list` call; null when gh fails. */
 export const repoPrs = async (repo: string): Promise<Map<string, BranchPr> | null> => {
   const r = await run(
     "gh",
-    ["pr", "list", "--state", "all", "--limit", "200", "--json", "number,url,state,headRefName,statusCheckRollup"],
+    [
+      "pr",
+      "list",
+      "--state",
+      "all",
+      "--limit",
+      "200",
+      "--json",
+      "number,url,state,headRefName,isCrossRepository,statusCheckRollup",
+    ],
     repo,
   )
   if (!r.ok) return null
@@ -545,9 +567,12 @@ export const repoPrs = async (repo: string): Promise<Map<string, BranchPr> | nul
     url: string
     state: string
     headRefName: string
+    isCrossRepository: boolean
     statusCheckRollup: Check[] | null
   }[]
-  for (const p of list)
+  for (const p of list) {
+    // A branch name identifies Factory work only within the registered repository.
+    if (p.isCrossRepository !== false) continue
     if (!out.has(p.headRefName) || out.get(p.headRefName)!.number < p.number)
       out.set(p.headRefName, {
         number: p.number,
@@ -555,5 +580,6 @@ export const repoPrs = async (repo: string): Promise<Map<string, BranchPr> | nul
         state: p.state,
         checks: checksState(p.statusCheckRollup ?? []),
       })
+  }
   return out
 }

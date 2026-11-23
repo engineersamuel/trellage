@@ -12,6 +12,7 @@ import type { Model } from "./model"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
 import * as Goals from "./goals"
+import * as Todo from "./todo"
 import * as Tournaments from "./tournaments"
 import * as Settings from "./settings"
 import {
@@ -19,6 +20,7 @@ import {
   toGotGoalsMessage,
   toGotReportViewerMessage,
   toGotSettingsMessage,
+  toGotTodoMessage,
   toGotTournamentsMessage,
 } from "./update"
 import * as Workers from "./workers"
@@ -34,8 +36,14 @@ const slot = (name: string, h: HtmlBuilder<Message>, className = ""): Html =>
 // ---------- Navbar ----------
 
 const contextMeter = (maybeCoordinator: Option.Option<Worker>, h: HtmlBuilder<Message>): Html => {
-  const used = Option.match(maybeCoordinator, { onNone: () => 0, onSome: (worker) => worker.contextTokens ?? 0 })
-  const limit = Option.match(maybeCoordinator, { onNone: () => 0, onSome: (worker) => worker.contextLimit ?? 0 })
+  const used = Option.match(maybeCoordinator, {
+    onNone: () => 0,
+    onSome: (worker) => worker.contextTokens ?? 0,
+  })
+  const limit = Option.match(maybeCoordinator, {
+    onNone: () => 0,
+    onSome: (worker) => worker.contextLimit ?? 0,
+  })
   const label = `${Math.round(used / TOKENS_PER_K)}k / ${Math.round(limit / TOKENS_PER_K)}k`
   return limit === 0
     ? h.span([h.Class("fk-nav-item")], ["ctx –"])
@@ -111,7 +119,12 @@ const navbarItem = (
     Match.when("auth", () =>
       h.span(
         [h.Class("fk-nav-item")],
-        [Option.match(maybeCoordinator, { onNone: () => "", onSome: ({ auth }) => backendName(auth) })],
+        [
+          Option.match(maybeCoordinator, {
+            onNone: () => "",
+            onSome: ({ auth }) => backendName(auth),
+          }),
+        ],
       ),
     ),
     Match.when("repo", () =>
@@ -148,6 +161,7 @@ const EMPTY_WORKERS: ReadonlyArray<Worker> = []
 const navbar = (
   settingsModel: Settings.Model,
   goalsModel: Goals.Model,
+  todoModel: Todo.Model,
   tournamentsModel: Tournaments.Model,
   diffPanelModel: DiffPanel.Model,
   workers: Workers.Model["workers"],
@@ -191,6 +205,12 @@ const navbar = (
             view: Tournaments.navButton,
           }),
           h.submodel({
+            model: todoModel,
+            slotId: "todo-button",
+            toParentMessage: toGotTodoMessage,
+            view: Todo.navButton,
+          }),
+          h.submodel({
             model: goalsModel,
             slotId: "goals-button",
             toParentMessage: toGotGoalsMessage,
@@ -219,18 +239,31 @@ const chatView = (chatModel: Model["chat"], h: HtmlBuilder<Message>): Html =>
       slot("chat-background", h, "fk-slot-bg"),
       h.div(
         [h.Class("fk-chat-body")],
-        [h.submodel({ model: chatModel, slotId: "chat", toParentMessage: toGotChatMessage, view: chat.view })],
+        [
+          h.submodel({
+            model: chatModel,
+            slotId: "chat",
+            toParentMessage: toGotChatMessage,
+            view: chat.view,
+          }),
+        ],
       ),
     ],
   )
 
 const settingsDrawer = (settingsModel: Settings.Model, h: HtmlBuilder<Message>): Html =>
-  h.submodel({ model: settingsModel, slotId: "settings", toParentMessage: toGotSettingsMessage, view: Settings.view })
+  h.submodel({
+    model: settingsModel,
+    slotId: "settings",
+    toParentMessage: toGotSettingsMessage,
+    view: Settings.view,
+  })
 
 // One memo slot per tree position: a cached VNode must render at a single position.
 const lazyNavbar = createLazy()
 const lazySettingsDrawer = createLazy()
 const lazyGoalsDialog = createLazy()
+const lazyTodoDialog = createLazy()
 const lazyTournamentsDialog = createLazy()
 const lazyDiffPanel = createLazy()
 const lazyReportViewer = createLazy()
@@ -246,7 +279,19 @@ const lazyChat = createLazy()
 const INBOX = "3"
 
 const goalsDialog = (goalsModel: Goals.Model, h: HtmlBuilder<Message>): Html =>
-  h.submodel({ model: goalsModel, slotId: "goals", toParentMessage: toGotGoalsMessage, view: Goals.view })
+  h.submodel({
+    model: goalsModel,
+    slotId: "goals",
+    toParentMessage: toGotGoalsMessage,
+    view: Goals.view,
+  })
+const todoDialog = (todoModel: Todo.Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({
+    model: todoModel,
+    slotId: "todo",
+    toParentMessage: toGotTodoMessage,
+    view: Todo.view,
+  })
 
 const tournamentsDialog = (tournamentsModel: Tournaments.Model, h: HtmlBuilder<Message>): Html =>
   h.submodel({
@@ -295,6 +340,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
             lazyNavbar(navbar, [
               model.settings,
               model.goals,
+              model.todo,
               model.tournaments,
               model.diffPanel,
               model.workers.workers,
@@ -311,6 +357,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
         slot("overlay", h, "fk-slot-overlay"),
         lazySettingsDrawer(settingsDrawer, [model.settings, h]),
         lazyGoalsDialog(goalsDialog, [model.goals, h]),
+        lazyTodoDialog(todoDialog, [model.todo, h]),
         lazyTournamentsDialog(tournamentsDialog, [model.tournaments, h]),
         lazyDiffPanel(diffPanel, [model.diffPanel, h]),
         lazyReportViewer(reportViewer, [model.reportViewer, h]),

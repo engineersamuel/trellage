@@ -375,6 +375,29 @@ test("remove stops draft workers before discard", async () => {
   expect(threads.get(t.id)).toBeUndefined()
 })
 
+test("run posts delivery hooks after the handoff without blocking a successful run", async () => {
+  const events: string[] = []
+  const { drafts } = setup({
+    deliver: async () => void events.push("delivered"),
+    onRun: async (id) => void events.push(`todo ${id}`),
+  })
+  const t = drafts.create("repo", "build x")
+  await drafts.run(t.id)
+  await Promise.resolve()
+  expect(events).toEqual(["delivered", `todo ${t.id}`])
+})
+
+test("remove releases a linked todo before deleting the thread", async () => {
+  const events: string[] = []
+  const { drafts } = setup({
+    beforeDiscard: async (t) => void events.push(`release ${t.id}`),
+    discard: async (t) => void events.push(`discard ${t.id}`),
+  })
+  const t = drafts.create("repo", "build x")
+  await drafts.remove(t.id)
+  expect(events).toEqual([`release ${t.id}`, `discard ${t.id}`])
+})
+
 test("every mutation calls changed", async () => {
   const { drafts, changed } = setup()
   const t = drafts.create("repo", "build x")

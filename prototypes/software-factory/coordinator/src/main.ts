@@ -66,10 +66,11 @@ import {
   OPEN_CHILD,
   RESUME,
   RUN_AGAIN,
+  startAction,
   STOP_GOAL,
   type GoalState,
 } from "./goalLoop.ts"
-import { criteriaResults } from "./sdlc.ts"
+import { criteriaResults, factoryThreadUrl } from "./sdlc.ts"
 import type { Verdict } from "../../shared/goal.ts"
 import { DEFAULT_RUN_USD } from "../../shared/goal.ts"
 import type { Approval } from "./approvals.ts"
@@ -102,6 +103,14 @@ import { costReport, GOAL_PAGE_AGENT, gradeCost, rollUp, runCost, type AgentInfo
 import { factoryConfig } from "./config.ts"
 import { addLessons, artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
+import { makeTodoApi } from "./todo/api.ts"
+import { makeHttpHandler, type Handler } from "./http.ts"
+import { adoptDraftTodo, createTodoDraft, draftGoalSeed } from "./todo/draft.ts"
+import { makeTodoLifecycle, type PendingTodoRelease } from "./todo/lifecycle.ts"
+import { makeTodoPrSweep } from "./todo/pr-sweep.ts"
+import { makeTodoRoutes } from "./todo/routes.ts"
+import { makeTickTickAuth } from "./todo/ticktick-auth.ts"
+import { makeTickTickTodoSource } from "./todo/ticktick.ts"
 import { postMergeCheck } from "./postmerge.ts"
 import { ARTIFACTS_DIR, peekFile, servableImage } from "./files.ts"
 import { checkoutCommit, GoalError, goalsDir, loopPrompt, makeGoals } from "./goals.ts"
@@ -111,7 +120,7 @@ import { cardData, coordinatorTools, factoryConfigView, globalTools, spawnHealin
 import { DRAFT_NOTE, DraftError, draftNodeId, isUnstartedDraft, makeDrafts } from "./drafts.ts"
 import { enhanceWith, stopEnhance } from "./enhance.ts"
 import { makeGoalPage, startGoalRun } from "./goalPage.ts"
-import { Option, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { worktreeDiff } from "./worktreeDiff.ts"
 import { guideOutdated, guideView, latestGuide, openInHerdr, writeGuide } from "./testGuide.ts"
 import { llmTitle } from "./titles.ts"
@@ -1586,6 +1595,49 @@ const startHold = (folder: string, task: string, fresh = false): string | null =
 
 /** R24: the same blocker twice stops the conversation's workers and asks the human. */
 const cosState = new CosState(factory.root)
+const todoAuth = makeTickTickAuth({
+  uiUrl: () => process.env.SF_UI_URL ?? "http://localhost:5174/",
+})
+const todoSource = makeTickTickTodoSource({
+  accessToken: async () => {
+    const token = await todoAuth.accessToken()
+    if (!token) throw new Error("Todo source is disconnected")
+    return token
+  },
+  tag: factoryConfig().todo.tag,
+  markExpired: () => todoAuth.markUnauthorized(),
+})
+const todoPending = cosState.map<PendingTodoRelease>("todo-release")
+const todoLifecycle = makeTodoLifecycle({
+  threads,
+  pending: todoPending,
+  threadUrl: (id) => factoryThreadUrl(id),
+  changed: (threadId) => factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId }),
+  onError: (id, message) => cosLog("TODO", id, message, "failed", "TickTick lifecycle will retry"),
+  actions: {
+    task: async (id) => (await Effect.runPromise(todoSource.task(id))).task,
+    claim: (task, url, marker) => Effect.runPromise(todoSource.claim(task, url, marker)),
+    note: (task, text, marker) => Effect.runPromise(todoSource.note(task, text, marker)),
+    release: (task, reason, checkpoint, marker) =>
+      Effect.runPromise(todoSource.release(task, reason, checkpoint, marker)),
+    complete: (task, url, onCommented, commentPosted, marker) =>
+      Effect.runPromise(todoSource.complete(task, url, { commentPosted, onCommented, marker })),
+  },
+})
+const todoApi = makeTodoApi({
+  enabled: () => factoryConfig().todo.enabled,
+  threads,
+  uiUrl: process.env.SF_UI_URL ?? "http://localhost:5174/",
+  coordinatorAddress: process.env.SF_ADDR ?? "127.0.0.1:7700",
+  resetSource: () => todoSource.resetConnection(),
+  auth: todoAuth,
+  source: {
+    lists: () => Effect.runPromise(todoSource.lists()),
+    tasks: (listId) => Effect.runPromise(todoSource.tasks(listId)),
+    task: (id) => Effect.runPromise(todoSource.task(id)),
+  },
+  onError: () => cosLog("TODO", null, "API request", "failed", "TickTick request failed"),
+})
 const lastBlocker = cosState.map<string>("r24-blocker")
 /** When each conversation last reported (R25). */
 const lastReportAt = cosState.map<{ at: number; status: string }>("last-report")
@@ -1807,28 +1859,8 @@ const holdSweep = () => {
 }
 loop("cos-holds", "1 minute", holdSweep)
 
-/** Open repo conversations with a worktree (PR events). */
-const openRepoThreads = () => threads.list().filter((t) => t.worktree && t.branch && !t.cleanedAt && !t.archivedAt)
-
 /** Typed PR events (ADR 0008 step 1): pr-green, pr-red, merged, from each conversation's PR state. */
 const prStates = cosState.map<PrState>("pr-state")
-const prSweep = async () => {
-  // One gh call per repo, not per conversation.
-  const byRepo = new Map<string, Thread[]>()
-  for (const t of openRepoThreads()) {
-    const repo = threads.folder(t.folderId)?.path
-    if (repo) byRepo.set(repo, [...(byRepo.get(repo) ?? []), t])
-  }
-  for (const k of prStates.keys()) if (!threads.get(k) || threads.get(k)!.archivedAt) prStates.delete(k)
-  for (const [repo, list] of byRepo) {
-    const prs = await repoPrs(repo)
-    if (!prs) continue
-    for (const t of list) {
-      const pr: BranchPr | undefined = prs.get(t.branch!)
-      if (pr) prEventFor(t, pr)
-    }
-  }
-}
 const prEventFor = (t: Thread, pr: BranchPr) => {
   const state = prState(pr.state, pr.checks)
   const ev = prEvent(prStates.get(t.id), state)
@@ -1844,6 +1876,15 @@ const prEventFor = (t: Thread, pr: BranchPr) => {
   if (ev === "pr-green" && ruleOn("r3"))
     deliverAndLog(t.id, `[Chief of Staff · rule R3] ${pr.url} is green. Call merge_pr now.`)
 }
+const prSweep = makeTodoPrSweep({
+  threads,
+  prStates,
+  repoPrs,
+  onPr: prEventFor,
+  todoEnabled: () => factoryConfig().todo.enabled,
+  todoSweep: (prs) => todoLifecycle.sweep(prs),
+  onError: (id) => cosLog("TODO", id, "PR sweep request", "failed", "TickTick lifecycle request failed"),
+})
 loop("cos-pr-events", "2 minutes", prSweep)
 
 const supervise = async () => {
@@ -1897,6 +1938,34 @@ const drafts = makeDrafts({
   enhance: enhanceWith(factory),
   stopEnhance: (id) => stopEnhance(factory, draftNodeId(id)),
   changed: (threadId) => factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId }),
+  onRun: (threadId) => (factoryConfig().todo.enabled ? todoLifecycle.run(threadId) : Promise.resolve()),
+  beforeDiscard: (thread) =>
+    factoryConfig().todo.enabled ? todoLifecycle.discard(thread, "draft discarded") : Promise.resolve(),
+})
+
+const draftFromTodo = (folderId: string, link: typeof TodoLinkBody.Type, prompt?: string) =>
+  createTodoDraft(
+    {
+      threads,
+      drafts,
+      source: {
+        lists: () => Effect.runPromise(todoSource.lists()),
+        task: (id) => Effect.runPromise(todoSource.task(id)),
+      },
+      claim: (id) => todoLifecycle.claim(id),
+    },
+    folderId,
+    link,
+    prompt,
+  )
+
+const todoRoutes = makeTodoRoutes({
+  enabled: () => factoryConfig().todo.enabled,
+  threads,
+  drafts,
+  createTodoDraft: draftFromTodo,
+  discard: (thread, reason) => todoLifecycle.discard(thread, reason),
+  deleteThread,
 })
 
 /** Read one payload shape from a feed event; a payload of another shape gives None. */
@@ -1907,7 +1976,11 @@ const decodeToolStart = Schema.decodeUnknownOption(
 )
 const decodeContent = Schema.decodeUnknownOption(Schema.Struct({ content: Schema.String }))
 
-const CreateBody = Schema.Struct({ folderId: Schema.String, prompt: Schema.String })
+const TodoLinkBody = Schema.Struct({
+  source: Schema.Literal("ticktick"),
+  listId: Schema.String,
+  taskId: Schema.String,
+})
 const VersionBody = Schema.Struct({ prompt: Schema.String })
 const CurrentBody = Schema.Struct({ versionId: Schema.String })
 const PickBody = Schema.Struct({ index: Schema.Int })
@@ -1950,7 +2023,6 @@ const draftReply = async (run: () => unknown): Promise<Response> => {
 
 // ---------- routes ----------
 
-type Handler = (req: Request, url: URL, params: string[]) => Response | Promise<Response>
 /** The repo conversation an agent works in: its own (sub-coordinator), its owner's, or the one whose worktree it uses. */
 const threadOfAgent = (w: Worker): Thread | undefined =>
   threads
@@ -1992,6 +2064,15 @@ const goalPage = makeGoalPage({
   workerState: (id) => factory.workers.get(id)?.summary(),
   removeDraft: (id) => drafts.remove(id),
   startRun: startGoalRun(`http://${hostname}:${port}`, path.join(factory.root, "logs", "goal-runs")),
+  draft: (id) => {
+    const t = threads.get(id)
+    return t ? draftGoalSeed(t, (w) => factory.workers.get(w)?.status === "running") : undefined
+  },
+  adoptDraft: (draftId, goalThreadId) => {
+    adoptDraftTodo(threads, draftId, goalThreadId, Date.now())
+    for (const threadId of [draftId, goalThreadId])
+      factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId })
+  },
   recordUsage: (data) => factory.publish(GOAL_PAGE_AGENT, "assistant.usage", null, now(), data),
 })
 
@@ -2959,23 +3040,8 @@ const routes: [string, RegExp, Handler][] = [
       return json(t ?? null)
     },
   ],
-  [
-    "DELETE",
-    /^\/api\/threads\/delete\/([^/]+)$/,
-    async (_req, _url, [id]) => {
-      await deleteThread(id!)
-      return empty(204)
-    },
-  ],
-  [
-    "POST",
-    /^\/api\/drafts$/,
-    (req) =>
-      draftReply(async () => {
-        const b = await draftBody(req, CreateBody)
-        return drafts.create(b.folderId, b.prompt)
-      }),
-  ],
+  ["DELETE", /^\/api\/threads\/delete\/([^/]+)$/, (_req, _url, [id]) => todoRoutes.deleteThread(id!)],
+  ["POST", /^\/api\/drafts$/, (req) => todoRoutes.create(req)],
   [
     "POST",
     /^\/api\/drafts\/([^/]+)\/versions$/,
@@ -2998,35 +3064,24 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/drafts\/([^/]+)\/(council|debate|research|hyperresearch|deep-research)$/,
     (_req, _url, [id, action]) => draftReply(() => drafts.act(id!, action as DraftAction)),
   ],
-  ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => draftReply(() => drafts.run(id!))],
-  ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => draftReply(() => drafts.remove(id!))],
+  ["POST", /^\/api\/drafts\/([^/]+)\/run$/, (_req, _url, [id]) => todoRoutes.run(id!)],
+  ["DELETE", /^\/api\/drafts\/([^/]+)$/, (_req, _url, [id]) => todoRoutes.discardDraft(id!)],
+  ["GET", /^\/api\/todo(?:\/.*)?$/, (req, url) => todoApi.handle(req, url)],
+  ["DELETE", /^\/api\/todo(?:\/.*)?$/, (req, url) => todoApi.handle(req, url)],
   ["GET", /^\/api\/artifacts$/, () => json({ artifacts: [] })],
-  ["GET", /^\/api\/goal-page\/(info|repos)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
+  ["GET", /^\/api\/goal-page\/(info|repos|draft)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
   ["POST", /^\/api\/goal-page\/([a-z]+(?:\/[a-z]+)?)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
 ]
-
-const cors = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "*",
-  "access-control-allow-headers": "*",
-}
 
 const server = Bun.serve({
   hostname,
   port: Number(port),
   idleTimeout: 0,
-  async fetch(req) {
-    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors })
-    const url = new URL(req.url)
-    for (const [method, re, handler] of routes) {
-      const m = method === req.method && url.pathname.match(re)
-      if (!m) continue
-      const res = await handler(req, url, m.slice(1).map(decodeURIComponent))
-      for (const [k, v] of Object.entries(cors)) res.headers.set(k, v)
-      return res
-    }
-    return empty(404)
-  },
+  fetch: makeHttpHandler(
+    routes,
+    process.env.SF_UI_URL ?? "http://localhost:5174/",
+    process.env.SF_ADDR ?? "127.0.0.1:7700",
+  ),
 })
 console.error(`software-factory coordinator on http://${server.hostname}:${server.port}`)
 
@@ -3168,7 +3223,16 @@ const startGoal = async (goalId: string, parentGoalId?: string): Promise<{ threa
   }
   const s = goalStates.get(goalId)
   const live = s && threads.get(s.threadId)
-  if (s && live?.worktree && !live.cleanedAt) {
+  const action = startAction({
+    hasState: !!s,
+    liveWorktree: !!live?.worktree && !live.cleanedAt,
+    messageCount: s ? threads.count(s.threadId) : 0,
+  })
+  if (s && action === "resend") {
+    logFailure(await deliverToThread(s.threadId, spec.prompt))
+    return { threadId: s.threadId, resumed: true }
+  }
+  if (s && action === "resume") {
     // A stopped goal started again continues with its next loop.
     if (s.status === "stopped") goalStates.set({ ...s, status: "running", next: true, reason: undefined })
     return { threadId: s.threadId, resumed: true }

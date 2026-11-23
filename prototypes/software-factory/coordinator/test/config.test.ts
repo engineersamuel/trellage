@@ -167,6 +167,7 @@ test("a pre-change run snapshot on disk keeps its values and gets empty defaults
   delete current.models.security
   delete current.routing.implement_model
   delete current.routing.implement_small_model
+  delete current.todo
   current.sdlc.max_fix_rounds = 41
   mkdirSync(path.join(root, "config-snapshots"), { recursive: true })
   writeFileSync(path.join(root, "config-snapshots", "old0000000001.json"), JSON.stringify(current))
@@ -175,6 +176,7 @@ test("a pre-change run snapshot on disk keeps its values and gets empty defaults
   expect(pinned.models.security).toBe("")
   expect(pinned.routing.implement_model).toBe("")
   expect(pinned.routing.implement_small_model).toBe("")
+  expect(pinned.todo).toEqual({ enabled: true, tag: "factory" })
   expect(pinned.routing.small_threshold).toBe(current.routing.small_threshold)
 })
 

@@ -14,7 +14,7 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-const page = (started: string[] = []) => {
+const page = (started: string[] = [], adopted: string[][] = []) => {
   const goals = makeGoals(path.join(root, "goals"), ["implement", "verify", "security", "finish"])
   const gp = makeGoalPage({
     proxyUrl: () => "http://127.0.0.1:1/v1",
@@ -27,6 +27,8 @@ const page = (started: string[] = []) => {
     workerState: () => undefined,
     removeDraft: async () => {},
     startRun: async (id) => (started.push(id), "thread-1"),
+    draft: (id) => (id === "d1" ? { seed: "Seed from draft", folderId: "f", research: "/r/report.md" } : undefined),
+    adoptDraft: (draftId, threadId) => void adopted.push([draftId, threadId]),
   })
   const call = (name: string, body?: unknown) =>
     gp.handle(
@@ -34,7 +36,7 @@ const page = (started: string[] = []) => {
         `http://x/api/goal-page/${name}`,
         body === undefined ? {} : { method: "POST", body: JSON.stringify(body) },
       ),
-      name,
+      name.split("?")[0]!,
     )
   return { call, goals }
 }
@@ -167,4 +169,15 @@ test("each Goal page model call records its usage for cost reports", async () =>
   } finally {
     globalThis.fetch = realFetch
   }
+})
+
+test("a draft seeds the goal page, and launch from it moves the draft's link to the goal thread", async () => {
+  const adopted: string[][] = []
+  const { call } = page([], adopted)
+  const seed = await call("draft?id=d1")
+  expect(await seed.json()).toEqual({ seed: "Seed from draft", folderId: "f", research: "/r/report.md" })
+  expect((await call("draft?id=nope")).status).toBe(404)
+  const r = await call("launch", { repo: root, base: "main", doc, expect: expectations, draftId: "d1" })
+  expect(r.status).toBe(200)
+  expect(adopted).toEqual([["d1", "thread-1"]])
 })

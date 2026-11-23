@@ -224,6 +224,14 @@ export const draftDetail = (
     b.title = why ?? label
     return b
   })
+  const toGoal = button("◎ Goal", () =>
+    window.open(`/goal-page/index.html?draft=${encodeURIComponent(t.id)}`, "_blank"),
+  )
+  toGoal.disabled = !!d.pending
+  toGoal.title = d.pending
+    ? "Pick a rewrite first"
+    : "Make this draft a goal: the guided goal page opens with the current version and its research; you pick the repo"
+  acts.push(toGoal)
   const del = button("✕ Delete", remove)
   del.title = "Delete draft, its worktree, and branch"
   acts.push(del)

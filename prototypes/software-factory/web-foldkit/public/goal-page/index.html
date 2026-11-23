@@ -728,6 +728,9 @@ const isLow = c => c == null || c < 0.65;   // worried pose follows the REAL Jev
 
 let S, pid = 0, gen = 0, info = null, infoErr = null;
 let repos = null, reposErr = null;
+// A goal made from a draft (?draft=<id>): its id, folder and research report. The human must pick the repo.
+const draftId = new URLSearchParams(location.search).get("draft");
+let fromDraft = null, draftErr = null;
 const J = {};          // background jobs: name -> {state:"loading"|"ok"|"err", data, err, doc, t0, ms, seq}
 window.__coachLat = []; // measured latencies, for the test script
 
@@ -1389,8 +1392,12 @@ function pSeed(){
   const list = reposErr ? errBox(`Could not load repos: ${reposErr}`, "loadrepos")
     : !repos ? skel(2, 46)
     : `<div class="repos">${repos.map(r => `<button class="repo ${S.repo===r.id?"on":""}" data-act="repo" data-v="${esc(r.id)}" ${S.discRunning?"disabled":""}><span class="r"></span><span><div>${esc(r.name)} <span class="lock">· ${esc(r.base)}</span></div><div class="p">${esc(r.path)}</div></span></button>`).join("")}</div>`;
-  return `<h2>Start with a rough idea</h2><p class="sub">One line. Jev reads the repo before it asks anything (30–90 s).</p>
-  <div class="field"><label>Repo</label>${list}</div>
+  const fromNote = draftId
+    ? (draftErr ? errBox(`Could not load the draft: ${draftErr}`, "reset")
+      : `<p class="sub">From a draft. ${fromDraft?.research ? `Its research report goes in at launch: <span class="mono">${esc(fromDraft.research)}</span>. ` : ""}Pick the repo the result belongs in; it is not chosen for you.</p>`)
+    : "";
+  return `<h2>Start with a rough idea</h2><p class="sub">One line. Jev reads the repo before it asks anything (30–90 s).</p>${fromNote}
+  <div class="field"><label>Repo${draftId && !repoObj() ? " · <b>pick one</b>" : ""}</label>${list}</div>
   <div class="field"><label for="seedin">Idea</label><textarea id="seedin" class="input" rows="2" placeholder="${esc(D.seed)}">${esc(S.seed)}</textarea></div>
   <div class="foot nav"><span class="lock"><span class="kbd">↵</span> to start · <span class="kbd">⇧</span> <span class="kbd">↵</span> new line</span><span class="sp"></span><button class="btn primary" data-act="start" data-next ${!repoObj()||S.discRunning?"disabled":""}>${S.discRunning?`<span class="spin"></span> Reading…`:S.started?"Start over with this idea":"Coach me"} →</button></div>`;
 }
@@ -2173,10 +2180,11 @@ const ACT = {
     if(!S.exp || S.launching) return;
     const repo = repoObj(), g = gen, t0 = performance.now();
     S.launching = true; S.launchErr = null; render();
-    L.launch({repo:repo.path, base:repo.base, doc:docNow(), expectations:S.exp, override: weak.length ? S.override.trim() : null, research: v!=="nores" && S.deep.result?.artifactPath || null}).then(res => {
+    const research = v!=="nores" && (S.deep.result?.artifactPath || fromDraft?.research) || null;
+    L.launch({repo:repo.path, base:repo.base, doc:docNow(), expectations:S.exp, override: weak.length ? S.override.trim() : null, research, draftId: draftId || undefined}).then(res => {
       if(g!==gen) return;
       window.__coachLat.push({name:"launch", ms:Math.round(performance.now()-t0)});
-      S.launching = false; S.launched = res; S.launchedRes = v!=="nores" && S.deep.result?.artifactPath || null;
+      S.launching = false; S.launched = res; S.launchedRes = research;
       if(v==="nores" && deepActive()){ deepCancelRun(); S.deep.mode = "skipped"; }
       say(res.live ? "Spec saved and the run started. Go get 'em." : "Dry run: the spec is valid and saved. No run started.", "salute");
       const card = $(".gcard"); if(card){ card.classList.add("ship"); }
@@ -2296,7 +2304,8 @@ function loadRepos(){
   repos = null; reposErr = null; render();
   L.repos().then(list => {
     repos = list;
-    if(!S.repo || !list.some(r=>r.id===S.repo)) S.repo = (list.find(r => r.name==="copilot-proxy-rs") || list[0])?.id ?? null;
+    if(draftId){ if(S.repo && !list.some(r=>r.id===S.repo)) S.repo = null; }
+    else if(!S.repo || !list.some(r=>r.id===S.repo)) S.repo = (list.find(r => r.name==="copilot-proxy-rs") || list[0])?.id ?? null;
     render();
   }, e => { reposErr = e.message; render(); });
 }
@@ -2304,6 +2313,9 @@ L.info().then(d => { info = d; renderTop(); }, e => { infoErr = e.message; rende
 
 init();
 loadRepos();
+if(draftId) L.draft(draftId).then(d => {
+  fromDraft = d; if(!S.started && !S.seed) S.seed = d.seed; render();
+}, e => { draftErr = e.message; render(); });
 })();
 </script>
 <script>

@@ -1,4 +1,5 @@
 // Automatic security review after every implement step: audit the diff, triage with Jev, fix what is kept.
+import { execFileSync } from "node:child_process"
 import { mkdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { choice } from "@typesafe-ai/sdk"
@@ -40,6 +41,8 @@ export type SecurityReview = {
   findings: TriagedFinding[]
   error?: string
   at: number
+  /** Commit the review covered (after its fixes); a later review of the same scope audits only what came after. */
+  head?: string
 }
 
 const KEPT = new Set(["confirmed", "needs_validation"])
@@ -193,16 +196,57 @@ const target = (f: Factory, scope: Scope) => {
 /** The security-audit skill profile for a diff: `quick` unless the risk tier is T2 (large, dependencies, sensitive paths). */
 export const auditProfile = (tier: Tier): "quick" | "standard" => (tier === "T2" ? "standard" : "quick")
 
+/** Head of the scope's newest finished review: the diff before it was audited already. */
+export const reviewedHead = (reviews: Iterable<SecurityReview>, scopeId: string): string | undefined =>
+  [...reviews].filter((r) => r.scopeId === scopeId && r.status === "done" && r.head).sort((a, b) => b.at - a.at)[0]
+    ?.head
+
+/**
+ * What one review audits. The first review of a scope audits the whole diff from `base` with the tier's profile; a
+ * later one audits only the commits after the last reviewed head, with the quick profile, so a fix of a few lines
+ * does not start a new full audit. A reviewed head that is not an ancestor of HEAD (history rewritten) is ignored.
+ */
+export const auditPlan = (
+  base: string,
+  tier: Tier,
+  reviewed: string | undefined,
+  isAncestor: (commit: string) => boolean,
+): { base: string; profile: "quick" | "standard"; incremental: boolean } =>
+  reviewed && isAncestor(reviewed)
+    ? { base: reviewed, profile: "quick", incremental: true }
+    : { base, profile: auditProfile(tier), incremental: false }
+
+const git = (workdir: string, ...args: string[]) =>
+  execFileSync("git", ["-C", workdir, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim()
+
+const isAncestorOf = (workdir: string) => (commit: string) => {
+  try {
+    git(workdir, "merge-base", "--is-ancestor", commit, "HEAD")
+    return true
+  } catch {
+    return false
+  }
+}
+
+const headOf = (workdir: string): string | undefined => {
+  try {
+    return git(workdir, "rev-parse", "HEAD")
+  } catch {
+    return undefined
+  }
+}
+
 /** Reviewer worker: audit the diff, read its findings.json, stop it. */
 const audit = async (
   f: Factory,
   spawn: Spawn,
   set: Set,
   workdir: string,
-  base: string,
+  diffBase: string,
+  profile: "quick" | "standard",
   wait: Wait,
 ): Promise<Finding[]> => {
-  const profile = auditProfile(classify(diffFiles(workdir, base)).tier)
+  const base = diffBase
   const id = `w-${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`
   const out = path.join(f.root, id, "security-audit")
   mkdirSync(out, { recursive: true })
@@ -277,7 +321,14 @@ const run = async (f: Factory, scope: Scope, r: SecurityReview, set: Set, pinned
   }
   try {
     const wait: Wait = (start, what) => awaitGateWorker(start, what, (id) => f.stop(id), factoryConfig())
-    const found = await audit(f, spawn, set, workdir, base, wait)
+    const plan = auditPlan(
+      base,
+      classify(diffFiles(workdir, base)).tier,
+      reviewedHead(f.securityReviews.values(), scope.id),
+      isAncestorOf(workdir),
+    )
+    if (plan.incremental) console.log(`[security] ${r.id} audits only the commits after ${plan.base.slice(0, 9)}`)
+    const found = await audit(f, spawn, set, workdir, plan.base, plan.profile, wait)
     set({
       status: "findings",
       findings: found.map((x) => withVerdict(x, { verdict: "keep", reason: "awaiting triage", confidence: 0 })),
@@ -287,6 +338,8 @@ const run = async (f: Factory, scope: Scope, r: SecurityReview, set: Set, pinned
     for (const line of discardLines(r.id, triaged)) console.log(line)
     const kept = triaged.filter((t) => t.verdict === "keep")
     if (kept.length) await fixAndVerify(spawn, set, kept, base, wait)
+    const head = headOf(workdir)
+    if (head) set({ head })
   } finally {
     await stopAll(started, (id) => f.stop(id))
   }

@@ -144,6 +144,10 @@ export type GoalPageDeps = {
   removeDraft: (threadId: string) => Promise<void>
   /** Start `sf goal run <id>`; resolves with its thread id. */
   startRun: (goalId: string) => Promise<string>
+  /** The goal page's start for a draft: its current version, folder and finished research report. */
+  draft?: (id: string) => { seed: string; folderId: string; research: string | null } | undefined
+  /** A goal launched from a draft takes over the draft's Todo link; the draft is archived. */
+  adoptDraft?: (draftId: string, goalThreadId: string) => void
   /** Store one model call's usage (`assistant.usage` data) for cost reports. */
   recordUsage?: (data: Record<string, unknown>) => void
 }
@@ -1314,6 +1318,7 @@ export const makeGoalPage = (d: GoalPageDeps) => {
       limits,
       override,
       research: artifact,
+      draftId,
     } = decode(
       Schema.Struct({
         repo: Schema.String,
@@ -1324,6 +1329,7 @@ export const makeGoalPage = (d: GoalPageDeps) => {
         limits: Schema.optionalKey(Schema.Unknown),
         override: Schema.optionalKey(Schema.NullOr(Schema.String)),
         research: Schema.optionalKey(Schema.NullOr(Schema.String)),
+        draftId: Schema.optionalKey(Schema.String),
       }),
       body,
       "launch request",
@@ -1345,6 +1351,7 @@ export const makeGoalPage = (d: GoalPageDeps) => {
     if (problems.length) throw new PageError(400, `not a valid goal: ${problems.join("; ")}`)
     const spec = d.goals.save(exit.value)
     const threadId = await d.startRun(spec.id)
+    if (draftId) d.adoptDraft?.(draftId, threadId)
     return {
       live: true,
       savedPath: path.join(d.goals.dir, `${spec.id}.json`),
@@ -1407,6 +1414,10 @@ export const makeGoalPage = (d: GoalPageDeps) => {
       if (req.method === "GET" && name === "info")
         return json({ model: model(), effort: cfg().effort, proxy: d.proxyUrl(), liveLaunch: true, calls })
       if (req.method === "GET" && name === "repos") return json(await reposList())
+      if (req.method === "GET" && name === "draft") {
+        const seed = d.draft?.(new URL(req.url).searchParams.get("id") ?? "")
+        return seed ? json(seed) : json({ error: "no such draft" }, 404)
+      }
       const route = ROUTES[name]
       const stream = STREAMS[name]
       if (req.method !== "POST" || (!route && !stream)) return json({ error: "not found" }, 404)

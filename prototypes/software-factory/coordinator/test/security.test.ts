@@ -123,7 +123,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import type { Factory } from "../src/factory.ts"
-import { auditProfile, securityReview } from "../src/security.ts"
+import { execFileSync } from "node:child_process"
+import { auditPlan, auditProfile, reviewedHead, securityReview } from "../src/security.ts"
 
 /** A Factory double: spawned workers finish at once; the reviewer writes `findings`. */
 const fakeFactory = (findings: unknown[] | null, idle = true) => {
@@ -378,3 +379,50 @@ test("auditProfile: quick for T0 and T1 diffs, standard for T2", () => {
   expect(auditProfile("T1")).toBe("quick")
   expect(auditProfile("T2")).toBe("standard")
 })
+
+test("auditPlan: the first review audits the whole diff; a later one only the commits after the reviewed head", () => {
+  const yes = () => true
+  const no = () => false
+  expect(auditPlan("base0", "T2", undefined, yes)).toEqual({ base: "base0", profile: "standard", incremental: false })
+  expect(auditPlan("base0", "T2", "head1", yes)).toEqual({ base: "head1", profile: "quick", incremental: true })
+  // History rewritten (rebase): the old head is not an ancestor, so the whole diff again.
+  expect(auditPlan("base0", "T1", "head1", no)).toEqual({ base: "base0", profile: "quick", incremental: false })
+})
+
+test("reviewedHead: the newest finished review of the scope with a head", () => {
+  const r = (scopeId: string, status: SecurityReview["status"], at: number, head?: string) =>
+    ({ scopeId, status, at, head }) as SecurityReview
+  const reviews = [
+    r("sub-1", "done", 1, "old"),
+    r("sub-1", "done", 3, "new"),
+    r("sub-1", "failed", 4, "broken"),
+    r("sub-2", "done", 5, "other"),
+    r("sub-1", "done", 6),
+  ]
+  expect(reviewedHead(reviews, "sub-1")).toBe("new")
+  expect(reviewedHead(reviews, "sub-3")).toBeUndefined()
+})
+
+test("a second review of the same scope audits only the new commits, quick", () =>
+  noJev(async () => {
+    const repo = mkdtempSync(path.join(tmpdir(), "sf-sec-git-"))
+    const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8" }).trim()
+    git("init", "-q")
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "base")
+    const base = git("rev-parse", "HEAD")
+    writeFileSync(path.join(repo, "a.ts"), "export const a = 1\n")
+    git("add", ".")
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "a")
+    const { f, spawned } = fakeFactory([])
+    const s = { ...scope, workdir: repo, base }
+    const first = await securityReview(f, s, "w-impl")
+    expect(first.head).toBe(git("rev-parse", "HEAD"))
+    writeFileSync(path.join(repo, "b.ts"), "export const b = 2\n")
+    git("add", ".")
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "fix")
+    await securityReview(f, s, "w-impl-2")
+    const audits = spawned.filter((x) => x.step === "security")
+    expect(audits[0]!.task).toContain(`git diff ${base}`)
+    expect(audits[1]!.task).toContain(`git diff ${first.head}`)
+    expect(audits[1]!.task).toContain("`quick` run profile")
+  }))
