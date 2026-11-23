@@ -287,6 +287,14 @@ export class Threads {
     }
   }
 
+  clearTodo(id: string): void {
+    const t = this.get(id)
+    if (t?.todo) {
+      delete t.todo
+      this.save(t)
+    }
+  }
+
   delete(id: string): void {
     this.threads = this.threads.filter((t) => t.id !== id)
     this.db.transaction(() => {

@@ -87,6 +87,11 @@
     },
     info: () => fetch(API + "/info").then((r) => r.json()),
     repos: () => fetch(API + "/repos").then((r) => r.json()),
+    /** The draft a goal starts from: {seed, folderId, research} (current version, its folder, finished report path). */
+    draft: (id) =>
+      fetch(API + "/draft?id=" + encodeURIComponent(id)).then((r) =>
+        r.ok ? r.json() : r.json().then((b) => Promise.reject(new Error(b.error || "HTTP " + r.status))),
+      ),
     discover: (repo, seed, onEvent) => stream("/discover", { repo, seed }, onEvent),
     patch: (doc, question, answer) => post("/patch", { doc: cleanDoc(doc), question, answer }),
     suggest: (doc, facts) => post("/suggest", { doc: cleanDoc(doc), facts: facts ?? [] }),
@@ -95,7 +100,7 @@
     research: (action, repo, doc, onEvent) => stream("/research", { action, repo, doc: cleanDoc(doc) }, onEvent),
     expectations: (doc) => post("/expectations", { doc: cleanDoc(doc) }),
     readiness: (doc, notes = true) => post("/readiness", { doc: cleanDoc(doc), notes }),
-    launch: ({ repo, base, doc, expectations, override, research }) =>
+    launch: ({ repo, base, doc, expectations, override, research, draftId }) =>
       post("/launch", {
         repo,
         base,
@@ -105,6 +110,7 @@
         limits: expectations.limits,
         override: override || null,
         research: research || null,
+        ...(draftId ? { draftId } : {}),
       }),
     /** history: [{role:"user"|"assistant", content}] — the newest user turn last. → {reply} */
     ask: (doc, question, options, history) => post("/ask", { doc: cleanDoc(doc), question, options, history }),
