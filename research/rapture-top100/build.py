@@ -216,6 +216,26 @@ def validate_ranks(kept: list[dict[str, str]], excluded: list[dict[str, str]]) -
     return {rank: source for rank, source, _, _ in records}
 
 
+def validate_outreach_duplicates(kept: list[dict[str, str]], excluded: list[dict[str, str]]) -> None:
+    outreach: dict[tuple[str, str], tuple[str, str]] = {}
+    hartford: list[dict[str, str]] = []
+    for source, rows in (("kept.csv", kept), ("excluded.csv", excluded)):
+        for row in rows:
+            identity = (normalize_church(row["church"]), normalize_church(row.get("city_state", "")))
+            if row["ranking_source"] == "Outreach 100 2026":
+                outreach[identity] = (row["rank"], source)
+            elif row["ranking_source"] == "Hartford":
+                hartford.append(row)
+    for row in hartford:
+        identity = (normalize_church(row["church"]), normalize_church(row.get("city_state", "")))
+        if identity in outreach:
+            outreach_rank, source = outreach[identity]
+            raise ValidationError(
+                f"Hartford rank {row['rank']} church {row['church']!r} appears in both Outreach and Hartford "
+                f"populations; Outreach rank {outreach_rank} is in {source}"
+            )
+
+
 def read_logs(path: Path) -> list[dict]:
     if not path.is_file():
         raise ValidationError("search-log.jsonl is missing")
@@ -286,6 +306,7 @@ def load_data(root: Path) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     kept = read_csv(root / "kept.csv", KEPT_REQUIRED)
     excluded = read_csv(root / "excluded.csv", EXCLUDED_REQUIRED)
     validate_kept(kept)
+    validate_outreach_duplicates(kept, excluded)
     rank_sources = validate_ranks(kept, excluded)
     validate_logs(read_logs(root / "search-log.jsonl"), rank_sources)
     return kept, excluded

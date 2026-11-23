@@ -323,6 +323,12 @@ class BuildTest(unittest.TestCase):
         self.write_csv("kept.csv", KEPT_FIELDS, self.kept)
         self.assert_fails("repeats church")
 
+    def test_duplicate_church_across_sources_fails(self) -> None:
+        self.kept[-1]["church"] = "Excluded Church 100"
+        self.write_csv("kept.csv", KEPT_FIELDS, self.kept)
+        with self.assertRaisesRegex(self.build.ValidationError, "appears in both Outreach and Hartford populations"):
+            self.build.load_data(self.root)
+
     def test_duplicate_statement_host_fails(self) -> None:
         self.kept[1]["statement_url"] = "https://www.CHURCH1.example/another-page"
         self.write_csv("kept.csv", KEPT_FIELDS, self.kept)

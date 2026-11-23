@@ -12,10 +12,10 @@ teaching by its members.
   views permitted **5**; other eschatology **0**; premillennial (timing not
   stated) **42**; imminent return (timing not stated) **26**; rapture named
   (timing not stated) **8**.
-- The 100 kept churches were reached at walk rank **443**; **343** churches
+- The 100 kept churches were reached at walk rank **442**; **342** churches
   through that rank were excluded.
 - Pages-read date range: **2026-11-22 to 2026-11-22**.
-- Hartford walk depth: walk ranks **101-443**, corresponding to filtered
+- Hartford walk depth: walk ranks **101-442**, corresponding to filtered
   Hartford positions **40-452**.
 
 ## Ranking sources
@@ -30,7 +30,7 @@ teaching by its members.
   described as "consistent weekly attendance." Rows are ordered by size
   descending and then church name A-Z. Canadian rows and Outreach-100
   duplicates are removed. The roster preparation removed **23 Canadian**,
-  **1 Australian**, and **105 Outreach-duplicate** rows (129 removals total).
+  **1 Australian**, and **106 Outreach-duplicate** rows (130 removals total).
   The database was fetched on 2026-11-22 (2026-11-23 UTC). Hartford asks that
   its list not be reprinted, so this repository publishes only the rows
   reached in the walk.
