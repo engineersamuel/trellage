@@ -81,9 +81,9 @@ The full TERMS list, label precedence, and four-step search procedure are in
 Run from the repository root:
 
 ```sh
-python3 research/rapture-top100/build.py
-python3 research/rapture-top100/build.py --check
-python3 research/rapture-top100/test_build.py
+python3 docs/research/rapture-top100/build.py
+python3 docs/research/rapture-top100/build.py --check
+python3 docs/research/rapture-top100/test_build.py
 ```
 
 The first command writes `chart-counts.svg` and `chart-churches.svg`; the

@@ -7,9 +7,6 @@
 /.scratch/
 /.audit/
 /research/
-!/research/
-/research/*
-!/research/rapture-top100/
 /evidence/
 /codex-*.png
 /copilot-*.png
