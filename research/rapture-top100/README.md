@@ -7,9 +7,16 @@ teaching by its members.
 
 ## Data snapshot
 
-- Counts by label: **TODO-DATA**
-- Pages-read date range: **TODO-DATA**
-- Hartford walk depth: **TODO-DATA**
+- Counts by label: pre-tribulation **19**; pre-wrath **0**;
+  mid-tribulation **0**; post-tribulation **0**; preterist **0**; multiple
+  views permitted **5**; other eschatology **0**; premillennial (timing not
+  stated) **42**; imminent return (timing not stated) **26**; rapture named
+  (timing not stated) **8**.
+- The 100 kept churches were reached at walk rank **443**; **343** churches
+  through that rank were excluded.
+- Pages-read date range: **2026-11-22 to 2026-11-22**.
+- Hartford walk depth: walk ranks **101-443**, corresponding to filtered
+  Hartford positions **40-452**.
 
 ## Ranking sources
 
@@ -22,8 +29,17 @@ teaching by its members.
   The page was updated 2026-09-29. Row years are not stated; the metric is
   described as "consistent weekly attendance." Rows are ordered by size
   descending and then church name A-Z. Canadian rows and Outreach-100
-  duplicates are removed. Hartford asks that its list not be reprinted, so
-  this repository publishes only the rows reached in the walk.
+  duplicates are removed. The roster preparation removed **23 Canadian**,
+  **1 Australian**, and **105 Outreach-duplicate** rows (129 removals total).
+  The database was fetched on 2026-11-22 (2026-11-23 UTC). Hartford asks that
+  its list not be reprinted, so this repository publishes only the rows
+  reached in the walk.
+
+Three roster locations were corrected from the original source data:
+NewSpring Church is in Anderson, SC; Free Chapel is in Gainesville, GA; and
+Second Baptist Church is in Houston, TX. Akron and Getzville instances of
+The Chapel, and Naperville and Grand Rapids instances of Calvary Church, carry
+city qualifiers in the published name so distinct churches remain distinct.
 
 ## Plain-language labels
 
@@ -74,6 +90,14 @@ The first command writes `chart-counts.svg` and `chart-churches.svg`; the
 check validates the CSVs, search log, SVG XML, visible chart contents, and
 byte-for-byte freshness. The build is deterministic. The counts chart displays
 only labels with a count greater than zero.
+
+## What the charts show
+
+The counts chart shows the mix of the 100 qualifying church statements: 42
+state premillennialism without a rapture timing, 26 state an imminent return
+without that timing, and smaller groups use the other observed labels. The
+church chart lists every kept church, its walk rank, and its label; the gaps
+in rank sequence are the churches excluded from the walk.
 
 ## Interpretation risks
 

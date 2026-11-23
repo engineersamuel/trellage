@@ -303,6 +303,10 @@ class BuildTest(unittest.TestCase):
         self.write_csv("kept.csv", KEPT_FIELDS, self.kept)
         self.assert_fails("rank values must be exactly")
 
+    def test_no_kept_ranks_fails(self) -> None:
+        with self.assertRaisesRegex(self.build.ValidationError, "kept.csv must contain ranks"):
+            self.build.validate_rank_set([(100, "excluded.csv", self.kept[0], 2)])
+
     def test_zero_rank_fails(self) -> None:
         self.kept[0]["rank"] = "0"
         self.kept[0]["source_rank"] = "0"
