@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
-import { mkdtempSync } from "node:fs"
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { createTodoDraft } from "../src/todo/draft.ts"
+import { adoptDraftTodo, createTodoDraft, draftGoalSeed } from "../src/todo/draft.ts"
 import { Threads } from "../src/threads.ts"
 
 const createDraft = (threads: Threads, folderId: string, prompt: string) => {
@@ -76,4 +76,51 @@ test("a claim failure never rejects a created Todo draft", async () => {
     { source: "ticktick", listId: "list", taskId: "task" },
   )
   expect(threads.get(thread.id)?.todo?.state).toBe("drafted")
+})
+test("draftGoalSeed gives the current version, the folder and the newest finished research report", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "sf-goal-seed-"))
+  const threads = new Threads(dir)
+  const thread = threads.create("x", "general", () => ({ worktree: dir, branch: "b", base: "main" }))
+  mkdirSync(path.join(dir, "reports"), { recursive: true })
+  writeFileSync(path.join(dir, "reports", "deep.md"), "# report")
+  threads.setDraft(thread.id, {
+    versions: [
+      { id: "v1", prompt: "old", source: "human", at: 1 },
+      { id: "v2", prompt: "current prompt", source: "human", at: 2 },
+    ],
+    current: "v2",
+    reports: [
+      { action: "deep-research", workerId: "w1", path: "reports/deep.md", versionId: "v1" },
+      { action: "research", workerId: "w2", path: "reports/missing.md", versionId: "v2" },
+    ],
+  })
+  expect(draftGoalSeed(threads.get(thread.id)!, () => false)).toEqual({
+    seed: "current prompt",
+    folderId: "general",
+    research: path.join(dir, "reports", "deep.md"),
+  })
+  expect(draftGoalSeed(threads.get(thread.id)!, (id) => id === "w1")?.research).toBeNull()
+  expect(draftGoalSeed(threads.create("chat", "general"), () => false)).toBeUndefined()
+})
+
+test("adoptDraftTodo moves the TickTick link to the goal thread and archives the draft", () => {
+  const threads = new Threads(mkdtempSync(path.join(tmpdir(), "sf-adopt-")))
+  const draft = createDraft(threads, "general", "p")
+  const goal = threads.create("goal", "general", () => ({ worktree: "/g", branch: "g", base: "main" }))
+  const todo = {
+    source: "ticktick" as const,
+    listId: "l",
+    taskId: "t",
+    title: "T",
+    state: "claimed" as const,
+    done: ["claim"],
+  }
+  threads.setTodo(draft.id, todo)
+  adoptDraftTodo(threads, draft.id, goal.id, 5)
+  expect(threads.get(goal.id)!.todo).toEqual(todo)
+  expect(threads.get(draft.id)!.todo).toBeUndefined()
+  expect(threads.get(draft.id)!.archivedAt).toBe(5)
+  const plain = createDraft(threads, "general", "no link")
+  adoptDraftTodo(threads, plain.id, goal.id, 6)
+  expect([threads.get(plain.id)!.archivedAt, threads.get(goal.id)!.todo?.taskId]).toEqual([6, "t"])
 })

@@ -105,7 +105,7 @@ import { addLessons, artifact, readLessons, unprovenCriteria } from "./sdlc.ts"
 import { makeGrading } from "./grading.ts"
 import { makeTodoApi } from "./todo/api.ts"
 import { makeHttpHandler, type Handler } from "./http.ts"
-import { createTodoDraft } from "./todo/draft.ts"
+import { adoptDraftTodo, createTodoDraft, draftGoalSeed } from "./todo/draft.ts"
 import { makeTodoLifecycle, type PendingTodoRelease } from "./todo/lifecycle.ts"
 import { makeTodoPrSweep } from "./todo/pr-sweep.ts"
 import { makeTodoRoutes } from "./todo/routes.ts"
@@ -2063,6 +2063,15 @@ const goalPage = makeGoalPage({
   workerState: (id) => factory.workers.get(id)?.summary(),
   removeDraft: (id) => drafts.remove(id),
   startRun: startGoalRun(`http://${hostname}:${port}`, path.join(factory.root, "logs", "goal-runs")),
+  draft: (id) => {
+    const t = threads.get(id)
+    return t ? draftGoalSeed(t, (w) => factory.workers.get(w)?.status === "running") : undefined
+  },
+  adoptDraft: (draftId, goalThreadId) => {
+    adoptDraftTodo(threads, draftId, goalThreadId, Date.now())
+    for (const threadId of [draftId, goalThreadId])
+      factory.publish("coordinator", "factory.thread_updated", null, now(), { threadId })
+  },
   recordUsage: (data) => factory.publish(GOAL_PAGE_AGENT, "assistant.usage", null, now(), data),
 })
 
@@ -3059,7 +3068,7 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/todo(?:\/.*)?$/, (req, url) => todoApi.handle(req, url)],
   ["DELETE", /^\/api\/todo(?:\/.*)?$/, (req, url) => todoApi.handle(req, url)],
   ["GET", /^\/api\/artifacts$/, () => json({ artifacts: [] })],
-  ["GET", /^\/api\/goal-page\/(info|repos)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
+  ["GET", /^\/api\/goal-page\/(info|repos|draft)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
   ["POST", /^\/api\/goal-page\/([a-z]+(?:\/[a-z]+)?)$/, (req, _url, [name]) => goalPage.handle(req, name!)],
 ]
 
