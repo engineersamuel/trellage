@@ -98,7 +98,8 @@ A spec says:
 
 - `expect.steps`: step id → `{min, max}` workers on that step (e.g. `review: {min: 1}`, `finish: {min: 1, max: 1}`).
 - `expect.skills`: skills some worker must have invoked (`skill.invoked` events).
-- `expect.pr`: `state`, `checks`, `base` (defaults to the goal's base), `bodyIncludes`, `untouched` files.
+- `expect.pr`: `state` (a MERGED PR also meets an OPEN `state`), `checks`, `base` (defaults to the
+  goal's base), `bodyIncludes`, `untouched` files.
 - `approvals`: per topic (`plan`, `findings`, `ship`, `other`) who answers: `auto` (the runner picks the first option)
   or `human` (`sf goal run` stops with exit 2). Approvals carry a `topic`; a ship request is always `ship`.
 - `limits`: `usd`, the cost limit of the **goal**: all its loops together (default $250). There
