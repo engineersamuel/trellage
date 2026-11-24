@@ -66,6 +66,7 @@ unix.each(["trx", "trx.ts"])("initial bin/%s disables the transpiler cache befor
     "packages/trellage-runtime/bunfig.toml",
     "packages/trellage-runtime/src/index.ts",
     "packages/trellage-runtime/src/workspace.ts",
+    "packages/trellage-runtime/src/windows-permissions.ts",
   ]) {
     f.copy(relative)
   }

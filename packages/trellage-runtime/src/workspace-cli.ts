@@ -424,19 +424,25 @@ try {
         ["trx.cmd", "@rem Managed by Trellage Windows installer."],
       ] as const) {
         const launcher = path.join(root, name)
-        if (!(await present(launcher))) continue
-        safePath(launcher, "file")
-        // Read through one handle and require it to be the file safePath inspected, so a swap cannot slip in.
-        const checked = lstatSync(launcher)
-        const handle = openSync(launcher, "r")
+        // Open first, then confirm the path still names that file: no check runs before the use.
+        let handle: number
+        try {
+          handle = openSync(launcher, "r")
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+          throw error
+        }
         try {
           const opened = fstatSync(handle)
+          const firstLine = readFileSync(handle, "utf8").split(/\r?\n/, 1)[0]
+          safePath(launcher, "file")
+          const named = lstatSync(launcher)
           if (
-            opened.dev !== checked.dev ||
-            opened.ino !== checked.ino ||
+            named.dev !== opened.dev ||
+            named.ino !== opened.ino ||
             !opened.isFile() ||
             opened.nlink !== 1 ||
-            readFileSync(handle, "utf8").split(/\r?\n/, 1)[0] !== marker
+            firstLine !== marker
           )
             throw new Error(`refusing unmanaged Windows launcher: ${launcher}`)
         } finally {

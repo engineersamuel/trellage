@@ -873,6 +873,7 @@ describe("Bun invocation", () => {
       "packages/trellage-runtime/bunfig.toml",
       "packages/trellage-runtime/src/index.ts",
       "packages/trellage-runtime/src/workspace.ts",
+      "packages/trellage-runtime/src/windows-permissions.ts",
     ]) {
       mkdirSync(path.dirname(path.join(root, relative)), { recursive: true })
       cpSync(path.join(sourceWorkspaceRoot(), relative), path.join(root, relative))
