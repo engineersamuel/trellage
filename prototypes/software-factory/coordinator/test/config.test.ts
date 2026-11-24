@@ -28,17 +28,26 @@ test("shipped defaults are valid and match the current code values", () => {
   expect(c.sdlc.max_fix_rounds).toBe(5)
   expect(c.fanout.max_workers).toBe(4)
   expect(c.models.review).toEqual({ claude: "claude-opus-5.5", gpt: "gpt-6-astra", gemini: "gemini-4-argon" })
-  expect(c.accountability).toMatchObject({
+  expect(c.accountability).toEqual({
     enabled: true,
     pass_threshold: 0.5,
     extract_max_chars: 15000,
     args_chars: 160,
     max_parallel: 2,
+    calibration_min_labels: 20,
+    calibration_min_agreement: 0.8,
     worker_usd: {
       default: 5,
       implement: 4,
       verify: 3,
+      review: 1.5,
+      evaluate: 2.5,
       security: 25,
+      research: 10.5,
+      finish: 1,
+      synthesis: 0.5,
+      plan: 1.5,
+      debug: 4,
     },
   })
 })

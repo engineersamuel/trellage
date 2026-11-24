@@ -136,7 +136,15 @@ import { makeTournaments, STOP_TOURNAMENT } from "./tournamentRun.ts"
 import { assetUrl, leaderboardTable, thumbUrl, tournamentTools } from "./tournamentTools.ts"
 import { presetOf, presetPrompt, PRESETS } from "./tournamentPresets.ts"
 import { checkNames } from "./uiJudge.ts"
-import { AccountabilityDb, AccountabilityGrades, accountabilityDbPath, patchEvaluation } from "./accountability.ts"
+import {
+  AccountabilityDb,
+  AccountabilityGrades,
+  accountabilityDbPath,
+  accountabilityDimensions,
+  accountabilityEvaluation,
+  accountabilityRoutes,
+  accountabilityWorkerEnd,
+} from "./accountability.ts"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
 const landing = asset("landing.html")
@@ -206,59 +214,19 @@ for (const [k, s] of factory.sdlc) {
 }
 const threads = new Threads(factory.root)
 const accountabilityDb = new AccountabilityDb(accountabilityDbPath(factory.root))
-const accountabilityDimensions = (owner: string) => {
-  const thread = threads
-    .list()
-    .find((candidate) => subId(candidate.id) === owner || draftNodeId(candidate.id) === owner)
-  if (!thread)
-    return {
-      owner,
-      thread: null,
-      goal: null,
-      folderId: owner === "coordinator" ? GENERAL.id : null,
-      repo: null,
-    }
-  const folder = threads.folder(thread.folderId)
-  return {
-    owner: thread.id,
-    thread: thread.id,
-    goal: thread.goalId ?? null,
-    folderId: thread.folderId,
-    repo: folder?.path || null,
-  }
-}
 const accountabilityGrades = new AccountabilityGrades({
   store: factory.store,
   db: accountabilityDb,
   config: factoryConfig(),
-  dimensions: accountabilityDimensions,
+  dimensions: accountabilityDimensions(threads),
   publish: (worker, type, data) => factory.publish(worker, type, null, now(), data),
 })
-factory.onWorkerEnd = (worker, why) => {
-  if (worker.role !== "worker" || worker.graded || !factoryConfig().accountability.enabled) return
-  worker.graded = true
-  void accountabilityGrades.queue(worker, why).catch(() => {})
-}
-factory.feed.subscribe((event) => {
-  const data = (event.data ?? {}) as {
-    scopeId?: unknown
-    status?: unknown
-    verdicts?: unknown
-  }
-  if (
-    event.type !== "factory.evaluation" ||
-    data.status !== "done" ||
-    typeof data.scopeId !== "string" ||
-    !Array.isArray(data.verdicts)
-  )
-    return
-  patchEvaluation(
-    accountabilityDb,
-    data.scopeId,
-    data.verdicts as { id?: string; verdict: "pass" | "fail" }[],
-    (worker, type, value) => factory.publish(worker, type, null, now(), value),
-  )
-})
+factory.onWorkerEnd = accountabilityWorkerEnd(accountabilityGrades, () => factoryConfig().accountability.enabled)
+factory.feed.subscribe(
+  accountabilityEvaluation(accountabilityDb, (worker, type, value) =>
+    factory.publish(worker, type, null, now(), value),
+  ),
+)
 /** Warn when FACTORY.md sections and the repo folders disagree: a section only reaches a matching folder. */
 const checkHome = () => {
   const w = homeWarning(
@@ -2423,6 +2391,7 @@ if (GRADING) {
 }
 
 const routes: [string, RegExp, Handler][] = [
+  ...accountabilityRoutes(accountabilityDb, factoryConfig),
   ["GET", /^\/$/, () => new Response(landing, { headers: { "content-type": "text/html" } })],
   [
     "GET",

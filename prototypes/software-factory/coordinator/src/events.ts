@@ -255,7 +255,10 @@ export class EventStore {
         "SELECT ts, data FROM (SELECT ts, data, seq FROM events WHERE type = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq",
       )
       .all(type, limit) as { ts: string; data: string }[]
-    return rows.map((r) => ({ ts: Number(r.ts), data: JSON.parse(r.data) }))
+    return rows.map((r) => {
+      const numeric = Number(r.ts)
+      return { ts: Number.isFinite(numeric) ? numeric : Date.parse(r.ts), data: JSON.parse(r.data) }
+    })
   }
 
   /** Every stored subagent event (subagent.*, and Pi's `subagent` tool calls with their results), oldest first. */

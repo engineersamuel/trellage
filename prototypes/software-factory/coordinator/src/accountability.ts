@@ -12,6 +12,10 @@ import { KEEP_PER_WORKER, EventStore } from "./events.ts"
 import type { FeedEvent, Worker } from "./factory.ts"
 import { add, totalsOf, zero } from "./costs.ts"
 import { cardBudget } from "./roleCard.ts"
+import { draftNodeId } from "./drafts.ts"
+import { subId, Threads } from "./threads.ts"
+import { GENERAL } from "./folders.ts"
+import type { Handler } from "./http.ts"
 
 const DECISION_KEYS = {
   purpose: "3.1",
@@ -199,13 +203,37 @@ const promptHash = () =>
 
 export const GRADER_VERSION = `a1:${promptHash()}`
 
-type GradeDimensions = {
+export type GradeDimensions = {
   owner: string
   thread: string | null
   goal: string | null
   folderId: string | null
   repo: string | null
 }
+
+/** Resolve the grade's display relationships without replacing the event scope used to join evaluations. */
+export const accountabilityDimensions =
+  (threads: Threads) =>
+  (owner: string): GradeDimensions => {
+    const thread = threads
+      .list()
+      .find((candidate) => subId(candidate.id) === owner || draftNodeId(candidate.id) === owner)
+    if (!thread)
+      return {
+        owner,
+        thread: null,
+        goal: null,
+        folderId: owner === "coordinator" ? GENERAL.id : null,
+        repo: null,
+      }
+    return {
+      owner,
+      thread: thread.id,
+      goal: thread.goalId ?? null,
+      folderId: thread.folderId,
+      repo: threads.folder(thread.folderId)?.path ?? null,
+    }
+  }
 
 export type GradeDeps = {
   store: EventStore
@@ -327,6 +355,9 @@ export class AccountabilityDb {
   }
 
   label(worker: string, control: ControlId, label: "pass" | "fail", at = Date.now()): void {
+    if (!CONTROLS.some((item) => item.id === control)) throw new Error(`unknown control ${control}`)
+    if (label !== "pass" && label !== "fail") throw new Error("label must be pass or fail")
+    if (!this.get(worker)) throw new Error(`unknown worker ${worker}`)
     this.db.run("INSERT OR REPLACE INTO labels (worker, control, label, at) VALUES (?, ?, ?, ?)", [
       worker,
       control,
@@ -492,6 +523,21 @@ export const patchEvaluation = (
   return changed
 }
 
+/** Production feed subscriber for evaluation events; invalid and incomplete events are ignored. */
+export const accountabilityEvaluation =
+  (db: AccountabilityDb, publish: GradePublisher) =>
+  (event: FeedEvent): number => {
+    const data = object(event.data)
+    if (
+      event.type !== "factory.evaluation" ||
+      data.status !== "done" ||
+      typeof data.scopeId !== "string" ||
+      !Array.isArray(data.verdicts)
+    )
+      return 0
+    return patchEvaluation(db, data.scopeId, data.verdicts as EvaluationVerdict[], publish)
+  }
+
 export class AccountabilityGrades {
   private readonly semaphore: Semaphore.Semaphore
 
@@ -513,6 +559,261 @@ export class AccountabilityGrades {
     )
   }
 }
+
+type AccountableWorker = Pick<Worker, "id" | "role" | "graded">
+
+/** Non-blocking production hook shared by stop, idle and runtime-exit wiring. */
+export const accountabilityWorkerEnd =
+  (grades: AccountabilityGrades, enabled: () => boolean) =>
+  (worker: AccountableWorker, why: "idle" | "stopped" | "runtime"): void => {
+    if (worker.role !== "worker" || worker.graded || !enabled()) return
+    worker.graded = true
+    void grades.queue(worker, why).catch(() => {})
+  }
+
+export type BackfillInput = Omit<GradeDeps, "ask" | "available"> &
+  Partial<Pick<GradeDeps, "ask" | "available">> & {
+    since?: number
+    limit?: number
+  }
+
+/** Grade recorded, ended workers in start order; a current grader-version row is skipped idempotently. */
+export const backfillAccountability = async (input: BackfillInput): Promise<{ graded: number; skipped: number }> => {
+  const starts = input.store.latestTimed("factory.worker_started", 100_000) as {
+    ts: number
+    data: { id?: unknown; role?: unknown; startedAt?: unknown }
+  }[]
+  const candidates = [
+    ...new Map(
+      starts
+        .filter((row) => row.data.role === "worker" && typeof row.data.id === "string")
+        .filter((row) => input.since === undefined || Number(row.data.startedAt ?? row.ts) >= input.since)
+        .map((row) => [String(row.data.id), row]),
+    ).values(),
+  ]
+  let graded = 0
+  let skipped = 0
+  const grades = new AccountabilityGrades(input)
+  for (const { data } of candidates) {
+    const worker = String(data.id)
+    if (input.db.has(worker, GRADER_VERSION)) {
+      skipped++
+      continue
+    }
+    if (
+      !input.store
+        .load(worker, KEEP_PER_WORKER)
+        .some((event) => event.type === "factory.worker_stopped" || event.type === "session.idle")
+    )
+      continue
+    if (input.limit !== undefined && graded >= input.limit) break
+    await grades.queue({ id: worker }, "runtime")
+    graded++
+  }
+  return { graded, skipped }
+}
+
+export type CalibrationThresholds = Pick<
+  FactoryConfig["accountability"],
+  "calibration_min_labels" | "calibration_min_agreement"
+>
+
+export const accountabilityCalibration = (db: AccountabilityDb, thresholds: CalibrationThresholds) => {
+  const grades = new Map(db.rows().map((grade) => [grade.worker, grade]))
+  return CONTROLS.map(({ id }) => {
+    const labels = db.labels().filter((label) => label.control === id)
+    const agree = labels.filter((label) => grades.get(label.worker)?.controls[id].result === label.label).length
+    const agreement = labels.length ? agree / labels.length : 0
+    return {
+      control: id,
+      labels: labels.length,
+      agree,
+      agreement,
+      calibrated:
+        labels.length >= thresholds.calibration_min_labels && agreement >= thresholds.calibration_min_agreement,
+    }
+  })
+}
+
+export const ACCOUNTABILITY_DIMENSIONS = ["model", "harness", "step", "repo", "goal", "modelSource"] as const
+export type AccountabilityDimension = (typeof ACCOUNTABILITY_DIMENSIONS)[number]
+
+const isDimension = (value: string): value is AccountabilityDimension =>
+  ACCOUNTABILITY_DIMENSIONS.some((dimension) => dimension === value)
+const isControl = (value: string): value is ControlId => CONTROLS.some((control) => control.id === value)
+
+const seriesBucket = (at: number, bucket: "day" | "week"): string => {
+  const date = new Date(at)
+  if (bucket === "day") return date.toISOString().slice(0, 10)
+  const day = date.getUTCDay()
+  date.setUTCDate(date.getUTCDate() - ((day + 6) % 7))
+  return date.toISOString().slice(0, 10)
+}
+
+export const accountabilitySeries = (
+  rows: readonly Grade[],
+  dimension: AccountabilityDimension,
+  bucket: "day" | "week",
+  control?: ControlId,
+) => {
+  const groups = new Map<string, { bucket: string; value: string; scores: number[] }>()
+  for (const grade of rows) {
+    const value = String(grade[dimension] ?? "(none)")
+    const at = seriesBucket(grade.stoppedAt, bucket)
+    const key = `${at}\0${value}`
+    const group = groups.get(key) ?? { bucket: at, value, scores: [] }
+    const pointScore = seriesScore(grade, control)
+    if (pointScore !== null) group.scores.push(pointScore)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
+    .map((group) => ({
+      bucket: group.bucket,
+      value: group.value,
+      score: group.scores.length ? group.scores.reduce((total, value) => total + value, 0) / group.scores.length : null,
+      n: group.scores.length,
+    }))
+    .sort((a, b) => a.bucket.localeCompare(b.bucket) || a.value.localeCompare(b.value))
+}
+
+const seriesScore = (grade: Grade, control?: ControlId): number | null => {
+  if (!control) return grade.score
+  const result = grade.controls[control].result
+  return result === "pass" ? 1 : result === "fail" ? 0 : null
+}
+
+type WorkerQuery = {
+  filters: Partial<Record<AccountabilityDimension, string>>
+  control?: ControlId
+  result?: Result
+  limit: number
+  offset: number
+}
+
+const positiveInt = (value: string | null, fallback: number, maximum = 200): number => {
+  if (value === null) return fallback
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > maximum) throw new Error(`limit must be 1-${maximum}`)
+  return parsed
+}
+
+const pageOffset = (value: string | null): number => {
+  if (value === null) return 0
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error("offset must be a non-negative integer")
+  return parsed
+}
+
+const workerQuery = (url: URL): WorkerQuery => {
+  const control = url.searchParams.get("control")
+  const result = url.searchParams.get("result")
+  if (control !== null && !isControl(control)) throw new Error(`unknown control ${control}`)
+  if (result !== null && !["pass", "fail", "n/a", "unknown"].includes(result))
+    throw new Error("result must be pass, fail, n/a or unknown")
+  if ((control === null) !== (result === null)) throw new Error("control and result must be supplied together")
+  return {
+    filters: Object.fromEntries(
+      ACCOUNTABILITY_DIMENSIONS.flatMap((dimension) => {
+        const value = url.searchParams.get(dimension)
+        return value === null ? [] : [[dimension, value]]
+      }),
+    ),
+    ...(control === null ? {} : { control, result: result as Result }),
+    limit: positiveInt(url.searchParams.get("limit"), 50),
+    offset: pageOffset(url.searchParams.get("offset")),
+  }
+}
+
+export const accountabilityWorkers = (rows: readonly Grade[], query: WorkerQuery) => {
+  const filtered = rows.filter((grade) => {
+    if (
+      Object.entries(query.filters).some(
+        ([key, value]) => String(grade[key as AccountabilityDimension] ?? "") !== value,
+      )
+    )
+      return false
+    return !query.control || grade.controls[query.control].result === query.result
+  })
+  filtered.sort((a, b) => b.stoppedAt - a.stoppedAt || a.worker.localeCompare(b.worker))
+  return { rows: filtered.slice(query.offset, query.offset + query.limit), total: filtered.length }
+}
+
+const routeError = (error: unknown, status = 400): Response =>
+  Response.json({ error: error instanceof Error ? error.message : String(error) }, { status })
+
+const seriesRoute =
+  (db: AccountabilityDb): Handler =>
+  (_req, url) => {
+    try {
+      const dimension = url.searchParams.get("dimension") ?? ""
+      const bucket = url.searchParams.get("bucket") ?? "day"
+      const control = url.searchParams.get("control")
+      if (!isDimension(dimension)) throw new Error(`unknown dimension ${dimension}`)
+      if (bucket !== "day" && bucket !== "week") throw new Error("bucket must be day or week")
+      if (control !== null && !isControl(control)) throw new Error(`unknown control ${control}`)
+      return Response.json(accountabilitySeries(db.rows(), dimension, bucket, control ?? undefined))
+    } catch (error) {
+      return routeError(error)
+    }
+  }
+
+const workersRoute =
+  (db: AccountabilityDb): Handler =>
+  (_req, url) => {
+    try {
+      return Response.json(accountabilityWorkers(db.rows(), workerQuery(url)))
+    } catch (error) {
+      return routeError(error)
+    }
+  }
+
+const workerRoute =
+  (db: AccountabilityDb): Handler =>
+  (_req, _url, [worker]) => {
+    const grade = db.get(worker!)
+    return grade ? Response.json(grade) : routeError(new Error(`unknown worker ${worker}`), 404)
+  }
+
+const labelsRoute =
+  (db: AccountabilityDb): Handler =>
+  (_req, url) => {
+    const worker = url.searchParams.get("worker")
+    return Response.json(worker ? db.labels().filter((label) => label.worker === worker) : db.labels())
+  }
+
+const saveLabelRoute =
+  (db: AccountabilityDb): Handler =>
+  async (req) => {
+    try {
+      const body = (await req.json()) as Record<string, unknown>
+      const worker = String(body.worker ?? "")
+      const control = String(body.control ?? "")
+      const label = String(body.label ?? "")
+      if (!isControl(control)) throw new Error(`unknown control ${control}`)
+      if (label !== "pass" && label !== "fail") throw new Error("label must be pass or fail")
+      const at = Date.now()
+      db.label(worker, control, label, at)
+      return Response.json({ worker, control, label, at })
+    } catch (error) {
+      return routeError(error)
+    }
+  }
+
+export const accountabilityRoutes = (
+  db: AccountabilityDb,
+  config: () => FactoryConfig,
+): [string, RegExp, Handler][] => [
+  [
+    "GET",
+    /^\/api\/accountability\/calibration$/,
+    () => Response.json(accountabilityCalibration(db, config().accountability)),
+  ],
+  ["GET", /^\/api\/accountability\/series$/, seriesRoute(db)],
+  ["GET", /^\/api\/accountability\/workers$/, workersRoute(db)],
+  ["GET", /^\/api\/accountability\/workers\/([^/]+)$/, workerRoute(db)],
+  ["GET", /^\/api\/accountability\/labels$/, labelsRoute(db)],
+  ["POST", /^\/api\/accountability\/labels$/, saveLabelRoute(db)],
+]
 
 export type WorkerBudgetRow = { worker: string; costUsd: number }
 export type WorkerStart = { worker: string; role: string; step: string | null; timestamp: string }

@@ -2,12 +2,21 @@ import { expect, test } from "bun:test"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { AccountabilityDb, extract, gradeWorker, workerBudgets, type GradeDeps } from "../src/accountability.ts"
+import {
+  AccountabilityDb,
+  accountabilityDimensions,
+  accountabilityEvaluation,
+  extract,
+  gradeWorker,
+  workerBudgets,
+  type GradeDeps,
+} from "../src/accountability.ts"
 import { EventStore } from "../src/events.ts"
 import type { FeedEvent } from "../src/factory.ts"
 import { factoryConfig } from "../src/config.ts"
 import type { DecideRequest } from "../src/decide.ts"
 import type { ControlId } from "../../shared/accountability.ts"
+import { Threads } from "../src/threads.ts"
 
 const root = () => mkdtempSync(path.join(tmpdir(), "sf-accountability-"))
 const feed = (seq: number, type: string, data: unknown, agentId: string | null = null): FeedEvent => ({
@@ -33,11 +42,20 @@ const started = {
   startedAt: 1,
 }
 
-const fixture = (options: { cost?: number; denied?: number; evaluation?: boolean } = {}) => {
+const fixture = (
+  options: {
+    cost?: number
+    denied?: number
+    evaluation?: boolean
+    owner?: string
+    evaluationVerdict?: "pass" | "fail"
+  } = {},
+) => {
   const dir = root()
   const store = new EventStore(path.join(dir, "events.db"))
   let seq = 1
-  store.append(feed(seq++, "factory.worker_started", started))
+  const owner = options.owner ?? started.owner
+  store.append(feed(seq++, "factory.worker_started", { ...started, owner }))
   store.append(
     feed(seq++, "assistant.usage", {
       model: "gpt-x",
@@ -65,9 +83,9 @@ const fixture = (options: { cost?: number; denied?: number; evaluation?: boolean
   if (options.evaluation !== false)
     store.append(
       feed(seq++, "factory.evaluation", {
-        scopeId: "sub-12345678",
+        scopeId: owner,
         status: "done",
-        verdicts: [{ id: "AC-1", verdict: "pass" }],
+        verdicts: [{ id: "AC-1", verdict: options.evaluationVerdict ?? "pass" }],
       }),
     )
   store.append(feed(seq++, "factory.worker_stopped", { id: "w-1" }))
@@ -197,11 +215,12 @@ test("AC-2: unavailable evaluator is n/a, then a code-only patch sets 5.5 and sc
   )
   expect(grade.controls["5.5"]).toEqual({ result: "n/a", value: 0 })
   const published: unknown[] = []
-  const count = (await import("../src/accountability.ts")).patchEvaluation(
-    x.db,
-    "sub-12345678",
-    [{ id: "AC-1", verdict: "fail" }],
-    (worker, type, data) => published.push({ worker, type, data }),
+  const count = accountabilityEvaluation(x.db, (worker, type, data) => published.push({ worker, type, data }))(
+    feed(100, "factory.evaluation", {
+      scopeId: "sub-12345678",
+      status: "done",
+      verdicts: [{ id: "AC-1", verdict: "fail" }],
+    }),
   )
   expect(count).toBe(1)
   expect(calls).toBe(1)
@@ -210,13 +229,62 @@ test("AC-2: unavailable evaluator is n/a, then a code-only patch sets 5.5 and sc
   expect(published).toHaveLength(1)
 })
 
+test("AC-2: production dimensions keep the scope owner for existing and later evaluations", async () => {
+  const threadRoot = root()
+  const threads = new Threads(threadRoot)
+  const folder = threads.addFolder(path.resolve(import.meta.dir, "../../.."))
+  const thread = threads.create("Fix the parser", folder.id)
+  threads.setMeta(thread.id, { goalId: "goal-1" })
+  const owner = `sub-${thread.id.slice(0, 8)}`
+  const x = fixture({ owner, evaluationVerdict: "fail" })
+  const dimensions = accountabilityDimensions(threads)(owner)
+  expect(dimensions).toEqual({
+    owner,
+    thread: thread.id,
+    goal: "goal-1",
+    folderId: folder.id,
+    repo: folder.path,
+  })
+  const d = { ...deps(x), dimensions: accountabilityDimensions(threads) }
+  const grade = await gradeWorker({ ...d, dimensions: () => dimensions }, "w-1")
+  expect(grade.owner).toBe(owner)
+  expect(grade.controls["5.5"]).toEqual({ result: "fail", value: 1 })
+
+  const laterState = root()
+  const laterThreads = new Threads(laterState)
+  const laterFolder = laterThreads.addFolder(path.resolve(import.meta.dir, "../../.."))
+  const laterThread = laterThreads.create("Later evaluation", laterFolder.id)
+  const laterOwner = `sub-${laterThread.id.slice(0, 8)}`
+  const noEvaluation = fixture({ evaluation: false, owner: laterOwner })
+  const later = await gradeWorker(
+    {
+      ...deps(noEvaluation),
+      dimensions: accountabilityDimensions(laterThreads),
+    },
+    "w-1",
+  )
+  expect(later.owner).toBe(laterOwner)
+  expect(later.controls["5.5"].result).toBe("n/a")
+  expect(
+    accountabilityEvaluation(noEvaluation.db, () => {})(
+      feed(100, "factory.evaluation", {
+        scopeId: laterOwner,
+        status: "done",
+        verdicts: [{ id: "AC-1", verdict: "fail" }],
+      }),
+    ),
+  ).toBe(1)
+  expect(noEvaluation.db.get("w-1")?.controls["5.5"]).toEqual({ result: "fail", value: 1 })
+})
+
 test("AC-3: the extract sent to the engine is bounded, action-focused and redacted", async () => {
+  const credential = ["ghp", "abcdefghijklmnopqrstuvwxyz123456789"].join("_")
   const log: FeedEvent[] = [
     feed(1, "factory.worker_started", started),
     feed(2, "tool.execution_start", {
       toolCallId: "head",
       toolName: "head_tool",
-      arguments: `{"token":"ghp_abcdefghijklmnopqrstuvwxyz123456789"}`,
+      arguments: JSON.stringify({ token: credential }),
     }),
   ]
   for (let i = 3; i < 5000; i++)
@@ -249,7 +317,7 @@ test("AC-3: the extract sent to the engine is bounded, action-focused and redact
   expect(text).toContain("FINAL_SENTINEL")
   expect(text).toContain("$1.25")
   expect(text).not.toContain("REASONING_SENTINEL_DO_NOT_SEND")
-  expect(text).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz123456789")
+  expect(text).not.toContain(credential)
   expect(text).toContain("[REDACTED credential]")
 
   const dir = root()
@@ -285,7 +353,7 @@ test("AC-3: the extract sent to the engine is bounded, action-focused and redact
   expect(sent).toContain("REFUSAL_SENTINEL")
   expect(sent).toContain("FINAL_SENTINEL")
   expect(sent).not.toContain("REASONING_SENTINEL_DO_NOT_SEND")
-  expect(sent).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz123456789")
+  expect(sent).not.toContain(credential)
   expect(sent).toContain("[REDACTED credential]")
   expect(sent.length).toBeLessThanOrEqual(15000)
 })
