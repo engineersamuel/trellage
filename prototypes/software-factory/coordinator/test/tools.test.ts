@@ -9,7 +9,7 @@ import { Factory, type SpawnSpec } from "../src/factory.ts"
 import { Approvals } from "../src/approvals.ts"
 import { freshTurn } from "../src/report.ts"
 import { defaultSettings } from "../src/settings.ts"
-import { coordinatorTools, fanout, globalTools, synthesisBlocked, type Scope } from "../src/tools.ts"
+import { coordinatorTools, fanout, firstIdle, globalTools, synthesisBlocked, type Scope } from "../src/tools.ts"
 import type { FanoutSelection } from "../src/workflows.ts"
 
 const fakeFactory = () => {
@@ -538,4 +538,15 @@ test("the final security review uses SF_SECURITY_MODEL, then models.security, th
     cfg.resetConfigStore()
     store.close()
   }
+})
+
+test("firstIdle returns the first worker to be idle, or null when none is in time", async () => {
+  const after = (ms: number, idle: boolean) => ({
+    waitIdle: () => new Promise<boolean>((r) => setTimeout(() => r(idle), ms)),
+  })
+  const slow = after(30, true)
+  const fast = after(5, true)
+  expect(await firstIdle([slow, fast], 100)).toBe(fast)
+  expect(await firstIdle([after(5, false), after(10, false)], 100)).toBeNull()
+  expect(await firstIdle([after(5, false), slow], 100)).toBe(slow)
 })

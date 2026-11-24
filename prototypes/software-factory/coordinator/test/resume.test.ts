@@ -7,7 +7,7 @@ import { Duration, Effect } from "effect"
 import { retryTransient } from "../goal-cli.ts"
 import { Factory } from "../src/factory.ts"
 import { rerunInterruptedReview } from "../src/gates.ts"
-import { interruptedScopes, resumePrompt, type Shutdown } from "../src/resume.ts"
+import { interruptedScopes, recentProcesses, resumePrompt, type Shutdown } from "../src/resume.ts"
 import { newSdlc, type Gate, type Sdlc } from "../src/sdlc.ts"
 
 const agent = (id: string, owner: string | null, step: string | null = null) => ({
@@ -147,4 +147,19 @@ test("the goal runner polls through a coordinator restart, but not past a 4xx or
   )
   const down = Effect.fail(new Error("502 bad gateway"))
   await expect(Effect.runPromise(retryTransient(down, Date.now() - 1, Duration.millis(1)))).rejects.toThrow("502")
+})
+
+test("recentProcesses keeps only processes started within the window", () => {
+  const ps = [
+    "    1     0 07-04:23:05 /sbin/launchd",
+    "  900   800    01:02:03 bun src/main.ts",
+    "  950   940       00:59 /bin/zsh -c pkill -f src/main.ts",
+    "  951   950       00:00 pkill -f src/main.ts",
+    "",
+  ].join("\n")
+  expect(recentProcesses(ps)).toEqual([
+    "950 940 00:59 /bin/zsh -c pkill -f src/main.ts",
+    "951 950 00:00 pkill -f src/main.ts",
+  ])
+  expect(recentProcesses(ps, 30)).toEqual(["951 950 00:00 pkill -f src/main.ts"])
 })

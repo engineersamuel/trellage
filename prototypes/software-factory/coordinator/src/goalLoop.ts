@@ -167,8 +167,12 @@ export const afterReport = (s: GoalState, r: ReportFacts): { state: GoalState; d
   return { state: { ...base, noProgress, status: "running", next: true }, decision: { kind: "next-loop" } }
 }
 
-/** Session id of a loop: loop 1 keeps the plain id; later loops get a fresh session (a fresh context). */
-export const loopSessionId = (subId: string, loop: number) => `sf-${subId}${loop > 1 ? `-l${loop}` : ""}`
+/**
+ * Session id of a loop: loop 1 keeps the plain id; later loops get a fresh session (a fresh context). Each renewal of
+ * a long session (`renewals`) gets a fresh one too.
+ */
+export const loopSessionId = (subId: string, loop: number, renewals = 0) =>
+  `sf-${subId}${loop > 1 ? `-l${loop}` : ""}${renewals > 0 ? `-r${renewals}` : ""}`
 
 /** The first turn of loop n > 1: the goal and its state, so a fresh session continues the work. */
 export const goalLoopPrompt = (

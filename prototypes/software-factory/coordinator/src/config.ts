@@ -111,6 +111,7 @@ const FactoryConfigSchema = Schema.Struct({
     cost_alert_share: Probability,
     max_parallel_events: Count,
     renew_context_share: Probability,
+    sub_renew_tokens: Count,
     rules: Schema.Struct({
       r1: Schema.Boolean,
       r3: Schema.Boolean,

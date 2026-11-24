@@ -51,6 +51,16 @@ const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
 
 type Args = Record<string, unknown>
 
+/** The first of `ws` to be idle within `ms`, or null. */
+export const firstIdle = <W extends { waitIdle(ms: number): Promise<boolean> }>(
+  ws: W[],
+  ms: number,
+): Promise<W | null> =>
+  new Promise((resolve) => {
+    let pending = ws.length
+    for (const w of ws) void w.waitIdle(ms).then((idle) => (idle ? resolve(w) : --pending === 0 && resolve(null)))
+  })
+
 const str = (args: Args | null | undefined, key: string): string => {
   const v = args?.[key]
   if (typeof v !== "string") throw new Error(`missing \`${key}\``)
@@ -186,12 +196,26 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
   }),
   defineTool("read_worker", {
     description:
-      "Read a worker's latest assistant message. With wait=true, wait (max timeout_s, default 300) until the worker is idle first.",
-    parameters: obj({ id: { type: "string" }, wait: { type: "boolean" }, timeout_s: { type: "integer" } }, ["id"]),
+      "Read a worker's latest assistant message. With wait=true, wait (max timeout_s, default 300) until the worker is idle first. With `any` (worker ids, wait=true), wait until the FIRST of them is idle and read that one: use it for a batch of workers that work toward one target (for example N records), so you can check the target after each one and stop the rest when it is met.",
+    parameters: obj(
+      {
+        id: { type: "string" },
+        any: { type: "array", items: { type: "string" } },
+        wait: { type: "boolean" },
+        timeout_s: { type: "integer" },
+      },
+      [],
+    ),
     handler: async (a: Args) => {
-      const w = f.get(str(a, "id"))
-      const idle =
-        a.wait === true ? await w.waitIdle(((a.timeout_s as number | undefined) ?? 300) * 1000) : w.status !== "running"
+      const ms = ((a.timeout_s as number | undefined) ?? 300) * 1000
+      const ids = Array.isArray(a.any) && a.any.length ? (a.any as string[]) : [str(a, "id")]
+      // In a batch, a worker already read and still idle has nothing new: wait for the others.
+      const all = ids.map((id) => f.get(id))
+      const fresh = all.filter((x) => x.status === "running" || !x.collected)
+      const ws = all.length > 1 && fresh.length ? fresh : all
+      const first = a.wait === true ? await firstIdle(ws, ms) : null
+      const w = first ?? ws.find((x) => x.status !== "running") ?? ws[0]!
+      const idle = w.status !== "running" || first !== null
       if (idle) w.collected = true
       const review = [...f.securityReviews.values()].find((r) => r.implementWorkerId === w.id)
       return json({

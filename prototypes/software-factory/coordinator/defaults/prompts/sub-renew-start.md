@@ -1,0 +1,1 @@
+You continue this conversation in a new session: the old one grew too long. What follows is the handoff from that session; trust it as your own earlier work. Call sdlc_status and list_workers before you act on it: they show the live state.

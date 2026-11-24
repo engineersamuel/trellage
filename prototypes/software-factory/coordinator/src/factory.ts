@@ -1361,21 +1361,36 @@ export class Factory {
    * The handoff of a coordinator that changes SDK: its own summary, else (no answer in time, or a dead session) the
    * last turns from the event log. Saved in its home, so it survives the service restart a desk switch needs.
    */
-  private async writeHandoff(w: Worker): Promise<void> {
+  private async writeHandoff(w: Worker, ask = "handoff-ask", start = "handoff-start"): Promise<void> {
     const before = w.lastMessage
     let summary: string | null = null
     try {
-      await w.send(loadPrompt("handoff-ask"))
+      await w.send(loadPrompt(ask))
       if ((await w.waitIdle(HANDOFF_WAIT_MS)) && w.lastMessage && w.lastMessage !== before) summary = w.lastMessage
     } catch {}
     const body =
       summary ?? `Transcript of the last turns (the old session wrote no summary):\n\n${handoffTranscript(w.log)}`
     try {
       mkdirSync(path.join(this.root, w.id), { recursive: true })
-      writeFileSync(handoffFile(this.root, w.id), `${loadPrompt("handoff-start")}\n\n${body}`)
+      writeFileSync(handoffFile(this.root, w.id), `${loadPrompt(start)}\n\n${body}`)
     } catch (e) {
       console.error(`handoff of ${w.id} not saved: ${e instanceof Error ? e.message : e}`)
     }
+  }
+
+  /**
+   * End an idle sub-coordinator's long session: it writes a handoff, then stops. The caller's next spawn of it uses a
+   * new session id and gets the handoff with its first message, in either SDK. False when it got busy meanwhile.
+   */
+  async handOffAndStop(w: Worker): Promise<boolean> {
+    if (w.status === "running") return false
+    await this.writeHandoff(w, "sub-renew-ask", "sub-renew-start")
+    if (w.status === "running" || this.workers.get(w.id) !== w) {
+      rmSync(handoffFile(this.root, w.id), { force: true })
+      return false
+    }
+    await this.stop(w.id)
+    return true
   }
 
   /**

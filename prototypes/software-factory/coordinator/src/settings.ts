@@ -72,7 +72,7 @@ const SettingsSchema = Schema.Struct({
   /** Model and effort of the repo sub-coordinators (the delivery loops); the global ones use `agent`. */
   subAgent: Schema.Struct({ model: Schema.String, reasoningEffort: Schema.String }).pipe(
     Schema.withDecodingDefaultKey(
-      Effect.sync(() => ({ model: factoryConfig().models.sub_coordinator, reasoningEffort: "high" })),
+      Effect.sync(() => ({ model: factoryConfig().models.sub_coordinator, reasoningEffort: "medium" })),
     ),
   ),
   /** Agent SDK of every worker: auto (the step decides, else Claude Agent SDK for a Claude model, Copilot SDK for others) or one SDK forced for all workers. */
@@ -148,7 +148,7 @@ export const defaultSettings = (): Settings => ({
   focus: "coordinator",
   banner: null,
   agent: { model: factoryConfig().models.coordinator, reasoningEffort: "high", disabledTools: [], instructions: "" },
-  subAgent: { model: factoryConfig().models.sub_coordinator, reasoningEffort: "high" },
+  subAgent: { model: factoryConfig().models.sub_coordinator, reasoningEffort: "medium" },
   workers: { harness: "auto", forceWithLease: true },
   decisions: { engine: "jev" },
   crons: {},
