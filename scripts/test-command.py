@@ -5,10 +5,17 @@ from __future__ import annotations
 
 import math
 import os
+import shutil
 import signal
 import subprocess
 import sys
 import time
+
+
+# Windows has no process groups or SIGHUP: stop the recipe's process tree with taskkill instead.
+WINDOWS = os.name == "nt"
+FORWARDED = tuple(getattr(signal, name) for name in ("SIGINT", "SIGTERM", "SIGHUP") if hasattr(signal, name))
+SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
 
 def _stamp() -> str:
@@ -19,7 +26,11 @@ def _group_has_live_members(pgid: int) -> bool:
     """Fail closed if the host cannot confirm that a retired group is empty."""
     try:
         result = subprocess.run(
-            ["ps", "-axo", "pgid=,stat="], capture_output=True, text=True, check=True, timeout=1,
+            ["ps", "-axo", "pgid=,stat="],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=1,
         )
     except (OSError, subprocess.SubprocessError):
         return True
@@ -54,7 +65,10 @@ def main(argv: list[str]) -> int:
     timed_out = False
 
     def signal_group(signum: int) -> None:
-        if child is not None:
+        if child is not None and WINDOWS:
+            if child.poll() is None:
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(child.pid)], capture_output=True, check=False)
+        elif child is not None:
             try:
                 os.killpg(child.pid, signum)
             except ProcessLookupError:
@@ -72,13 +86,14 @@ def main(argv: list[str]) -> int:
         except subprocess.TimeoutExpired:
             pass
         # Kill descendants too, including ones that outlive a cooperative shell.
-        signal_group(signal.SIGKILL)
+        signal_group(SIGKILL)
         child.wait(timeout=1)
 
     def forward(signum: int, _frame: object) -> None:
         nonlocal interrupted
         interrupted = interrupted or signum
-        if child is None:
+        if child is None or WINDOWS:
+            # The polling loop stops the whole tree once `interrupted` is set.
             return
         try:
             os.killpg(child.pid, signum)
@@ -86,11 +101,11 @@ def main(argv: list[str]) -> int:
             pass
 
     previous: dict[int, object] = {}
-    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    for signum in FORWARDED:
         previous[signum] = signal.signal(signum, forward)
     try:
         child = subprocess.Popen(
-            ["/bin/sh", "-c", command, *argv[4:]],
+            [(shutil.which("sh") or "sh") if WINDOWS else "/bin/sh", "-c", command, *argv[4:]],
             start_new_session=True,
             # Recursive make recipes inherit the jobserver descriptors.
             close_fds=False,
@@ -128,8 +143,7 @@ def main(argv: list[str]) -> int:
         detail = f"code={status} status={'passed' if status == 0 else 'failed'}"
         exit_status = status
     print(
-        f"[test-timing] target={target} event=end time={_stamp()} "
-        f"duration={duration:.3f}s {detail}",
+        f"[test-timing] target={target} event=end time={_stamp()} duration={duration:.3f}s {detail}",
         file=sys.stderr,
         flush=True,
     )

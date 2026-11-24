@@ -1,0 +1,56 @@
+[
+  {
+    "number": 2,
+    "headRefName": "topic",
+    "isCrossRepository": true,
+    "url": "https://github.test/owner/repo/pull/2",
+    "state": "CLOSED",
+    "statusCheckRollup": null
+  },
+  {
+    "number": 1,
+    "headRefName": "topic",
+    "isCrossRepository": false,
+    "url": "https://github.test/owner/repo/pull/1",
+    "state": "OPEN",
+    "statusCheckRollup": null
+  },
+  {
+    "number": 3,
+    "headRefName": "topic",
+    "isCrossRepository": true,
+    "url": "https://github.test/owner/repo/pull/3",
+    "state": "CLOSED",
+    "statusCheckRollup": null
+  },
+  {
+    "number": 4,
+    "headRefName": "topic",
+    "url": "https://github.test/owner/repo/pull/4",
+    "state": "CLOSED",
+    "statusCheckRollup": null
+  },
+  {
+    "number": 5,
+    "headRefName": "topic",
+    "isCrossRepository": null,
+    "url": "https://github.test/owner/repo/pull/5",
+    "state": "CLOSED",
+    "statusCheckRollup": null
+  },
+  {
+    "number": 6,
+    "headRefName": "foreign-only",
+    "isCrossRepository": true,
+    "url": "https://github.test/owner/repo/pull/6",
+    "state": "CLOSED",
+    "statusCheckRollup": null
+  },
+  {
+    "number": 7,
+    "headRefName": "unknown-only",
+    "url": "https://github.test/owner/repo/pull/7",
+    "state": "CLOSED",
+    "statusCheckRollup": null
+  }
+]

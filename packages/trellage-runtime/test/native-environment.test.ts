@@ -9,6 +9,8 @@ import {
 } from "@trellage/runtime/native-environment"
 import { cleanupFixtures, tempRoot } from "./native-run/fixtures.ts"
 
+const unix = test.skipIf(process.platform === "win32")
+
 afterEach(cleanupFixtures)
 
 const source = async (files: Record<string, string>, mode = 0o700): Promise<string> => {
@@ -58,6 +60,8 @@ test("an empty process variable does not hide the central value", async () => {
 test("starts nothing when no name is requested or the central environment is off", async () => {
   const directory = await source({ ".env.local": "CONTEXT7_API_KEY=fixture-context\n" })
   // Starting Varlock from this root would fail and warn, so empty warnings prove it never started.
+
+  // Tests marked skipIf(win32) cover POSIX mode bits; Windows checks NTFS DACLs instead.
   const unusable = { sourceRoot: path.join(directory, "missing") }
   const environment = { HOME: directory, PATH: process.env.PATH ?? "", TRELLAGE_ENVIRONMENT: "off" }
   const nothing = { values: {}, warnings: [] }
@@ -74,7 +78,7 @@ test("starts nothing when no name is requested or the central environment is off
   )
 })
 
-test("an unsafe or broken source only warns, without echoing its content, unless it is required", async () => {
+unix("an unsafe or broken source only warns, without echoing its content, unless it is required", async () => {
   const open = await source({ ".env.local": "CONTEXT7_API_KEY=fixture-context\n" }, 0o755)
   const unsafe = await readCentralEnvironment(request(open, ["CONTEXT7_API_KEY"]))
   expect(unsafe.values).toEqual({})

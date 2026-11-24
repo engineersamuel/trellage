@@ -15,6 +15,10 @@ script='scripts/apply-trellage-statusline.sh'
 home_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-statusline-apply.XXXXXX")"
 trap 'rm -rf -- "$home_root"' EXIT
 export HOME="$home_root/home"
+# Native jq.exe receives paths as C:/...; Git Bash shows /tmp/... for the same directory.
+native_path() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+}
 mkdir -p "$HOME"
 
 run_apply() {
@@ -66,7 +70,7 @@ printf '%s\n' '{"statusLine":{"type":"command","command":"bash /tmp/statusline-b
 run_apply >/dev/null
 assert_file "$HOME/.claude/statusline.sh"
 assert_same_as_canon "$HOME/.claude/statusline.sh"
-assert_json "$HOME/.claude/settings.json" '.statusLine.command' "bash $HOME/.claude/statusline.sh" 'claude balanced command'
+assert_json "$HOME/.claude/settings.json" '.statusLine.command' "bash $(native_path "$HOME")/.claude/statusline.sh" 'claude balanced command'
 assert_json "$HOME/.claude/settings.json" '.statusLine.refreshInterval' '15' 'claude balanced refresh'
 
 rm -rf "$HOME/.claude"
@@ -83,7 +87,7 @@ printf '%s\n' '{}' >"$HOME/.copilot/settings.json"
 run_apply >/dev/null
 assert_file "$HOME/.copilot/statusline.sh"
 assert_same_as_canon "$HOME/.copilot/statusline.sh"
-assert_json "$HOME/.copilot/settings.json" '.statusLine.command' "bash $HOME/.copilot/statusline.sh" 'copilot command'
+assert_json "$HOME/.copilot/settings.json" '.statusLine.command' "bash $(native_path "$HOME")/.copilot/statusline.sh" 'copilot command'
 assert_json "$HOME/.copilot/settings.json" '.footer.showCustom' 'true' 'copilot footer enabled'
 
 mkdir -p "$HOME/.codex"
@@ -113,7 +117,7 @@ printf '%s\n' '{}' >"$profile_home/settings.json"
 run_apply >/dev/null
 assert_file "$profile_home/statusline.sh"
 assert_same_as_canon "$profile_home/statusline.sh"
-assert_json "$profile_home/settings.json" '.statusLine.command' "bash $profile_home/statusline.sh" 'profile claude command'
+assert_json "$profile_home/settings.json" '.statusLine.command' "bash $(native_path "$profile_home")/statusline.sh" 'profile claude command'
 assert_json "$profile_home/settings.json" '.statusLine.refreshInterval' '15' 'profile claude refresh'
 
 printf '%s\n' 'trellage statusline apply: PASS'

@@ -21,7 +21,12 @@ def isolated_command(command: list[str]) -> list[str]:
         ]
     if platform.system() == "Linux":
         return [sys.executable, str(Path(__file__).with_name("test-offline-linux.py")), *command]
-    raise RuntimeError("offline tests require macOS sandbox-exec or Linux libseccomp")
+    if platform.system() == "Windows":
+        # Windows has no OS network denial here yet: only the provider tripwire and environment scrubbing apply.
+        print("offline tests: OS network isolation is disabled on Windows.", file=sys.stderr)
+        # CreateProcess searches System32 (WSL's bash.exe) before PATH; resolve the program like a shell would.
+        return [shutil.which(command[0]) or command[0], *command[1:]]
+    raise RuntimeError("offline tests require macOS sandbox-exec, Linux libseccomp, or Windows")
 
 
 def prepare_process_listing(directory: Path, env: dict[str, str]) -> None:
@@ -98,7 +103,7 @@ def isolated_environment(violations: Path) -> dict[str, str]:
     # Resolve the pinned executable before fixtures replace HOME. A mise shim
     # would otherwise consult the fixture's empty trust database on every call.
     bun = subprocess.run(
-        ["bun", "--no-env-file", "--config=/dev/null", "-p", "process.execPath"],
+        ["bun", "--no-env-file", f"--config={os.devnull}", "-p", "process.execPath"],
         check=True,
         capture_output=True,
         text=True,
@@ -139,7 +144,9 @@ def main(argv: list[str]) -> int:
             except ProcessLookupError:
                 pass
 
-        previous = {sig: signal.signal(sig, forward) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+        # Windows has no process groups to signal; the console already delivers Ctrl+C to the child.
+        forwarded = () if os.name == "nt" else (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+        previous = {sig: signal.signal(sig, forward) for sig in forwarded}
         try:
             status = child.wait()
         finally:

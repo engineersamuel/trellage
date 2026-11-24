@@ -4,7 +4,10 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { swapPaths } from "../src/swap.ts"
 
-test("swapPaths exchanges two directories; a missing path is an error and changes nothing", () => {
+// unix(...) tests cover atomic directory swap, which is Unix-only.
+const unix = test.skipIf(process.platform === "win32")
+
+unix("swapPaths exchanges two directories; a missing path is an error and changes nothing", () => {
   const root = mkdtempSync(path.join(tmpdir(), "swap-"))
   const a = path.join(root, "a")
   const b = path.join(root, "b")

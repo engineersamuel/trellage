@@ -1,4 +1,5 @@
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
+import { openSync, closeSync } from "node:fs"
 import { copyFile, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -16,7 +17,9 @@ export const devSourceRoots = (value: string | undefined): ReadonlyMap<string, s
     const repository = separator < 0 ? "" : entry.slice(0, separator)
     const root = separator < 0 ? "" : entry.slice(separator + 1)
     if (!githubHttpsUrl.test(repository) || !path.isAbsolute(root))
-      throw new Error(`TRELLAGE_DEV_SOURCES entry must be <https://github.com/OWNER/REPO.git>=<absolute path>: ${entry}`)
+      throw new Error(
+        `TRELLAGE_DEV_SOURCES entry must be <https://github.com/OWNER/REPO.git>=<absolute path>: ${entry}`,
+      )
     roots.set(repository, root)
   }
   return roots
@@ -68,14 +71,37 @@ const extractCommit = (root: string, commit: string, destination: string): Promi
   withTemporaryDirectory("trellage-dev-archive-", async (directory) => {
     const archive = path.join(directory, "source.tar")
     await git(root, ["archive", "--format=tar", "-o", archive, commit])
-    await execFilePromise("tar", ["-xf", archive, "-C", destination])
+    await extractTar(archive, destination)
+  })
+
+/**
+ * Extract on stdin from inside the destination: GNU tar misreads drive paths in -f and -C, so it gets no paths at all.
+ * This works with GNU tar, bsdtar, and Windows' tar.exe alike.
+ */
+const extractTar = (archive: string, destination: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const input = openSync(archive, "r")
+    let open = true
+    const release = () => {
+      if (open) closeSync(input)
+      open = false
+    }
+    let stderr = ""
+    const child = spawn("tar", ["-xf", "-"], { cwd: destination, stdio: [input, "ignore", "pipe"] })
+    child.stderr?.on("data", (chunk: Buffer) => (stderr += chunk.toString()))
+    child.on("error", (error) => {
+      release()
+      reject(error)
+    })
+    child.on("close", (code, signal) => {
+      release()
+      if (code === 0) resolve()
+      else reject(new Error(`tar -xf failed (${code ?? signal}): ${stderr.trim()}`))
+    })
   })
 
 /** Override mapped GitHub repositories with deterministic snapshots of local worktrees. */
-export const devSourceTransport = (
-  base: SourceTransport,
-  roots: ReadonlyMap<string, string>,
-): SourceTransport => ({
+export const devSourceTransport = (base: SourceTransport, roots: ReadonlyMap<string, string>): SourceTransport => ({
   ...(base.listTags ? { listTags: base.listTags } : {}),
   resolveRef: (repository, ref) => {
     const root = roots.get(githubUrl(repository))
@@ -83,6 +109,8 @@ export const devSourceTransport = (
   },
   fetchCommit: (repository, commit, destination) => {
     const root = roots.get(githubUrl(repository))
-    return root === undefined ? base.fetchCommit(repository, commit, destination) : extractCommit(root, commit, destination)
+    return root === undefined
+      ? base.fetchCommit(repository, commit, destination)
+      : extractCommit(root, commit, destination)
   },
 })

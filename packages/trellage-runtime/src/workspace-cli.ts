@@ -1,6 +1,10 @@
 import {
+  closeSync,
   cpSync,
+  fstatSync,
   mkdirSync,
+  lstatSync,
+  openSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -165,12 +169,18 @@ async function installFrozenDependencies(
     try {
       registry = configured(
         (
-          await promisify(execFile)("npm", ["config", "get", "registry", "--workspaces=false"], {
-            cwd: root,
-            env,
-            signal: cancellation.signal,
-            timeout: 10_000,
-          })
+          await promisify(execFile)(
+            process.platform === "win32" ? (env.ComSpec ?? "cmd.exe") : "npm",
+            process.platform === "win32"
+              ? ["/d", "/s", "/c", "npm config get registry --workspaces=false"]
+              : ["config", "get", "registry", "--workspaces=false"],
+            {
+              cwd: root,
+              env,
+              signal: cancellation.signal,
+              timeout: 10_000,
+            },
+          )
         ).stdout,
       )
     } catch (error) {
@@ -408,6 +418,39 @@ try {
     case "check":
       await requireReadyAsync(root)
       break
+    case "validate-command-directory": {
+      for (const [name, marker] of [
+        ["trx.ps1", "# Managed by Trellage Windows installer."],
+        ["trx.cmd", "@rem Managed by Trellage Windows installer."],
+      ] as const) {
+        const launcher = path.join(root, name)
+        // Open first, then confirm the path still names that file: no check runs before the use.
+        let handle: number
+        try {
+          handle = openSync(launcher, "r")
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+          throw error
+        }
+        try {
+          const opened = fstatSync(handle)
+          const firstLine = readFileSync(handle, "utf8").split(/\r?\n/, 1)[0]
+          safePath(launcher, "file")
+          const named = lstatSync(launcher)
+          if (
+            named.dev !== opened.dev ||
+            named.ino !== opened.ino ||
+            !opened.isFile() ||
+            opened.nlink !== 1 ||
+            firstLine !== marker
+          )
+            throw new Error(`refusing unmanaged Windows launcher: ${launcher}`)
+        } finally {
+          closeSync(handle)
+        }
+      }
+      break
+    }
     case "fingerprint": {
       const digest = await sourceFingerprintAsync(root)
       cancellation.signal.throwIfAborted()

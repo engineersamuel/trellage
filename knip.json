@@ -5,7 +5,7 @@
   },
   "workspaces": {
     ".": {
-      "ignoreBinaries": ["uv", "pbcopy", "mkfifo"],
+      "ignoreBinaries": ["uv", "pbcopy", "mkfifo", "icacls.exe"],
       "ignoreDependencies": [
         "@swc/core",
         "@trellage/launcher",
@@ -41,6 +41,7 @@
         "src/index.ts",
         "src/*cli.{ts,tsx}",
         "src/native-run/cli.ts",
+        "src/native-run/windows-claude-cli.ts",
         "test/**/*.{ts,tsx}",
         "tests/**/*.{ts,tsx}"
       ],

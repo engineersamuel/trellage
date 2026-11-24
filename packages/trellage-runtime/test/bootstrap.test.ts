@@ -15,6 +15,9 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
+// unix(...) tests cover the Bash bootstrap installer; Windows installs with scripts/install-windows.ps1.
+const unix = test.skipIf(process.platform === "win32")
+
 const roots: string[] = []
 const repository = fileURLToPath(new URL("../../../", import.meta.url))
 
@@ -85,7 +88,7 @@ function fixture() {
   }
 }
 
-test("installed lib bootstrap prepares its complete source workspace without changing the caller cwd", () => {
+unix("installed lib bootstrap prepares its complete source workspace without changing the caller cwd", () => {
   const f = fixture()
   const result = f.run()
   expect(result.error).toBeUndefined()
@@ -99,7 +102,7 @@ test("installed lib bootstrap prepares its complete source workspace without cha
   expect(existsSync(path.join(f.state, "dependency-bootstrap.lock"))).toBe(false)
 })
 
-test("canonical source bootstrap does not require a surrounding router installation", () => {
+unix("canonical source bootstrap does not require a surrounding router installation", () => {
   const f = fixture()
   rmSync(f.marker)
   const result = f.run(f.sourceEntrypoint)
@@ -107,7 +110,9 @@ test("canonical source bootstrap does not require a surrounding router installat
   expect(f.invocations()[0]).toEqual(["prepare", f.source, f.cwd])
 })
 
-test.each(["source", "source/scripts", "source/scripts/build-profile-compiler.sh", ".managed-by-trellage-router"])(
+test
+  .skipIf(process.platform === "win32")
+  .each(["source", "source/scripts", "source/scripts/build-profile-compiler.sh", ".managed-by-trellage-router"])(
   "installed bootstrap refuses a redirected %s before preparation or locking",
   (relative) => {
     const f = fixture()
@@ -123,7 +128,7 @@ test.each(["source", "source/scripts", "source/scripts/build-profile-compiler.sh
   },
 )
 
-test.each(["trellage-router-v2\n", "unrelated\n"])("installed bootstrap refuses the non-v3 marker %j", (marker) => {
+unix.each(["trellage-router-v2\n", "unrelated\n"])("installed bootstrap refuses the non-v3 marker %j", (marker) => {
   const f = fixture()
   writeFileSync(f.marker, marker)
   const result = f.run()
@@ -133,7 +138,7 @@ test.each(["trellage-router-v2\n", "unrelated\n"])("installed bootstrap refuses 
   expect(existsSync(f.state)).toBe(false)
 })
 
-test("installed bootstrap refuses a missing source preparer without skipping dependency preparation", () => {
+unix("installed bootstrap refuses a missing source preparer without skipping dependency preparation", () => {
   const f = fixture()
   rmSync(path.join(f.source, "scripts/build-profile-compiler.sh"))
   const result = f.run()
@@ -143,7 +148,7 @@ test("installed bootstrap refuses a missing source preparer without skipping dep
   expect(existsSync(f.state)).toBe(false)
 })
 
-test("explicit source preparation failure preserves its status and releases the bootstrap lock", () => {
+unix("explicit source preparation failure preserves its status and releases the bootstrap lock", () => {
   const f = fixture()
   const result = f.run(f.entrypoint, "--run", "23")
   expect(result.status).toBe(23)
@@ -151,7 +156,7 @@ test("explicit source preparation failure preserves its status and releases the 
   expect(existsSync(path.join(f.state, "dependency-bootstrap.lock"))).toBe(false)
 })
 
-test("background bootstrap rejects automatic installation without preparation or locking", () => {
+unix("background bootstrap rejects automatic installation without preparation or locking", () => {
   const f = fixture()
   const result = f.run(f.entrypoint, "--background")
   expect(result.status).toBe(1)

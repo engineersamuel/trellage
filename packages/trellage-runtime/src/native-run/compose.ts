@@ -648,7 +648,7 @@ export const publishGeneration = async (input: PublishInput): Promise<Generation
       const target = path.join(layout.ownerHome, "state", name)
       await mkdir(target, { recursive: true, mode: 0o700 })
       await rm(path.join(stage, name), { recursive: true, force: true })
-      await symlink(target, path.join(stage, name))
+      await symlink(target, path.join(stage, name), process.platform === "win32" ? "junction" : "dir")
     }
     if (input.plan.instructions.length > 0)
       await writeFile(

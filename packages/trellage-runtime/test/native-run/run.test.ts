@@ -46,6 +46,9 @@ import {
   waitForFile,
 } from "./fixtures.ts"
 
+// unix(...) tests cover non-Claude harnesses, the Claude plugin lifecycle, or POSIX signal status, none of which native Windows runs.
+const unix = test.skipIf(process.platform === "win32")
+
 afterEach(cleanupFixtures)
 
 const world = async (config?: string) => {
@@ -205,7 +208,7 @@ test("parses harness, stacked profiles, overrides and forwarded arguments", () =
   })
 })
 
-test("Prime launch uses its managed lifecycle binary and preserves spawn diagnostics", async () => {
+unix("Prime launch uses its managed lifecycle binary and preserves spawn diagnostics", async () => {
   const root = await tempRoot("prime-lifecycle")
   const lifecycle = path.join(root, ".local", "share", "trellage", "prx", "bin", "prx")
   const marker = path.join(root, "lifecycle-args")
@@ -262,7 +265,7 @@ test("Fx uses the canonical adapter with shared host context and plan defaults",
   expect(settings.providers["trellage-copilot-proxy"].base_url).toBe("http://127.0.0.1:8080/v1")
 })
 
-test("Headlong uses host proxy settings and keeps manual skills outside identity registries", async () => {
+unix("Headlong uses host proxy settings and keeps manual skills outside identity registries", async () => {
   const { dependencies, root } = await world()
   const headlongHome = path.join(root, ".headlong")
   const appHome = path.join(headlongHome, "app")
@@ -311,7 +314,7 @@ test("Headlong uses host proxy settings and keeps manual skills outside identity
   await expect(readlink(path.join(appHome, ".identities", "ada", "kernel", "i-have-adhd"))).rejects.toThrow()
 })
 
-test("Uji scopes its config, selected skills, and session database to the profile composition", async () => {
+unix("Uji scopes its config, selected skills, and session database to the profile composition", async () => {
   const { dependencies, root } = await world(`schema_version = 1
   [native.sources.office-content]
   repository = "example/office"
@@ -427,7 +430,7 @@ test("Nodecode default routes through copilot-proxy-rs with a persistent profile
   ).rejects.toThrow(/managed by the Nodecode adapter/)
 })
 
-test("Nodecode runs preserve native update settings and release holds without a forced update", async () => {
+unix("Nodecode runs preserve native update settings and release holds without a forced update", async () => {
   const { dependencies } = await world()
   const options = { ...base, harness: "nodecode", profiles: ["default"], allowUnprovenIsolation: true }
   const prepared = await prepareRun(options, dependencies())
@@ -531,7 +534,7 @@ const activeNodecodeSnapshot = async (ownerHome: string): Promise<string> =>
     }
   ).snapshot
 
-test("Nodecode activates canonical selected skills, always instructions, and provenance before spawning", async () => {
+unix("Nodecode activates canonical selected skills, always instructions, and provenance before spawning", async () => {
   const { dependencies } = await nodecodeSkillsWorld()
   const prepared = await prepareRun(nodecodeRunOptions, dependencies())
   const home = path.join(prepared.layout.ownerHome, "state", "home")
@@ -612,34 +615,37 @@ test("Nodecode activates canonical selected skills, always instructions, and pro
   expect(await readFile(path.join(home, "cells", "user-cell", "notes.txt"), "utf8")).toBe("user cell\n")
 })
 
-test("Nodecode no-always reconciles the same home without retaining removed managed instructions or discovery", async () => {
-  const { dependencies } = await nodecodeSkillsWorld()
-  const prepared = await prepareRun(nodecodeRunOptions, dependencies())
-  const deps = dependencies(async () => 0)
-  await runNative(nodecodeRunOptions, deps)
-  const previous = await activeNodecodeSnapshot(prepared.layout.ownerHome)
-  const options = { ...nodecodeRunOptions, noAlways: true }
-  const withoutAlways = await prepareRun(options, dependencies())
-  expect(withoutAlways.layout.ownerHome).toBe(prepared.layout.ownerHome)
-  await runNative(options, deps)
-  const snapshot = await activeNodecodeSnapshot(prepared.layout.ownerHome)
-  expect(snapshot).not.toBe(previous)
-  const manifest = JSON.parse(await readFile(path.join(snapshot, "manifest.json"), "utf8"))
-  expect(manifest.alwaysProfiles).toEqual([])
-  expect(manifest.instructions).toEqual([])
-  expect(manifest.skills.map((skill: { name: string }) => skill.name)).toEqual(["i-have-adhd", "powerpoint"])
-  const home = path.join(prepared.layout.ownerHome, "state", "home")
-  const instructions = await readFile(path.join(home, "AGENTS.md"), "utf8")
-  expect(instructions).not.toContain("CANONICAL CONFIG INSTRUCTION")
-  expect(instructions).not.toContain("ALWAYS-ON WRITING GUIDANCE")
-  expect(await readdir(path.join(home, "cells", "trellage-knowledge"))).not.toContain("writing-plans.lisp")
-  // Old conversations retain their durable paths; selection changes do not erase them.
-  expect(await readFile(path.join(previous, "ordinary", "writing-plans", "SKILL.md"), "utf8")).toContain(
-    "ALWAYS-ON WRITING GUIDANCE",
-  )
-})
+unix(
+  "Nodecode no-always reconciles the same home without retaining removed managed instructions or discovery",
+  async () => {
+    const { dependencies } = await nodecodeSkillsWorld()
+    const prepared = await prepareRun(nodecodeRunOptions, dependencies())
+    const deps = dependencies(async () => 0)
+    await runNative(nodecodeRunOptions, deps)
+    const previous = await activeNodecodeSnapshot(prepared.layout.ownerHome)
+    const options = { ...nodecodeRunOptions, noAlways: true }
+    const withoutAlways = await prepareRun(options, dependencies())
+    expect(withoutAlways.layout.ownerHome).toBe(prepared.layout.ownerHome)
+    await runNative(options, deps)
+    const snapshot = await activeNodecodeSnapshot(prepared.layout.ownerHome)
+    expect(snapshot).not.toBe(previous)
+    const manifest = JSON.parse(await readFile(path.join(snapshot, "manifest.json"), "utf8"))
+    expect(manifest.alwaysProfiles).toEqual([])
+    expect(manifest.instructions).toEqual([])
+    expect(manifest.skills.map((skill: { name: string }) => skill.name)).toEqual(["i-have-adhd", "powerpoint"])
+    const home = path.join(prepared.layout.ownerHome, "state", "home")
+    const instructions = await readFile(path.join(home, "AGENTS.md"), "utf8")
+    expect(instructions).not.toContain("CANONICAL CONFIG INSTRUCTION")
+    expect(instructions).not.toContain("ALWAYS-ON WRITING GUIDANCE")
+    expect(await readdir(path.join(home, "cells", "trellage-knowledge"))).not.toContain("writing-plans.lisp")
+    // Old conversations retain their durable paths; selection changes do not erase them.
+    expect(await readFile(path.join(previous, "ordinary", "writing-plans", "SKILL.md"), "utf8")).toContain(
+      "ALWAYS-ON WRITING GUIDANCE",
+    )
+  },
+)
 
-test("Nodecode reuses an unchanged snapshot but refreshes floating sources before its next launch", async () => {
+unix("Nodecode reuses an unchanged snapshot but refreshes floating sources before its next launch", async () => {
   const { dependencies, office } = await world()
   const options = { ...base, harness: "nodecode", profiles: ["office"], allowUnprovenIsolation: true }
   const prepared = await prepareRun(options, dependencies())
@@ -691,7 +697,7 @@ test("Nodecode dry-run prepares a plan but does not activate skills or serialize
   expect(existsSync(path.join(prepared.layout.ownerHome, "state", "home", "cells"))).toBe(false)
 })
 
-test("Nodecode leaves native store ownership and obsolete launch guards alone", async () => {
+unix("Nodecode leaves native store ownership and obsolete launch guards alone", async () => {
   const { dependencies } = await nodecodeSkillsWorld()
   const prepared = await prepareRun(nodecodeRunOptions, dependencies())
   const home = path.join(prepared.layout.ownerHome, "state", "home")
@@ -770,7 +776,7 @@ test.skipIf(!["darwin", "linux"].includes(process.platform))(
   },
 )
 
-test("a Nodecode spawn failure releases preparation ownership and generation lease for a retry", async () => {
+unix("a Nodecode spawn failure releases preparation ownership and generation lease for a retry", async () => {
   const { dependencies, paths } = await world()
   const options = { ...base, harness: "nodecode", profiles: ["office"], allowUnprovenIsolation: true }
   const prepared = await prepareRun(options, dependencies())
@@ -794,92 +800,95 @@ test("a Nodecode spawn failure releases preparation ownership and generation lea
   expect(existsSync(path.join(prepared.layout.ownerHome, ".launch-guard"))).toBe(false)
 })
 
-test("Nodecode admits overlapping same-profile sessions and selection changes without stopping either session", async () => {
-  const { dependencies } = await nodecodeSkillsWorld()
-  const prepared = await prepareRun(nodecodeRunOptions, dependencies())
-  let enterFirst!: () => void
-  const firstEntered = new Promise<void>((resolve) => {
-    enterFirst = resolve
-  })
-  let finishFirst!: (status: number) => void
-  const firstHeld = new Promise<number>((resolve) => {
-    finishFirst = resolve
-  })
-  let enterSecond!: () => void
-  const secondEntered = new Promise<void>((resolve) => {
-    enterSecond = resolve
-  })
-  let finishSecond!: (status: number) => void
-  const secondHeld = new Promise<number>((resolve) => {
-    finishSecond = resolve
-  })
-  let firstExited = false
-  let secondExited = false
-  const first = runNative(
-    nodecodeRunOptions,
-    dependencies(async (_launch, _environment, _cwd, onSpawn, guard) => {
-      expect(guard).toBeUndefined()
-      onSpawn()
-      enterFirst()
-      const status = await firstHeld
-      firstExited = true
-      return status
-    }),
-  )
-  let second: Promise<number> | undefined
-  try {
-    await Promise.race([
-      firstEntered,
-      first.then(() => {
-        throw new Error("First Nodecode fixture exited before spawning")
-      }),
-    ])
-    const snapshot = await activeNodecodeSnapshot(prepared.layout.ownerHome)
-    second = runNative(
+unix(
+  "Nodecode admits overlapping same-profile sessions and selection changes without stopping either session",
+  async () => {
+    const { dependencies } = await nodecodeSkillsWorld()
+    const prepared = await prepareRun(nodecodeRunOptions, dependencies())
+    let enterFirst!: () => void
+    const firstEntered = new Promise<void>((resolve) => {
+      enterFirst = resolve
+    })
+    let finishFirst!: (status: number) => void
+    const firstHeld = new Promise<number>((resolve) => {
+      finishFirst = resolve
+    })
+    let enterSecond!: () => void
+    const secondEntered = new Promise<void>((resolve) => {
+      enterSecond = resolve
+    })
+    let finishSecond!: (status: number) => void
+    const secondHeld = new Promise<number>((resolve) => {
+      finishSecond = resolve
+    })
+    let firstExited = false
+    let secondExited = false
+    const first = runNative(
       nodecodeRunOptions,
       dependencies(async (_launch, _environment, _cwd, onSpawn, guard) => {
         expect(guard).toBeUndefined()
         onSpawn()
-        enterSecond()
-        const status = await secondHeld
-        secondExited = true
+        enterFirst()
+        const status = await firstHeld
+        firstExited = true
         return status
       }),
     )
-    await Promise.race([
-      secondEntered,
-      second.then(() => {
-        throw new Error("Second Nodecode fixture exited before spawning")
-      }),
-    ])
-    expect(firstExited).toBe(false)
-    expect(secondExited).toBe(false)
-    expect(await activeNodecodeSnapshot(prepared.layout.ownerHome)).toBe(snapshot)
-    expect(
-      await runNative(
-        { ...nodecodeRunOptions, noAlways: true },
-        dependencies(async () => 0),
-      ),
-    ).toBe(0)
-    expect(await activeNodecodeSnapshot(prepared.layout.ownerHome)).not.toBe(snapshot)
-    expect(
-      await runNative(
-        { ...nodecodeRunOptions, profiles: ["unselected"] },
-        dependencies(async () => 0),
-      ),
-    ).toBe(0)
-    expect(firstExited).toBe(false)
-    expect(secondExited).toBe(false)
-    finishFirst(0)
-    expect(await first).toBe(0)
-    expect(secondExited).toBe(false)
-  } finally {
-    finishFirst(0)
-    finishSecond(0)
-    await Promise.all([first, second])
-  }
-  expect(secondExited).toBe(true)
-})
+    let second: Promise<number> | undefined
+    try {
+      await Promise.race([
+        firstEntered,
+        first.then(() => {
+          throw new Error("First Nodecode fixture exited before spawning")
+        }),
+      ])
+      const snapshot = await activeNodecodeSnapshot(prepared.layout.ownerHome)
+      second = runNative(
+        nodecodeRunOptions,
+        dependencies(async (_launch, _environment, _cwd, onSpawn, guard) => {
+          expect(guard).toBeUndefined()
+          onSpawn()
+          enterSecond()
+          const status = await secondHeld
+          secondExited = true
+          return status
+        }),
+      )
+      await Promise.race([
+        secondEntered,
+        second.then(() => {
+          throw new Error("Second Nodecode fixture exited before spawning")
+        }),
+      ])
+      expect(firstExited).toBe(false)
+      expect(secondExited).toBe(false)
+      expect(await activeNodecodeSnapshot(prepared.layout.ownerHome)).toBe(snapshot)
+      expect(
+        await runNative(
+          { ...nodecodeRunOptions, noAlways: true },
+          dependencies(async () => 0),
+        ),
+      ).toBe(0)
+      expect(await activeNodecodeSnapshot(prepared.layout.ownerHome)).not.toBe(snapshot)
+      expect(
+        await runNative(
+          { ...nodecodeRunOptions, profiles: ["unselected"] },
+          dependencies(async () => 0),
+        ),
+      ).toBe(0)
+      expect(firstExited).toBe(false)
+      expect(secondExited).toBe(false)
+      finishFirst(0)
+      expect(await first).toBe(0)
+      expect(secondExited).toBe(false)
+    } finally {
+      finishFirst(0)
+      finishSecond(0)
+      await Promise.all([first, second])
+    }
+    expect(secondExited).toBe(true)
+  },
+)
 
 test("canonical adapters launch agent executables instead of retired profile wrappers", async () => {
   const { dependencies } = await world()
@@ -900,7 +909,7 @@ test("canonical adapters launch agent executables instead of retired profile wra
   }
 })
 
-test.each([
+unix.each([
   ["--model=claude-opus-5.5", "github-copilot/claude-opus-5.5"],
   ["--model=github-copilot/claude-opus-5.5", "github-copilot/claude-opus-5.5"],
 ])("OMP admission preserves the model override %s", async (modelOption, selector) => {
@@ -976,7 +985,7 @@ test("OMP keeps profile defaults and passes explicit local model overrides", asy
   expect(overridden.launch.args).toEqual(["--model", "copilot-proxy-rs/custom-model", "--thinking", "off"])
 })
 
-test("OMP admission rejects malformed relative executable paths", async () => {
+unix("OMP admission rejects malformed relative executable paths", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-relative")
   const credential = path.join(root, "omp-invalid-admission-credential")
@@ -1059,7 +1068,7 @@ printf '%s\\n' ${JSON.stringify(
   await expect(readFile(credential, "utf8")).rejects.toThrow()
 })
 
-test("OMP invalid credential content removes the admission handoff", async () => {
+unix("OMP invalid credential content removes the admission handoff", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-invalid-credential")
   const executable = path.join(root, "host-omp-invalid-credential")
@@ -1100,7 +1109,7 @@ printf '%s\\n' ${JSON.stringify(
   await expect(readFile(credential, "utf8")).rejects.toThrow()
 })
 
-test("OMP admission attaches its child and forwards diagnostics while it is supervised", async () => {
+unix("OMP admission attaches its child and forwards diagnostics while it is supervised", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-supervised")
   const childPidFile = path.join(root, "omp-admission.pid")
@@ -1175,7 +1184,7 @@ while :; do :; done
   }
 })
 
-test("OMP guard attachment failure settles its supervisor before admission can start", async () => {
+unix("OMP guard attachment failure settles its supervisor before admission can start", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-attach-failure")
   const childPidFile = path.join(root, "omp-attach-failure.pid")
@@ -1252,7 +1261,7 @@ while :; do :; done
   }
 })
 
-test("SQLite attachment failure prevents admission descendants and late credential writes", async () => {
+unix("SQLite attachment failure prevents admission descendants and late credential writes", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-descendant-attachment-failure")
   const descendantScript = path.join(root, "omp-admission-descendant.ts")
@@ -1372,7 +1381,7 @@ while :; do :; done
   }
 })
 
-test("OMP admission bounds failed tree cleanup while owned work remains alive", async () => {
+unix("OMP admission bounds failed tree cleanup while owned work remains alive", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-cleanup-timeout")
   const ready = path.join(root, "omp-cleanup-ready")
@@ -1439,7 +1448,7 @@ while :; do :; done
   }
 })
 
-test("OMP headless policy creates a per-launch overlay and cleans it after settlement", async () => {
+unix("OMP headless policy creates a per-launch overlay and cleans it after settlement", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-headless")
   const executable = path.join(root, "host-omp-headless")
@@ -1489,7 +1498,7 @@ printf '%s\\n' ${JSON.stringify(
   await expect(readFile(overlay, "utf8")).rejects.toThrow()
 })
 
-test("a canonical OMP run attaches its child and holds the mutation guard until exit", async () => {
+unix("a canonical OMP run attaches its child and holds the mutation guard until exit", async () => {
   const { dependencies, root } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-guard")
   const executable = path.join(root, "host-omp-guard")
@@ -1559,7 +1568,7 @@ printf '%s\\n' ${JSON.stringify(
   }
 })
 
-test("a failed OMP guard admission releases its generation lease", async () => {
+unix("a failed OMP guard admission releases its generation lease", async () => {
   const { dependencies, paths, root } = await world()
   const options = { ...base, allowUnprovenIsolation: true, harness: "omp", profiles: ["default"] }
   const prepared = await prepareRun(options, dependencies())
@@ -1572,7 +1581,7 @@ test("a failed OMP guard admission releases its generation lease", async () => {
   }
 })
 
-test.each(["override", "managed"] as const)(
+unix.each(["override", "managed"] as const)(
   "JCode resolves its private mise executable through %s lifecycle",
   async (mode) => {
     const { dependencies, root, work } = await world()
@@ -1615,7 +1624,7 @@ printf '%s\\n' ${JSON.stringify(managed)}
   },
 )
 
-test("Claude admission loads the validated lifecycle plugin directory", async () => {
+unix("Claude admission loads the validated lifecycle plugin directory", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "cldx")
   const plugin = path.join(root, "document-plugin")
@@ -1785,7 +1794,7 @@ commit = "${commits.trellage}"
   expect(cleanRun.clean).toBe(true)
 })
 
-test("shipped Claude research stages the bootstrap and automatically installs its missing CLI at launch", async () => {
+unix("shipped Claude research stages the bootstrap and automatically installs its missing CLI at launch", async () => {
   const { dependencies, office, root } = await world("[native]\n")
   const bin = path.join(root, "bin")
   await mkdir(bin)
@@ -1877,7 +1886,7 @@ repository = "example/office"
 plugins = [{ source = "office-content", harness = "claude", path = "plugins/linked", name = "linked" }]
 `
 
-test("Native Claude stages a plugin whose files link inside the plugin, like Council", async () => {
+unix("Native Claude stages a plugin whose files link inside the plugin, like Council", async () => {
   const { dependencies, office } = await world(linkedPluginConfig)
   const plugin = path.join(office.directory, "plugins", "linked")
   await mkdir(path.join(plugin, ".claude-plugin"), { recursive: true })
@@ -1907,7 +1916,7 @@ test("Native Claude refuses a plugin that links outside itself", async () => {
   )
 })
 
-test("Copilot admission bridges lifecycle plugins, hooks, and agents into the generated home", async () => {
+unix("Copilot admission bridges lifecycle plugins, hooks, and agents into the generated home", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "cpx")
   const installedPlugins = path.join(root, "installed-plugins")
@@ -2074,7 +2083,7 @@ for (const harness of ["fx", "headlong", "agency", "jcode", "omp", "prime"]) {
   }
 }
 
-test("canonical launches preserve signal exit status", async () => {
+unix("canonical launches preserve signal exit status", async () => {
   expect(
     await spawnInherited(
       { command: "/bin/sh", args: ["-c", "kill -TERM $$"], env: {} },
@@ -2085,7 +2094,7 @@ test("canonical launches preserve signal exit status", async () => {
   ).toBe(143)
 })
 
-test("Codex saves folder trust before spawning in each new worktree and preserves profile settings", async () => {
+unix("Codex saves folder trust before spawning in each new worktree and preserves profile settings", async () => {
   const { root, work, dependencies } = await world()
   await git(work, "commit", "--allow-empty", "-qm", "initial")
   const linked = path.join(root, 'linked "worktree"')
@@ -2781,7 +2790,7 @@ const capture = () => {
   return { launches, spawner }
 }
 
-test("Codex clean disables every skill its app server still lists", async () => {
+unix("Codex clean disables every skill its app server still lists", async () => {
   const { dependencies, root } = await cleanWorld()
   const fake = path.join(root, "fake-codex")
   await writeFile(
@@ -2815,7 +2824,7 @@ lines.on("line", (line) => {
   expect(args.slice(0, 2)).toEqual(["-c", "project_doc_max_bytes=0"])
 })
 
-test("Copilot clean disables listed skills and MCP servers and refuses repository hooks", async () => {
+unix("Copilot clean disables listed skills and MCP servers and refuses repository hooks", async () => {
   const { dependencies, root, work } = await cleanWorld()
   const fake = path.join(root, "fake-copilot")
   await writeFile(

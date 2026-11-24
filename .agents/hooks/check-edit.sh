@@ -12,6 +12,11 @@ if [[ -z "${file_path}" ]]; then
   exit 0
 fi
 
+# Windows harnesses send drive paths (C:\x or C:/x); Git Bash addresses them as /c/x.
+if [[ "${file_path}" =~ ^[A-Za-z]:[\\/] ]] && command -v cygpath >/dev/null 2>&1; then
+  file_path="$(cygpath -u "${file_path}")"
+fi
+
 case "${file_path}" in
   /*) candidate_path="${file_path}" ;;
   *)

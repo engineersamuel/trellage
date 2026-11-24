@@ -290,7 +290,8 @@ def staged_snapshot(root: Path, paths: list[str]):
         for path in paths:
             safe_path(path)
         entries = index_entries(
-            root, set(paths) | set(CONFIGS.values()) | {str(BASELINE), str(FIXTURES), str(SCANNER_CONFIG)}
+            root,
+            set(paths) | set(CONFIGS.values()) | {BASELINE.as_posix(), FIXTURES.as_posix(), SCANNER_CONFIG.as_posix()},
         )
         if entries:
             requests = b"".join(object_id.encode() + b"\n" for _, object_id in entries)

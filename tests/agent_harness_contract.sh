@@ -174,6 +174,8 @@ lefthook_linked="${lefthook_regression_root}/linked"
 lefthook_custom_hooks="${lefthook_regression_root}/custom-hooks"
 mkdir -p "${lefthook_custom_hooks}"
 lefthook_custom_hooks="$(cd "${lefthook_custom_hooks}" && pwd -P)"
+# Git for Windows reports C:/ paths where Git Bash reports /tmp; compare in Git's form.
+if command -v cygpath >/dev/null 2>&1; then lefthook_custom_hooks="$(cygpath -m "${lefthook_custom_hooks}")"; fi
 mkdir -p "${lefthook_primary}/packages/trellage-launcher"
 lefthook_primary="$(cd "${lefthook_primary}" && pwd -P)"
 git -C "${lefthook_primary}" init -q
@@ -303,7 +305,14 @@ for pull_hook in "${post_merge_hook}" "${post_rewrite_hook}" \
       harness) harness_status=18 ;;
       plugin) plugin_status=19 ;;
       all) refresh_status=17 harness_status=18 plugin_status=19 ;;
-      missing-refresh) chmod -x "${lefthook_primary}/scripts/refresh-native-if-stale.sh" ;;
+      # NTFS has no execute bit to clear (Git Bash infers it), so Windows removes the script instead.
+      missing-refresh)
+        if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]]; then
+          mv -- "${lefthook_primary}/scripts/refresh-native-if-stale.sh" "${lefthook_regression_root}/refresh-native-if-stale.sh"
+        else
+          chmod -x "${lefthook_primary}/scripts/refresh-native-if-stale.sh"
+        fi
+        ;;
     esac
     rm -f -- "${refresh_args}" "${pull_upgrade_log}"
     if (
@@ -314,6 +323,9 @@ for pull_hook in "${post_merge_hook}" "${post_rewrite_hook}" \
         "$pull_hook"
     ); then
       fail "pull maintenance hid the ${failure_stage} failure: ${pull_hook}"
+    fi
+    if [[ -e "${lefthook_regression_root}/refresh-native-if-stale.sh" ]]; then
+      mv -- "${lefthook_regression_root}/refresh-native-if-stale.sh" "${lefthook_primary}/scripts/"
     fi
     chmod +x "${lefthook_primary}/scripts/refresh-native-if-stale.sh"
     if [[ "$failure_stage" != missing-refresh ]]; then

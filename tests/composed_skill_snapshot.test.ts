@@ -4,10 +4,15 @@ import os from "node:os"
 import path from "node:path"
 import { syncSnapshot, verifyTarget, isComposedSkillSnapshot } from "../scripts/floating-skills.ts"
 
-const roots: string[] = []
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
+const unix = test.skipIf(process.platform === "win32")
 
-test("an explicit empty composition removes managed skills and preserves user skills", async () => {
+const roots: string[] = []
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+})
+
+// Windows: composition snapshots are verified by POSIX uid and mode bits (Unix private backends only).
+unix("an explicit empty composition removes managed skills and preserves user skills", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "trx-overlay-"))
   roots.push(root)
   const snapshot = path.join(root, "snapshot")

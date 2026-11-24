@@ -24,7 +24,10 @@ export class NativeRunError extends Error {
 }
 
 export class NativeRunCancelledError extends NativeRunError {
-  constructor(message: string, readonly signal: NodeJS.Signals) {
+  constructor(
+    message: string,
+    readonly signal: NodeJS.Signals,
+  ) {
     super("launch", message)
     this.name = "NativeRunCancelledError"
   }
@@ -46,10 +49,15 @@ const absoluteOr = (value: string | undefined, fallback: string): string =>
 
 export const resolveNativeRunPaths = (options: NativeRunPathOptions = {}): NativeRunPaths => {
   const environment = options.environment ?? process.env
-  const home = options.home ?? os.homedir()
+  // os.homedir() ignores HOME on Windows (it reads USERPROFILE); HOME stays authoritative on every platform.
+  const home = options.home ?? (environment.HOME || os.homedir())
   return {
     cache: path.join(absoluteOr(environment.XDG_CACHE_HOME, path.join(home, ".cache")), "trellage", "native-run"),
-    data: path.join(absoluteOr(environment.XDG_DATA_HOME, path.join(home, ".local", "share")), "trellage", "native-run"),
+    data: path.join(
+      absoluteOr(environment.XDG_DATA_HOME, path.join(home, ".local", "share")),
+      "trellage",
+      "native-run",
+    ),
     state: path.join(
       absoluteOr(environment.XDG_STATE_HOME, path.join(home, ".local", "state")),
       "trellage",

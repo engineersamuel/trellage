@@ -21,6 +21,9 @@ import {
   verifyTarget,
 } from "../scripts/floating-skills.ts"
 
+// unix(...) tests need POSIX read-only mode bits or directory-lock rename semantics.
+const unix = process.platform === "win32" ? test.skip : test
+
 const execFilePromise = promisify(execFile)
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)))
 const temporaryRoots = []
@@ -169,17 +172,11 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   assert.equal(catalog.sources["mattpocock-code-review"].allowExecutables, false)
   assert.ok(catalog.bundles["native-common"].includes("mattpocock-code-review"))
   assert.ok(!catalog.bundles["sandbox-common"].includes("mattpocock-code-review"))
-  assert.equal(
-    catalog.sources["antislop-core"].repository,
-    "https://github.com/miqdadbadjuber/anti-slop.git",
-  )
+  assert.equal(catalog.sources["antislop-core"].repository, "https://github.com/miqdadbadjuber/anti-slop.git")
   assert.deepEqual(catalog.sources["antislop-core"].select, ["antislop"])
   assert.equal(catalog.sources["antislop-core"].alwaysOn, true)
   assert.equal(catalog.sources["antislop-core"].allowExecutables, false)
-  assert.equal(
-    catalog.sources["antislop-addons"].repository,
-    "https://github.com/miqdadbadjuber/anti-slop.git",
-  )
+  assert.equal(catalog.sources["antislop-addons"].repository, "https://github.com/miqdadbadjuber/anti-slop.git")
   assert.deepEqual(catalog.sources["antislop-addons"].select, [
     "antislop-ui",
     "antislop-copywriting",
@@ -189,9 +186,7 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   ])
   assert.equal(catalog.sources["antislop-addons"].alwaysOn, false)
   assert.equal(catalog.sources["antislop-addons"].allowExecutables, false)
-  const ompCommunityNames = catalog.bundles["omp-community"].flatMap(
-    (sourceId) => catalog.sources[sourceId].select,
-  )
+  const ompCommunityNames = catalog.bundles["omp-community"].flatMap((sourceId) => catalog.sources[sourceId].select)
   assert.equal(ompCommunityNames.length, 33)
   assert.equal(new Set(ompCommunityNames).size, 33)
   assert.ok(catalog.sources["dsebban-omp"].select.includes("poteto-mode"))
@@ -545,7 +540,7 @@ test("refresh removes stale managed skills and preserves unmanaged skills", asyn
   assert.equal(await readFile(path.join(fixture.target, "unmanaged", "SKILL.md"), "utf8"), "keep\n")
 })
 
-test("read-only image snapshots can be published and replaced by their owner", async () => {
+unix("read-only image snapshots can be published and replaced by their owner", async () => {
   const fixture = await createFixture()
   await updateNative({ catalog: fixture.catalog, bundleIds: ["test"], cache: fixture.cache })
   const source = path.join(fixture.cache, "skills", "fixture")
@@ -559,7 +554,6 @@ test("read-only image snapshots can be published and replaced by their owner", a
     await chmod(source, 0o755)
   }
 })
-
 
 test("publication rejects unmanaged collisions and source symlinks", async () => {
   const fixture = await createFixture()
@@ -733,7 +727,7 @@ exec /bin/mv "$@"
   assert.equal(await readFile(path.join(destination, "previous"), "utf8"), "preserve\n")
 })
 
-test("concurrent first use shares one cache and reclaims malformed locks", async () => {
+unix("concurrent first use shares one cache and reclaims malformed locks", async () => {
   const fixture = await createFixture()
   await mkdir(`${fixture.cache}.lock`, { recursive: true })
   const secondTarget = path.join(fixture.root, "second-target")
@@ -804,7 +798,10 @@ test("offline native fallback refuses altered cached skill bytes", async () => {
   await ensureNative({ catalog: fixture.catalog, bundleIds: ["test"], cache: fixture.cache, target: fixture.target })
   await writeFile(path.join(fixture.cache, "skills", "fixture", "SKILL.md"), "---\nname: fixture\n---\nchanged\n")
   await rename(fixture.repository, `${fixture.repository}.offline`)
-  await assert.rejects(ensureNative({ catalog: fixture.catalog, bundleIds: ["test"], cache: fixture.cache, target: fixture.target }), /integrity/)
+  await assert.rejects(
+    ensureNative({ catalog: fixture.catalog, bundleIds: ["test"], cache: fixture.cache, target: fixture.target }),
+    /integrity/,
+  )
 })
 
 test("direct Native catalog reads honor user policy and explicit config without rewriting either", async () => {
@@ -813,17 +810,26 @@ test("direct Native catalog reads honor user policy and explicit config without 
   const configHome = path.join(root, "config")
   const config = path.join(configHome, "trellage/config.toml")
   const starter = path.join(repositoryRoot, "config.example.toml")
-  const policy = '[skills.sources.pinned]\nrepository = "https://github.com/example/pinned.git"\ncommit = "' + 'a'.repeat(40) + '"\nselect = ["chosen"]\n[skills.bundles]\nnative-common = ["pinned"]\n'
+  const policy =
+    '[skills.sources.pinned]\nrepository = "https://github.com/example/pinned.git"\ncommit = "' +
+    "a".repeat(40) +
+    '"\nselect = ["chosen"]\n[skills.bundles]\nnative-common = ["pinned"]\n'
   await mkdir(path.dirname(config), { recursive: true })
   await writeFile(config, policy, { mode: 0o600 })
   const environment = { HOME: root, XDG_CONFIG_HOME: configHome }
   const selected = await readNativeSkillCatalog(starter, environment)
-  assert.equal(selected.sources.pinned.commit, 'a'.repeat(40))
-  assert.deepEqual(selected.bundles['native-common'], ['pinned'])
-  assert.equal(await readFile(config, 'utf8'), policy)
-  const explicit = path.join(root, 'explicit.toml')
-  await writeFile(explicit, policy.replaceAll('pinned', 'explicit'), { mode: 0o600 })
-  assert.deepEqual((await readNativeSkillCatalog(starter, { ...environment, TRELLAGE_CONFIG: explicit })).bundles['native-common'], ['explicit'])
-  await writeFile(explicit, '[environment]\nenabled = false\n', { mode: 0o600 })
-  await assert.rejects(readNativeSkillCatalog(starter, { ...environment, TRELLAGE_CONFIG: explicit }), /no \[skills\] policy/)
+  assert.equal(selected.sources.pinned.commit, "a".repeat(40))
+  assert.deepEqual(selected.bundles["native-common"], ["pinned"])
+  assert.equal(await readFile(config, "utf8"), policy)
+  const explicit = path.join(root, "explicit.toml")
+  await writeFile(explicit, policy.replaceAll("pinned", "explicit"), { mode: 0o600 })
+  assert.deepEqual(
+    (await readNativeSkillCatalog(starter, { ...environment, TRELLAGE_CONFIG: explicit })).bundles["native-common"],
+    ["explicit"],
+  )
+  await writeFile(explicit, "[environment]\nenabled = false\n", { mode: 0o600 })
+  await assert.rejects(
+    readNativeSkillCatalog(starter, { ...environment, TRELLAGE_CONFIG: explicit }),
+    /no \[skills\] policy/,
+  )
 })

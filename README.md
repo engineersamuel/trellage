@@ -5,6 +5,50 @@ Native harnesses run on the host; they are not containers or security
 boundaries.
 Install the Native router and private backends from `prototypes/trellage-router`.
 
+## Native Windows (Claude)
+
+Windows runs Claude through native Bun and PowerShell, without WSL or Git Bash.
+Install Bun 1.4.4, Node.js 22 or newer, Git, and the native Claude Code `.exe`.
+Keep `copilot-proxy-rs` running on `http://127.0.0.1:8080`; it must advertise
+`claude-sonnet-5.5` and `claude-opus-5.5`.
+
+Use a checkout under your user profile, not a shared-writable drive directory.
+Windows runtime safety uses NTFS ownership and DACLs, not Unix mode bits. It
+allows the current user, SYSTEM, and Administrators to modify owned paths and
+refuses other write grants, null DACLs, and redirected paths. It does not change
+your filesystem permissions.
+
+From that checkout in PowerShell:
+
+```powershell
+$env:HOME = $env:USERPROFILE
+mise trust
+mise install bun@1.4.4
+.\scripts\install-windows.ps1
+trx doctor claude default
+trx run claude
+trx run claude default
+```
+
+The installer prepares locked runtime dependencies and installs
+`%USERPROFILE%\.local\bin\trx.cmd`, which runs this private checkout
+directly. Keep the checkout in place. Source-mode launches prepare stale
+dependencies automatically; no compiled bundle or relocated dependency tree is
+needed. Open a new terminal if the command directory was not already on `PATH`.
+Re-run the installer if you move the checkout or change the Bun executable.
+For development checks, invoke the native Bun runtime on
+`packages\trellage-runtime\src\workspace-cli.ts prepare <checkout>`.
+
+Claude composed profiles, `default`, `clean`, `list`, and default Claude
+setup/doctor/repair are supported. Office plugin lifecycle, other harnesses,
+Guide, the run composer, and Herdr handoff remain Unix-only; Windows reports
+unsupported commands explicitly rather than delegating to WSL. Claude sessions
+remain profile-scoped, ambient credentials are scrubbed, and model traffic uses
+the existing local proxy. Windows launches omit Claude Code's first-party billing
+attribution block (`CLAUDE_CODE_ATTRIBUTION_HEADER=0`), which the Copilot Opus
+endpoint rejects. Instructions, prompt caching, tools, and the selected model
+are unchanged. Background tasks use the proxy's `claude-haiku-5.5`.
+
 ## Fresh Machine Setup (macOS)
 
 These are the one-time prerequisites for Native Trellage on macOS. Skip

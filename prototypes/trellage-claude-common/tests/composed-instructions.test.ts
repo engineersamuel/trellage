@@ -4,7 +4,10 @@ import os from "node:os"
 import path from "node:path"
 import { publishCompositionInstructions } from "../native-skills.ts"
 
-test("composed Copilot instructions preserve user files and reject an unowned destination", async () => {
+const unix = test.skipIf(process.platform === "win32")
+
+// Windows: Copilot is Unix-only; native skills check POSIX ownership.
+unix("composed Copilot instructions preserve user files and reject an unowned destination", async () => {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "trellage-instructions-")))
   const priorHarness = process.env.TRELLAGE_NATIVE_COMPOSITION_HARNESS
   const priorSnapshot = process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT
@@ -19,7 +22,9 @@ test("composed Copilot instructions preserve user files and reject an unowned de
     process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT = cache
     const destination = path.join(home, "instructions/trellage-selected.instructions.md")
     await writeFile(destination, "Unowned content")
-    await expect(publishCompositionInstructions(cache, path.join(home, "skills"))).rejects.toThrow("refusing to replace user instructions")
+    await expect(publishCompositionInstructions(cache, path.join(home, "skills"))).rejects.toThrow(
+      "refusing to replace user instructions",
+    )
     await rm(destination)
     await publishCompositionInstructions(cache, path.join(home, "skills"))
     expect(await readFile(destination, "utf8")).toContain("Selected instructions.")
@@ -35,7 +40,8 @@ test("composed Copilot instructions preserve user files and reject an unowned de
     await rm(root, { recursive: true, force: true })
   }
 })
-test("JCode composition replaces only its managed instruction block", async () => {
+// Windows: JCode is Unix-only; native skills check POSIX ownership.
+unix("JCode composition replaces only its managed instruction block", async () => {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "trellage-jcode-instructions-")))
   const priorHarness = process.env.TRELLAGE_NATIVE_COMPOSITION_HARNESS
   const priorSnapshot = process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT

@@ -38,11 +38,13 @@ class TestCommand(unittest.TestCase):
         self.assertEqual(result.returncode, 7)
         self.assertIn("code=7 status=failed", result.stderr)
 
+    @unittest.skipIf(os.name == "nt", "Windows processes do not die by POSIX signal")
     def test_reports_signal_and_returns_shell_convention(self) -> None:
         result = self.run_command("kill -TERM $$")
         self.assertEqual(result.returncode, 128 + signal.SIGTERM)
         self.assertIn("signal=SIGTERM status=signal", result.stderr)
 
+    @unittest.skipIf(os.name == "nt", "Windows has no process groups to signal")
     def test_forwards_external_signal_to_recipe_process_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             ready = Path(directory) / "ready"
@@ -81,22 +83,37 @@ class TestCommand(unittest.TestCase):
             pid_file = Path(directory) / "child.pid"
             script = (
                 "import os,signal,time,pathlib; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
-                f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(30)"
+                f"pathlib.Path({pid_file.as_posix()!r}).write_text(str(os.getpid())); time.sleep(30)"
             )
             started = time.monotonic()
             result = subprocess.run(
-                [sys.executable, str(COMMAND), "--timeout", "0.3", "slow", "-c", shlex.join([sys.executable,"-c",script])],
-                capture_output=True, text=True, timeout=4,
+                [
+                    sys.executable,
+                    str(COMMAND),
+                    "--timeout",
+                    "0.3",
+                    "slow",
+                    "-c",
+                    shlex.join([sys.executable, "-c", script]),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=4,
             )
             self.assertEqual(result.returncode, 124, result.stderr)
             self.assertIn("status=timeout", result.stderr)
             self.assertLess(time.monotonic() - started, 3)
             self.assertTrue(pid_file.exists())
             pid = int(pid_file.read_text())
+            if os.name == "nt":
+                listed = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True)
+                self.assertNotIn(f" {pid} ", listed.stdout)
+                return
             # A killed child can briefly be a zombie until its parent/init reaps it.
             state = subprocess.run(["ps", "-p", str(pid), "-o", "stat="], capture_output=True, text=True).stdout.strip()
             self.assertTrue(not state or state.startswith("Z"), state)
 
+    @unittest.skipIf(os.name == "nt", "os.killpg does not exist on Windows")
     def test_darwin_empty_group_permission_error_preserves_timeout_status(self) -> None:
         namespace = runpy.run_path(str(COMMAND), run_name="test_command_module")
         real_killpg = os.killpg
@@ -110,6 +127,7 @@ class TestCommand(unittest.TestCase):
             status = namespace["main"]([str(COMMAND), "--timeout", "0.1", "empty-group", "-c", "exec sleep 30"])
         self.assertEqual(status, 124)
 
+    @unittest.skipIf(os.name == "nt", "os.killpg does not exist on Windows")
     def test_permission_error_is_not_hidden_when_group_may_still_be_live(self) -> None:
         namespace = runpy.run_path(str(COMMAND), run_name="test_command_module")
         real_killpg = os.killpg
@@ -119,8 +137,12 @@ class TestCommand(unittest.TestCase):
                 raise PermissionError("live group denied")
             real_killpg(pgid, signum)
 
-        with patch.object(os, "killpg", denied_killpg), patch.dict(
-            namespace["main"].__globals__, {"_group_has_live_members": lambda _pgid: True},
+        with (
+            patch.object(os, "killpg", denied_killpg),
+            patch.dict(
+                namespace["main"].__globals__,
+                {"_group_has_live_members": lambda _pgid: True},
+            ),
         ):
             with self.assertRaisesRegex(PermissionError, "live group denied"):
                 namespace["main"]([str(COMMAND), "--timeout", "0.1", "live-group", "-c", "exec sleep 30"])
@@ -129,18 +151,24 @@ class TestCommand(unittest.TestCase):
         for value in ("0", "-1", "nan", "inf", "not-a-number"):
             result = subprocess.run(
                 [sys.executable, str(COMMAND), "--timeout", value, "example", "-c", "printf executed"],
-                capture_output=True, text=True, timeout=3,
+                capture_output=True,
+                text=True,
+                timeout=3,
             )
             self.assertEqual(result.returncode, 2)
             self.assertEqual(result.stdout, "")
 
+    @unittest.skipIf(os.name == "nt", "Windows cannot pass file descriptors to children")
     def test_preserves_inherited_jobserver_descriptors(self) -> None:
         reader, writer = os.pipe()
         try:
             recipe = shlex.join([sys.executable, "-c", f"import os; os.fstat({reader}); os.fstat({writer})"])
             result = subprocess.run(
                 [sys.executable, str(COMMAND), "recursive-make", "-c", recipe],
-                pass_fds=(reader, writer), capture_output=True, text=True, timeout=10,
+                pass_fds=(reader, writer),
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
         finally:

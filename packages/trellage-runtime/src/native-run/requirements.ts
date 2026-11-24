@@ -36,12 +36,16 @@ export const executableOnPath = async (
   command: string,
   environment: NodeJS.ProcessEnv,
 ): Promise<string | undefined> => {
+  const names =
+    process.platform === "win32" && path.extname(command) === ""
+      ? [command, ...[".exe", ".com", ".cmd", ".bat"].map((extension) => command + extension)]
+      : [command]
   const candidates = path.isAbsolute(command)
-    ? [command]
-    : (environment.PATH ?? "")
+    ? names
+    : (environment.PATH ?? environment.Path ?? "")
         .split(path.delimiter)
         .filter(Boolean)
-        .map((directory) => path.resolve(directory, command))
+        .flatMap((directory) => names.map((name) => path.resolve(directory, name)))
   for (const candidate of candidates) {
     try {
       const file = await realpath(candidate)
@@ -113,6 +117,8 @@ export const harnessBinaryAvailable = async (harness: string, environment: NodeJ
     return info?.isFile() === true
   }
   const command =
-    harness === "empryo" ? empryoBinary(environment) : resolveNativeBinary(environment, `TRELLAGE_${harness.toUpperCase()}_BIN`, name)
+    harness === "empryo"
+      ? empryoBinary(environment)
+      : resolveNativeBinary(environment, `TRELLAGE_${harness.toUpperCase()}_BIN`, name)
   return !!(await executableOnPath(command, environment))
 }

@@ -286,7 +286,7 @@
         "types:packages/trellage-runtime/src/native-run/prime-runtime.ts:PrimeRuntimeIdentity"
       ],
       "reason": "Existing graph findings at adoption; new findings fail.",
-      "settings": "6d93e9d6cdb0a6b97689aa0e5fead084ee2889959f68e6a7c2869a22d8a5b51b"
+      "settings": "02b4b553f35e35cb40caec72e5a956cc780bb09302585ec2fb291c62b5d70d8d"
     },
     "oxfmt": {
       "files": {

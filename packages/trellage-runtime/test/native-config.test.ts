@@ -7,6 +7,9 @@ import { promisify } from "node:util"
 import { Effect } from "effect"
 import { loadTrellageConfig, loadTrellageConfigDocument, parseTrellageConfig } from "@trellage/runtime/native-config"
 
+// unix(...) tests cover POSIX mode bits and named pipes; Windows checks NTFS DACLs instead.
+const unix = test.skipIf(process.platform === "win32")
+
 const execFilePromise = promisify(execFile)
 const roots: string[] = []
 afterEach(async () => {
@@ -157,7 +160,7 @@ test("reads the variable names injected from the central environment", async () 
   expect(result.environment.inject).toEqual(["CONTEXT7_API_KEY", "PERPLEXITY_API_KEY"])
 })
 
-test("rejects symbolic links, directories, and writable user config files", async () => {
+unix("rejects symbolic links, directories, and writable user config files", async () => {
   const home = await fixture()
   const configPath = path.join(home, "config.toml")
   const target = path.join(home, "target.toml")
@@ -241,7 +244,7 @@ tag = "Release-1"
   })
 })
 
-test("rejects a named-pipe config without waiting for a writer", async () => {
+unix("rejects a named-pipe config without waiting for a writer", async () => {
   const home = await fixture()
   const configPath = path.join(home, "config.toml")
   await execFilePromise("mkfifo", [configPath])

@@ -1,4 +1,5 @@
 import { mkdirSync, rmdirSync, lstatSync } from "node:fs"
+import { assertWindowsPermissions } from "./windows-permissions.ts"
 
 export interface PreparationLockOptions {
   readonly signal?: AbortSignal
@@ -20,10 +21,11 @@ function validateLock(lock: string): { readonly dev: number; readonly ino: numbe
     status.isSymbolicLink() ||
     !status.isDirectory() ||
     (process.getuid !== undefined && Number(status.uid) !== process.getuid()) ||
-    (Number(status.mode) & 0o022) !== 0
+    (process.platform !== "win32" && (Number(status.mode) & 0o022) !== 0)
   ) {
     throw unsafeLock(lock)
   }
+  if (process.platform === "win32") assertWindowsPermissions(lock)
   return { dev: Number(status.dev), ino: Number(status.ino) }
 }
 

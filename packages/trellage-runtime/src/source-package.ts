@@ -32,7 +32,9 @@ export function packageSources(root: string, destination: string): void {
       copyFileSync(path.join(root, name), path.join(stage, name))
     }
     const archive = path.join(temporary, "source.tgz")
-    const result = spawnSync("tar", ["-czf", archive, "-C", temporary, "package"], {
+    // GNU tar reads `C:` in an -f path as a remote host; a bare name from cwd works with every tar.
+    const result = spawnSync("tar", ["-czf", path.basename(archive), "package"], {
+      cwd: temporary,
       stdio: ["ignore", "inherit", "inherit"],
       env: { ...process.env, COPYFILE_DISABLE: "1" },
     })

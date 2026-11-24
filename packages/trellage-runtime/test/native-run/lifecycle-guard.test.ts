@@ -11,6 +11,9 @@ import {
 } from "../../src/native-run/lifecycle-guard.ts"
 import { cleanupFixtures, tempRoot, waitForFile } from "./fixtures.ts"
 
+// unix(...) tests cover POSIX process groups, ps, and signals.
+const unix = test.skipIf(process.platform === "win32")
+
 afterEach(cleanupFixtures)
 
 const database = (home: string) => new Database(path.join(home, ".local/share/trellage/profile-guards/profiles.sqlite"))
@@ -31,7 +34,7 @@ const legacyDatabase = (home: string) => {
   return db
 }
 
-test("OMP admits concurrent runs for one canonical profile", async () => {
+unix("OMP admits concurrent runs for one canonical profile", async () => {
   const home = await tempRoot("profile-guard-omp-shared")
   const first = acquireProfileGuard("omp", ["default"], "run", home)
   const db = database(home)
@@ -49,7 +52,7 @@ test("OMP admits concurrent runs for one canonical profile", async () => {
   }
 })
 
-test("a live OMP run blocks every mutating operation", async () => {
+unix("a live OMP run blocks every mutating operation", async () => {
   const home = await tempRoot("profile-guard-omp-mutations")
   const active = acquireProfileGuard("omp", ["default"], "run", home)
   try {
@@ -68,7 +71,7 @@ test("a live OMP run blocks every mutating operation", async () => {
   }
 })
 
-test("releasing one OMP run leaves another run blocking mutation", async () => {
+unix("releasing one OMP run leaves another run blocking mutation", async () => {
   const home = await tempRoot("profile-guard-omp-release")
   const first = acquireProfileGuard("omp", ["default"], "run", home)
   let second: ReturnType<typeof acquireProfileGuard> | undefined
@@ -86,7 +89,7 @@ test("releasing one OMP run leaves another run blocking mutation", async () => {
   }
 })
 
-test("an OMP mutation blocks a later run for the same profile", async () => {
+unix("an OMP mutation blocks a later run for the same profile", async () => {
   const home = await tempRoot("profile-guard-omp-mutation-first")
   const mutation = acquireProfileGuard("omp", ["default"], "repair", home)
   try {
@@ -98,7 +101,7 @@ test("an OMP mutation blocks a later run for the same profile", async () => {
   run.release()
 })
 
-test("OMP profiles are independent while all-profile mutation sees both", async () => {
+unix("OMP profiles are independent while all-profile mutation sees both", async () => {
   const home = await tempRoot("profile-guard-omp-scopes")
   const defaultRun = acquireProfileGuard("omp", ["default"], "run", home)
   const localRun = acquireProfileGuard("omp", ["local"], "run", home)
@@ -117,7 +120,7 @@ test("OMP profiles are independent while all-profile mutation sees both", async 
   }
 })
 
-test("stale shared OMP rows are replaced while live attached children block mutation", async () => {
+unix("stale shared OMP rows are replaced while live attached children block mutation", async () => {
   const home = await tempRoot("profile-guard-omp-stale")
   const stale = acquireProfileGuard("omp", ["default"], "run", home)
   const db = database(home)
@@ -151,7 +154,7 @@ test("stale shared OMP rows are replaced while live attached children block muta
   }
 })
 
-test("recorded OMP descendants continue blocking mutation after release", async () => {
+unix("recorded OMP descendants continue blocking mutation after release", async () => {
   const home = await tempRoot("profile-guard-omp-descendants")
   const guard = acquireProfileGuard("omp", ["default"], "run", home)
   const child = spawn("sh", ["-c", "sh -c 'trap \"\" TERM; sleep 30' & wait"], { stdio: "ignore" })
@@ -177,7 +180,7 @@ test("recorded OMP descendants continue blocking mutation after release", async 
   }
 })
 
-test("Codex same-profile runs remain exclusive", async () => {
+unix("Codex same-profile runs remain exclusive", async () => {
   const home = await tempRoot("profile-guard-codex-exclusive")
   const first = acquireProfileGuard("codex", ["pstack"], "run", home)
   try {
@@ -187,7 +190,7 @@ test("Codex same-profile runs remain exclusive", async () => {
   }
 })
 
-test("legacy single-key owners migrate without dropping a live owner or its token", async () => {
+unix("legacy single-key owners migrate without dropping a live owner or its token", async () => {
   const home = await tempRoot("profile-guard-legacy-live")
   const db = legacyDatabase(home)
   db.query(
@@ -221,7 +224,7 @@ test("legacy single-key owners migrate without dropping a live owner or its toke
   }
 })
 
-test("legacy stale owners preserve attached children through migration and release", async () => {
+unix("legacy stale owners preserve attached children through migration and release", async () => {
   const home = await tempRoot("profile-guard-legacy-child")
   const child = spawn("sleep", ["30"])
   await once(child, "spawn")
@@ -265,7 +268,7 @@ test("legacy stale owners preserve attached children through migration and relea
   }
 })
 
-test("active presets reject another composition and maintenance, while other presets remain independent", async () => {
+unix("active presets reject another composition and maintenance, while other presets remain independent", async () => {
   const home = await tempRoot("profile-guard")
   const first = acquireProfileGuard("codex", ["pstack"], "run", home)
   try {
@@ -283,7 +286,7 @@ test("active presets reject another composition and maintenance, while other pre
   next.release()
 })
 
-test("stale process identities recover atomically and old release cannot remove a replacement", async () => {
+unix("stale process identities recover atomically and old release cannot remove a replacement", async () => {
   const home = await tempRoot("profile-guard-stale")
   const first = acquireProfileGuard("codex", ["pstack"], "run", home)
   const db = database(home)
@@ -296,7 +299,7 @@ test("stale process identities recover atomically and old release cannot remove 
   db.close()
 })
 
-test("live maintenance child retains ownership after the supervising process disappears", async () => {
+unix("live maintenance child retains ownership after the supervising process disappears", async () => {
   const home = await tempRoot("profile-guard-child")
   const guard = acquireProfileGuard("codex", ["pstack"], "run", home)
   const child = spawn("sleep", ["30"])
@@ -323,7 +326,7 @@ test("operation scope blocks global maintenance but permits shutdown and read-on
   expect(profileGuardProfiles("upgrade", "codex", ["--check"])).toEqual([])
 })
 
-test("upgrade checks need no guard state and remain available during an active session", async () => {
+unix("upgrade checks need no guard state and remain available during an active session", async () => {
   const home = await tempRoot("profile-guard-check")
   const scopes = profileGuardProfiles("upgrade", "codex", ["pstack", "--check"])
   acquireProfileGuard("codex", scopes, "upgrade", home).release()
@@ -336,7 +339,7 @@ test("upgrade checks need no guard state and remain available during an active s
   }
 })
 
-test("failed all-profile maintenance releases every partially acquired preset", async () => {
+unix("failed all-profile maintenance releases every partially acquired preset", async () => {
   const home = await tempRoot("profile-guard-all")
   const active = acquireProfileGuard("codex", ["youtube"], "run", home)
   try {
@@ -350,7 +353,7 @@ test("failed all-profile maintenance releases every partially acquired preset", 
   }
 })
 
-test("process identities remain stable when timezone and locale change", async () => {
+unix("process identities remain stable when timezone and locale change", async () => {
   const home = await tempRoot("profile-guard-timezone")
   const previous = { TZ: process.env.TZ, LC_ALL: process.env.LC_ALL }
   process.env.TZ = "America/New_York"
@@ -369,7 +372,7 @@ test("process identities remain stable when timezone and locale change", async (
   }
 })
 
-test("surviving maintenance process group retains ownership after its leader exits", async () => {
+unix("surviving maintenance process group retains ownership after its leader exits", async () => {
   const home = await tempRoot("profile-guard-group")
   const guard = acquireProfileGuard("codex", ["pstack"], "setup", home)
   const child = spawn("sh", ["-c", "sleep 30 & wait"], { detached: true, stdio: "ignore" })
@@ -390,7 +393,7 @@ test("surviving maintenance process group retains ownership after its leader exi
   }
 })
 
-test("attached cancellation retains ownership when a descendant ignores TERM", async () => {
+unix("attached cancellation retains ownership when a descendant ignores TERM", async () => {
   const home = await tempRoot("profile-guard-survivor")
   const guard = acquireProfileGuard("codex", ["pstack"], "run", home)
   const child = spawn("sh", ["-c", "sh -c 'trap \"\" TERM; sleep 30' & wait"], { stdio: "ignore" })
@@ -417,7 +420,7 @@ test("attached cancellation retains ownership when a descendant ignores TERM", a
   }
 })
 
-test("escalation kills a recorded orphan after TERM removes its intermediate parent", async () => {
+unix("escalation kills a recorded orphan after TERM removes its intermediate parent", async () => {
   const home = await tempRoot("profile-guard-orphan-escalation")
   const guard = acquireProfileGuard("omp", ["default"], "run", home)
   const script = path.join(home, "tree.ts")
@@ -476,7 +479,7 @@ setTimeout(() => process.exit(0), 30_000);
   }
 })
 
-test("the first tree signal refuses a root whose stored child start time does not match", async () => {
+unix("the first tree signal refuses a root whose stored child start time does not match", async () => {
   const home = await tempRoot("profile-guard-reused-root")
   const guard = acquireProfileGuard("omp", ["default"], "run", home)
   const child = spawn("sleep", ["30"], { stdio: "ignore" })
@@ -500,7 +503,7 @@ test("the first tree signal refuses a root whose stored child start time does no
   }
 })
 
-test("failed persistent attachment keeps mutation excluded until captured work settles", async () => {
+unix("failed persistent attachment keeps mutation excluded until captured work settles", async () => {
   const home = await tempRoot("profile-guard-attachment-write-failure")
   const guard = acquireProfileGuard("omp", ["default"], "run", home)
   const child = spawn("sleep", ["30"], { stdio: "ignore" })
@@ -549,7 +552,7 @@ const deferred = <T>() => {
   return { promise, resolve }
 }
 
-test("composition preparation waits for the same canonical home but not independent homes", async () => {
+unix("composition preparation waits for the same canonical home but not independent homes", async () => {
   const root = await tempRoot("composition-prepare")
   const owner = path.join(root, "nodecode-arbitrary-profile-stack")
   const otherOwner = path.join(root, "nodecode-other-stack")
@@ -590,7 +593,7 @@ test("composition preparation waits for the same canonical home but not independ
   }
 })
 
-test("failed preparation releases ownership for a retry", async () => {
+unix("failed preparation releases ownership for a retry", async () => {
   const owner = await tempRoot("composition-prepare-failed")
   await expect(
     withCompositionPreparation(owner, async () => {
@@ -606,7 +609,7 @@ test("failed preparation releases ownership for a retry", async () => {
   }
 })
 
-test("composition preparation recovers stale PID identities and ignores old session guards", async () => {
+unix("composition preparation recovers stale PID identities and ignores old session guards", async () => {
   const owner = await tempRoot("composition-prepare-stale")
   await withCompositionPreparation(owner, async () => {})
   const db = compositionDatabase(owner)
@@ -633,7 +636,7 @@ test("composition preparation recovers stale PID identities and ignores old sess
   }
 })
 
-test("composition preparation waits across processes and recovers a killed preparer", async () => {
+unix("composition preparation waits across processes and recovers a killed preparer", async () => {
   const owner = await tempRoot("composition-prepare-process")
   const module = new URL("../../src/native-run/lifecycle-guard.ts", import.meta.url).href
   const child = spawn(
@@ -682,7 +685,7 @@ test("composition preparation waits across processes and recovers a killed prepa
   }
 })
 
-test("composition preparation rejects redirected or writable ownership surfaces", async () => {
+unix("composition preparation rejects redirected or writable ownership surfaces", async () => {
   const root = await tempRoot("composition-prepare-unsafe")
   const unsafeOwner = path.join(root, "unsafe-owner")
   mkdirSync(unsafeOwner, { mode: 0o700 })
