@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-export const ControlId = Schema.Literals(["3.1", "3.5", "4.2", "4.6", "4.7", "4.8/4.9", "5.2/6.3", "5.5"])
+export const ControlId = Schema.Literals(["3.1", "3.5", "4.2", "4.6", "4.7", "4.8", "4.9", "5.2/6.3", "5.5"])
 export type ControlId = typeof ControlId.Type
 
 export const Result = Schema.Literals(["pass", "fail", "n/a", "unknown"])
@@ -19,7 +19,8 @@ export const CONTROLS = [
   { id: "4.2", title: "Role-derived least privilege", kind: "metric" },
   { id: "4.6", title: "Authority is not content", kind: "decision" },
   { id: "4.7", title: "Intent-bounded authorization", kind: "decision" },
-  { id: "4.8/4.9", title: "Bounded egress, Execution containment", kind: "code" },
+  { id: "4.8", title: "Bounded egress", kind: "code" },
+  { id: "4.9", title: "Execution containment", kind: "code" },
   { id: "5.2/6.3", title: "Runtime deviation surfacing, Pre-defined escalation", kind: "decision" },
   { id: "5.5", title: "Performance against role", kind: "code" },
 ] as const satisfies ReadonlyArray<{ id: ControlId; title: string; kind: "code" | "decision" | "metric" }>

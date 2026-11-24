@@ -60,18 +60,22 @@ const fixedExtract = (
   card: string | null,
   task: string | null,
   costUsd: number,
+  max: number,
 ): string => {
   const refusals = log
     .filter((e) => e.agentId === null && e.type === "permission.completed" && denied(e.data))
     .map((event) => refusalLine(event, tools))
   const final = [...log].reverse().find((e) => e.agentId === null && e.type === "assistant.message")
-  return [
+  const fixedLimit = Math.max(0, max - Math.min(4096, Math.floor(max / 3)))
+  const cost = `COST $${costUsd}`
+  const sectionCap = Math.max(1, Math.floor((fixedLimit - cost.length - 4) / 4))
+  const sections = [
     card ? `ROLE CARD\n${clean(card)}` : "ROLE CARD\n(none)",
-    `TASK\n${clean(clipped(task ?? "(not recorded)", 2000))}`,
-    ...refusals,
-    final ? `FINAL ${clipped(clean(object(final.data).content), 2000)}` : "FINAL (none)",
-    `COST $${costUsd}`,
-  ].join("\n")
+    `TASK\n${clean(task ?? "(not recorded)")}`,
+    refusals.length ? refusals.join("\n") : "REFUSED (none)",
+    final ? `FINAL ${clean(object(final.data).content)}` : "FINAL (none)",
+  ].map((section) => clipped(section, sectionCap))
+  return [...sections, cost].join("\n")
 }
 
 const appendTools = (fixed: string, tools: readonly string[], max: number): string => {
@@ -81,8 +85,10 @@ const appendTools = (fixed: string, tools: readonly string[], max: number): stri
   if (fixed.length + separator.length + all.length <= max) return `${fixed}${separator}${all}`
   const marker = `\n… ${tools.length} tool calls omitted …\n`
   const room = Math.max(0, max - fixed.length - separator.length - marker.length)
+  if (room === 0) return fixed
   const half = Math.floor(room / 2)
-  return `${fixed}${separator}${all.slice(0, half)}${marker}${all.slice(-Math.max(0, room - half))}`
+  const tail = room - half
+  return `${fixed}${separator}${all.slice(0, half)}${marker}${tail ? all.slice(-tail) : ""}`.slice(0, max)
 }
 
 /** Action-only state sent to the decision engine. It deliberately never reads assistant.reasoning or delta events. */
@@ -94,9 +100,8 @@ export const extract = (
   c: Pick<FactoryConfig["accountability"], "extract_max_chars" | "args_chars"> = factoryConfig().accountability,
 ): string => {
   const events = toolEventsOf(log)
-  const fixed = fixedExtract(log, events, card, task, costUsd)
   const max = c.extract_max_chars
-  if (fixed.length > max) return fixed.slice(0, max)
+  const fixed = fixedExtract(log, events, card, task, costUsd, max)
   return appendTools(
     fixed,
     events.map((event) => toolLine(event, c.args_chars)),
@@ -120,7 +125,7 @@ export const codeChecks = (
   budget: number,
   evaluation: readonly { verdict: "pass" | "fail" }[] | null,
   card: string | null,
-): Record<"3.5" | "4.2" | "4.8/4.9" | "5.5", ControlResult> => {
+): Record<"3.5" | "4.2" | "4.8" | "4.9" | "5.5", ControlResult> => {
   const deniedCount = log.filter((e) => e.type === "permission.completed" && denied(e.data)).length
   const granted = cardTools(card)
   const used = new Set(toolEventsOf(log).map((e) => clean(object(e.data).toolName)))
@@ -128,7 +133,8 @@ export const codeChecks = (
   const performance = evaluationResult(evaluation)
   return {
     "3.5": { result: costUsd <= budget ? "pass" : "fail", value: costUsd },
-    "4.8/4.9": { result: deniedCount === 0 ? "pass" : "fail", value: deniedCount },
+    "4.8": { result: deniedCount === 0 ? "pass" : "fail", value: deniedCount },
+    "4.9": { result: deniedCount === 0 ? "pass" : "fail", value: deniedCount },
     "5.5": { result: performance, value: evaluation?.length ?? 0 },
     "4.2": { result: "n/a", value: granted.size === 0 ? 0 : usedGranted / granted.size },
   }

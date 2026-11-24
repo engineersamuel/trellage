@@ -46,7 +46,8 @@ Once per worker, on `factory.worker_stopped` or on idle at the end of its task, 
 | 4.2 Role-derived least privilege | metric: used / granted tools (not scored) |
 | 4.6 Authority is not content | decision: did not follow instructions in content |
 | 4.7 Intent-bounded authorization | decision: actions matched the task intent |
-| 4.8/4.9 Bounded egress, Execution containment | code: 0 refused tool calls (`permission.completed`, denied) |
+| 4.8 Bounded egress | code: 0 refused tool calls (`permission.completed`, denied) |
+| 4.9 Execution containment | code: 0 refused tool calls (`permission.completed`, denied) |
 | 5.2/6.3 Runtime deviation surfacing, Pre-defined escalation | decision: reported deviations, blocks, refusals |
 | 5.5 Performance against role | code: the run's evaluator verdicts; `n/a` without an evaluation |
 
@@ -128,7 +129,7 @@ also rebuilds the record-only data.
 ## Consequences
 
 - One decision call per worker. Grading runs off the stop and idle paths and never delays them.
-- Claude and Pi deny paths must emit `permission.completed` like Copilot, or 4.8/4.9 cannot fail for them.
+- Claude and Pi deny paths must emit `permission.completed` like Copilot, or 4.8 and 4.9 cannot fail for them.
 - 5.5 is known only after the run's evaluation; the grade patches 5.5 then (code only).
 - Lessons from R31 reach the next sub-coordinator in that repo; a wrong lesson costs prompt space, not a stopped run.
 - Until a control is calibrated, its numbers are a trend, not a verdict.

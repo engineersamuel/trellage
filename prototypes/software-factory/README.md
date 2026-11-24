@@ -397,7 +397,8 @@ factory tools it was granted. The same text is retained on `factory.worker_start
 
 When a worker becomes idle after its task or stops, the factory records one **record-only** grade in
 `$SF_STATE_DIR/accountability.db`. Worker controls cover scoped purpose (3.1), own-cost budget (3.5), granted-tool
-use ratio (4.2, metric only), authority in content (4.6), intent (4.7), refused execution (4.8/4.9), reporting
+use ratio (4.2, metric only), authority in content (4.6), intent (4.7), bounded egress (4.8), execution
+containment (4.9), reporting
 deviations (5.2/6.3), and evaluator performance (5.5). Four decision checks use one `systemOne` call; the action
 extract excludes reasoning, redacts credentials and keeps at most 15,000 characters. A completed evaluation later
 patches only 5.5 in code, without another model call.

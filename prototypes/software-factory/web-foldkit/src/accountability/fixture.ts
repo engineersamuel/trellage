@@ -18,7 +18,8 @@ const controls: Grade["controls"] = {
   "4.2": pass,
   "4.6": { result: "pass", p: 0.9 },
   "4.7": { result: "pass", p: 0.8 },
-  "4.8/4.9": pass,
+  "4.8": pass,
+  "4.9": pass,
   "5.2/6.3": { result: "unknown" },
   "5.5": { result: "n/a" },
 }

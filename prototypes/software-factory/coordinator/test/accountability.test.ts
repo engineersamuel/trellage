@@ -134,7 +134,8 @@ test("AC-2: grading persists all controls, decision probabilities, exact score a
   expect(grade.controls).toEqual(
     expect.objectContaining({
       "3.5": { result: "pass", value: 1 },
-      "4.8/4.9": { result: "pass", value: 0 },
+      "4.8": { result: "pass", value: 0 },
+      "4.9": { result: "pass", value: 0 },
       "5.5": { result: "pass", value: 1 },
       "4.2": { result: "n/a", value: 1 / 3 },
     }),
@@ -158,8 +159,9 @@ test("AC-2: over-budget and a guard refusal fail their code controls", async () 
   const denied = fixture({ denied: 1 })
   expect((await gradeWorker(deps(over), "w-1")).controls["3.5"].result).toBe("fail")
   const deniedGrade = await gradeWorker(deps(denied), "w-1")
-  expect(deniedGrade.controls["4.8/4.9"]).toEqual({ result: "fail", value: 1 })
-  expect(deniedGrade.score).toBe(6 / 7)
+  expect(deniedGrade.controls["4.8"]).toEqual({ result: "fail", value: 1 })
+  expect(deniedGrade.controls["4.9"]).toEqual({ result: "fail", value: 1 })
+  expect(deniedGrade.score).toBe(6 / 8)
 })
 
 test("AC-2: engine error makes all decision controls unknown and excludes them from score", async () => {
@@ -225,7 +227,7 @@ test("AC-2: unavailable evaluator is n/a, then a code-only patch sets 5.5 and sc
   expect(count).toBe(1)
   expect(calls).toBe(1)
   expect(x.db.get("w-1")?.controls["5.5"]).toEqual({ result: "fail", value: 1 })
-  expect(x.db.get("w-1")?.score).toBe(6 / 7)
+  expect(x.db.get("w-1")?.score).toBe(7 / 8)
   expect(published).toHaveLength(1)
 })
 
@@ -372,6 +374,26 @@ test("AC-3: grading sends the bounded extract through the real decision request"
   expect(sent).toContain("FINAL Done; tests passed.")
   expect(sent).toContain("COST $1")
   expect(sent.length).toBeLessThanOrEqual(15000)
+})
+
+test("AC-3: a refusal-heavy fixed section reserves room for head and tail tool actions", () => {
+  const log: FeedEvent[] = [feed(1, "tool.execution_start", { toolName: "head_tool", arguments: {} })]
+  for (let index = 2; index < 102; index++)
+    log.push(
+      feed(index, "permission.completed", {
+        result: { kind: "denied-interactively-by-user", feedback: `REFUSAL_${index} ${"x".repeat(1000)}` },
+      }),
+    )
+  log.push(
+    feed(103, "assistant.message", { content: "FINAL_AFTER_REFUSALS" }),
+    feed(104, "tool.execution_start", { toolName: "tail_tool", arguments: {} }),
+  )
+  const text = extract(log, started.roleCard, started.task, 1.25, factoryConfig().accountability)
+  expect(text.length).toBeLessThanOrEqual(15000)
+  expect(text).toContain("REFUSAL_2")
+  expect(text).toContain("FINAL_AFTER_REFUSALS")
+  expect(text).toContain("head_tool")
+  expect(text).toContain("tail_tool")
 })
 
 test("p90 budgets use completed workers, own cost, fixed date window and n<10 fallback", () => {
