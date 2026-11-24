@@ -24,6 +24,7 @@ import {
   settleGates,
   shipBlockers,
   unprovenCriteria,
+  waiveGate,
   withGates,
   type Sdlc,
 } from "../src/sdlc.ts"
@@ -163,6 +164,73 @@ describe("worktree artifacts", () => {
     const linked = prBody(s, r, "Adds a.", undefined, id)
     expect(linked).toContain(`## Factory\nthread=${id}\nhttp://localhost:5174/?thread=${id}`)
     expect(factoryThreadUrl(id, "http://factory.test:9000/ui")).toBe(`http://factory.test:9000/ui?thread=${id}`)
+  })
+
+  test("waiveGate marks only a chosen docs gate done and removes its blocker", () => {
+    const { r, git, base } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(path.join(r, "src.ts"), "base")
+    git("add", "src.ts")
+    git("commit", "-q", "-m", "base")
+    writeFileSync(path.join(r, "src.ts"), "changed")
+    writeFileSync(path.join(r, "src.test.ts"), "test")
+    git("add", "src.ts", "src.test.ts")
+    let s: Sdlc = {
+      ...newSdlc("sub", null),
+      request: "Keep the change minimal: the regex and its tests",
+      criteria: ["works"],
+      implementDoneAt: 2,
+      verifyDoneAt: 3,
+    }
+    s = withGates(s, decide("diff", { docs: 0.9 }, null))
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — bun test — ok\n")
+    const before = shipBlockers(s, r, base, true, true)
+    expect(before.some((b) => b.startsWith("docs gate:"))).toBe(true)
+    const result = waiveGate(s, "docs", "the regex and its tests")
+    expect("error" in result).toBe(false)
+    if ("error" in result) throw new Error(result.error)
+    const docs = result.sdlc.gates.find((g) => g.id === "docs")!
+    expect(docs.status).toBe("done")
+    expect(docs.detail?.startsWith("waived:")).toBe(true)
+    expect(shipBlockers(result.sdlc, r, base, true, true).some((b) => b.startsWith("docs gate:"))).toBe(false)
+  })
+
+  test("waiveGate rejects other gates and unquoted reasons without changing state", () => {
+    let s: Sdlc = withGates(
+      { ...newSdlc("sub", "Keep the change minimal: code and tests only"), criteria: ["works"] },
+      decide("diff", { docs: 0.9, codeReview: 0.9, supplyChain: 0.9 }, null),
+    )
+    for (const id of ["security", "verify", "codeReview", "unknown"]) {
+      const before = structuredClone(s)
+      const result = waiveGate(s, id, "code and tests only")
+      expect("error" in result).toBe(true)
+      if (!("error" in result)) throw new Error("expected refusal")
+      expect(result.error).toContain("only the docs gate")
+      expect(result.error).toContain("floors")
+      expect(result.error).toContain("never be waived")
+      expect(s).toEqual(before)
+    }
+    for (const reason of ["", " documentation updates "]) {
+      const before = structuredClone(s)
+      const result = waiveGate(s, "docs", reason)
+      expect("error" in result).toBe(true)
+      expect(s).toEqual(before)
+      if (!("error" in result)) throw new Error("expected refusal")
+      expect(result.error).toMatch(/reason.*request|request.*reason|words of the request/i)
+    }
+  })
+
+  test("prBody includes the waived docs reason in the Gates section", () => {
+    let s: Sdlc = withGates(
+      { ...newSdlc("sub", null), request: "code and tests only", criteria: ["works"] },
+      decide("diff", { docs: 0.9 }, null),
+    )
+    const waived = waiveGate(s, "docs", "code and tests only")
+    if ("error" in waived) throw new Error(waived.error)
+    s = waived.sdlc
+    const body = prBody(s, tmpdir(), "Adds a.")
+    expect(body).toContain("## Gates")
+    expect(body).toMatch(/- docs: done \([^)]*\) — waived: code and tests only/)
   })
 
   test("implement rules follow the chosen gates", () => {

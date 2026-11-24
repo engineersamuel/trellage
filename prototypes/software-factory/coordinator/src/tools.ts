@@ -37,7 +37,7 @@ import {
   startEvaluation,
   startFinalSecurity,
 } from "./gates.ts"
-import { addLessons, artifact, prBody, screenshotsMarkdown, unprovenCriteria } from "./sdlc.ts"
+import { addLessons, artifact, prBody, screenshotsMarkdown, unprovenCriteria, waiveGate } from "./sdlc.ts"
 import { fetchOrigin, upstreamState } from "./folders.ts"
 import { decideNext, selectableSteps, SkillPreflightError } from "./steps.ts"
 import { homeFor, readHome } from "./home.ts"
@@ -322,7 +322,13 @@ export const coordinatorTools = (f: Factory, scope: Scope = { id: "coordinator",
     },
   }),
   ...(scope.workdir
-    ? [reportUp(f, scope, scope.workdir), sdlcPlanTool(f, scope), sdlcStatusTool(f, scope), mergePrTool(f, scope)]
+    ? [
+        reportUp(f, scope, scope.workdir),
+        sdlcPlanTool(f, scope),
+        sdlcStatusTool(f, scope),
+        waiveGateTool(f, scope),
+        mergePrTool(f, scope),
+      ]
     : []),
   defineTool("extension_errors", {
     description:
@@ -427,6 +433,29 @@ const sdlcStatusTool = (f: Factory, scope: Scope) =>
         readyToShip: blockers.length === 0,
         ...(prFile ? { prBody: prFile } : {}),
       })
+    },
+  })
+
+/** waive_gate: waive only the chosen docs gate, using words quoted from the request. */
+const waiveGateTool = (f: Factory, scope: Scope) =>
+  defineTool("waive_gate", {
+    description:
+      "Waive the docs gate only. The reason must be a literal substring of the current request, quoting the scope-limiting words.",
+    parameters: obj(
+      {
+        gate: { type: "string", description: "Gate to waive; only docs is allowed." },
+        reason: { type: "string", description: "Exact scope-limiting words quoted from the request." },
+      },
+      ["gate", "reason"],
+    ),
+    handler: async (a: Args) => {
+      const s = f.sdlc.get(scope.id)
+      if (!s) return json({ error: "no SDLC plan: call sdlc_plan first" })
+      const result = waiveGate(s, str(a, "gate"), str(a, "reason"))
+      if ("error" in result) return json({ error: result.error })
+      f.sdlc.set(scope.id, result.sdlc)
+      f.publish(scope.id, "factory.sdlc", null, now(), result.sdlc)
+      return json({ gate: str(a, "gate"), blockers: sdlcShipBlockers(f, scope) })
     },
   })
 

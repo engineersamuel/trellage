@@ -438,6 +438,21 @@ export const withGates = (s: Sdlc, gates: Gate[]): Sdlc => ({
 export const gate = (s: Sdlc, id: GateId): Gate | undefined => s.gates.find((g) => g.id === id)
 export const isOn = (s: Sdlc, id: GateId) => !!gate(s, id)?.chosen
 
+export const waiveGate = (s: Sdlc, id: string, reason: string): { sdlc: Sdlc } | { error: string } => {
+  if (id !== "docs")
+    return {
+      error:
+        "only the docs gate can be waived; floors (security, verify, criteria) and other gates can never be waived",
+    }
+  const trimmed = reason.trim()
+  if (!trimmed || !s.request.includes(trimmed))
+    return { error: "The reason must quote the words of the request that limit the scope." }
+  if (!isOn(s, "docs")) return { error: "The docs gate is not chosen; nothing to waive." }
+  return {
+    sdlc: withGates(s, [{ ...gate(s, "docs")!, status: "done", detail: `waived: ${trimmed}` }]),
+  }
+}
+
 const TEST = /(^|\/)(tests?|__tests__|spec)\/|(^|\/)(tests?\.sh|test_[^/]+\.[a-z0-9]+)$|[._-](test|spec)\.[a-z0-9]+$/i
 export const isTestPath = (p: string): boolean => TEST.test(p)
 
@@ -467,7 +482,13 @@ export const shipBlockers = (
   if (isOn(s, "codeReview") && !codeReviewDone) out.push("code review gate not done")
   const sc = gate(s, "supplyChain")
   if (sc?.chosen && sc.status !== "done") out.push(`supply-chain gate ${sc.status}${sc.detail ? `: ${sc.detail}` : ""}`)
-  if (isOn(s, "docs") && base && !diffFiles(workdir, base).some((f) => DOC.test(f.path)))
+  const docs = gate(s, "docs")
+  if (
+    isOn(s, "docs") &&
+    !docs?.detail?.startsWith("waived:") &&
+    base &&
+    !diffFiles(workdir, base).some((f) => DOC.test(f.path))
+  )
     out.push("docs gate: the diff changes no README, docs or CHANGELOG")
   return out
 }
@@ -512,7 +533,7 @@ export const prBody = (
     `## Summary\n${summary.trim()}`,
     `## Acceptance criteria\n${s.criteria.map((c, i) => `- [${unproven.has(`AC-${i + 1}`) ? " " : "x"}] AC-${i + 1}: ${c}`).join("\n")}`,
     `## Risk\nTier ${s.risk?.tier ?? "?"}${s.risk?.reasons.length ? `: ${s.risk.reasons.join("; ")}` : ""}`,
-    `## Gates\n${s.gates.map((g) => `- ${g.id}: ${g.chosen ? g.status : "skipped"} (${g.reason})`).join("\n")}`,
+    `## Gates\n${s.gates.map((g) => `- ${g.id}: ${g.chosen ? g.status : "skipped"} (${g.reason})${g.detail ? ` — ${g.detail}` : ""}`).join("\n")}`,
     ...(evaluation ? [`## Independent evaluation\n${evaluation}`] : []),
     `## Evidence\n\`\`\`\n${evidence.trim().slice(0, 6000)}\n\`\`\``,
     `## Rollback\n${rollback}`,
