@@ -107,6 +107,35 @@ contract_rounds = 2
 # Evaluations per ship; a fix and a verify worker run between two of them when a criterion fails.
 max_rounds = 2
 
+# Worker accountability (ADR 0010). Record-only: never blocks, stops or reroutes. false = no role card, no grade.
+[accountability]
+enabled = true
+# A decision control passes at or above this probability.
+pass_threshold = 0.5
+# Engine state per worker: at most this many characters; tool call arguments cut to args_chars.
+extract_max_chars = 15000
+args_chars = 160
+# Grades that run at the same time; more wait.
+max_parallel = 2
+# A control is calibrated with at least this many human labels that agree at least this often.
+calibration_min_labels = 20
+calibration_min_agreement = 0.8
+
+# Role card budget (3.5) per step, USD: p90 of completed workers' own cost, 2026-11-04..24, rounded up to $0.50.
+# Steps with fewer than 10 samples use default.
+[accountability.worker_usd]
+default = 5.0
+implement = 4.0
+verify = 3.0
+review = 1.5
+evaluate = 2.5
+security = 25.0
+research = 10.5
+finish = 1.0
+synthesis = 0.5
+plan = 1.5
+debug = 4.0
+
 # Chief of Staff rules (ADR 0008). Every rule acts live; set one to false to stop it.
 [cos]
 # R1: Jev confidence at or above which the Chief of Staff answers a decision for the human.

@@ -215,6 +215,21 @@ export class EventStore {
     return rows.map((r) => ({ ...r, reported: r.reported === 1 }))
   }
 
+  /** One worker's own usage rows, excluding every descendant. */
+  usageRowsOf(worker: string): UsageRow[] {
+    const rows = this.db
+      .query(
+        `SELECT worker, coalesce(json_extract(data, '$.model'), 'unknown') AS model,
+           json_extract(data, '$.copilotUsage.totalNanoAiu') IS NOT NULL AS reported, count(*) AS calls,
+           total(json_extract(data, '$.inputTokens')) AS inputTokens, total(json_extract(data, '$.outputTokens')) AS outputTokens,
+           total(json_extract(data, '$.cacheReadTokens')) AS cacheReadTokens, total(json_extract(data, '$.cacheWriteTokens')) AS cacheWriteTokens,
+           total(json_extract(data, '$.copilotUsage.totalNanoAiu')) AS nanoAiu
+         FROM events WHERE type = 'assistant.usage' AND worker = ? GROUP BY 1, 2, 3`,
+      )
+      .all(worker) as (Omit<UsageRow, "reported"> & { reported: number })[]
+    return rows.map((r) => ({ ...r, reported: r.reported === 1 }))
+  }
+
   /** Copilot's per-token rates (nano-AIU per token) by model and token type, from the newest call that reported them. */
   rates(): Record<string, Rates> {
     const rows = this.db

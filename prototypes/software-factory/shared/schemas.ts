@@ -27,6 +27,7 @@ export const Worker = Schema.Struct({
   rssKb: NullableNumber,
   home: Schema.String.pipe(withDefault("")),
   task: NullableString,
+  roleCard: Schema.optionalKey(Schema.NullOr(Schema.String)),
   lastMessage: NullableString,
   owner: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** SDK that runs the agent: copilot, claude or pi. */
