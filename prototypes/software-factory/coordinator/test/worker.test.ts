@@ -536,3 +536,33 @@ test("waitIdle ends when the factory stops the worker, not at its timeout", asyn
   expect(w.status).toBe("stopped")
   expect(Date.now() - started).toBeLessThan(1_000)
 })
+
+test("handOffAndStop saves the sub-coordinator's handoff and stops it; a busy one is left alone", async () => {
+  type Spy = { workers: Map<string, unknown>; stop: (id: string) => Promise<void> }
+  const f = new Factory({ SF_STATE_DIR: mkdtempSync(path.join(tmpdir(), "sf-renew-")) })
+  const spy = as<Spy>(f)
+  const stopped: string[] = []
+  spy.stop = async (id) => void (stopped.push(id), spy.workers.delete(id))
+  const fake = (id: string, status: string) => ({
+    id,
+    role: "coordinator",
+    status,
+    lastMessage: "old",
+    log: [] as unknown[],
+    waitIdle: async () => true,
+    send: async function (this: { lastMessage: string }) {
+      this.lastMessage = `handoff of ${id}`
+    },
+  })
+  const idle = fake("sub-1", "idle")
+  spy.workers.set("sub-1", idle)
+  expect(await f.handOffAndStop(idle as never)).toBe(true)
+  expect(stopped).toEqual(["sub-1"])
+  const saved = readFileSync(path.join(f.root, "sub-1", "handoff.md"), "utf8")
+  expect(saved).toStartWith("You continue this conversation in a new session")
+  expect(saved).toContain("handoff of sub-1")
+  const busy = fake("sub-2", "running")
+  spy.workers.set("sub-2", busy)
+  expect(await f.handOffAndStop(busy as never)).toBe(false)
+  expect(stopped).toEqual(["sub-1"])
+})

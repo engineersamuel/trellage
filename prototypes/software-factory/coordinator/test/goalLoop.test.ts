@@ -96,6 +96,8 @@ test("a repeated report of the same loop replaces its entry", () => {
 test("loop sessions: loop 1 keeps the old id, later loops get a fresh one", () => {
   expect(loopSessionId("sub-1", 1)).toBe("sf-sub-1")
   expect(loopSessionId("sub-1", 3)).toBe("sf-sub-1-l3")
+  expect(loopSessionId("sub-1", 1, 2)).toBe("sf-sub-1-r2")
+  expect(loopSessionId("sub-1", 3, 1)).toBe("sf-sub-1-l3-r1")
 })
 
 test("the handoff names the loop, the AC status, the PR, earlier loops and the human's direction", () => {

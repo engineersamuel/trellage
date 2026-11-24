@@ -165,6 +165,11 @@ describe("goalUnmet", () => {
       ),
     ).toEqual(["no PR for the branch"])
   })
+  test("a merged PR meets an OPEN expectation; a closed one does not", () => {
+    const want = { steps: {}, skills: [], pr: { state: "OPEN", bodyIncludes: [], untouched: [] } }
+    expect(goalUnmet({ ...run, pr: { ...run.pr!, state: "MERGED" } }, want)).toEqual([])
+    expect(goalUnmet({ ...run, pr: { ...run.pr!, state: "CLOSED" } }, want)).toEqual(["PR #7 is CLOSED, expected OPEN"])
+  })
 })
 
 describe("approval policy", () => {

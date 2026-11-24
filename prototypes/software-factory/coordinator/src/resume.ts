@@ -8,7 +8,25 @@ import type { Sdlc } from "./sdlc.ts"
 /** One agent that was running when the coordinator stopped. */
 export type Interrupted = { id: string; name: string; owner: string | null; step: string | null; task: string | null }
 /** `factory.shutdown`: published before the coordinator stops its agents. */
-export type Shutdown = { at: number; running: Interrupted[] }
+export type Shutdown = { at: number; running: Interrupted[]; reason?: string; recent?: string[] }
+
+/** Seconds from a `ps -o etime` value: `[[dd-]hh:]mm:ss`. */
+const etimeSeconds = (etime: string): number => {
+  const [days, rest] = etime.includes("-") ? etime.split("-") : ["0", etime]
+  return rest!.split(":").reduce((n, part) => n * 60 + Number(part), 0) + Number(days) * 86_400
+}
+
+/**
+ * The processes of `ps -axo pid=,ppid=,etime=,command=` that started at most `maxSeconds` ago. A stray signal
+ * has no sender on record (Bun has no siginfo), but its `kill`/`pkill` or the shell that ran it is usually still
+ * among the newest processes when the coordinator reacts.
+ */
+export const recentProcesses = (ps: string, maxSeconds = 60): string[] =>
+  ps
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/))
+    .filter((f) => f.length >= 4 && etimeSeconds(f[2]!) <= maxSeconds)
+    .map(([pid, ppid, etime, ...command]) => `${pid} ${ppid} ${etime} ${command.join(" ").slice(0, 200)}`)
 /** `factory.resumed`: published once the shutdown at `shutdownAt` was handled, so a second start does not repeat it. */
 export type Resumed = { shutdownAt: number; scopes: string[] }
 

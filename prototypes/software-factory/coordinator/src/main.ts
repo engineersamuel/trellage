@@ -48,7 +48,14 @@ import {
   type MergeResult,
 } from "./cos.ts"
 import { inRun, rerunInterruptedReview } from "./gates.ts"
-import { interruptedScopes, resumePrompt, type Interrupted, type Resumed, type Shutdown } from "./resume.ts"
+import {
+  interruptedScopes,
+  recentProcesses,
+  resumePrompt,
+  type Interrupted,
+  type Resumed,
+  type Shutdown,
+} from "./resume.ts"
 import { GoalBudgets, pauseApproval, PAUSE_REASON, readAnswer, shouldPause, type Budget } from "./budget.ts"
 import {
   afterReport,
@@ -518,6 +525,15 @@ const subScope = (t: Thread): Scope => {
 
 /** The coordinator for a conversation: the global one, or the conversation's sub-coordinator in its worktree (started on first use). */
 const starting = new Map<string, Promise<Worker>>()
+/** How often a sub-coordinator's long session was renewed (sub-renew below); part of its session id. */
+const subRenewalsFile = (id: string) => path.join(factory.root, id, "session-renewals")
+const subRenewals = (id: string): number => {
+  try {
+    return Number(readFileSync(subRenewalsFile(id), "utf8")) || 0
+  } catch {
+    return 0
+  }
+}
 const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
   if (!t) return Promise.resolve(coord)
   if (t.tournamentId) return tournamentCoordinator(t)
@@ -542,7 +558,7 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
         workdir: t.worktree,
         model: factory.settings.subAgent.model,
         // A goal's loop n > 1 is a fresh session (a fresh context) of the same sub-coordinator (ADR 0007).
-        sessionId: loopSessionId(id, (t.goalId && goalStates.get(t.goalId)?.loop) || 1),
+        sessionId: loopSessionId(id, (t.goalId && goalStates.get(t.goalId)?.loop) || 1, subRenewals(id)),
       })
       .then(async (w) => {
         // Resumed sessions keep their old model: always apply the sub-coordinator model and effort.
@@ -3330,6 +3346,34 @@ const goalReported = async (threadId: string, r: Report) => {
 const conversationIdle = (t: Thread) =>
   !runAgents(t).some((w) => w.status === "running") && !factory.approvals.pending().some((a) => a.threadId === t.id)
 
+/**
+ * A sub-coordinator re-reads its whole context on every model call, so a long one is the costliest agent of a run.
+ * When its context passes [cos] sub_renew_tokens, no agent of its conversation runs, and it waits for something that
+ * will message it (a decision for the human, or an answer to its report), it writes a handoff and stops; that next
+ * message starts it in a new session with the handoff. A sub-coordinator that neither asked nor reported is left
+ * to R25, which only nudges a live one.
+ */
+loop("sub-renew", "1 minute", async () => {
+  const limit = factoryConfig().cos.sub_renew_tokens
+  for (const w of [...factory.workers.values()]) {
+    const t = threads.list().find((x) => subId(x.id) === w.id)
+    if (!t?.worktree || t.tournamentId || (w.context?.[0] ?? 0) < limit) continue
+    if (runAgents(t).some((x) => x.status === "running") || activeRuns.has(t.id) || starting.has(w.id)) continue
+    const asked = factory.approvals.pending().some((a) => a.threadId === t.id)
+    const hasReported = (lastReportAt.get(t.id)?.at ?? 0) >= factory.turn(w.id).start
+    if (!asked && !hasReported) continue
+    const used = w.context![0]
+    const n = subRenewals(w.id) + 1
+    mkdirSync(path.dirname(subRenewalsFile(w.id)), { recursive: true })
+    writeFileSync(subRenewalsFile(w.id), String(n))
+    if (!(await factory.handOffAndStop(w))) {
+      writeFileSync(subRenewalsFile(w.id), String(n - 1))
+      continue
+    }
+    cosLog("CoS", t.id, "renew sub-coordinator session", "done", `context ${used} tokens -> renewal ${n}`)
+  }
+})
+
 /** Start the next loop: a fresh sub-coordinator session on the same worktree, seeded from the goal state. */
 const startNextLoop = async (s: GoalState) => {
   const t = threads.get(s.threadId)
@@ -3480,9 +3524,14 @@ const shutdown = async (signal: string) => {
     .summaries()
     .filter((w) => w.status === "running")
     .map((w) => ({ id: w.id, name: w.name, owner: w.owner, step: w.step, task: w.task }))
+  // The log file is cleared at the next start, so the reason and the newest processes (the likely sender of a
+  // stray signal) go into the event store.
+  const ps = Bun.spawnSync(["ps", "-axo", "pid=,ppid=,etime=,command="])
   factory.publish("coordinator", "factory.shutdown", null, now(), {
     at: Date.now(),
     running,
+    reason: `${signal} (ppid ${process.ppid})`,
+    recent: recentProcesses(ps.stdout.toString()).slice(0, 40),
   } satisfies Shutdown)
   await stopLoops()
   await factory.stopAll()

@@ -126,6 +126,9 @@ cost_alert_share = 0.8
 max_parallel_events = 4
 # The Chief of Staff's main session (the human's chat) starts again from a short handoff when its context is this full.
 renew_context_share = 0.6
+# A repo sub-coordinator starts again from a short handoff when its context passes this many tokens and its
+# conversation is idle (it re-reads the whole context on every model call).
+sub_renew_tokens = 200000
 
 [cos.rules]
 # R1: answer a decision with Jev's pick (never ship, merge, delete, cost, goal or config decisions).
