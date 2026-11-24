@@ -41,25 +41,37 @@ export const costLine = (t: Totals): string =>
 const NOTE =
   "AIC = GitHub AI Credits as Copilot reports them per call. ~ = part estimated from tokens at Copilot's rates (Claude/Pi workers, proxy calls). +? = calls with no known rate, left out."
 
-type Summary = { at: number; text: string | null }
+type Summary = { at: number; totals: Totals | null }
 const summaries = new Map<string, Summary>()
 const FRESH_MS = 15_000
 
-/** Cached one-line cost of a run (`threadId`) or of the factory (`null`). Fetches when stale; `onLoad` fires on new data. */
-export const costSummary = (threadId: string | null, onLoad: () => void): string | null => {
+/** Cached totals of a run (`threadId`) or of the factory (`null`). Fetches when stale; `onLoad` fires on new data. */
+const costTotals = (threadId: string | null, onLoad: () => void): Totals | null => {
   const key = threadId ?? ""
   const c = summaries.get(key)
-  if (c && Date.now() - c.at < FRESH_MS) return c.text
-  summaries.set(key, { at: Date.now(), text: c?.text ?? null })
+  if (c && Date.now() - c.at < FRESH_MS) return c.totals
+  summaries.set(key, { at: Date.now(), totals: c?.totals ?? null })
   const load = threadId
     ? runOr(json(`/api/costs/${encodeURIComponent(threadId)}`, Run), null).then((r) => r && r.total)
     : runOr(json("/api/costs", Report), null).then((r) => r && r.global)
   void load.then((t) => {
     if (!t) return
-    summaries.set(key, { at: Date.now(), text: costLine(t) })
+    summaries.set(key, { at: Date.now(), totals: t })
     onLoad()
   })
-  return c?.text ?? null
+  return c?.totals ?? null
+}
+
+/** Cached one-line cost of a run (`threadId`) or of the factory (`null`). */
+export const costSummary = (threadId: string | null, onLoad: () => void): string | null => {
+  const t = costTotals(threadId, onLoad)
+  return t && costLine(t)
+}
+
+/** Cached running USD total of a run, e.g. "$83.36". */
+export const costUsd = (threadId: string, onLoad: () => void): string | null => {
+  const t = costTotals(threadId, onLoad)
+  return t && usd(t)
 }
 
 const table = (head: string[], rows: string[][]): HTMLTableElement => {

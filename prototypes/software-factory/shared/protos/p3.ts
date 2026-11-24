@@ -9,7 +9,7 @@ import { harnessBadge } from "../harness"
 import { critterOf, layoutCrittersOn, mountCritter, onLayoutCritters } from "../critter"
 import { treeLines } from "../treeLines"
 import { openSpec } from "../spec"
-import { costSummary, mountCost } from "../costs"
+import { costSummary, costUsd, mountCost } from "../costs"
 import { mountLedger } from "../ledger"
 import { draftDetail, draftForm } from "./drafts"
 import { mountCanvas } from "./canvas"
@@ -345,7 +345,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const critter = critterFor(n, "p3-critter big")
     hd.append(...(critter ? [critter] : []), ...badge(n), el("b", "", `${ICON[n.kind]} ${KIND[n.kind]}`), pill(n))
     c.append(hd, el("div", "p3-title", n.title))
-    const meta = [n.thread?.folderId, n.agent?.model, ago(n.thread?.createdAt)].filter(Boolean).join(" · ")
+    const usd = n.kind === "sub" && n.thread ? costUsd(n.thread.id, render) : null
+    const meta = [n.thread?.folderId, n.agent?.model, ago(n.thread?.createdAt), usd].filter(Boolean).join(" · ")
     if (meta) c.append(el("div", "p3-sub", meta))
     if (!n.parent && n.agg.desc) {
       const a = el("div", "p3-sub", `${n.agg.desc} below · ${n.agg.running} running`)
@@ -424,7 +425,8 @@ const mount = ({ root, placeChat }: Ctx): (() => void) => {
     const critter = critterFor(n, "p3-critter")
     hd.append(...(critter ? [critter] : []), ...badge(n), el("b", "p3-ell", name), pill(n))
     const text = n.kind === "worker" ? (n.agent?.task ?? "") : n.title
-    const meta = [n.thread?.folderId, n.agent?.model, ago(bornAt(n))].filter(Boolean).join(" · ")
+    const usd = n.kind === "sub" && n.thread ? costUsd(n.thread.id, render) : null
+    const meta = [n.thread?.folderId, n.agent?.model, ago(bornAt(n)), usd].filter(Boolean).join(" · ")
     c.append(hd, el("div", "p3-cv-title", text), el("div", "p3-sub p3-ell", meta))
     c.onclick = (e) => (e.stopPropagation(), choose(n.id))
     c.onkeydown = (e) => e.key === "Enter" && (e.preventDefault(), choose(n.id))
