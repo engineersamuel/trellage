@@ -686,9 +686,41 @@ type WorkerQuery = {
   filters: Partial<Record<AccountabilityDimension, string>>
   control?: ControlId
   result?: Result
+  range: StoppedRange
+  sort: "newest" | "score"
   limit: number
   offset: number
 }
+
+type StoppedRange = { from?: number; to?: number }
+
+const rangeInstant = (value: string, name: "from" | "to"): number => {
+  const epoch = /^-?\d+$/.test(value) ? Number(value) : null
+  if (epoch !== null && Number.isSafeInteger(epoch) && Number.isFinite(new Date(epoch).getTime())) return epoch
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const at = Date.parse(`${value}T00:00:00.000Z`)
+    if (Number.isFinite(at) && new Date(at).toISOString().slice(0, 10) === value) return at
+  }
+  throw new Error(`${name} must be an ISO date or epoch milliseconds`)
+}
+
+const endOfUtcDay = (at: number): number => {
+  const date = new Date(at)
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1)
+}
+
+const stoppedRange = (url: URL): StoppedRange => {
+  const fromValue = url.searchParams.get("from")
+  const toValue = url.searchParams.get("to")
+  const from = fromValue === null ? undefined : rangeInstant(fromValue, "from")
+  // Date filters include all of `to`'s UTC day and exclude the next day's exact midnight.
+  const to = toValue === null ? undefined : endOfUtcDay(rangeInstant(toValue, "to"))
+  if (from !== undefined && to !== undefined && from >= to) throw new Error("from must be before the end of the to day")
+  return { ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }) }
+}
+
+const inStoppedRange = (grade: Grade, range: StoppedRange): boolean =>
+  (range.from === undefined || grade.stoppedAt >= range.from) && (range.to === undefined || grade.stoppedAt < range.to)
 
 const positiveInt = (value: string | null, fallback: number, maximum = 200): number => {
   if (value === null) return fallback
@@ -704,54 +736,100 @@ const pageOffset = (value: string | null): number => {
   return parsed
 }
 
-const workerQuery = (url: URL): WorkerQuery => {
+const workerControlQuery = (url: URL): Pick<WorkerQuery, "control" | "result"> => {
   const control = url.searchParams.get("control")
   const result = url.searchParams.get("result")
   if (control !== null && !isControl(control)) throw new Error(`unknown control ${control}`)
   if (result !== null && !["pass", "fail", "n/a", "unknown"].includes(result))
     throw new Error("result must be pass, fail, n/a or unknown")
   if ((control === null) !== (result === null)) throw new Error("control and result must be supplied together")
+  return control === null ? {} : { control, result: result as Result }
+}
+
+const workerDimensionFilters = (url: URL): WorkerQuery["filters"] =>
+  Object.fromEntries(
+    ACCOUNTABILITY_DIMENSIONS.flatMap((dimension) => {
+      const value = url.searchParams.get(dimension)
+      return value === null ? [] : [[dimension, value]]
+    }),
+  )
+
+const workerQuery = (url: URL): WorkerQuery => {
+  const sort = url.searchParams.get("sort") ?? "newest"
+  if (sort !== "newest" && sort !== "score") throw new Error("sort must be newest or score")
   return {
-    filters: Object.fromEntries(
-      ACCOUNTABILITY_DIMENSIONS.flatMap((dimension) => {
-        const value = url.searchParams.get(dimension)
-        return value === null ? [] : [[dimension, value]]
-      }),
-    ),
-    ...(control === null ? {} : { control, result: result as Result }),
+    filters: workerDimensionFilters(url),
+    ...workerControlQuery(url),
+    range: stoppedRange(url),
+    sort,
     limit: positiveInt(url.searchParams.get("limit"), 50),
     offset: pageOffset(url.searchParams.get("offset")),
   }
 }
 
-export const accountabilityWorkers = (rows: readonly Grade[], query: WorkerQuery) => {
-  const filtered = rows.filter((grade) => {
-    if (
-      Object.entries(query.filters).some(
-        ([key, value]) => String(grade[key as AccountabilityDimension] ?? "") !== value,
-      )
+const dimensionValue = (value: string | null): string => (value === null ? "" : value)
+
+const workerMatches = (grade: Grade, query: WorkerQuery): boolean => {
+  if (
+    Object.entries(query.filters).some(
+      ([key, value]) => dimensionValue(grade[key as AccountabilityDimension]) !== value,
     )
-      return false
-    return !query.control || grade.controls[query.control].result === query.result
-  })
-  filtered.sort((a, b) => b.stoppedAt - a.stoppedAt || a.worker.localeCompare(b.worker))
+  )
+    return false
+  if (!inStoppedRange(grade, query.range)) return false
+  return !query.control || grade.controls[query.control].result === query.result
+}
+
+const sortableScore = (grade: Grade): number => (grade.score === null ? Number.POSITIVE_INFINITY : grade.score)
+
+const scoreOrder = (a: Grade, b: Grade): number | null => {
+  if (a.score === b.score) return null
+  const difference = sortableScore(a) - sortableScore(b)
+  return difference
+}
+
+const workerSort =
+  (sort: WorkerQuery["sort"]) =>
+  (a: Grade, b: Grade): number => {
+    if (sort === "score") {
+      const ordered = scoreOrder(a, b)
+      if (ordered !== null) return ordered
+    }
+    return b.stoppedAt - a.stoppedAt || a.worker.localeCompare(b.worker)
+  }
+
+export const accountabilityWorkers = (rows: readonly Grade[], query: WorkerQuery) => {
+  const filtered = rows.filter((grade) => workerMatches(grade, query)).sort(workerSort(query.sort))
   return { rows: filtered.slice(query.offset, query.offset + query.limit), total: filtered.length }
 }
 
 const routeError = (error: unknown, status = 400): Response =>
   Response.json({ error: error instanceof Error ? error.message : String(error) }, { status })
 
+const seriesQuery = (url: URL): { dimension: AccountabilityDimension; bucket: "day" | "week"; control?: ControlId } => {
+  const dimension = url.searchParams.get("dimension") ?? ""
+  const bucket = url.searchParams.get("bucket") ?? "day"
+  const control = url.searchParams.get("control")
+  if (!isDimension(dimension)) throw new Error(`unknown dimension ${dimension}`)
+  if (bucket !== "day" && bucket !== "week") throw new Error("bucket must be day or week")
+  if (control !== null && !isControl(control)) throw new Error(`unknown control ${control}`)
+  return { dimension, bucket, control: control ?? undefined }
+}
+
 const seriesRoute =
   (db: AccountabilityDb): Handler =>
   (_req, url) => {
     try {
-      const dimension = url.searchParams.get("dimension") ?? ""
-      const bucket = url.searchParams.get("bucket") ?? "day"
-      const control = url.searchParams.get("control")
-      if (!isDimension(dimension)) throw new Error(`unknown dimension ${dimension}`)
-      if (bucket !== "day" && bucket !== "week") throw new Error("bucket must be day or week")
-      if (control !== null && !isControl(control)) throw new Error(`unknown control ${control}`)
-      return Response.json(accountabilitySeries(db.rows(), dimension, bucket, control ?? undefined))
+      const { dimension, bucket, control } = seriesQuery(url)
+      const range = stoppedRange(url)
+      return Response.json(
+        accountabilitySeries(
+          db.rows().filter((grade) => inStoppedRange(grade, range)),
+          dimension,
+          bucket,
+          control,
+        ),
+      )
     } catch (error) {
       return routeError(error)
     }
@@ -802,18 +880,22 @@ const saveLabelRoute =
 export const accountabilityRoutes = (
   db: AccountabilityDb,
   config: () => FactoryConfig,
-): [string, RegExp, Handler][] => [
-  [
-    "GET",
-    /^\/api\/accountability\/calibration$/,
-    () => Response.json(accountabilityCalibration(db, config().accountability)),
-  ],
-  ["GET", /^\/api\/accountability\/series$/, seriesRoute(db)],
-  ["GET", /^\/api\/accountability\/workers$/, workersRoute(db)],
-  ["GET", /^\/api\/accountability\/workers\/([^/]+)$/, workerRoute(db)],
-  ["GET", /^\/api\/accountability\/labels$/, labelsRoute(db)],
-  ["POST", /^\/api\/accountability\/labels$/, saveLabelRoute(db)],
-]
+): [string, RegExp, Handler][] => {
+  const saveLabel = saveLabelRoute(db)
+  return [
+    [
+      "GET",
+      /^\/api\/accountability\/calibration$/,
+      () => Response.json(accountabilityCalibration(db, config().accountability)),
+    ],
+    ["GET", /^\/api\/accountability\/series$/, seriesRoute(db)],
+    ["GET", /^\/api\/accountability\/workers$/, workersRoute(db)],
+    ["GET", /^\/api\/accountability\/workers\/([^/]+)$/, workerRoute(db)],
+    ["GET", /^\/api\/accountability\/labels$/, labelsRoute(db)],
+    ["POST", /^\/api\/accountability\/label$/, saveLabel],
+    ["POST", /^\/api\/accountability\/labels$/, saveLabel],
+  ]
+}
 
 export type WorkerBudgetRow = { worker: string; costUsd: number }
 export type WorkerStart = { worker: string; role: string; step: string | null; timestamp: string }

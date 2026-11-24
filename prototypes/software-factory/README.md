@@ -413,6 +413,9 @@ score, or one control's pass rate, per day or week with one line per model, harn
 a control × value table of pass rates with `n`; the 10 lowest-scoring workers, each linked to its chat (`?worker=`);
 and a calibration panel with your pass/fail label buttons per worker and control. Controls that are not yet calibrated
 are grey and tagged "uncalibrated". With no grades it says to run `sf accountability backfill`.
+The series and worker-list APIs accept `from` and `to` as ISO dates or epoch milliseconds and filter by worker stop
+time: `from` is inclusive and `to` includes its entire UTC day. Workers can be sorted newest-first or by ascending
+score (`sort=score`, null scores last). `POST /api/accountability/label` records a label; `/labels` remains an alias.
 
 ## How to test (manual test guide)
 

@@ -62,18 +62,23 @@ test("accountability API persists validated labels and computes calibration thre
     ]),
   )
 
-  const saved = await call(handle, "/api/accountability/labels", {
-    method: "POST",
-    body: JSON.stringify({ worker: "w-0", control: "4.7", label: "fail" }),
-  })
-  expect(saved.status).toBe(200)
-  expect(await saved.json()).toEqual({
-    worker: "w-0",
-    control: "4.7",
-    label: "fail",
-    at: expect.any(Number),
-  })
-  expect(db.labels()).toContainEqual(expect.objectContaining({ worker: "w-0", control: "4.7", label: "fail" }))
+  for (const [pathname, label] of [
+    ["/api/accountability/label", "fail"],
+    ["/api/accountability/labels", "pass"],
+  ] as const) {
+    const saved = await call(handle, pathname, {
+      method: "POST",
+      body: JSON.stringify({ worker: "w-0", control: "4.7", label }),
+    })
+    expect(saved.status).toBe(200)
+    expect(await saved.json()).toEqual({
+      worker: "w-0",
+      control: "4.7",
+      label,
+      at: expect.any(Number),
+    })
+  }
+  expect(db.labels()).toContainEqual(expect.objectContaining({ worker: "w-0", control: "4.7", label: "pass" }))
 
   for (const body of [
     { worker: "missing", control: "4.7", label: "pass" },
@@ -128,14 +133,52 @@ test("accountability API aggregates every dimension by day and week, including c
   expect(daily.find((row) => row.value === "model-a")?.score).toBe(0)
   expect(daily.find((row) => row.value === "model-b")?.score).toBe(1)
   expect((await call(handle, "/api/accountability/series?dimension=unknown&bucket=day")).status).toBe(400)
+  expect((await call(handle, "/api/accountability/series?dimension=model&bucket=")).status).toBe(400)
+  expect((await call(handle, "/api/accountability/series?dimension=model&control=")).status).toBe(400)
+})
+
+test("accountability API filters series and workers by inclusive ranges and exclusive end of the to day", async () => {
+  const db = new AccountabilityDb(path.join(mkdtempSync(path.join(tmpdir(), "sf-accountability-range-")), "db.sqlite"))
+  for (const [worker, stoppedAt] of [
+    ["before", at("2026-11-19T23:59:59.999Z")],
+    ["start", at("2026-11-20T00:00:00.000Z")],
+    ["middle", at("2026-11-20T12:00:00.000Z")],
+    ["end", at("2026-11-20T23:59:59.999Z")],
+    ["after", at("2026-11-21T00:00:00.000Z")],
+  ] as const)
+    db.put(grade(worker, { stoppedAt, gradedAt: at("2026-11-20T12:30:00.000Z") }))
+  const handle = api(db)
+
+  for (const [from, to, workers] of [
+    ["2026-11-20", "2026-11-20", ["start", "middle", "end"]],
+    [String(at("2026-11-20T12:00:00.000Z")), String(at("2026-11-20T12:00:00.000Z")), ["middle", "end"]],
+  ] as const) {
+    const query = `from=${from}&to=${to}`
+    const series = await (await call(handle, `/api/accountability/series?dimension=model&bucket=day&${query}`)).json()
+    expect(series).toMatchObject([{ bucket: "2026-11-20", value: "model-a", n: workers.length }])
+
+    const page = await (await call(handle, `/api/accountability/workers?${query}&limit=200`)).json()
+    expect(page.total).toBe(workers.length)
+    expect(page.rows.map((row: Grade) => row.worker).sort()).toEqual([...workers].sort())
+  }
+
+  const fromOnly = await (await call(handle, "/api/accountability/workers?from=2026-11-20T00%3A00%3A00.000Z")).status
+  expect(fromOnly).toBe(400)
+  const fromDay = await (await call(handle, "/api/accountability/workers?from=2026-11-20")).json()
+  expect(fromDay.rows.map((row: Grade) => row.worker).sort()).toEqual(["after", "end", "middle", "start"])
+  const toDay = await (await call(handle, "/api/accountability/workers?to=2026-11-19")).json()
+  expect(toDay.rows.map((row: Grade) => row.worker)).toEqual(["before"])
+
+  for (const query of ["from=2026-02-30", `from=${Number.MAX_SAFE_INTEGER}0`, "from=2026-11-21&to=2026-11-20"])
+    expect((await call(handle, `/api/accountability/workers?${query}`)).status).toBe(400)
 })
 
 test("accountability API filters and pages workers and returns one worker", async () => {
   const db = new AccountabilityDb(
     path.join(mkdtempSync(path.join(tmpdir(), "sf-accountability-workers-")), "db.sqlite"),
   )
-  db.put(grade("old", { stoppedAt: at("2026-11-19T11:00:00.000Z") }))
-  db.put(grade("new", { stoppedAt: at("2026-11-21T11:00:00.000Z") }))
+  db.put(grade("old", { score: 0.1, stoppedAt: at("2026-11-19T11:00:00.000Z") }))
+  db.put(grade("new", { score: 0.9, stoppedAt: at("2026-11-21T11:00:00.000Z") }))
   db.put(grade("other", { step: "verify", stoppedAt: at("2026-11-22T11:00:00.000Z") }))
   const handle = api(db)
 
@@ -154,4 +197,38 @@ test("accountability API filters and pages workers and returns one worker", asyn
   expect((await call(handle, "/api/accountability/workers/new")).status).toBe(200)
   expect((await call(handle, "/api/accountability/workers/missing")).status).toBe(404)
   expect((await call(handle, "/api/accountability/workers?limit=0")).status).toBe(400)
+  expect((await call(handle, "/api/accountability/workers?sort=")).status).toBe(400)
+})
+
+test("accountability API sorts workers by score with stable paging", async () => {
+  const db = new AccountabilityDb(path.join(mkdtempSync(path.join(tmpdir(), "sf-accountability-sort-")), "db.sqlite"))
+  db.put(grade("null-old", { score: null, stoppedAt: at("2026-11-17T11:00:00.000Z") }))
+  db.put(grade("null-new", { score: null, stoppedAt: at("2026-11-21T11:00:00.000Z") }))
+  db.put(grade("low-old", { score: 0.1, stoppedAt: at("2026-11-20T11:00:00.000Z") }))
+  db.put(grade("low-z", { score: 0.1, stoppedAt: at("2026-11-22T11:00:00.000Z") }))
+  db.put(grade("low-a", { score: 0.1, stoppedAt: at("2026-11-22T11:00:00.000Z") }))
+  db.put(
+    grade("high", {
+      score: 0.9,
+      repo: null,
+      stoppedAt: at("2026-11-19T11:00:00.000Z"),
+    }),
+  )
+  const handle = api(db)
+
+  const pages = await Promise.all(
+    [0, 1, 2].map(async (offset) =>
+      (
+        await (await call(handle, `/api/accountability/workers?sort=score&limit=2&offset=${offset * 2}`)).json()
+      ).rows.map((row: Grade) => row.worker),
+    ),
+  )
+  expect(pages).toEqual([
+    ["low-a", "low-z"],
+    ["low-old", "high"],
+    ["null-new", "null-old"],
+  ])
+  expect((await (await call(handle, "/api/accountability/workers?repo=")).json()).rows).toMatchObject([
+    { worker: "high" },
+  ])
 })
