@@ -30,11 +30,13 @@ export const purposeLine = (task: string): string => {
 export const grantedTools = (
   spec: { tools?: Tool<Record<string, unknown>>[] },
   mcp: Record<string, McpServer>,
+  harness: "copilot" | "claude" | "pi" = "copilot",
 ): string[] =>
   [
     ...new Set([
       ...(spec.tools ?? []).map((tool) => tool.name),
-      "generate_image",
+      ...(harness === "pi" ? ["read", "bash", "edit", "write"] : []),
+      ...(harness === "pi" ? [] : ["generate_image"]),
       ...Object.keys(mcp).map((x) => `mcp:${x}`),
     ]),
   ].sort()

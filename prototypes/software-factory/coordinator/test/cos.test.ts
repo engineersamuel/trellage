@@ -520,6 +520,30 @@ test("R31 writes at most three recent calibrated failures per repo and excludes 
   expect(entries[0]!.detail).toContain("repo-b: 3 lessons")
 })
 
+test("R31 records the run and preserves earlier repo lessons when a later filesystem write fails", () => {
+  const now = Date.parse("2026-11-24T12:00:00.000Z")
+  const { root, db } = r31Fixture((store) => {
+    for (const folder of ["repo-a", "repo-b"]) {
+      for (let i = 0; i < 10; i++) {
+        const grade = r31Grade(`${folder}-w-${i}`, folder, now - DAY + i, ["3.1"])
+        store.put(grade)
+        store.label(grade.worker, "3.1", "fail", i)
+      }
+    }
+  })
+  mkdirSync(path.join(root, "lessons"), { recursive: true })
+  mkdirSync(path.join(root, "lessons", "repo-b.md"))
+
+  expect(r31Tick({ root, db, config: r31Config(), now })).toEqual({ ran: true, lessons: 1 })
+  expect(readLessons(root, "repo-a")).toHaveLength(1)
+  expect(new Ledger(root).list()).toEqual([
+    expect.objectContaining({
+      rule: "R31",
+      result: "failed",
+    }),
+  ])
+})
+
 test("R31 records a no-lessons run with no calibrated controls", () => {
   const now = Date.parse("2026-11-24T12:00:00.000Z")
   const { root, db } = r31Fixture((store) => store.put(r31Grade("uncalibrated", "repo-a", now - DAY, ["3.1"])))

@@ -6,7 +6,7 @@ import { encode } from "gpt-tokenizer/encoding/o200k_base"
 import type { CopilotClient, SessionConfig, Tool } from "@github/copilot-sdk"
 import { ConfigStore, setConfigStore } from "../src/config.ts"
 import { Factory } from "../src/factory.ts"
-import { roleCard } from "../src/roleCard.ts"
+import { grantedTools, roleCard } from "../src/roleCard.ts"
 
 const as = <T>(value: unknown): T => value as T
 
@@ -235,4 +235,11 @@ test("role card golden values are stable for step and fallback cards", () => {
   expect(roleCard("implement", "Fix the parser.", ["apply_patch", "generate_image"], c)).toStartWith("<role-card>")
   expect(roleCard("verify", "Run the checks.", ["generate_image"], c)).toContain("Do not edit code or tracked files.")
   expect(roleCard("plan", "Plan it.", [], c)).toContain("Do not push, merge or delete branches.")
+})
+
+test("AC-1: granted tools are harness-specific", () => {
+  const spec = { tools: [tool("read_goal"), tool("apply_patch")] }
+  expect(grantedTools(spec, {}, "copilot")).toEqual(["apply_patch", "generate_image", "read_goal"])
+  expect(grantedTools(spec, {}, "pi")).toEqual(["apply_patch", "bash", "edit", "read", "read_goal", "write"])
+  expect(grantedTools(spec, {}, "claude")).toEqual(["apply_patch", "generate_image", "read_goal"])
 })

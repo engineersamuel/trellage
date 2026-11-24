@@ -708,13 +708,6 @@ export class Factory {
         perplexityLimits: { max, maxResearch },
       }
     }
-    const c = factoryConfig()
-    if (spec.role === "worker" && c.accountability.enabled) {
-      const card = roleCard(spec.step ?? null, spec.task ?? "", grantedTools(spec, mcp.servers), c)
-      spec = card
-        ? { ...spec, roleCard: card, system: spec.system ? `${spec.system}\n\n${card}` : card }
-        : { ...spec, roleCard: null }
-    }
     // Skill preflight runs first, so a worker with an unusable skill fails before any model call.
     const { workdir, setup, skills } = this.prepareSpawn(spec, id, home, step)
     const setting = this.settings.workers.harness
@@ -729,6 +722,14 @@ export class Factory {
       id.startsWith("sub-"),
       routed?.model ?? spec.model,
     )
+    const c = factoryConfig()
+    if (spec.role === "worker" && c.accountability.enabled) {
+      const actualHarness = harness?.kind ?? "copilot"
+      const card = roleCard(spec.step ?? null, spec.task ?? "", grantedTools(spec, mcp.servers, actualHarness), c)
+      spec = card
+        ? { ...spec, roleCard: card, system: spec.system ? `${spec.system}\n\n${card}` : card }
+        : { ...spec, roleCard: null }
+    }
     if (harness) {
       const pinned = routed ? { ...spec, model: routed.model } : spec
       return this.spawnHarness(pinned, id, home, workdir, harness, skills, routed?.source, mcp.servers)

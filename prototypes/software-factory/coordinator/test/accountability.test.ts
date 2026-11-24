@@ -179,6 +179,37 @@ test("AC-2: a config budget change after spawn does not replace the recorded rol
   expect(grade.controls["3.5"]).toEqual({ result: "fail", value: 6 })
 })
 
+test("AC-2: grading retains start metadata from a 20004-event worker log", async () => {
+  const dir = root()
+  const store = new EventStore(path.join(dir, "events.db"))
+  store.append(feed(1, "factory.worker_started", started))
+  for (let seq = 2; seq <= 20003; seq++) {
+    store.append(feed(seq, "assistant.turn_start", {}))
+  }
+  store.append(feed(20004, "factory.worker_stopped", { id: "w-1" }))
+  const db = new AccountabilityDb(path.join(dir, "accountability.db"))
+  const grade = await gradeWorker(
+    {
+      store,
+      db,
+      config: factoryConfig(),
+      available: () => true,
+      ask: fakeAsk,
+      publish: () => {},
+      dimensions: () => ({
+        owner: started.owner,
+        thread: "thread-1",
+        goal: "goal-1",
+        folderId: "repo-1",
+        repo: "/tmp/repo-1",
+      }),
+    },
+    "w-1",
+  )
+  expect(grade.worker).toBe("w-1")
+  expect(db.rows()).toHaveLength(1)
+})
+
 test("AC-2: engine error makes all decision controls unknown and excludes them from score", async () => {
   const x = fixture()
   const grade = await gradeWorker(

@@ -209,18 +209,25 @@ export const r31Tick = ({
     return { ran: true, lessons: 0 }
   }
   const lessons = r31Lessons(db.rows(), calibrated, now)
-  const counts = [...lessons].map(([folderId, lines]) => {
-    addLessons(root, folderId, lines)
-    return `${folderId}: ${lines.length} lessons`
-  })
-  const total = [...lessons.values()].reduce((sum, lines) => sum + lines.length, 0)
+  const counts: string[] = []
+  const failures: string[] = []
+  let total = 0
+  for (const [folderId, lines] of lessons) {
+    try {
+      addLessons(root, folderId, lines)
+      counts.push(`${folderId}: ${lines.length} lessons`)
+      total += lines.length
+    } catch (error) {
+      failures.push(`${folderId}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
   const entry = ledger.add(
     {
       rule: "R31",
       threadId: null,
       action: "weekly accountability lessons",
-      result: "done",
-      detail: counts.length ? counts.join("; ") : "0 lessons",
+      result: failures.length ? "failed" : "done",
+      detail: failures.length ? [...counts, ...failures].join("; ") : counts.length ? counts.join("; ") : "0 lessons",
     },
     now,
   )

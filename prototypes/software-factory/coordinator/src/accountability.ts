@@ -465,7 +465,7 @@ const buildGrade = (input: {
 }
 
 export const gradeWorker = async (deps: GradeDeps, workerId: string): Promise<Grade> => {
-  const log = deps.store.load(workerId, KEEP_PER_WORKER)
+  const log = deps.store.load(workerId, Math.max(KEEP_PER_WORKER, 100_000))
   const { event: startedEvent, data: started } = startedWorker(log, workerId)
   const ended = endedWorker(log, workerId)
   const costUsd = ownCost(deps, workerId)
@@ -608,7 +608,7 @@ export const backfillAccountability = async (input: BackfillInput): Promise<{ gr
     }
     if (
       !input.store
-        .load(worker, KEEP_PER_WORKER)
+        .load(worker, Math.max(KEEP_PER_WORKER, 100_000))
         .some((event) => event.type === "factory.worker_stopped" || event.type === "session.idle")
     )
       continue
