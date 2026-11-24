@@ -113,6 +113,21 @@ test("AC-1: a step-specific verify card reaches the real spawn prompt", async ()
   expect(encode(card).length).toBeLessThanOrEqual(200)
 })
 
+test("AC-1: long Unicode summaries and many granted tools stay within the token cap", async () => {
+  const { f, configs } = spawnFactory()
+  await f.spawn({
+    id: "w-large",
+    name: "implementer",
+    role: "worker",
+    step: "implement",
+    task: `Implement ${"Unicode\u{1F680}".repeat(80)}`,
+    tools: Array.from({ length: 40 }, (_, index) => tool(`factory_granted_tool_${index}`)),
+  })
+  const card = cardFrom(configs[0]!)
+  expect(encode(card).length).toBeLessThanOrEqual(200)
+  expect(card).toContain("factory_granted_tool_0")
+})
+
 test("AC-1: sub-coordinators get no role card", async () => {
   const { f, configs } = spawnFactory()
   const w = await f.spawn({
