@@ -34,6 +34,8 @@ appended to its system prompt, at most 200 tokens (`gpt-tokenizer` 4.1.2, `o200k
 - **Tools:** every granted tool name the factory knows, literally (never wildcard-compressed).
 
 The card text is kept on the worker record (`factory.worker_started`).
+Tool names are listed literally; if the card cannot fit 200 tokens, the worker is spawned without a card and graded
+against its task text. A card never blocks a spawn.
 
 ### 2. Grade at task end, record-only
 

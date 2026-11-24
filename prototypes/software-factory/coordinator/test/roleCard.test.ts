@@ -180,6 +180,23 @@ test("AC-1: the real granted tool names stay covered within the token cap", asyn
   expect(card).toContain("Autonomy: Report every deviation")
 })
 
+test("an over-budget literal tool list spawns without a card", async () => {
+  const { f, configs } = spawnFactory()
+  const tools = Array.from({ length: 500 }, (_, i) => tool(`literal_tool_${i}_${"x".repeat(40)}`))
+  const w = await f.spawn({
+    id: "w-no-card",
+    name: "implementer",
+    role: "worker",
+    step: "implement",
+    task: "Fix the parser.",
+    tools,
+    system: "Existing worker system prompt.",
+  })
+  expect(configs[0]!.systemMessage?.content).toBe("Existing worker system prompt.")
+  expect(configs[0]!.systemMessage?.content ?? "").not.toContain("<role-card>")
+  expect(w.summary().roleCard).toBeNull()
+})
+
 test("AC-1: sub-coordinators get no role card", async () => {
   const { f, configs } = spawnFactory()
   const w = await f.spawn({

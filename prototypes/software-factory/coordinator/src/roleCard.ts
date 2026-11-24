@@ -94,13 +94,13 @@ const boundedCard = (
   exclusions: string,
   tools: readonly string[],
   c: FactoryConfig,
-): string => {
+): string | null => {
   const complete = renderCard(step, purpose, exclusions, tools, c)
   if (encode(complete).length <= 200) return complete
 
   const fitted = fitPurpose(step, purpose, exclusions, tools, c)
   if (encode(fitted).length <= 200) return fitted
-  throw new Error(`role card exceeds 200 tokens with ${tools.length} literal tool names`)
+  return null
 }
 
 export const roleCard = (
@@ -108,4 +108,4 @@ export const roleCard = (
   task: string,
   tools: readonly string[],
   c: FactoryConfig = factoryConfig(),
-): string => boundedCard(step, purposeLine(task), exclusionsFor(step), tools, c)
+): string | null => boundedCard(step, purposeLine(task), exclusionsFor(step), tools, c)

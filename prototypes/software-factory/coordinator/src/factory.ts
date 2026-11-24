@@ -174,7 +174,7 @@ export type SpawnSpec = {
   /** The Perplexity limits behind toolGuard; Pi shares them with its subagent children through a file. */
   perplexityLimits?: { max: number; maxResearch: number }
   /** Rendered accountability role card, retained on the worker record. */
-  roleCard?: string
+  roleCard?: string | null
 }
 
 export type WorkerSpec = {
@@ -711,7 +711,9 @@ export class Factory {
     const c = factoryConfig()
     if (spec.role === "worker" && c.accountability.enabled) {
       const card = roleCard(spec.step ?? null, spec.task ?? "", grantedTools(spec, mcp.servers), c)
-      spec = { ...spec, roleCard: card, system: spec.system ? `${spec.system}\n\n${card}` : card }
+      spec = card
+        ? { ...spec, roleCard: card, system: spec.system ? `${spec.system}\n\n${card}` : card }
+        : { ...spec, roleCard: null }
     }
     // Skill preflight runs first, so a worker with an unusable skill fails before any model call.
     const { workdir, setup, skills } = this.prepareSpawn(spec, id, home, step)
