@@ -140,6 +140,7 @@ export const FactoryConfigSchema = Schema.Struct({
       r27: Schema.Boolean,
       r28: Schema.Boolean,
       r29: Schema.Boolean,
+      r31: Schema.Boolean,
     }),
   }),
   /** Gate workers (gateWorker.ts): when one counts as stuck, how often it is replaced, and the backstop wait. */

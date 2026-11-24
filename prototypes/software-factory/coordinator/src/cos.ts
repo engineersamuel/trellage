@@ -4,10 +4,15 @@ import { Database } from "bun:sqlite"
 import { execFile } from "node:child_process"
 import { realpathSync } from "node:fs"
 import path from "node:path"
+import { CONTROLS, type ControlId, type Grade } from "../../shared/accountability.ts"
+import { AccountabilityDb, accountabilityCalibration } from "./accountability.ts"
 import type { Approval } from "./approvals.ts"
-import { factoryConfig } from "./config.ts"
+import { factoryConfig, type FactoryConfig } from "./config.ts"
 import type { Evaluation } from "./evaluate.ts"
+import { GENERAL } from "./folders.ts"
+import { loadPrompt } from "./prompt.ts"
 import { checksState, type Check } from "./run.ts"
+import { addLessons } from "./sdlc.ts"
 
 export type RuleId =
   | "r1"
@@ -25,6 +30,7 @@ export type RuleId =
   | "r27"
   | "r28"
   | "r29"
+  | "r31"
 
 export const ruleOn = (id: RuleId): boolean => factoryConfig().cos.rules[id]
 
@@ -41,19 +47,28 @@ export type LedgerEntry = {
 }
 
 const ledgers = new Map<string, Ledger>()
+const COS_SCHEMAS = {
+  ledger:
+    "CREATE TABLE IF NOT EXISTS ledger (seq INTEGER PRIMARY KEY, at INTEGER NOT NULL, rule TEXT NOT NULL, thread_id TEXT, action TEXT NOT NULL, result TEXT NOT NULL, detail TEXT NOT NULL)",
+  repoHolds: "CREATE TABLE IF NOT EXISTS repo_holds (repo TEXT PRIMARY KEY, data TEXT NOT NULL)",
+  ruleState:
+    "CREATE TABLE IF NOT EXISTS rule_state (ns TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (ns, key))",
+} as const
+
+const openCosDb = (root: string, schema: keyof typeof COS_SCHEMAS): Database => {
+  const db = new Database(path.join(root, "cos.db"), { create: true })
+  db.run("PRAGMA journal_mode = WAL")
+  db.run(COS_SCHEMAS[schema])
+  return db
+}
 
 /** Append-only log of every action a rule took or refused. */
 export class Ledger {
   private readonly db: Database
   constructor(root: string) {
-    this.db = new Database(path.join(root, "cos.db"), { create: true })
-    this.db.run("PRAGMA journal_mode = WAL")
-    this.db.run(
-      "CREATE TABLE IF NOT EXISTS ledger (seq INTEGER PRIMARY KEY, at INTEGER NOT NULL, rule TEXT NOT NULL, thread_id TEXT, action TEXT NOT NULL, result TEXT NOT NULL, detail TEXT NOT NULL)",
-    )
+    this.db = openCosDb(root, "ledger")
   }
-  add(e: Omit<LedgerEntry, "seq" | "at">): LedgerEntry {
-    const at = Date.now()
+  add(e: Omit<LedgerEntry, "seq" | "at">, at = Date.now()): LedgerEntry {
     const r = this.db.run(
       "INSERT INTO ledger (at, rule, thread_id, action, result, detail) VALUES (?, ?, ?, ?, ?, ?)",
       [at, e.rule, e.threadId, e.action, e.result, e.detail],
@@ -79,12 +94,138 @@ export class Ledger {
     const sql = `SELECT seq, at, rule, thread_id AS threadId, action, result, detail FROM ledger${threadId ? " WHERE thread_id = ?" : ""} ORDER BY seq DESC LIMIT ?`
     return this.db.query(sql).all(...(threadId ? [threadId, limit] : [limit])) as LedgerEntry[]
   }
+  lastAt(rule: string): number | null {
+    const row = this.db.query("SELECT at FROM ledger WHERE rule = ? ORDER BY seq DESC LIMIT 1").get(rule) as {
+      at: number
+    } | null
+    return row?.at ?? null
+  }
 }
 
 export const ledgerOf = (root: string): Ledger => {
   let l = ledgers.get(root)
   if (!l) ledgers.set(root, (l = new Ledger(root)))
   return l
+}
+
+// ---------- R31: weekly accountability lessons ----------
+
+const R31_WEEK = 7 * 86_400_000
+
+export const r31Due = (lastRunAt: number | null, now: number): boolean =>
+  lastRunAt === null || now - lastRunAt >= R31_WEEK
+
+const controlTitle = (control: ControlId): string => CONTROLS.find(({ id }) => id === control)!.title
+const controlOrder = new Map(CONTROLS.map(({ id }, index) => [id, index]))
+
+const r31RepoGrade = (grade: Grade, since: number, now: number): boolean =>
+  !!grade.folderId && grade.folderId !== GENERAL.id && grade.stoppedAt >= since && grade.stoppedAt <= now
+
+const r31Failures = (
+  rows: readonly Grade[],
+  calibrated: ReadonlySet<ControlId>,
+  since: number,
+  now: number,
+): Map<string, Map<ControlId, Grade[]>> => {
+  const failures = new Map<string, Map<ControlId, Grade[]>>()
+  for (const grade of rows) {
+    if (!r31RepoGrade(grade, since, now)) continue
+    for (const control of calibrated) {
+      if (grade.controls[control].result !== "fail") continue
+      const byControl = failures.get(grade.folderId!) ?? new Map<ControlId, Grade[]>()
+      const matching = byControl.get(control) ?? []
+      matching.push(grade)
+      byControl.set(control, matching)
+      failures.set(grade.folderId!, byControl)
+    }
+  }
+  return failures
+}
+
+const r31Lesson = ([control, matching]: [ControlId, Grade[]]): string => {
+  matching.sort((a, b) => b.stoppedAt - a.stoppedAt || a.worker.localeCompare(b.worker))
+  return loadPrompt("cos/r31-lesson", {
+    control,
+    title: controlTitle(control),
+    count: matching.length,
+    example: matching[0]!.worker,
+  })
+}
+
+const rankR31Failures = (byControl: Map<ControlId, Grade[]>): string[] =>
+  [...byControl]
+    .sort(
+      ([left, leftRows], [right, rightRows]) =>
+        rightRows.length - leftRows.length || controlOrder.get(left)! - controlOrder.get(right)!,
+    )
+    .slice(0, 3)
+    .map(r31Lesson)
+
+export const r31Lessons = (
+  rows: readonly Grade[],
+  calibrated: ReadonlySet<ControlId>,
+  now: number,
+): Map<string, string[]> => {
+  const failures = r31Failures(rows, calibrated, now - R31_WEEK, now)
+  return new Map([...failures].map(([folderId, byControl]) => [folderId, rankR31Failures(byControl)]))
+}
+
+type R31Config = Pick<FactoryConfig, "accountability" | "cos">
+type R31Input = {
+  root: string
+  db: AccountabilityDb
+  config: R31Config
+  now?: number
+  publish?: (entry: LedgerEntry) => void
+}
+
+export const r31Tick = ({
+  root,
+  db,
+  config,
+  now = Date.now(),
+  publish,
+}: R31Input): { ran: boolean; lessons: number } => {
+  if (!config.cos.rules.r31 || !config.accountability.enabled) return { ran: false, lessons: 0 }
+  const ledger = ledgerOf(root)
+  if (!r31Due(ledger.lastAt("R31"), now)) return { ran: false, lessons: 0 }
+  const calibrated = new Set(
+    accountabilityCalibration(db, config.accountability)
+      .filter(({ calibrated: isCalibrated }) => isCalibrated)
+      .map(({ control }) => control),
+  )
+  if (!calibrated.size) {
+    const entry = ledger.add(
+      {
+        rule: "R31",
+        threadId: null,
+        action: "weekly accountability lessons",
+        result: "refused",
+        detail: "no calibrated control; nothing written",
+      },
+      now,
+    )
+    publish?.(entry)
+    return { ran: true, lessons: 0 }
+  }
+  const lessons = r31Lessons(db.rows(), calibrated, now)
+  const counts = [...lessons].map(([folderId, lines]) => {
+    addLessons(root, folderId, lines)
+    return `${folderId}: ${lines.length} lessons`
+  })
+  const total = [...lessons.values()].reduce((sum, lines) => sum + lines.length, 0)
+  const entry = ledger.add(
+    {
+      rule: "R31",
+      threadId: null,
+      action: "weekly accountability lessons",
+      result: "done",
+      detail: counts.length ? counts.join("; ") : "0 lessons",
+    },
+    now,
+  )
+  publish?.(entry)
+  return { ran: true, lessons: total }
 }
 
 // ---------- R1: Jev answers a decision ----------
@@ -277,10 +418,8 @@ export class RepoGates {
   private readonly holds = new Map<string, RepoHold>()
   private readonly db: Database | null
   constructor(root?: string) {
-    this.db = root ? new Database(path.join(root, "cos.db"), { create: true }) : null
+    this.db = root ? openCosDb(root, "repoHolds") : null
     if (!this.db) return
-    this.db.run("PRAGMA journal_mode = WAL")
-    this.db.run("CREATE TABLE IF NOT EXISTS repo_holds (repo TEXT PRIMARY KEY, data TEXT NOT NULL)")
     const rows = this.db.query("SELECT repo, data FROM repo_holds").all() as {
       repo: string
       data: string
@@ -506,11 +645,7 @@ export const prEvent = (
 export class CosState {
   private readonly db: Database
   constructor(root: string) {
-    this.db = new Database(path.join(root, "cos.db"), { create: true })
-    this.db.run("PRAGMA journal_mode = WAL")
-    this.db.run(
-      "CREATE TABLE IF NOT EXISTS rule_state (ns TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (ns, key))",
-    )
+    this.db = openCosDb(root, "ruleState")
   }
   /** A Map-like view of one namespace, written through to SQLite. */
   map<V>(ns: string): {

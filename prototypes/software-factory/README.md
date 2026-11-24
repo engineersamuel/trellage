@@ -406,6 +406,7 @@ Grades never block, stop, reroute or ship a run. Their consumers are the account
 view and the weekly calibrated-control rule R31. `[accountability] enabled = false` is the complete rollback: new
 workers receive no role card and no grade. Per-step budgets in `[accountability.worker_usd]` are p90 own-cost budgets
 from the 2026-11-04 through 2026-11-24 sample, rounded upward to $0.50; undersampled steps use `default`.
+R31 writes at most three lessons per repo each week from the most frequent recent calibrated control failures.
 
 ## How to test (manual test guide)
 

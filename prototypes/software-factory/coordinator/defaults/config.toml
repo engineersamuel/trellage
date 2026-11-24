@@ -191,6 +191,8 @@ r27 = true
 r28 = true
 # R29: the daily spend limit stops new workers and conversations.
 r29 = true
+# R31: weekly, up to 3 lessons per repo from the most frequent calibrated accountability failures.
+r31 = true
 
 # Steps, research workflows and review lenses are prompt files: prompts/steps/, prompts/research/, prompts/lenses/.
 

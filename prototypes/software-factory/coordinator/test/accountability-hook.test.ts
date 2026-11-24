@@ -166,10 +166,10 @@ test("AC-2: Pi denial path emits the same permission.completed event shape", () 
   ])
 })
 
-test("AC-4 record-only: production grades are consumed only by accountability and main wiring", () => {
+test("AC-4 record-only: production grades are consumed only by accountability, main wiring and R31", () => {
   const src = path.join(import.meta.dir, "..", "src")
   const imports = readdirSync(src)
-    .filter((name) => name.endsWith(".ts") && !["accountability.ts", "main.ts"].includes(name))
+    .filter((name) => name.endsWith(".ts") && !["accountability.ts", "main.ts", "cos.ts"].includes(name))
     .map((name) => name.slice(0, -3))
   const consumers = imports.filter((name) => {
     const source = readFileSync(path.join(src, `${name}.ts`), "utf8")

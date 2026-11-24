@@ -34,6 +34,7 @@ import {
   prState,
   type PrState,
   ledgerOf,
+  r31Tick,
   mainChecks,
   modelErrorWorkers,
   r14Blocker,
@@ -1860,6 +1861,18 @@ const archiveDone = (t: Thread) => {
   cosLog("R25", t.id, "archive as successful", "done", t.cleanedAt ? "PR merged" : "done")
 }
 loop("cos-idle", "1 minute", idleSweep)
+loop(
+  "cos-r31",
+  "1 hour",
+  () =>
+    r31Tick({
+      root: factory.root,
+      db: accountabilityDb,
+      config: factoryConfig(),
+      publish: (entry) => factory.publish("coordinator", "factory.cos_action", null, now(), entry),
+    }),
+  "5 minutes",
+)
 // The ledger keeps 90 days.
 loop("cos-ledger-prune", "1 day", () => ledgerOf(factory.root).prune(), "1 minute")
 
