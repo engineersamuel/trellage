@@ -44,6 +44,78 @@ const api = (db: AccountabilityDb) =>
 const call = async (handle: ReturnType<typeof api>, pathname: string, init?: RequestInit) =>
   handle(new Request(`http://127.0.0.1:7700${pathname}`, init))
 
+const protectedEndpoints = [
+  ["GET", "/api/accountability/calibration"],
+  ["GET", "/api/accountability/series?dimension=model"],
+  ["GET", "/api/accountability/workers"],
+  ["GET", "/api/accountability/workers/w-origin"],
+  ["GET", "/api/accountability/labels"],
+  ["POST", "/api/accountability/label"],
+  ["POST", "/api/accountability/labels"],
+] as const
+
+test.each(protectedEndpoints)("accountability rejects foreign browser requests to %s %s", async (method, pathname) => {
+  const db = new AccountabilityDb(":memory:")
+  try {
+    db.put(grade("w-origin", { extract: "operator-owned extract" }))
+    db.label("w-origin", "4.7", "pass", 123)
+    const handle = api(db)
+    const deniedHeaders: Record<string, string>[] = [
+      { Origin: "https://foreign.test" },
+      { Origin: "null" },
+      { "Sec-Fetch-Site": "cross-site" },
+      { Origin: "http://localhost:5174", "Sec-Fetch-Site": "cross-site" },
+    ]
+    for (const headers of deniedHeaders) {
+      const response = await call(handle, pathname, {
+        method,
+        headers: new Headers({ ...headers, "Content-Type": "text/plain" }),
+        body: method === "POST" ? JSON.stringify({ worker: "w-origin", control: "4.7", label: "fail" }) : undefined,
+      })
+      expect(response.status).toBe(403)
+      expect(await response.text()).toBe("")
+      expect(response.headers.has("access-control-allow-origin")).toBe(false)
+      expect(db.labels()).toEqual([{ worker: "w-origin", control: "4.7", label: "pass", at: 123 }])
+      const preflight = await call(handle, pathname, { method: "OPTIONS", headers })
+      expect(preflight.status).toBe(403)
+      expect(preflight.headers.has("access-control-allow-origin")).toBe(false)
+    }
+  } finally {
+    db.close()
+  }
+})
+
+test.each([undefined, "http://localhost:5174", "http://127.0.0.1:7700", "http://localhost:7700"])(
+  "accountability permits CLI and trusted browser origin %s without wildcard CORS",
+  async (origin) => {
+    const db = new AccountabilityDb(":memory:")
+    try {
+      db.put(grade("w-origin", { extract: "operator-owned extract" }))
+      const handle = api(db)
+      const headers = origin ? { Origin: origin } : undefined
+      for (const [method, pathname] of protectedEndpoints) {
+        const response = await call(handle, pathname, {
+          method,
+          headers,
+          body: method === "POST" ? JSON.stringify({ worker: "w-origin", control: "4.7", label: "fail" }) : undefined,
+        })
+        expect(response.status).toBe(200)
+        expect(response.headers.has("access-control-allow-origin")).toBe(false)
+        await response.arrayBuffer()
+        const preflight = await call(handle, pathname, { method: "OPTIONS", headers })
+        expect(preflight.status).toBe(204)
+        expect(preflight.headers.has("access-control-allow-origin")).toBe(false)
+      }
+      expect(db.labels()).toContainEqual(expect.objectContaining({ worker: "w-origin", control: "4.7", label: "fail" }))
+      expect(await (await call(handle, "/api/accountability/workers/w-origin", { headers })).json()).toMatchObject({
+        extract: "operator-owned extract",
+      })
+    } finally {
+      db.close()
+    }
+  },
+)
+
 test("accountability API persists validated labels and computes calibration thresholds", async () => {
   const db = new AccountabilityDb(path.join(mkdtempSync(path.join(tmpdir(), "sf-accountability-api-")), "db.sqlite"))
   for (let i = 0; i < 20; i++) db.put(grade(`w-${i}`))

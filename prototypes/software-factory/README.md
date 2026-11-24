@@ -418,6 +418,10 @@ are grey and tagged "uncalibrated". With no grades it says to run `sf accountabi
 The series and worker-list APIs accept `from` and `to` as ISO dates or epoch milliseconds and filter by worker stop
 time: `from` is inclusive and `to` includes its entire UTC day. Workers can be sorted newest-first or by ascending
 score (`sort=score`, null scores last). `POST /api/accountability/label` records a label; `/labels` remains an alias.
+All accountability API routes use the same browser-origin guard as Todo: foreign origins and cross-site browser
+requests are rejected before reading grades or changing labels, including preflight requests. Responses do not
+advertise wildcard CORS. Requests without browser headers (CLI clients) and the configured UI/coordinator origins
+remain permitted; this is not caller authentication.
 
 ## How to test (manual test guide)
 

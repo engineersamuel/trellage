@@ -22,16 +22,18 @@ export const makeHttpHandler =
   (routes: Routes, uiUrl: string, coordinatorAddress: string) =>
   async (req: Request): Promise<Response> => {
     const url = new URL(req.url)
-    const todoRequest = /^\/api\/(?:todo|drafts|threads\/(?:get|delete)|goal-page\/deep\/cancel)(?:\/|$)/.test(
-      url.pathname,
-    )
-    if (todoRequest) {
+    const protectedRequest =
+      /^\/api\/(?:accountability|todo|drafts|threads\/(?:get|delete)|goal-page\/deep\/cancel)(?:\/|$)/.test(
+        url.pathname,
+      )
+    if (protectedRequest) {
       const denied = todoOriginDenied(req, uiUrl, coordinatorAddress)
       if (denied) return denied
     }
-    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: todoRequest ? undefined : cors })
+    if (req.method === "OPTIONS")
+      return new Response(null, { status: 204, headers: protectedRequest ? undefined : cors })
     const res = await routeResponse(routes, req, url)
     if (!res) return new Response(null, { status: 404 })
-    if (!todoRequest) for (const [k, v] of Object.entries(cors)) res.headers.set(k, v)
+    if (!protectedRequest) for (const [k, v] of Object.entries(cors)) res.headers.set(k, v)
     return res
   }
