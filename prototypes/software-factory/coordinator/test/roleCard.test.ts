@@ -57,6 +57,57 @@ const cardFrom = (config: SessionConfig): string => {
   return text.match(/<role-card>[\s\S]*?<\/role-card>/)?.[0] ?? ""
 }
 
+const expectToolsCovered = (card: string, tools: readonly string[]): void => {
+  const entries = card.match(/^Tools: (.*)$/m)?.[1]?.split(", ") ?? []
+  for (const toolName of tools)
+    expect(
+      entries.some((entry) => entry === toolName || (entry.endsWith("*") && toolName.startsWith(entry.slice(0, -1)))),
+    ).toBe(true)
+}
+
+const realFactoryToolNames = [
+  "confirm_action",
+  "extension_errors",
+  "factory_status",
+  "focus_agent",
+  "get_factory_config",
+  "get_settings",
+  "list_conversations",
+  "list_workers",
+  "message_conversation",
+  "message_worker",
+  "next_step",
+  "open_report",
+  "optimize_repo",
+  "propose_config_change",
+  "read_conversation",
+  "read_worker",
+  "render_ui",
+  "report_up",
+  "show_code_review",
+  "show_decisions",
+  "show_delivery_run",
+  "show_diff_summary",
+  "show_evaluation",
+  "show_report_findings",
+  "show_sdlc",
+  "show_security_review",
+  "show_worker_board",
+  "spawn_worker",
+  "start_conversation",
+  "stop_worker",
+  "tournament_add_variants",
+  "tournament_build",
+  "tournament_combine",
+  "tournament_finish",
+  "tournament_round",
+  "tournament_scout",
+  "tournament_status",
+  "update_settings",
+  "waive_gate",
+  "sdlc_plan",
+]
+
 test("AC-1: real worker spawn appends the step role card and stores the byte-identical text", async () => {
   const { f, configs } = spawnFactory()
   const w = await f.spawn({
@@ -113,7 +164,7 @@ test("AC-1: a step-specific verify card reaches the real spawn prompt", async ()
   expect(encode(card).length).toBeLessThanOrEqual(200)
 })
 
-test("AC-1: long Unicode summaries and many granted tools stay within the token cap", async () => {
+test("AC-1: the real granted tool names stay covered within the token cap", async () => {
   const { f, configs } = spawnFactory()
   await f.spawn({
     id: "w-large",
@@ -121,13 +172,37 @@ test("AC-1: long Unicode summaries and many granted tools stay within the token 
     role: "worker",
     step: "implement",
     task: `Implement ${"Unicode\u{1F680}".repeat(80)}`,
-    tools: Array.from({ length: 40 }, (_, index) => tool(`factory_granted_tool_${index}`)),
+    tools: realFactoryToolNames.map(tool),
   })
   const card = cardFrom(configs[0]!)
   expect(encode(card).length).toBeLessThanOrEqual(200)
-  expect(card).toContain("factory_granted_tool_[")
-  expect(card).toContain("0")
-  expect(card).toContain("39")
+  expectToolsCovered(card, [...realFactoryToolNames, "generate_image"])
+  expect(card).toContain("Purpose: implement:")
+  expect(card).toContain("Exclusions: Do not push, merge or delete branches.")
+  expect(card).toMatch(/Budget: \$[0-9.]+ USD/)
+  expect(card).toContain("Autonomy: Report up every deviation")
+})
+
+test("AC-1: mixed long tool names compact without blocking spawn", async () => {
+  const { f, configs } = spawnFactory()
+  const words = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet"]
+  const prefixes = ["show", "tournament", "factory", "accountability"]
+  const names = prefixes.flatMap((prefix) => words.map((word) => `${prefix}_${word}_operation_handler`))
+
+  await expect(
+    f.spawn({
+      id: "w-long-tools",
+      name: "implementer",
+      role: "worker",
+      step: "implement",
+      task: "Compact a very large set of granted tool names without losing any tool coverage.",
+      tools: names.map(tool),
+    }),
+  ).resolves.toBeDefined()
+
+  const card = cardFrom(configs[0]!)
+  expect(encode(card).length).toBeLessThanOrEqual(200)
+  expectToolsCovered(card, [...names, "generate_image"])
 })
 
 test("AC-1: sub-coordinators get no role card", async () => {

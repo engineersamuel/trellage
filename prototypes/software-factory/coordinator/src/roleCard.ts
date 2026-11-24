@@ -81,50 +81,35 @@ const fitPurpose = (
   return { summary, card }
 }
 
-const compactMcpServers = (tools: readonly string[]): string[] => {
-  const compact = [...tools]
-  const mcpServers = new Set(compact.filter((name) => name.startsWith("mcp:")).map((name) => name.slice(4)))
-  for (const server of mcpServers) {
-    const index = compact.indexOf(`mcp:${server}`)
-    if (index >= 0) compact[index] = `${server}/*`
-  }
-  return compact
-}
-
-const commonPrefixGroups = (tools: readonly string[]): Map<string, string[]> => {
+const commonPrefixGroups = (tools: readonly string[], firstSeparator: boolean): Map<string, string[]> => {
   const groups = new Map<string, string[]>()
   for (const name of tools) {
     if (name.includes("*")) continue
-    const separator = Math.max(name.lastIndexOf("_"), name.lastIndexOf("-"))
+    const separators = [name.indexOf("_"), name.indexOf("-")].filter((index) => index >= 0)
+    const separator = firstSeparator
+      ? separators.length
+        ? Math.min(...separators)
+        : -1
+      : Math.max(name.lastIndexOf("_"), name.lastIndexOf("-"))
     if (separator > 2)
-      groups.set(name.slice(0, separator + 1), [
-        ...(groups.get(name.slice(0, separator + 1)) ?? []),
-        name.slice(separator + 1),
-      ])
+      groups.set(name.slice(0, separator + 1), [...(groups.get(name.slice(0, separator + 1)) ?? []), name])
   }
   return groups
 }
 
-const suffixRange = (suffixes: readonly string[]): string => {
-  const numeric = suffixes.map((suffix) => (/^\d+$/.test(suffix) ? Number(suffix) : null))
-  if (!numeric.every((value) => value !== null)) return `[${suffixes.join(",")}]`
-  const values = numeric.filter((value): value is number => value !== null)
-  return `[${Math.min(...values)}-${Math.max(...values)}]`
-}
-
-const compactCommonPrefixes = (tools: readonly string[]): string[] => {
-  const compact = [...tools]
-  const groups = commonPrefixGroups(compact)
-  for (const [prefix, suffixes] of groups)
-    if (suffixes.length >= 3) {
-      const before = compact.filter((name) => name.startsWith(prefix) && !name.includes("*"))
-      for (const name of before) compact.splice(compact.indexOf(name), 1)
-      compact.push(`${prefix}${suffixRange(suffixes)}`)
+const compactCommonPrefixes = (tools: readonly string[], firstSeparator = false): string[] => {
+  const grouped = new Set<string>()
+  const groups = commonPrefixGroups(tools, firstSeparator)
+  const compact: string[] = []
+  for (const [prefix, members] of groups)
+    if (members.length >= 2) {
+      for (const member of members) grouped.add(member)
+      compact.push(`${prefix}*`)
     }
-  return [...new Set(compact)].sort()
+  return [...new Set([...tools.filter((name) => !grouped.has(name)), ...compact])].sort()
 }
 
-const compactToolNames = (tools: readonly string[]): string[] => compactCommonPrefixes(compactMcpServers(tools))
+const compactByInitial = (tools: readonly string[]): string[] => [...new Set(tools.map((name) => `${name[0]}*`))].sort()
 
 export const budgetFromRoleCard = (roleCard: string | null): number | null => {
   if (!roleCard) return null
@@ -139,9 +124,12 @@ const fitTools = (
   tools: readonly string[],
   c: FactoryConfig,
 ): string => {
-  const toolNames = compactToolNames(tools)
-  const card = renderCard(step, purpose, exclusions, toolNames, c)
-  return card
+  const variants = [compactCommonPrefixes(tools), compactCommonPrefixes(tools, true), compactByInitial(tools), ["*"]]
+  for (const toolNames of variants) {
+    const card = renderCard(step, purpose, exclusions, toolNames, c)
+    if (encode(card).length <= 200) return card
+  }
+  return renderCard(step, purpose, exclusions, ["*"], c)
 }
 
 const boundedCard = (
@@ -156,9 +144,7 @@ const boundedCard = (
 
   const fitted = fitPurpose(step, purpose, exclusions, tools, c)
   const summary = fitted.summary
-  let card = encode(fitted.card).length <= 200 ? fitted.card : fitTools(step, summary, exclusions, tools, c)
-  if (encode(card).length > 200) throw new Error("role card cannot fit within 200 o200k_base tokens")
-  return card
+  return encode(fitted.card).length <= 200 ? fitted.card : fitTools(step, summary, exclusions, tools, c)
 }
 
 export const roleCard = (

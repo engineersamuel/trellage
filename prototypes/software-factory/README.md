@@ -393,7 +393,7 @@ Every factory worker (not a coordinator) receives a short role card appended to 
 names the step and one-line task purpose, the step's exclusions, its USD budget, autonomy reporting duties and the
 factory tools it was granted. The same text is retained on `factory.worker_started`. Cards come from
 `coordinator/defaults/prompts/role-cards/<step>.md`, with `default.md` as the fallback, and are limited to 200
-`o200k_base` tokens.
+`o200k_base` tokens; long tool lists use prefix wildcards without dropping granted tools and never block a spawn.
 
 When a worker becomes idle after its task or stops, the factory records one **record-only** grade in
 `$SF_STATE_DIR/accountability.db`. Worker controls cover scoped purpose (3.1), own-cost budget (3.5), granted-tool
