@@ -95,6 +95,7 @@ const fail = <A>(current: AsyncData.AsyncData<A, string>, error: string) =>
 export const update = (model: Model, message: Message): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
     ClickedOpenAccountability: () => (model.dialog.isOpen ? dialogStep(Dialog.close)(model) : open(model)),
+    ClickedWorker: () => ({ model }),
     GotDialogMessage: ({ message: dialogMessage }) => foldDialog(model, dialogMessage),
     SelectedDimension: ({ value }) =>
       pick(model, modifyFields(model, { dimension: () => value }), { table: true, worst: false }),

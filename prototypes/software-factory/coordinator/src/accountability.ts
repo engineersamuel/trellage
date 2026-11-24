@@ -11,7 +11,7 @@ import { decisionsAvailable, systemOne, type DecideRequest } from "./decide.ts"
 import { KEEP_PER_WORKER, EventStore } from "./events.ts"
 import type { FeedEvent, Worker } from "./factory.ts"
 import { add, totalsOf, zero } from "./costs.ts"
-import { cardBudget } from "./roleCard.ts"
+import { budgetFromRoleCard, cardBudget } from "./roleCard.ts"
 import { draftNodeId } from "./drafts.ts"
 import { subId, Threads } from "./threads.ts"
 import { GENERAL } from "./folders.ts"
@@ -473,7 +473,7 @@ export const gradeWorker = async (deps: GradeDeps, workerId: string): Promise<Gr
   const roleCard = optionalText(started.roleCard)
   const dimensions = deps.dimensions(String(started.owner ?? "coordinator"))
   const state = extract(log, roleCard, optionalText(started.task), costUsd, deps.config.accountability)
-  const budget = cardBudget(step, deps.config)
+  const budget = budgetFromRoleCard(roleCard) ?? cardBudget(step, deps.config)
   const decisions = await decisionChecks(state, deps.config.accountability.pass_threshold, deps.ask, deps.available)
   const evaluation = evaluationOf(deps.store, dimensions.owner)
   const controls = {

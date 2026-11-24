@@ -207,10 +207,11 @@ describe("accountability view", () => {
       { update, view },
       given(start),
       ...open({ series, rows: worst, calibration }),
-      expect(within(worstWorkers, role("link", { name: "w-low" }))).toHaveAttr("href", "?worker=w-low"),
-      expect(within(worstWorkers, role("link", { name: "w-mid" }))).toHaveAttr("href", "?worker=w-mid"),
+      expect(within(worstWorkers, role("link", { name: "w-low" }))).toHaveAttr("href", "?thread=t1&worker=w-low"),
+      expect(within(worstWorkers, role("link", { name: "w-mid" }))).toHaveAttr("href", "?thread=t1&worker=w-mid"),
       expect(within(worstWorkers, role("row", { name: /^w-low/ }))).toContainText("25%verifygpt$1.25 / $2.00"),
       expect(within(worstWorkers, first(all.role("row", { name: /^w-/ })))).toContainText("w-low"),
+      click(within(worstWorkers, role("link", { name: "w-low" }))),
     )
   })
 

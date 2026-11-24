@@ -81,6 +81,57 @@ const fitPurpose = (
   return { summary, card }
 }
 
+const compactMcpServers = (tools: readonly string[]): string[] => {
+  const compact = [...tools]
+  const mcpServers = new Set(compact.filter((name) => name.startsWith("mcp:")).map((name) => name.slice(4)))
+  for (const server of mcpServers) {
+    const index = compact.indexOf(`mcp:${server}`)
+    if (index >= 0) compact[index] = `${server}/*`
+  }
+  return compact
+}
+
+const commonPrefixGroups = (tools: readonly string[]): Map<string, string[]> => {
+  const groups = new Map<string, string[]>()
+  for (const name of tools) {
+    if (name.includes("*")) continue
+    const separator = Math.max(name.lastIndexOf("_"), name.lastIndexOf("-"))
+    if (separator > 2)
+      groups.set(name.slice(0, separator + 1), [
+        ...(groups.get(name.slice(0, separator + 1)) ?? []),
+        name.slice(separator + 1),
+      ])
+  }
+  return groups
+}
+
+const suffixRange = (suffixes: readonly string[]): string => {
+  const numeric = suffixes.map((suffix) => (/^\d+$/.test(suffix) ? Number(suffix) : null))
+  if (!numeric.every((value) => value !== null)) return `[${suffixes.join(",")}]`
+  const values = numeric.filter((value): value is number => value !== null)
+  return `[${Math.min(...values)}-${Math.max(...values)}]`
+}
+
+const compactCommonPrefixes = (tools: readonly string[]): string[] => {
+  const compact = [...tools]
+  const groups = commonPrefixGroups(compact)
+  for (const [prefix, suffixes] of groups)
+    if (suffixes.length >= 3) {
+      const before = compact.filter((name) => name.startsWith(prefix) && !name.includes("*"))
+      for (const name of before) compact.splice(compact.indexOf(name), 1)
+      compact.push(`${prefix}${suffixRange(suffixes)}`)
+    }
+  return [...new Set(compact)].sort()
+}
+
+const compactToolNames = (tools: readonly string[]): string[] => compactCommonPrefixes(compactMcpServers(tools))
+
+export const budgetFromRoleCard = (roleCard: string | null): number | null => {
+  if (!roleCard) return null
+  const match = roleCard.match(/Budget:\s*\$([0-9]+(?:\.[0-9]+)?)(?:\s|USD)/)
+  return match ? Number(match[1]) : null
+}
+
 const fitTools = (
   step: string | null,
   purpose: string,
@@ -88,13 +139,8 @@ const fitTools = (
   tools: readonly string[],
   c: FactoryConfig,
 ): string => {
-  let toolNames = tools
-  let card = renderCard(step, purpose, exclusions, toolNames, c)
-  while (encode(card).length > 200 && toolNames.length > 1) {
-    toolNames = toolNames.slice(0, toolNames.length - 1)
-    const omitted = tools.length - toolNames.length
-    card = renderCard(step, purpose, exclusions, [...toolNames, `(+${omitted} more)`], c)
-  }
+  const toolNames = compactToolNames(tools)
+  const card = renderCard(step, purpose, exclusions, toolNames, c)
   return card
 }
 
@@ -111,8 +157,6 @@ const boundedCard = (
   const fitted = fitPurpose(step, purpose, exclusions, tools, c)
   const summary = fitted.summary
   let card = encode(fitted.card).length <= 200 ? fitted.card : fitTools(step, summary, exclusions, tools, c)
-  if (encode(card).length > 200) card = renderCard(step, summary, exclusions, [], c)
-  if (encode(card).length > 200) card = renderCard(step, summary, tokensThrough(exclusions, 8), [], c)
   if (encode(card).length > 200) throw new Error("role card cannot fit within 200 o200k_base tokens")
   return card
 }

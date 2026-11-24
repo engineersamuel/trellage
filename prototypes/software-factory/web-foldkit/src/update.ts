@@ -179,7 +179,14 @@ const handleMessage = (model: Model, message: Message) =>
     GotWorkersMessage: ({ message: childMessage }) => foldWorkers(model, childMessage),
     GotSettingsMessage: ({ message: childMessage }) => foldSettings(model, childMessage),
     GotGoalsMessage: ({ message: childMessage }) => foldGoals(model, childMessage),
-    GotAccountabilityMessage: ({ message: childMessage }) => foldAccountability(model, childMessage),
+    GotAccountabilityMessage: ({ message: childMessage }) =>
+      // eslint-disable-next-line no-underscore-dangle -- Foldkit messages are tagged unions
+      childMessage._tag === "ClickedWorker"
+        ? selectInboxNode(
+            childMessage.thread ? Option.some(childMessage.thread) : Option.none(),
+            Option.some(childMessage.worker),
+          )(model)
+        : foldAccountability(model, childMessage),
     GotTodoMessage: ({ message: childMessage }) => foldTodo(model, childMessage),
     GotTournamentsMessage: ({ message: childMessage }) => foldTournaments(model, childMessage),
     GotDiffPanelMessage: ({ message: childMessage }) => foldDiffPanel(model, childMessage),

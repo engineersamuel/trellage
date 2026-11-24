@@ -125,7 +125,9 @@ test("AC-1: long Unicode summaries and many granted tools stay within the token 
   })
   const card = cardFrom(configs[0]!)
   expect(encode(card).length).toBeLessThanOrEqual(200)
-  expect(card).toContain("factory_granted_tool_0")
+  expect(card).toContain("factory_granted_tool_[")
+  expect(card).toContain("0")
+  expect(card).toContain("39")
 })
 
 test("AC-1: sub-coordinators get no role card", async () => {

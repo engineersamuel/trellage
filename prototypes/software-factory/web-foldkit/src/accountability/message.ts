@@ -5,6 +5,7 @@ import { Bucket, CalibrationList, ControlId, Dimension, Series, Table, WorkerPag
 
 export const Message = defineMessageUnion({
   ClickedOpenAccountability: {},
+  ClickedWorker: { worker: Schema.String, thread: Schema.String },
   GotDialogMessage: { message: Dialog.Message },
   // Pickers
   SelectedDimension: { value: Dimension },

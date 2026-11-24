@@ -164,6 +164,21 @@ test("AC-2: over-budget and a guard refusal fail their code controls", async () 
   expect(deniedGrade.score).toBe(6 / 8)
 })
 
+test("AC-2: a config budget change after spawn does not replace the recorded role-card budget", async () => {
+  const x = fixture({ cost: 6 })
+  const base = factoryConfig()
+  const changed = {
+    ...base,
+    accountability: {
+      ...base.accountability,
+      worker_usd: { ...base.accountability.worker_usd, implement: 100 },
+    },
+  }
+  const grade = await gradeWorker({ ...deps(x), config: changed }, "w-1")
+  expect(grade.budgetUsd).toBe(4)
+  expect(grade.controls["3.5"]).toEqual({ result: "fail", value: 6 })
+})
+
 test("AC-2: engine error makes all decision controls unknown and excludes them from score", async () => {
   const x = fixture()
   const grade = await gradeWorker(

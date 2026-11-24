@@ -289,7 +289,15 @@ const worstTable = (rows: ReadonlyArray<Grade>, h: HtmlBuilder<Message>): Html =
                 [],
                 [
                   h.a(
-                    [h.Href(`?worker=${encodeURIComponent(g.worker)}`), h.Title("Open this worker's chat")],
+                    [
+                      h.Href(
+                        g.thread
+                          ? `?thread=${encodeURIComponent(g.thread)}&worker=${encodeURIComponent(g.worker)}`
+                          : `?worker=${encodeURIComponent(g.worker)}`,
+                      ),
+                      h.Title("Open this worker's chat"),
+                      h.OnClick(Message.ClickedWorker({ worker: g.worker, thread: g.thread ?? "" })),
+                    ],
                     [g.worker],
                   ),
                 ],
