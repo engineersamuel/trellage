@@ -16,7 +16,9 @@ export const devSourceRoots = (value: string | undefined): ReadonlyMap<string, s
     const repository = separator < 0 ? "" : entry.slice(0, separator)
     const root = separator < 0 ? "" : entry.slice(separator + 1)
     if (!githubHttpsUrl.test(repository) || !path.isAbsolute(root))
-      throw new Error(`TRELLAGE_DEV_SOURCES entry must be <https://github.com/OWNER/REPO.git>=<absolute path>: ${entry}`)
+      throw new Error(
+        `TRELLAGE_DEV_SOURCES entry must be <https://github.com/OWNER/REPO.git>=<absolute path>: ${entry}`,
+      )
     roots.set(repository, root)
   }
   return roots
@@ -72,10 +74,7 @@ const extractCommit = (root: string, commit: string, destination: string): Promi
   })
 
 /** Override mapped GitHub repositories with deterministic snapshots of local worktrees. */
-export const devSourceTransport = (
-  base: SourceTransport,
-  roots: ReadonlyMap<string, string>,
-): SourceTransport => ({
+export const devSourceTransport = (base: SourceTransport, roots: ReadonlyMap<string, string>): SourceTransport => ({
   ...(base.listTags ? { listTags: base.listTags } : {}),
   resolveRef: (repository, ref) => {
     const root = roots.get(githubUrl(repository))
@@ -83,6 +82,8 @@ export const devSourceTransport = (
   },
   fetchCommit: (repository, commit, destination) => {
     const root = roots.get(githubUrl(repository))
-    return root === undefined ? base.fetchCommit(repository, commit, destination) : extractCommit(root, commit, destination)
+    return root === undefined
+      ? base.fetchCommit(repository, commit, destination)
+      : extractCommit(root, commit, destination)
   },
 })

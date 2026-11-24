@@ -19,7 +19,9 @@ test("composed Copilot instructions preserve user files and reject an unowned de
     process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT = cache
     const destination = path.join(home, "instructions/trellage-selected.instructions.md")
     await writeFile(destination, "Unowned content")
-    await expect(publishCompositionInstructions(cache, path.join(home, "skills"))).rejects.toThrow("refusing to replace user instructions")
+    await expect(publishCompositionInstructions(cache, path.join(home, "skills"))).rejects.toThrow(
+      "refusing to replace user instructions",
+    )
     await rm(destination)
     await publishCompositionInstructions(cache, path.join(home, "skills"))
     expect(await readFile(destination, "utf8")).toContain("Selected instructions.")

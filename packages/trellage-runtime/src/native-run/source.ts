@@ -163,11 +163,13 @@ export const createSourceResolver = (options: SourceResolverOptions): SourceReso
     const existing = references.get(key)
     if (existing) return existing
     const lock = path.join(paths.state, "ref-locks", createHash("sha256").update(key).digest("hex"))
-    const task = (options.readOnly
-      ? transport.resolveRef(repository, ref)
-      : mkdir(path.dirname(lock), { recursive: true })
-          .then(() => withReceiptLock(() => transport.resolveRef(repository, ref), lock)))
-      .finally(() => references.delete(key))
+    const task = (
+      options.readOnly
+        ? transport.resolveRef(repository, ref)
+        : mkdir(path.dirname(lock), { recursive: true }).then(() =>
+            withReceiptLock(() => transport.resolveRef(repository, ref), lock),
+          )
+    ).finally(() => references.delete(key))
     references.set(key, task)
     return task
   }

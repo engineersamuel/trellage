@@ -125,7 +125,11 @@ test.each([
     },
   }
   const ready = await inspectHarnessReadiness("pi", f.context)
-  const result = await inspectProfileReadiness(resolveNamedRunProfile(configured, configured, "pi", "custom"), ready, f.context)
+  const result = await inspectProfileReadiness(
+    resolveNamedRunProfile(configured, configured, "pi", "custom"),
+    ready,
+    f.context,
+  )
   expect(result.reasons.some((reason) => reason.code === "missing-config")).toBe(unavailable)
 })
 

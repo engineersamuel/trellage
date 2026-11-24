@@ -5,7 +5,9 @@ import path from "node:path"
 import { syncSnapshot, verifyTarget, isComposedSkillSnapshot } from "../scripts/floating-skills.ts"
 
 const roots: string[] = []
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+})
 
 test("an explicit empty composition removes managed skills and preserves user skills", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "trx-overlay-"))

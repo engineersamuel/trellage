@@ -18,11 +18,22 @@ test("cleanup runs every bounded stage and reports all failures", async () => {
   const order: string[] = []
 
   try {
-    await runCleanupStages([
-      async () => { order.push("release"); throw new Error("release failed") },
-      async () => { order.push("processes"); throw new Error("process cleanup failed") },
-      async () => { order.push("children") },
-    ], "fixture cleanup")
+    await runCleanupStages(
+      [
+        async () => {
+          order.push("release")
+          throw new Error("release failed")
+        },
+        async () => {
+          order.push("processes")
+          throw new Error("process cleanup failed")
+        },
+        async () => {
+          order.push("children")
+        },
+      ],
+      "fixture cleanup",
+    )
     throw new Error("cleanup unexpectedly succeeded")
   } catch (error) {
     expect(error).toBeInstanceOf(AggregateError)
@@ -37,7 +48,9 @@ test("cleanup runs every bounded stage and reports all failures", async () => {
 
 test("cleanup waits only for registered children to close and does not signal them", async () => {
   const lifecycle = createProcessLifecycle({ settleDeadline: 20 })
-  const managed = lifecycle.spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 150)"], { stdio: "ignore" })
+  const managed = lifecycle.spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 150)"], {
+    stdio: "ignore",
+  })
   const killSignals: Array<NodeJS.Signals | number | undefined> = []
   const originalKill = managed.child.kill.bind(managed.child)
   managed.child.kill = ((signal?: NodeJS.Signals | number) => {
@@ -55,15 +68,14 @@ test("cleanup waits only for registered children to close and does not signal th
 
 test("a TERM-ignoring hung command self-terminates from the inherited POSIX alarm", async () => {
   const lifecycle = createProcessLifecycle({ settleDeadline: 2_000 })
-  const managed = lifecycle.spawn("perl", [
-    "-e", POSIX_ALARM_SCRIPT,
-    process.execPath,
-    "-e",
-    "process.on('SIGTERM', () => {}); setTimeout(() => {}, 30_000)",
-  ], {
-    env: { ...process.env, TRELLAGE_TEST_ALARM_SECONDS: "1" },
-    stdio: "ignore",
-  })
+  const managed = lifecycle.spawn(
+    "perl",
+    ["-e", POSIX_ALARM_SCRIPT, process.execPath, "-e", "process.on('SIGTERM', () => {}); setTimeout(() => {}, 30_000)"],
+    {
+      env: { ...process.env, TRELLAGE_TEST_ALARM_SECONDS: "1" },
+      stdio: "ignore",
+    },
+  )
 
   const result = await managed.settled
 
@@ -75,18 +87,19 @@ test("a TERM-ignoring hung command self-terminates from the inherited POSIX alar
 test("the inherited alarm survives the shell-router to Bash to Bun chain", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "trellage-router-alarm-"))
   const router = path.join(directory, "router")
-  await writeFile(router, `#!/usr/bin/env bash
+  await writeFile(
+    router,
+    `#!/usr/bin/env bash
 set -euo pipefail
 exec "\${TRELLAGE_TEST_BUN}" -e 'process.on("SIGTERM", () => {}); setTimeout(() => {}, 30_000)'
-`, { mode: 0o755 })
+`,
+    { mode: 0o755 },
+  )
   await chmod(router, 0o755)
 
   try {
     const lifecycle = createProcessLifecycle({ settleDeadline: 5_000 })
-    const managed = lifecycle.spawn("perl", [
-      "-e", POSIX_ALARM_SCRIPT,
-      router,
-    ], {
+    const managed = lifecycle.spawn("perl", ["-e", POSIX_ALARM_SCRIPT, router], {
       env: { ...process.env, TRELLAGE_TEST_BUN: process.execPath, TRELLAGE_TEST_ALARM_SECONDS: "1" },
       stdio: "ignore",
     })
