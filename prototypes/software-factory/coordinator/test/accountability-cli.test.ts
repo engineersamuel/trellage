@@ -2,14 +2,24 @@ import { expect, test } from "bun:test"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { AccountabilityDb, accountabilityDbPath, backfillAccountability } from "../src/accountability.ts"
+import { AccountabilityDb, accountabilityDbPath } from "../src/accountability.ts"
 import { EventStore } from "../src/events.ts"
 import type { FeedEvent } from "../src/factory.ts"
 import { accountabilityCommand } from "../accountability-cli.ts"
-import { factoryConfig, resetConfigStore } from "../src/config.ts"
+import { resetConfigStore } from "../src/config.ts"
 
-const cli = async (state: string, args: string[]) => {
-  const child = Bun.spawn([process.execPath, "cli.ts", "accountability", ...args], {
+const cli = async (state: string, args: string[], proxyUrl?: string) => {
+  const command = proxyUrl
+    ? [
+        process.execPath,
+        "--eval",
+        `import { setDecisionEngine } from "./src/decide.ts";
+setDecisionEngine("microsoft-decision-1", process.env.SF_TEST_PROXY_URL);
+process.argv = ["bun", "cli.ts", "accountability", ...JSON.parse(process.env.SF_TEST_CLI_ARGS!)];
+await import("./cli.ts");`,
+      ]
+    : [process.execPath, "cli.ts", "accountability", ...args]
+  const child = Bun.spawn(command, {
     cwd: path.join(import.meta.dir, ".."),
     env: {
       ...process.env,
@@ -17,6 +27,7 @@ const cli = async (state: string, args: string[]) => {
       SF_CONFIG: path.join(state, "missing-config.toml"),
       XDG_CONFIG_HOME: path.join(state, "config"),
       TYPESAFE_API_KEY: "",
+      ...(proxyUrl ? { SF_TEST_PROXY_URL: proxyUrl, SF_TEST_CLI_ARGS: JSON.stringify(args) } : {}),
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -74,42 +85,41 @@ test("accountability CLI backfills five recorded workers once and persists valid
   }
   store.close()
 
-  const first = await cli(state, ["backfill", "--limit", "5"])
-  expect(first.code).toBe(0)
-  expect(JSON.parse(first.stdout)).toEqual({ graded: 5, skipped: 0 })
-  const second = await cli(state, ["backfill", "--limit", "5"])
-  expect(second.code).toBe(0)
-  expect(JSON.parse(second.stdout)).toEqual({ graded: 0, skipped: 5 })
   let engineCalls = 0
-  const idempotentStore = new EventStore(path.join(state, "events.db"))
-  const idempotentDb = new AccountabilityDb(accountabilityDbPath(state))
-  expect(
-    await backfillAccountability({
-      store: idempotentStore,
-      db: idempotentDb,
-      config: factoryConfig(),
-      available: () => true,
-      ask: async (request) => {
-        engineCalls++
-        return {
-          answers: Object.fromEntries(
-            Object.keys(request.questions).map((key) => [
-              key,
-              { noul: 1, choice: "", confidence: 1, probabilities: {} },
-            ]),
-          ),
-          engine: "fake",
-        }
-      },
-      publish: () => {},
-      dimensions: (owner) => ({ owner, thread: null, goal: null, folderId: null, repo: null }),
-      limit: 5,
-    }),
-  ).toEqual({ graded: 0, skipped: 5 })
-  expect(engineCalls).toBe(0)
-  expect(idempotentDb.rows()).toHaveLength(5)
-  idempotentDb.close()
-  idempotentStore.close()
+  const engine = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      engineCalls++
+      const { questions } = (await request.json()) as { questions: Record<string, unknown> }
+      // Response shape from the real copilot-proxy-rs /v1/systemone contract documented in src/decide.ts.
+      return Response.json({
+        answers: Object.fromEntries(
+          Object.keys(questions).map((key) => [key, { noul: 1, choice: "", confidence: 1, probabilities: {} }]),
+        ),
+      })
+    },
+  })
+  const proxyUrl = `http://${engine.hostname}:${engine.port}/v1`
+  try {
+    const first = await cli(state, ["backfill", "--limit", "5"], proxyUrl)
+    expect(first.code).toBe(0)
+    expect(JSON.parse(first.stdout)).toEqual({ graded: 5, skipped: 0 })
+    const firstDb = new AccountabilityDb(accountabilityDbPath(state))
+    expect(firstDb.rows()).toHaveLength(5)
+    firstDb.close()
+    expect(engineCalls).toBe(5)
+
+    const second = await cli(state, ["backfill", "--limit", "5"], proxyUrl)
+    expect(second.code).toBe(0)
+    expect(JSON.parse(second.stdout)).toEqual({ graded: 0, skipped: 5 })
+    expect(engineCalls).toBe(5)
+    const secondDb = new AccountabilityDb(accountabilityDbPath(state))
+    expect(secondDb.rows()).toHaveLength(5)
+    secondDb.close()
+  } finally {
+    engine.stop(true)
+  }
   expect(await local(state, ["budgets"])).toEqual({ default: 1, implement: 1 })
   await expect(local(state, [])).rejects.toThrow("usage")
   await expect(local(state, ["backfill", "--limit", "0"])).rejects.toThrow("positive integer")
@@ -193,7 +203,12 @@ test("AC-9 accountability CLI budgets own completed worker cost with n<10 fallba
   const append = (worker: string, type: string, timestamp: string, data: unknown) =>
     store.append({ seq: ++seq, workerId: worker, type, agentId: null, timestamp, data })
   const complete = (worker: string, step: string, startedAt = "2026-11-10T00:00:00.000Z") => {
-    append(worker, "factory.worker_started", startedAt, { id: worker, role: "worker", step })
+    append(worker, "factory.worker_started", startedAt, {
+      id: worker,
+      role: "worker",
+      step,
+      owner: "coordinator",
+    })
     append(worker, "factory.worker_stopped", "2026-11-20T00:00:00.000Z", { id: worker })
   }
 
@@ -218,7 +233,16 @@ test("AC-9 accountability CLI budgets own completed worker cost with n<10 fallba
     })
   }
 
-  append("descendant", "assistant.usage", "2026-11-10T01:00:00.000Z", {
+  append("implement-child", "factory.worker_started", "2026-11-10T00:30:00.000Z", {
+    id: "implement-child",
+    role: "coordinator",
+    step: "child",
+    owner: "implement-10",
+  })
+  append("implement-child", "factory.worker_stopped", "2026-11-20T00:00:00.000Z", {
+    id: "implement-child",
+  })
+  append("implement-child", "assistant.usage", "2026-11-10T01:00:00.000Z", {
     model: "priced",
     inputTokens: 1,
     outputTokens: 1,

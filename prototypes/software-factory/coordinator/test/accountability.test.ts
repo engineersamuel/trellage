@@ -418,4 +418,29 @@ test("p90 budgets use completed workers, own cost, fixed date window and n<10 fa
       [{ worker: "x", timestamp: "2026-11-20T00:00:00.000Z" }],
     ).default,
   ).toBe(0.5)
+
+  const timestamp = "2026-11-20T00:00:00.000Z"
+  const parentAndChild = [
+    { worker: "parent", role: "worker", step: "tiny", timestamp, owner: "coordinator" },
+    { worker: "child", role: "coordinator", step: "child", timestamp, owner: "parent" },
+  ]
+  const hierarchyStops = [
+    { worker: "parent", timestamp },
+    { worker: "child", timestamp },
+  ]
+  const hierarchyCosts = [
+    { worker: "parent", costUsd: 2 },
+    { worker: "child", costUsd: 1000 },
+  ]
+  expect(workerBudgets(hierarchyCosts, parentAndChild, hierarchyStops)).toEqual({
+    default: 2,
+    tiny: 2,
+  })
+  expect(
+    workerBudgets(
+      hierarchyCosts,
+      parentAndChild.map((row) => (row.worker === "child" ? { ...row, role: "worker" } : row)),
+      hierarchyStops,
+    ).default,
+  ).toBe(1000)
 })

@@ -154,15 +154,15 @@ test("accountability API aggregates every dimension by day and week, including c
   } as const
   for (const dimension of ["model", "harness", "step", "repo", "goal", "modelSource"])
     for (const bucket of ["day", "week"]) {
-      const response = await call(handle, `/api/accountability/series?dimension=${dimension}&bucket=${bucket}`)
-      expect(response.status).toBe(200)
-      const rows = (await response.json()) as {
+      const meanResponse = await call(handle, `/api/accountability/series?dimension=${dimension}&bucket=${bucket}`)
+      expect(meanResponse.status).toBe(200)
+      const mean = (await meanResponse.json()) as {
         bucket: string
         value: string
         score: number | null
         n: number
       }[]
-      expect(rows).toEqual([
+      expect(mean).toEqual([
         {
           bucket: bucket === "day" ? "2026-11-22" : "2026-11-16",
           value: expectedValues[dimension as keyof typeof expectedValues][0],
@@ -176,20 +176,21 @@ test("accountability API aggregates every dimension by day and week, including c
           n: 1,
         },
       ])
-    }
 
-  for (const [bucket, value] of [
-    ["day", "2026-11-22"],
-    ["week", "2026-11-16"],
-  ]) {
-    const selected = await (
-      await call(
+      const controlResponse = await call(
         handle,
-        `/api/accountability/series?dimension=model&bucket=${bucket}&control=4.6&from=2026-11-22&to=2026-11-22`,
+        `/api/accountability/series?dimension=${dimension}&bucket=${bucket}&control=4.6&from=2026-11-22&to=2026-11-22`,
       )
-    ).json()
-    expect(selected).toEqual([{ bucket: value, value: "model-a", score: 0.5, n: 2 }])
-  }
+      expect(controlResponse.status).toBe(200)
+      expect(await controlResponse.json()).toEqual([
+        {
+          bucket: bucket === "day" ? "2026-11-22" : "2026-11-16",
+          value: expectedValues[dimension as keyof typeof expectedValues][0],
+          score: 0.5,
+          n: 2,
+        },
+      ])
+    }
   expect((await call(handle, "/api/accountability/series?dimension=unknown&bucket=day")).status).toBe(400)
   expect((await call(handle, "/api/accountability/series?dimension=model&bucket=")).status).toBe(400)
   expect((await call(handle, "/api/accountability/series?dimension=model&control=")).status).toBe(400)
