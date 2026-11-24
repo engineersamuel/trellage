@@ -1,8 +1,8 @@
 import { startFinalSecurity } from "../src/gates.ts"
-import { artifact, ensureFactoryDir, newSdlc } from "../src/sdlc.ts"
+import { artifact, decide, ensureFactoryDir, newSdlc, shipBlockers, withGates } from "../src/sdlc.ts"
 import { expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { Factory, type SpawnSpec } from "../src/factory.ts"
@@ -139,13 +139,134 @@ const gitRepo = () => {
   return { repo, head: git("rev-parse", "HEAD") }
 }
 
+test("waive_gate stores a docs waiver and sdlc_status writes it in the PR body", async () => {
+  const { repo, head } = gitRepo()
+  ensureFactoryDir(repo)
+  writeFileSync(path.join(repo, "src.ts"), "export const x = 1\n")
+  writeFileSync(path.join(repo, "src.test.ts"), "test('x', () => {})\n")
+  execFileSync("git", ["-C", repo, "-c", "user.email=a@b", "-c", "user.name=a", "add", "src.ts", "src.test.ts"])
+  execFileSync("git", ["-C", repo, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "-m", "feat: x"])
+
+  const f = fakeFactory()
+  const scope = { id: "sub-1", threadId: "t", workdir: repo, base: head }
+  let s = withGates(
+    {
+      ...newSdlc("sub-1", null),
+      request: "code and tests only",
+      criteria: ["works"],
+      implementDoneAt: 2,
+      verifyDoneAt: 1,
+    },
+    decide("diff", { docs: 0.9, codeReview: 0.1, supplyChain: 0.1 }, null),
+  )
+  f.sdlc.set(scope.id, s)
+  writeFileSync(artifact(repo, "evidence.md"), "AC-1: PASS — bun test — ok\n")
+  f.securityReviews.set("sr", { scopeId: scope.id, status: "started", at: 0 })
+
+  const tools = coordinatorTools(f, scope)
+  expect(tools.some((t) => t.name === "waive_gate")).toBe(true)
+  const status = tool(tools, "sdlc_status")
+  const pendingStatus = JSON.parse(await status({}))
+  expect(pendingStatus.blockers.some((b: string) => b.startsWith("docs gate:"))).toBe(true)
+  expect(pendingStatus.blockers.some((b: string) => b.startsWith("security review not done"))).toBe(true)
+  expect(pendingStatus.blockers.some((b: string) => b === "no verify step after the last implement")).toBe(true)
+
+  for (const gate of ["design", "codeReview", "supplyChain", "postMerge", "security", "verify", "unknown"]) {
+    const sdlcSnapshot = structuredClone(f.sdlc.get(scope.id))
+    const shipBlockersSnapshot = shipBlockers(sdlcSnapshot, repo, head, false, false)
+    const statusBlockersSnapshot = JSON.parse(await status({})).blockers
+    expect(shipBlockersSnapshot.some((b: string) => b.startsWith("docs gate:"))).toBe(true)
+    expect(statusBlockersSnapshot.some((b: string) => b.startsWith("docs gate:"))).toBe(true)
+    const rejected = JSON.parse(await tool(tools, "waive_gate")({ gate, reason: "code and tests only" }))
+    expect(rejected.error).toContain("only the docs gate")
+    expect(f.sdlc.get(scope.id)).toEqual(sdlcSnapshot)
+    expect(shipBlockers(f.sdlc.get(scope.id), repo, head, false, false)).toEqual(shipBlockersSnapshot)
+    const refusedStatus = JSON.parse(await status({}))
+    expect(refusedStatus.blockers).toEqual(statusBlockersSnapshot)
+    expect(refusedStatus.blockers.some((b: string) => b.startsWith("docs gate:"))).toBe(true)
+    expect(refusedStatus.blockers.some((b: string) => b.startsWith("security review not done"))).toBe(true)
+    expect(refusedStatus.blockers.some((b: string) => b === "no verify step after the last implement")).toBe(true)
+  }
+  for (const reason of ["", "documentation updates", " code and tests only "]) {
+    const sdlcSnapshot = structuredClone(f.sdlc.get(scope.id))
+    const shipBlockersSnapshot = shipBlockers(sdlcSnapshot, repo, head, false, false)
+    const statusBlockersSnapshot = JSON.parse(await status({})).blockers
+    expect(shipBlockersSnapshot.some((b: string) => b.startsWith("docs gate:"))).toBe(true)
+    expect(statusBlockersSnapshot.some((b: string) => b.startsWith("docs gate:"))).toBe(true)
+    const rejected = JSON.parse(await tool(tools, "waive_gate")({ gate: "docs", reason }))
+    expect(rejected.error).toMatch(/reason.*request|request.*reason|words of the request/i)
+    expect(f.sdlc.get(scope.id)).toEqual(sdlcSnapshot)
+    expect(shipBlockers(f.sdlc.get(scope.id), repo, head, false, false)).toEqual(shipBlockersSnapshot)
+    const refusedStatus = JSON.parse(await status({}))
+    expect(refusedStatus.blockers).toEqual(statusBlockersSnapshot)
+    expect(refusedStatus.blockers.some((b: string) => b.startsWith("docs gate:"))).toBe(true)
+    expect(refusedStatus.blockers.some((b: string) => b.startsWith("security review not done"))).toBe(true)
+    expect(refusedStatus.blockers.some((b: string) => b === "no verify step after the last implement")).toBe(true)
+  }
+
+  const beforeSuccessStatus = JSON.parse(await status({}))
+  const otherGatesBefore = f.sdlc.get(scope.id)!.gates.filter((g: { id: string }) => g.id !== "docs")
+  const nonDocsBlockersBefore = beforeSuccessStatus.blockers.filter((b: string) => !b.startsWith("docs gate:"))
+  const waive = tool(tools, "waive_gate")
+  const accepted = JSON.parse(await waive({ gate: "docs", reason: "code and tests only" }))
+  expect(accepted.blockers.some((b: string) => b.startsWith("docs gate:"))).toBe(false)
+  const stored = f.sdlc.get(scope.id)!
+  expect(stored.gates.find((g: { id: string }) => g.id === "docs")).toMatchObject({
+    status: "done",
+    detail: "waived: code and tests only",
+  })
+  expect(stored.gates.filter((g: { id: string }) => g.id !== "docs")).toEqual(otherGatesBefore)
+  expect(accepted.blockers.filter((b: string) => !b.startsWith("docs gate:"))).toEqual(nonDocsBlockersBefore)
+  expect(shipBlockers(stored, repo, head, false, false).some((b: string) => b.startsWith("docs gate:"))).toBe(false)
+
+  const withSummary = JSON.parse(await status({ summary: "Adds code-only behavior with tests." }))
+  expect(withSummary.prBody).toBe(path.join(repo, ".factory/pr.md"))
+  expect(withSummary.gates.find((g: { id: string }) => g.id === "docs")).toMatchObject({
+    status: "done",
+    detail: "waived: code and tests only",
+  })
+  expect(withSummary.blockers.some((b: string) => b.startsWith("docs gate:"))).toBe(false)
+  const body = readFileSync(withSummary.prBody, "utf8")
+  expect(body).toMatch(/## Gates[\s\S]*- docs: done \([^)]*\) — waived: code and tests only/)
+})
+
+test("waive_gate uses only the current scope's recorded request", async () => {
+  const f = fakeFactory()
+  const scope = { id: "sub-1", threadId: "t", workdir: "/tmp/sf-waiver-current" }
+  const current = withGates(
+    { ...newSdlc("sub-1", null), request: "fix the parser", criteria: ["works"] },
+    decide("diff", { docs: 0.9 }, null),
+  )
+  f.sdlc.set(scope.id, current)
+  f.sdlc.set("sub-2", {
+    ...newSdlc("sub-2", null),
+    request: "code and tests only",
+  })
+
+  const waive = tool(coordinatorTools(f, scope), "waive_gate")
+  const rejected = JSON.parse(
+    await waive({
+      gate: "docs",
+      reason: "code and tests only",
+      request: "code and tests only",
+    }),
+  )
+  expect(rejected.error).toBeTruthy()
+  expect(f.sdlc.get(scope.id)).toEqual(current)
+})
+
 test("report_up is for sub-coordinators; it takes branch and commit from git, reports once per commit and status", async () => {
   const { repo, head } = gitRepo()
   const f = fakeFactory()
   const sent: unknown[] = []
   expect(coordinatorTools(f).some((t) => t.name === "report_up")).toBe(false)
   const report = tool(
-    coordinatorTools(f, { id: "sub-1", threadId: "t", workdir: repo, report: (r) => void sent.push(r) }),
+    coordinatorTools(f, {
+      id: "sub-1",
+      threadId: "t",
+      workdir: repo,
+      report: (r) => void sent.push(r),
+    }),
     "report_up",
   )
   expect(JSON.parse(await report({ status: "maybe", summary: "x" })).error).toContain("status")
@@ -163,7 +284,12 @@ test("report_up sends the same report again in a later turn", async () => {
   const f = fakeFactory()
   const sent: unknown[] = []
   const report = tool(
-    coordinatorTools(f, { id: "sub-1", threadId: "t", workdir: repo, report: (r) => void sent.push(r) }),
+    coordinatorTools(f, {
+      id: "sub-1",
+      threadId: "t",
+      workdir: repo,
+      report: (r) => void sent.push(r),
+    }),
     "report_up",
   )
   await report({ status: "done", summary: "ok" })
@@ -176,7 +302,12 @@ test("report_up marks branch and commit unknown outside git", async () => {
   const sent: unknown[] = []
   const dir = mkdtempSync(path.join(tmpdir(), "sf-nogit-"))
   const report = tool(
-    coordinatorTools(fakeFactory(), { id: "sub-1", threadId: "t", workdir: dir, report: (r) => void sent.push(r) }),
+    coordinatorTools(fakeFactory(), {
+      id: "sub-1",
+      threadId: "t",
+      workdir: dir,
+      report: (r) => void sent.push(r),
+    }),
     "report_up",
   )
   await report({ status: "blocked", summary: "x", branch: "main", commit: "f00" })
@@ -198,7 +329,9 @@ test("a failed report_up leaves no trace, so a retry is sent", async () => {
     }),
     "report_up",
   )
-  expect(JSON.parse(await report({ status: "done", summary: "ok" }))).toEqual({ error: "delivery down" })
+  expect(JSON.parse(await report({ status: "done", summary: "ok" }))).toEqual({
+    error: "delivery down",
+  })
   expect(f.turn("sub-1").reported).toBe(false)
   expect(f.lastReports.size).toBe(0)
   expect(f.published).toEqual([])
@@ -211,7 +344,11 @@ test("only the global coordinator's request_approval stores the report conversat
   const opened: Record<string, unknown>[] = []
   const f = fakeFactory()
   f.approvals = { open: (a: Record<string, unknown>) => (opened.push(a), { id: "a1", ...a }) }
-  const global = coordinatorTools(f, { id: "coordinator", threadId: null, knownThread: (id) => id === "t-7" })
+  const global = coordinatorTools(f, {
+    id: "coordinator",
+    threadId: null,
+    knownThread: (id) => id === "t-7",
+  })
   await tool(global, "request_approval")({ title: "Next?", summary: "s", options: ["Merge"], reportThreadId: "t-7" })
   await tool(global, "ask_user")({ title: "Q", summary: "s", options: [], reportThreadId: "t-7" })
   await tool(
@@ -228,7 +365,11 @@ test("the global coordinator opens no second decision while the conversation alr
     open: (a: Record<string, unknown>) => (opened.push(a), { id: "a1", ...a }),
     pending: () => [{ id: "q9", title: "Gate blocks ship", threadId: "t-7" }],
   }
-  const global = coordinatorTools(f, { id: "coordinator", threadId: null, knownThread: () => true })
+  const global = coordinatorTools(f, {
+    id: "coordinator",
+    threadId: null,
+    knownThread: () => true,
+  })
   const r = JSON.parse(
     await tool(global, "request_approval")({ title: "Unblock?", summary: "s", options: ["A"], reportThreadId: "t-7" }),
   )
@@ -338,7 +479,12 @@ test("step=finish needs an accepted ship approval for this conversation's factor
   // A conversation whose floors are met: criteria proven, verify after implement, security done; no optional gate on.
   ensureFactoryDir(repo)
   writeFileSync(artifact(repo, "evidence.md"), "AC-1: PASS — t — ok\n")
-  f.sdlc.set("sub-1", { ...newSdlc("sub-1", "t"), criteria: ["works"], implementDoneAt: 1, verifyDoneAt: 2 })
+  f.sdlc.set("sub-1", {
+    ...newSdlc("sub-1", "t"),
+    criteria: ["works"],
+    implementDoneAt: 1,
+    verifyDoneAt: 2,
+  })
   f.securityReviews.set("sr-1", {
     id: "sr-1",
     scopeId: "sub-1",
@@ -379,7 +525,9 @@ test("step=finish needs an accepted ship approval for this conversation's factor
   expect(f.spawned).toHaveLength(1)
   expect(f.spawned[0].harness).toBeUndefined()
   const gate = f.spawned[0].permissions
-  expect(gate({ kind: "shell", fullCommandText: "git push -u origin factory/x" }, {})).toEqual({ kind: "approve-once" })
+  expect(gate({ kind: "shell", fullCommandText: "git push -u origin factory/x" }, {})).toEqual({
+    kind: "approve-once",
+  })
   expect(gate({ kind: "shell", fullCommandText: "git push origin main" }, {}).kind).toBe("reject")
   expect(gate({ kind: "shell", fullCommandText: "git push --force-with-lease origin factory/x" }, {}).kind).toBe(
     "approve-once",
@@ -426,7 +574,12 @@ test("the security review starts last: only when every other gate is ready, and 
   f.approvals = new Approvals(mkdtempSync(path.join(tmpdir(), "sf-last-state-")))
   const scope = { id: "sub-1", threadId: "t", workdir: repo }
   ensureFactoryDir(repo)
-  f.sdlc.set("sub-1", { ...newSdlc("sub-1", "t"), criteria: ["works"], implementDoneAt: 1, verifyDoneAt: 2 })
+  f.sdlc.set("sub-1", {
+    ...newSdlc("sub-1", "t"),
+    criteria: ["works"],
+    implementDoneAt: 1,
+    verifyDoneAt: 2,
+  })
   // Criteria not proven yet: no security review starts, the normal blockers come back.
   expect(startFinalSecurity(f, scope)).toBeNull()
   writeFileSync(artifact(repo, "evidence.md"), "AC-1: PASS — t — ok\n")
@@ -488,7 +641,11 @@ test("UI tools tell every open UI what to show, and confirm_action opens a yes/n
     ["factory.ui_open_report", "reports/synthesis.md"],
     ["factory.approval_requested", "Stop 3 workers?"],
   ])
-  expect(f.published[0].data).toEqual({ path: "reports/synthesis.md", agent: "gen-1", threadId: "t1" })
+  expect(f.published[0].data).toEqual({
+    path: "reports/synthesis.md",
+    agent: "gen-1",
+    threadId: "t1",
+  })
 })
 
 test("the final security review uses SF_SECURITY_MODEL, then models.security, then the reviewer model", async () => {
@@ -516,7 +673,12 @@ test("the final security review uses SF_SECURITY_MODEL, then models.security, th
   const firstSpawnModel = async (env: string | undefined, security: string) => {
     const f = fakeFactory()
     f.approvals = new Approvals(mkdtempSync(path.join(tmpdir(), "sf-final-sec-state-")))
-    f.sdlc.set("sub-1", { ...newSdlc("sub-1", "t"), criteria: ["works"], implementDoneAt: 1, verifyDoneAt: 2 })
+    f.sdlc.set("sub-1", {
+      ...newSdlc("sub-1", "t"),
+      criteria: ["works"],
+      implementDoneAt: 1,
+      verifyDoneAt: 2,
+    })
     f.routeModel = async () => null
     f.workers.set("sub-1", { auth: "proxy" } as never)
     f.root = mkdtempSync(path.join(tmpdir(), "sf-final-sec-root-"))

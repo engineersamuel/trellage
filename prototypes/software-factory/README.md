@@ -53,6 +53,10 @@ per gate against its threshold, `GATES` in `coordinator/src/sdlc.ts`); a risk ti
 | Docs | Jev ≥ 0.5 | the diff changes README, docs or CHANGELOG |
 | Post-merge | Jev ≥ 0.5 | after the human merges, the merge commit's checks on the default branch |
 
+For a code-and-tests-only request, the sub-coordinator may waive the chosen docs gate with
+`waive_gate` when the reason is an exact literal substring of that conversation's recorded request.
+The reason is preserved as `waived: <exact reason>` in the SDLC state and PR body; other gates remain enforceable.
+
 Risk tier (`classify`): T0 small docs-only, T2 > 400 lines, dependency manifests or sensitive paths (auth, secrets,
 bind, CI, scripts, Docker, mise), else T1. `.factory/` is git-excluded; `.factory/pr.md` (criteria ✓, tier, gates,
 evidence, rollback, `thread=<uuid>` and the Factory UI link `<SF_UI_URL>?thread=<uuid>`, default
