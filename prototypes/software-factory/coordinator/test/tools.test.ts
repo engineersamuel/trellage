@@ -187,7 +187,7 @@ test("waive_gate stores a docs waiver and sdlc_status writes it in the PR body",
     expect(refusedStatus.blockers.some((b: string) => b.startsWith("security review not done"))).toBe(true)
     expect(refusedStatus.blockers.some((b: string) => b === "no verify step after the last implement")).toBe(true)
   }
-  for (const reason of ["", "documentation updates"]) {
+  for (const reason of ["", "documentation updates", " code and tests only "]) {
     const sdlcSnapshot = structuredClone(f.sdlc.get(scope.id))
     const shipBlockersSnapshot = shipBlockers(sdlcSnapshot, repo, head, false, false)
     const statusBlockersSnapshot = JSON.parse(await status({})).blockers
@@ -228,6 +228,31 @@ test("waive_gate stores a docs waiver and sdlc_status writes it in the PR body",
   expect(withSummary.blockers.some((b: string) => b.startsWith("docs gate:"))).toBe(false)
   const body = readFileSync(withSummary.prBody, "utf8")
   expect(body).toMatch(/## Gates[\s\S]*- docs: done \([^)]*\) — waived: code and tests only/)
+})
+
+test("waive_gate uses only the current scope's recorded request", async () => {
+  const f = fakeFactory()
+  const scope = { id: "sub-1", threadId: "t", workdir: "/tmp/sf-waiver-current" }
+  const current = withGates(
+    { ...newSdlc("sub-1", null), request: "fix the parser", criteria: ["works"] },
+    decide("diff", { docs: 0.9 }, null),
+  )
+  f.sdlc.set(scope.id, current)
+  f.sdlc.set("sub-2", {
+    ...newSdlc("sub-2", null),
+    request: "code and tests only",
+  })
+
+  const waive = tool(coordinatorTools(f, scope), "waive_gate")
+  const rejected = JSON.parse(
+    await waive({
+      gate: "docs",
+      reason: "code and tests only",
+      request: "code and tests only",
+    }),
+  )
+  expect(rejected.error).toBeTruthy()
+  expect(f.sdlc.get(scope.id)).toEqual(current)
 })
 
 test("report_up is for sub-coordinators; it takes branch and commit from git, reports once per commit and status", async () => {

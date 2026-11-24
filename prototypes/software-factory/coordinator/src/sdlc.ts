@@ -444,12 +444,11 @@ export const waiveGate = (s: Sdlc, id: string, reason: string): { sdlc: Sdlc } |
       error:
         "only the docs gate can be waived; floors (security, verify, criteria) and other gates can never be waived",
     }
-  const trimmed = reason.trim()
-  if (!trimmed || !s.request.includes(trimmed))
+  if (!reason.trim() || !s.request.includes(reason))
     return { error: "The reason must quote the words of the request that limit the scope." }
   if (!isOn(s, "docs")) return { error: "The docs gate is not chosen; nothing to waive." }
   return {
-    sdlc: withGates(s, [{ ...gate(s, "docs")!, status: "done", detail: `waived: ${trimmed}` }]),
+    sdlc: withGates(s, [{ ...gate(s, "docs")!, status: "done", detail: `waived: ${reason}` }]),
   }
 }
 

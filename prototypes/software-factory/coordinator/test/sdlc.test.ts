@@ -234,7 +234,7 @@ describe("worktree artifacts", () => {
       expect(shipBlockers(s, r, base, false, false)).toEqual(blockersBefore)
       expect(shipBlockers(s, r, base, false, false).some((b) => b.startsWith("docs gate:"))).toBe(true)
     }
-    for (const reason of ["", " documentation updates "]) {
+    for (const reason of ["", " documentation updates ", " code and tests only "]) {
       const before = structuredClone(s)
       const blockersBefore = shipBlockers(s, r, base, false, false)
       expect(blockersBefore.some((b) => b.startsWith("docs gate:"))).toBe(true)
