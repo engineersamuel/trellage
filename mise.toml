@@ -190,7 +190,7 @@ rust = "1.96.0"
 
 [tasks."quality:setup"]
 description = "Install pinned quality tools and prepare the frozen workspace"
-run = "bash scripts/install-quality-tools.sh all && scripts/install-source-runtime.sh --prepare && bash scripts/install-lefthook-hook.sh"
+run = "bash scripts/install-quality-tools.sh all && bash scripts/install-source-runtime.sh --prepare && bash scripts/install-lefthook-hook.sh"
 
 [tasks."quality:staged"]
 description = "Check staged content without changing the index or working tree"

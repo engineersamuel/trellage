@@ -108,7 +108,7 @@ class RepositoryTests(unittest.TestCase):
     def write(self, name, content):
         path = self.root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        path.write_text(content, newline="\n")
 
     def commit(self):
         checks.git(self.root, "add", ".")
@@ -191,7 +191,12 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual((self.root / "example.py").read_text(), "WORKTREE = True\n")
 
     def test_staged_symlinks_are_not_followed_and_unsafe_paths_fail(self):
-        (self.root / "alias").symlink_to("README.md")
+        try:
+            (self.root / "alias").symlink_to("README.md")
+        except OSError as error:
+            if getattr(error, "winerror", None) != 1314:
+                raise
+            self.skipTest("Windows symlinks need Developer Mode or administrator rights")
         checks.git(self.root, "add", "alias")
         with quality.staged_snapshot(self.root, ["alias"]) as snapshot:
             self.assertFalse((snapshot / "alias").exists())

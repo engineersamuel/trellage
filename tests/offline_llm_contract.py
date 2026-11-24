@@ -46,6 +46,7 @@ class OfflineContract(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "no ps -o lstart on Windows")
     def test_process_identity_is_available_inside_isolation(self):
         result = self.run_offline(
             "import os,subprocess; "
@@ -83,6 +84,7 @@ class OfflineContract(unittest.TestCase):
             result = self.run_offline(f"import os; assert not set({list(hook)!r}) & os.environ.keys()")
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "no POSIX uid or gid on Windows")
     def test_isolation_preserves_user_and_ancestor_ownership(self):
         paths = [str(ROOT), *(str(parent) for parent in ROOT.parents)]
         expected = [(path, os.stat(path).st_uid, os.stat(path).st_gid) for path in paths]
@@ -95,6 +97,7 @@ class OfflineContract(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "no setuid mode bits on Windows")
     def test_permission_rejection_fixtures_keep_exact_mode_bits(self):
         result = self.run_offline(
             "import os,tempfile; from pathlib import Path; "
@@ -114,6 +117,7 @@ class OfflineContract(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    @unittest.skipIf(sys.platform == "win32", "OS network isolation is disabled on Windows")
     def test_network_denial_survives_empty_child_environment(self):
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
@@ -132,6 +136,7 @@ class OfflineContract(unittest.TestCase):
             with self.assertRaises(socket.timeout):
                 listener.accept()
 
+    @unittest.skipIf(sys.platform == "win32", "Python has no AF_UNIX on Windows")
     def test_unix_fixture_sockets_remain_available(self):
         with tempfile.TemporaryDirectory(prefix="trx-offline-") as directory:
             address = os.path.join(directory, "fixture.sock")

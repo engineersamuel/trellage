@@ -219,8 +219,9 @@ def selected(root: Path, name: str, paths: list[str]) -> list[str]:
 
 def executable(name: str, tools_root: Path = ROOT) -> str:
     if name in {"oxlint", "oxfmt", "depcruise", "knip"}:
-        candidate = tools_root / "node_modules/.bin" / name
-        found = str(candidate) if candidate.is_file() else None
+        # Bun installs Windows package binaries as `.exe` shims.
+        candidates = [tools_root / "node_modules/.bin" / f"{name}{suffix}" for suffix in ("", ".exe")]
+        found = next((str(candidate) for candidate in candidates if candidate.is_file()), None)
     else:
         found = shutil.which(name)
     if found:
@@ -317,7 +318,9 @@ def check_syntax(root: Path, paths: list[str]) -> list[dict]:
         batch = [str(root / path) for path in paths if shell(root, path) == interpreter]
         if batch:
             script = f'for file; do {interpreter} -n -- "$file" || exit; done'
-            results.append(run_command(f"syntax-{interpreter}", [interpreter, "-c", script, "syntax", *batch], root))
+            # Windows CreateProcess searches System32 (WSL bash) before PATH; which() follows PATH like a shell.
+            program = shutil.which(interpreter) or interpreter
+            results.append(run_command(f"syntax-{interpreter}", [program, "-c", script, "syntax", *batch], root))
     return results
 
 
@@ -404,7 +407,7 @@ def record_baseline(root: Path, names: list[str]) -> None:
         print(f"{name}: recorded {len(entries)} existing file exceptions")
     destination = root / BASELINE
     destination.parent.mkdir(exist_ok=True)
-    destination.write_text(json.dumps(baseline, indent=2, sort_keys=True) + "\n")
+    destination.write_text(json.dumps(baseline, indent=2, sort_keys=True) + "\n", newline="\n")
 
 
 def knip_symbols(entry: object) -> str:
@@ -520,7 +523,7 @@ def analysis(root: Path, record: bool = False) -> bool:
     if record:
         destination = root / BASELINE
         destination.parent.mkdir(exist_ok=True)
-        destination.write_text(json.dumps(baseline, indent=2, sort_keys=True) + "\n")
+        destination.write_text(json.dumps(baseline, indent=2, sort_keys=True) + "\n", newline="\n")
     results.append(run_command("syncpack", [executable("syncpack"), "lint"], root))
     write_report(results, "analysis")
     return all(result["exitCode"] == 0 for result in results)
