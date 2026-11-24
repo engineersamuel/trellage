@@ -1,11 +1,14 @@
 import { NativeRunError } from "./paths.ts"
-import type { LaunchCommand, LaunchInput } from "./adapters.ts"
 import { executableOnPath } from "./requirements.ts"
 
 const proxy = "http://127.0.0.1:8080"
 
-export const admitWindowsClaude = async (input: LaunchInput, planned: LaunchCommand): Promise<LaunchCommand> => {
-  const binary = await executableOnPath(planned.command, input.environment)
+// Takes only what it reads, so adapters.ts can call it without an import cycle.
+export const admitWindowsClaude = async <Launch extends { readonly command: string }>(
+  environment: NodeJS.ProcessEnv,
+  planned: Launch,
+): Promise<Launch> => {
+  const binary = await executableOnPath(planned.command, environment)
   if (!binary || !/\.(exe|com)$/i.test(binary))
     throw new NativeRunError(
       "prerequisite",

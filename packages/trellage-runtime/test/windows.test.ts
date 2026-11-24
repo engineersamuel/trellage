@@ -156,9 +156,9 @@ test.skipIf(process.platform !== "win32")(
       ),
     )
     try {
-      expect((await admitWindowsClaude(input, prepared.launch)).command).toBe(process.execPath)
+      expect((await admitWindowsClaude(input.environment, prepared.launch)).command).toBe(process.execPath)
       models = ["claude-sonnet-5.5"]
-      await expect(admitWindowsClaude(input, prepared.launch)).rejects.toThrow("claude-opus-5.5")
+      await expect(admitWindowsClaude(input.environment, prepared.launch)).rejects.toThrow("claude-opus-5.5")
     } finally {
       fetchMock.mockRestore()
     }

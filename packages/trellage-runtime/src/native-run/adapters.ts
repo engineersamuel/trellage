@@ -2324,7 +2324,7 @@ export const claudeAdapter: NativeAdapter = {
           "unsupported",
           `Claude ${profile} requires the Unix plugin lifecycle; native Windows currently supports composed profiles and default`,
         )
-      return admitWindowsClaude(input, planned)
+      return admitWindowsClaude(input.environment, planned)
     }
     if (!["default", "office", "office-charts"].includes(profile)) return planned
     const admitted = await privateAdmission(
