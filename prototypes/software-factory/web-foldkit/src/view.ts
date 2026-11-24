@@ -11,11 +11,13 @@ import { chat } from "./chatProgram"
 import type { Model } from "./model"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
+import * as Accountability from "./accountability"
 import * as Goals from "./goals"
 import * as Todo from "./todo"
 import * as Tournaments from "./tournaments"
 import * as Settings from "./settings"
 import {
+  toGotAccountabilityMessage,
   toGotDiffPanelMessage,
   toGotGoalsMessage,
   toGotReportViewerMessage,
@@ -161,6 +163,7 @@ const EMPTY_WORKERS: ReadonlyArray<Worker> = []
 const navbar = (
   settingsModel: Settings.Model,
   goalsModel: Goals.Model,
+  accountabilityModel: Accountability.Model,
   todoModel: Todo.Model,
   tournamentsModel: Tournaments.Model,
   diffPanelModel: DiffPanel.Model,
@@ -217,6 +220,12 @@ const navbar = (
             view: Goals.navButton,
           }),
           h.submodel({
+            model: accountabilityModel,
+            slotId: "accountability-button",
+            toParentMessage: toGotAccountabilityMessage,
+            view: Accountability.navButton,
+          }),
+          h.submodel({
             model: settingsModel,
             slotId: "settings-gear",
             toParentMessage: toGotSettingsMessage,
@@ -263,6 +272,7 @@ const settingsDrawer = (settingsModel: Settings.Model, h: HtmlBuilder<Message>):
 const lazyNavbar = createLazy()
 const lazySettingsDrawer = createLazy()
 const lazyGoalsDialog = createLazy()
+const lazyAccountabilityDialog = createLazy()
 const lazyTodoDialog = createLazy()
 const lazyTournamentsDialog = createLazy()
 const lazyDiffPanel = createLazy()
@@ -284,6 +294,13 @@ const goalsDialog = (goalsModel: Goals.Model, h: HtmlBuilder<Message>): Html =>
     slotId: "goals",
     toParentMessage: toGotGoalsMessage,
     view: Goals.view,
+  })
+const accountabilityDialog = (accountabilityModel: Accountability.Model, h: HtmlBuilder<Message>): Html =>
+  h.submodel({
+    model: accountabilityModel,
+    slotId: "accountability",
+    toParentMessage: toGotAccountabilityMessage,
+    view: Accountability.view,
   })
 const todoDialog = (todoModel: Todo.Model, h: HtmlBuilder<Message>): Html =>
   h.submodel({
@@ -340,6 +357,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
             lazyNavbar(navbar, [
               model.settings,
               model.goals,
+              model.accountability,
               model.todo,
               model.tournaments,
               model.diffPanel,
@@ -357,6 +375,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
         slot("overlay", h, "fk-slot-overlay"),
         lazySettingsDrawer(settingsDrawer, [model.settings, h]),
         lazyGoalsDialog(goalsDialog, [model.goals, h]),
+        lazyAccountabilityDialog(accountabilityDialog, [model.accountability, h]),
         lazyTodoDialog(todoDialog, [model.todo, h]),
         lazyTournamentsDialog(tournamentsDialog, [model.tournaments, h]),
         lazyDiffPanel(diffPanel, [model.diffPanel, h]),

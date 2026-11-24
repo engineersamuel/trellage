@@ -1132,3 +1132,94 @@ kbd {
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* Worker accountability (src/accountability) */
+.fk-drawer.fk-acct {
+  width: min(760px, 100vw);
+}
+.fk-acct-pickers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+.fk-acct-pickers .fk-field {
+  flex: 1 1 140px;
+}
+.fk-acct-chart {
+  margin: 0;
+}
+.fk-acct-svg {
+  width: 100%;
+  height: auto;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.fk-acct-svg text {
+  fill: var(--sf-muted);
+}
+.fk-acct-grid {
+  stroke: var(--sf-border);
+  stroke-width: 1;
+}
+.fk-acct-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.fk-acct-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fk-acct-swatch {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+}
+.fk-acct-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.fk-acct-table th,
+.fk-acct-table td {
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--sf-border);
+  white-space: nowrap;
+}
+.fk-acct-table a {
+  color: var(--sf-accent);
+}
+/* Grades of a control the human labels have not calibrated: shown, but not trusted. */
+.fk-acct-uncalibrated {
+  color: var(--sf-muted);
+  opacity: 0.7;
+}
+.fk-acct-tag {
+  font-size: 11px;
+  padding: 0 5px;
+  border: 1px solid var(--sf-border);
+  border-radius: 4px;
+  color: var(--sf-muted);
+}
+.fk-acct-labels details {
+  border-bottom: 1px solid var(--sf-border);
+  padding: 4px 0;
+}
+.fk-acct-empty {
+  padding: 24px 0;
+  color: var(--sf-muted);
+}
+@media (max-width: 640px) {
+  .fk-acct section {
+    overflow-x: auto;
+  }
+}

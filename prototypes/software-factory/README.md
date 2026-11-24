@@ -408,6 +408,12 @@ workers receive no role card and no grade. Per-step budgets in `[accountability.
 from the 2026-11-04 through 2026-11-24 sample, rounded upward to $0.50; undersampled steps use `default`.
 R31 writes at most three lessons per repo each week from the most frequent recent calibrated control failures.
 
+The navbar **⚖ Accountability** button opens the view (`web-foldkit/src/accountability/`): a line chart of the mean
+score, or one control's pass rate, per day or week with one line per model, harness, step, repo, goal or model source;
+a control × value table of pass rates with `n`; the 10 lowest-scoring workers, each linked to its chat (`?worker=`);
+and a calibration panel with your pass/fail label buttons per worker and control. Controls that are not yet calibrated
+are grey and tagged "uncalibrated". With no grades it says to run `sf accountability backfill`.
+
 ## How to test (manual test guide)
 
 After a sub-coordinator's `report_up status=done`, a read-only worker in its worktree writes how a human tries the
