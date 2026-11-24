@@ -197,10 +197,10 @@ describe("worktree artifacts", () => {
 
   test("waiveGate rejects other gates and unquoted reasons without changing state", () => {
     let s: Sdlc = withGates(
-      { ...newSdlc("sub", "Keep the change minimal: code and tests only"), criteria: ["works"] },
+      { ...newSdlc("sub", null), request: "Keep the change minimal: code and tests only", criteria: ["works"] },
       decide("diff", { docs: 0.9, codeReview: 0.9, supplyChain: 0.9 }, null),
     )
-    for (const id of ["security", "verify", "codeReview", "unknown"]) {
+    for (const id of ["design", "codeReview", "supplyChain", "postMerge", "security", "verify", "unknown"]) {
       const before = structuredClone(s)
       const result = waiveGate(s, id, "code and tests only")
       expect("error" in result).toBe(true)

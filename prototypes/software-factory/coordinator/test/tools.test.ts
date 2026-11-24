@@ -166,7 +166,25 @@ test("waive_gate stores a docs waiver and sdlc_status writes it in the PR body",
   const tools = coordinatorTools(f, scope)
   expect(tools.some((t) => t.name === "waive_gate")).toBe(true)
   const status = tool(tools, "sdlc_status")
-  expect(JSON.parse(await status({})).blockers.some((b: string) => b.startsWith("docs gate:"))).toBe(true)
+  const pendingStatus = JSON.parse(await status({}))
+  expect(pendingStatus.blockers.some((b: string) => b.startsWith("docs gate:"))).toBe(true)
+
+  for (const gate of ["design", "codeReview", "supplyChain", "postMerge", "security", "verify", "unknown"]) {
+    const sdlcSnapshot = JSON.stringify(f.sdlc.get(scope.id))
+    const blockersSnapshot = JSON.stringify(pendingStatus.blockers)
+    const rejected = JSON.parse(await tool(tools, "waive_gate")({ gate, reason: "code and tests only" }))
+    expect(rejected.error).toContain("only the docs gate")
+    expect(JSON.stringify(f.sdlc.get(scope.id))).toBe(sdlcSnapshot)
+    expect(JSON.stringify(JSON.parse(await status({})).blockers)).toBe(blockersSnapshot)
+  }
+  for (const reason of ["", "documentation updates"]) {
+    const sdlcSnapshot = JSON.stringify(f.sdlc.get(scope.id))
+    const blockersSnapshot = JSON.stringify(pendingStatus.blockers)
+    const rejected = JSON.parse(await tool(tools, "waive_gate")({ gate: "docs", reason }))
+    expect(rejected.error).toMatch(/reason.*request|request.*reason|words of the request/i)
+    expect(JSON.stringify(f.sdlc.get(scope.id))).toBe(sdlcSnapshot)
+    expect(JSON.stringify(JSON.parse(await status({})).blockers)).toBe(blockersSnapshot)
+  }
 
   const waive = tool(tools, "waive_gate")
   const accepted = JSON.parse(await waive({ gate: "docs", reason: "code and tests only" }))
@@ -177,23 +195,10 @@ test("waive_gate stores a docs waiver and sdlc_status writes it in the PR body",
     detail: "waived: code and tests only",
   })
 
-  for (const gate of ["security", "verify", "codeReview", "unknown"]) {
-    const snapshot = JSON.stringify(f.sdlc.get(scope.id))
-    const rejected = JSON.parse(await waive({ gate, reason: "code and tests only" }))
-    expect(rejected.error).toContain("only the docs gate")
-    expect(JSON.stringify(f.sdlc.get(scope.id))).toBe(snapshot)
-  }
-  for (const reason of ["", "documentation updates"]) {
-    const snapshot = JSON.stringify(f.sdlc.get(scope.id))
-    const rejected = JSON.parse(await waive({ gate: "docs", reason }))
-    expect(rejected.error).toMatch(/reason.*request|request.*reason|words of the request/i)
-    expect(JSON.stringify(f.sdlc.get(scope.id))).toBe(snapshot)
-  }
-
   const withSummary = JSON.parse(await status({ summary: "Adds code-only behavior with tests." }))
   expect(withSummary.prBody).toBe(path.join(repo, ".factory/pr.md"))
   const body = readFileSync(withSummary.prBody, "utf8")
-  expect(body).toMatch(/## Gates[\s\S]*- docs: done[^\\n]*waived: code and tests only/)
+  expect(body).toMatch(/## Gates[\s\S]*- docs: done \([^)]*\) — waived: code and tests only/)
 })
 
 test("report_up is for sub-coordinators; it takes branch and commit from git, reports once per commit and status", async () => {
