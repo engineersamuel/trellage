@@ -1,6 +1,7 @@
 import {
   cpSync,
   mkdirSync,
+  lstatSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -165,12 +166,18 @@ async function installFrozenDependencies(
     try {
       registry = configured(
         (
-          await promisify(execFile)("npm", ["config", "get", "registry", "--workspaces=false"], {
-            cwd: root,
-            env,
-            signal: cancellation.signal,
-            timeout: 10_000,
-          })
+          await promisify(execFile)(
+            process.platform === "win32" ? (env.ComSpec ?? "cmd.exe") : "npm",
+            process.platform === "win32"
+              ? ["/d", "/s", "/c", "npm config get registry --workspaces=false"]
+              : ["config", "get", "registry", "--workspaces=false"],
+            {
+              cwd: root,
+              env,
+              signal: cancellation.signal,
+              timeout: 10_000,
+            },
+          )
         ).stdout,
       )
     } catch (error) {
@@ -408,6 +415,19 @@ try {
     case "check":
       await requireReadyAsync(root)
       break
+    case "validate-command-directory": {
+      for (const [name, marker] of [
+        ["trx.ps1", "# Managed by Trellage Windows installer."],
+        ["trx.cmd", "@rem Managed by Trellage Windows installer."],
+      ] as const) {
+        const launcher = path.join(root, name)
+        if (!(await present(launcher))) continue
+        safePath(launcher, "file")
+        if (lstatSync(launcher).nlink !== 1 || readFileSync(launcher, "utf8").split(/\r?\n/, 1)[0] !== marker)
+          throw new Error(`refusing unmanaged Windows launcher: ${launcher}`)
+      }
+      break
+    }
     case "fingerprint": {
       const digest = await sourceFingerprintAsync(root)
       cancellation.signal.throwIfAborted()

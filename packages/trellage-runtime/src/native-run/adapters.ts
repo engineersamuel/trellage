@@ -38,6 +38,8 @@ import { digestDirectory } from "./source.ts"
 import { pickCopilotSession } from "./session-picker.ts"
 import { empryoBinary, resolveNativeBinary } from "./requirements.ts"
 import { reconcileNodecodeSkills } from "./nodecode-skills.ts"
+import { admitWindowsClaude } from "./windows-claude.ts"
+import { bunExecutable } from "../index.ts"
 
 const execFileAsync = promisify(execFile)
 
@@ -213,10 +215,7 @@ const readHostSettings = async (file: string, label: string): Promise<Record<str
       if (!isJsonObject(parsed)) throw new Error("expected an object")
       settings = parsed
     } catch (error) {
-      throw new NativeRunError(
-        "launch",
-        `invalid ${label}: ${error instanceof Error ? error.message : String(error)}`,
-      )
+      throw new NativeRunError("launch", `invalid ${label}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
   return settings
@@ -2183,7 +2182,9 @@ const claudeLaunch = ({
       ...CLAUDE_FOREIGN_AUTH,
       ANTHROPIC_BASE_URL: "http://127.0.0.1:8080",
       ANTHROPIC_AUTH_TOKEN: "trellage-local-proxy",
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4.5",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: process.platform === "win32" ? "claude-haiku-5.5" : "claude-haiku-4.5",
+      // Copilot's Opus endpoint rejects Claude Code's first-party billing attribution block.
+      ...(process.platform === "win32" ? { CLAUDE_CODE_ATTRIBUTION_HEADER: "0" } : {}),
       ...(model && !isClaudeAlias(model)
         ? { ANTHROPIC_DEFAULT_OPUS_MODEL: model, ANTHROPIC_DEFAULT_SONNET_MODEL: model }
         : {}),
@@ -2210,7 +2211,7 @@ export const claudeAdapter: NativeAdapter = {
   instructionsFile: "CLAUDE.md",
   efforts: ["low", "medium", "high", "xhigh", "max"],
   planDefaults: { model: "claude-opus-5.5", effort: "max" },
-  policyVersion: "claude-10",
+  policyVersion: process.platform === "win32" ? "claude-11-windows" : "claude-10",
   providerPolicy: () => "claude-native",
   effectivePolicy: (model, effort) => ({
     normal: `${model ?? "claude-opus-5.5"} · effort ${effort ?? DEFAULT_EFFORT}`,
@@ -2233,6 +2234,19 @@ export const claudeAdapter: NativeAdapter = {
     const statusline = path.join(stage, "statusline.sh")
     await copyFile(STATUSLINE_SOURCE, statusline)
     await chmod(statusline, 0o755)
+    if (process.platform === "win32") {
+      await copyFile(
+        fileURLToPath(new URL("../../../../scripts/trellage-statusline.ts", import.meta.url)),
+        path.join(stage, "statusline.ts"),
+      )
+      await mkdir(path.join(stage, "output-styles"), { recursive: true })
+      await copyFile(
+        fileURLToPath(
+          new URL("../../../../prototypes/trellage-claude-profiles/assets/rundown/rundown.md", import.meta.url),
+        ),
+        path.join(stage, "output-styles", "rundown.md"),
+      )
+    }
     await writeFile(
       path.join(stage, "settings.json"),
       `${JSON.stringify(
@@ -2246,7 +2260,10 @@ export const claudeAdapter: NativeAdapter = {
           ...claudePluginSettings(plan),
           statusLine: {
             type: "command",
-            command: 'bash "$CLAUDE_CONFIG_DIR/statusline.sh"',
+            command:
+              process.platform === "win32"
+                ? `"${bunExecutable()}" --no-install --no-env-file --config="${fileURLToPath(new URL("../../bunfig.toml", import.meta.url))}" "${path.join(_layout.generationPath, "statusline.ts")}"`
+                : 'bash "$CLAUDE_CONFIG_DIR/statusline.sh"',
             refreshInterval: 15,
           },
         },
@@ -2301,6 +2318,14 @@ export const claudeAdapter: NativeAdapter = {
   },
   resolveLaunch: async (input, planned) => {
     const profile = lifecycleProfile(input.plan, "claude", "default")
+    if (process.platform === "win32") {
+      if (["office", "office-charts"].includes(profile))
+        throw new NativeRunError(
+          "unsupported",
+          `Claude ${profile} requires the Unix plugin lifecycle; native Windows currently supports composed profiles and default`,
+        )
+      return admitWindowsClaude(input, planned)
+    }
     if (!["default", "office", "office-charts"].includes(profile)) return planned
     const admitted = await privateAdmission(
       "claude",
@@ -2682,8 +2707,7 @@ const empryoProviders = (settings: Record<string, unknown>): { values: unknown[]
     (provider: unknown) =>
       typeof provider === "object" && provider !== null && "id" in provider && provider.id === EMPRYO_PROVIDER,
   )
-  const baseURL =
-    typeof current === "object" && current !== null && "baseURL" in current ? current.baseURL : undefined
+  const baseURL = typeof current === "object" && current !== null && "baseURL" in current ? current.baseURL : undefined
   if (current !== undefined && baseURL !== EMPRYO_PROVIDER_DEFINITION.baseURL)
     throw new NativeRunError("launch", `Empryo provider ${EMPRYO_PROVIDER} already exists with a different baseURL`)
   return { values, current }
@@ -2691,8 +2715,7 @@ const empryoProviders = (settings: Record<string, unknown>): { values: unknown[]
 
 const empryoPerformance = (settings: Record<string, unknown>): Record<string, unknown> => {
   const value = settings.performance ?? {}
-  if (!isJsonObject(value))
-    throw new NativeRunError("launch", "invalid Empryo performance configuration")
+  if (!isJsonObject(value)) throw new NativeRunError("launch", "invalid Empryo performance configuration")
   return value
 }
 

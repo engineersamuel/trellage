@@ -8,6 +8,7 @@ import { parseCatalog } from "./skill-config.ts"
 import { McpConfig } from "./mcp-config.ts"
 import { parseSelectionMetadata } from "@trellage/guide-core"
 import { resolveShippedResource } from "./native-run/resources.ts"
+import { assertWindowsPermissions } from "./windows-permissions.ts"
 
 const NonEmpty = Schema.String.pipe(Schema.minLength(1))
 const LowercaseIdentity = Schema.transform(Schema.String, Schema.String, {
@@ -387,7 +388,8 @@ export const loadTrellageConfigDocument = (location: TrellageConfigLocation = {}
           if (!stats.isFile()) {
             throw new TrellageConfigError({ message: `Trellage config must be a regular file: ${configPath}` })
           }
-          if ((stats.mode & 0o022) !== 0) {
+          if (process.platform === "win32") assertWindowsPermissions(configPath)
+          else if ((stats.mode & 0o022) !== 0) {
             throw new TrellageConfigError({
               message: `Trellage config must not be writable by group or other users: ${configPath}`,
             })

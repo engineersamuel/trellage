@@ -4,12 +4,16 @@ import path from "node:path"
 import { promisify } from "node:util"
 import type { NativeRunPaths } from "./paths.ts"
 import { WORKER_GENERATION_MARKER, WORKER_GENERATION_RETENTION_MS } from "./worker-handoff.ts"
+import { windowsProcessStart } from "../windows-process.ts"
 
 const execFilePromise = promisify(execFile)
 
 const processStart = async (pid: number): Promise<string | null> => {
+  if (process.platform === "win32") return windowsProcessStart(pid)
   try {
-    return (await execFilePromise("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8" })).stdout.trim() || null
+    return (
+      (await execFilePromise("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8" })).stdout.trim() || null
+    )
   } catch {
     return null
   }
@@ -56,7 +60,10 @@ export const hasLiveLease = async (paths: NativeRunPaths, generationId: string):
 /** A generation that started agent workers, which can outlive the trx process that holds the lease. */
 const recentWorkerGeneration = async (generation: string): Promise<boolean> => {
   try {
-    return Date.now() - (await stat(path.join(generation, WORKER_GENERATION_MARKER))).mtimeMs < WORKER_GENERATION_RETENTION_MS
+    return (
+      Date.now() - (await stat(path.join(generation, WORKER_GENERATION_MARKER))).mtimeMs <
+      WORKER_GENERATION_RETENTION_MS
+    )
   } catch {
     return false
   }
@@ -76,7 +83,9 @@ export const pruneGenerations = async (
   } catch {
     return []
   }
-  const dated = await Promise.all(names.map(async (name) => ({ name, time: (await stat(path.join(root, name))).mtimeMs })))
+  const dated = await Promise.all(
+    names.map(async (name) => ({ name, time: (await stat(path.join(root, name))).mtimeMs })),
+  )
   dated.sort((a, b) => b.time - a.time)
   const removed: string[] = []
   for (const { name } of dated.slice(keep)) {

@@ -11,6 +11,7 @@ import {
   writeNativeMcpFiles,
 } from "../../src/native-run/mcp-render.ts"
 import { cleanupFixtures, tempRoot } from "./fixtures.ts"
+import { assertWindowsPermissions } from "../../src/windows-permissions.ts"
 
 afterEach(cleanupFixtures)
 const local: McpServer = {
@@ -28,6 +29,10 @@ const remote: McpServer = {
 }
 const common = { perplexity: local, context7: remote }
 const json = async (root: string, filename: string) => JSON.parse(await readFile(path.join(root, filename), "utf8"))
+const expectPrivateFile = async (file: string): Promise<void> => {
+  if (process.platform === "win32") expect(() => assertWindowsPermissions(file, true)).not.toThrow()
+  else expect((await stat(file)).mode & 0o777).toBe(0o600)
+}
 
 test.each(["claude", "copilot", "codex", "jcode", "grok", "pi", "nodecode"])(
   "%s supports stdio and streamable HTTP",
@@ -75,7 +80,7 @@ test.each(["claude", "copilot", "jcode", "pi"])(
       command: process.execPath,
       env: { TRX_MCP_ENV_PERPLEXITY_API_KEY: "${TRX_MCP_ENV_PERPLEXITY_API_KEY}" },
     })
-    expect(config.mcpServers.perplexity.args[0]).toEndWith("/native-run/mcp-stdio.ts")
+    expect(config.mcpServers.perplexity.args[0]).toEndWith(path.join("native-run", "mcp-stdio.ts"))
     expect(config.mcpServers.perplexity.args[1]).toBe(path.join(generation, "mcp-specs", "perplexity.json"))
     expect(config.mcpServers.context7).toMatchObject({
       type: "http",
@@ -88,7 +93,7 @@ test.each(["claude", "copilot", "jcode", "pi"])(
       expect(config.mcpServers.context7.tools).toEqual(["*"])
     }
     expect(await json(root, "mcp-specs/perplexity.json")).toEqual(local)
-    expect((await stat(path.join(root, filename))).mode & 0o777).toBe(0o600)
+    await expectPrivateFile(path.join(root, filename))
     const token = "secret-do-not-persist"
     const environment = nativeMcpEnvironment(harness, common, {
       CONTEXT7_API_KEY: token,
@@ -132,7 +137,7 @@ test.each(["codex", "grok"])("%s preserves provider settings and translates nati
   } else {
     expect(entries.context7).toMatchObject({ type: "http", headers: { "X-Literal": "public" } })
   }
-  expect((await stat(file)).mode & 0o777).toBe(0o600)
+  await expectPrivateFile(file)
 })
 
 test("Nodecode stages only immutable stdio specifications, never persistent home configuration", async () => {
@@ -147,7 +152,10 @@ test("Nodecode stages only immutable stdio specifications, never persistent home
 })
 
 test("Claude uses a filename and Pi explicitly reenables builtin MCP; disabled servers add nothing", () => {
-  expect(nativeMcpArgs("claude", "/generation", common)).toEqual(["--mcp-config", "/generation/mcp-config.json"])
+  expect(nativeMcpArgs("claude", "/generation", common)).toEqual([
+    "--mcp-config",
+    path.join("/generation", "mcp-config.json"),
+  ])
   expect(nativeMcpArgs("pi", "/generation", common)).toEqual(["--extension", "builtin:mcp"])
   expect(nativeMcpArgs("pi", "/generation", { context7: { ...remote, enabled: false } })).toEqual([])
 })

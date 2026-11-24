@@ -23,6 +23,7 @@ import {
 import { lstat as lstatAsync, readFile, readdir as readdirAsync } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { assertWindowsPermissions } from "./windows-permissions.ts"
 
 export const sourceMarker = ".managed-by-trellage-source"
 export const preparationLockName = ".trellage-prepare.lock"
@@ -89,6 +90,7 @@ function sourceDirectoryNames(root: string): string[] {
 }
 
 function excludedSourceName(name: string, parent: string): boolean {
+  parent = parent.split(path.sep).join("/")
   const testDirectory =
     (name === "test" || name === "tests") && (parent === "scripts" || /^(?:packages|prototypes)\/[^/]+$/.test(parent))
   return (
@@ -145,7 +147,13 @@ function requireSafeStatus(candidate: string, kind: "file" | "directory", status
   if (status.isSymbolicLink() || (kind === "directory" ? !status.isDirectory() : !status.isFile())) {
     throw new Error(`unsafe ${kind}: ${candidate}`)
   }
-  if (process.getuid === undefined || Number(status.uid) !== process.getuid() || (Number(status.mode) & 0o022) !== 0) {
+  if (process.platform === "win32") {
+    assertWindowsPermissions(candidate)
+  } else if (
+    process.getuid === undefined ||
+    Number(status.uid) !== process.getuid() ||
+    (Number(status.mode) & 0o022) !== 0
+  ) {
     throw new Error(`runtime path must be owned by this user and not shared-writable: ${candidate}`)
   }
 }
@@ -158,6 +166,11 @@ export function safeDirectory(candidate: string): string {
   let ancestor = path.dirname(resolved)
   while (ancestor !== path.parse(ancestor).root) {
     const status = lstatSync(ancestor)
+    if (process.platform === "win32") {
+      requireSafeStatus(ancestor, "directory", status)
+      ancestor = path.dirname(ancestor)
+      continue
+    }
     const systemTemporary = status.uid === 0 && (status.mode & 0o1000) !== 0
     if (
       !status.isDirectory() ||
@@ -393,7 +406,10 @@ export function dependencyDirectory(root: string, name: string): string {
 
 function validateRuntimeLink(root: string, candidate: string): void {
   const relative = path.relative(root, candidate)
-  if (!relative.split(path.sep).includes("node_modules") || path.isAbsolute(readlinkSync(candidate))) {
+  if (
+    !relative.split(path.sep).includes("node_modules") ||
+    (process.platform !== "win32" && path.isAbsolute(readlinkSync(candidate)))
+  ) {
     throw new Error(`unpermitted runtime link: ${candidate}`)
   }
   const resolved = realpathSync(candidate)
@@ -407,7 +423,10 @@ function validateRuntimeLink(root: string, candidate: string): void {
     (file) => file !== "package.json" && path.dirname(path.join(root, file)) === resolved,
   )
   const expected = workspace === undefined ? undefined : packageManifest(path.join(root, workspace)).name
-  if (expected === undefined || !candidate.endsWith(`${path.sep}node_modules${path.sep}${expected}`)) {
+  if (
+    expected === undefined ||
+    !candidate.endsWith(`${path.sep}node_modules${path.sep}${expected.split("/").join(path.sep)}`)
+  ) {
     throw new Error(`unpermitted workspace link: ${candidate}`)
   }
 }
@@ -443,9 +462,14 @@ function workspaceBinaryEntry(
   }
   safeDirectory(path.dirname(target))
   const status = lstatSync(target)
-  if (!status.isFile() || status.isSymbolicLink() || status.uid !== process.getuid?.()) {
+  if (
+    !status.isFile() ||
+    status.isSymbolicLink() ||
+    (process.platform !== "win32" && status.uid !== process.getuid?.())
+  ) {
     throw new Error(`unsafe workspace binary: ${target}`)
   }
+  if (process.platform === "win32") assertWindowsPermissions(target)
   if (status.nlink !== 1) throw new Error(`hard-linked workspace binary: ${target}`)
   return [target, status]
 }
@@ -489,6 +513,10 @@ function validatePermissionIdentity(candidate: string, original: Stats, current:
 }
 
 function normalizePermission(candidate: string, status: Stats): void {
+  if (process.platform === "win32") {
+    requireSafeStatus(candidate, status.isDirectory() ? "directory" : "file", status)
+    return
+  }
   if (status.uid !== process.getuid?.() || (!status.isFile() && !status.isDirectory())) {
     throw new Error(`unsafe installed dependency: ${candidate}`)
   }
@@ -508,7 +536,8 @@ const retiredWorkspaceLink = (root: string, candidate: string): { target: string
   const link = readlinkSync(candidate)
   if (path.isAbsolute(link)) return undefined
   const target = path.resolve(path.dirname(candidate), link)
-  if (!/\/node_modules\/(?:@[^/]+\/)?[^/]+$/.test(candidate)) return { target, retired: false }
+  if (!/\/node_modules\/(?:@[^/]+\/)?[^/]+$/.test(candidate.split(path.sep).join("/")))
+    return { target, retired: false }
   if (path.dirname(target) !== path.join(root, "packages")) return { target, retired: false }
   const status = lstatSync(target, { throwIfNoEntry: false })
   if (status !== undefined && !status.isDirectory()) return { target, retired: false }

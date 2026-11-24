@@ -6,6 +6,7 @@ import { Data, Duration, Effect, Either, Schema } from "effect"
 import { bunArguments, bunExecutable, sourceEnvironment, sourceWorkspaceRoot } from "./index.ts"
 import { expandTrellagePath, type EnvironmentConfig } from "./native-config.ts"
 import { dependencyDirectory } from "./workspace.ts"
+import { assertWindowsPermissions } from "./windows-permissions.ts"
 
 export class CentralEnvironmentError extends Data.TaggedError("CentralEnvironmentError")<{
   readonly message: string
@@ -34,6 +35,16 @@ const assertSafe = (
     if (stats.isSymbolicLink()) return yield* refuse(`${label} must not be a symbolic link: ${candidate}`)
     if (!stats.isFile() && !stats.isDirectory()) {
       return yield* refuse(`${label} is not a file or directory: ${candidate}`)
+    }
+    if (process.platform === "win32") {
+      yield* Effect.try({
+        try: () => assertWindowsPermissions(candidate, strictPermissions && !allowPublicRead),
+        catch: (cause) =>
+          new CentralEnvironmentError({
+            message: cause instanceof Error ? cause.message : `cannot inspect Windows environment ACL: ${candidate}`,
+          }),
+      })
+      return
     }
     if ((stats.mode & 0o022) !== 0) {
       return yield* refuse(`${label} must not be writable by group or other users: ${candidate}`)
