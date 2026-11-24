@@ -187,12 +187,7 @@ describe("worktree artifacts", () => {
   })
 
   test("ship docs gate blocks only for non-user-documentation diffs", () => {
-    const nonDocs = [
-      "coordinator/defaults/prompts/x.md",
-      "skills/a/SKILL.md",
-      "notes.txt",
-      "src/a.ts",
-    ]
+    const nonDocs = ["coordinator/defaults/prompts/x.md", "skills/a/SKILL.md", "notes.txt", "src/a.ts"]
     const userDocs = [
       "README.md",
       "prototypes/x/README.md",
