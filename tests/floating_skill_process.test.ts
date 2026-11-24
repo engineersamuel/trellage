@@ -3,7 +3,10 @@ import { spawn, execFileSync } from "node:child_process"
 import { once } from "node:events"
 import { signalSkillChild } from "../scripts/floating-skills.ts"
 
-test("skill cleanup tolerates a group containing only an unreaped child", async () => {
+const unix = test.skipIf(process.platform === "win32")
+
+// Windows: needs os.fork and POSIX process groups.
+unix("skill cleanup tolerates a group containing only an unreaped child", async () => {
   const parent = spawn(
     "python3",
     [
@@ -43,7 +46,8 @@ os.waitpid(pid, 0)
   }
 })
 
-test("skill cleanup preserves permission failures for a live group", async () => {
+// Windows: needs os.setsid and POSIX process groups.
+unix("skill cleanup preserves permission failures for a live group", async () => {
   const child = spawn(
     "python3",
     ["-c", "import os,sys; os.setsid(); print('ready',flush=True); sys.stdin.readline()"],

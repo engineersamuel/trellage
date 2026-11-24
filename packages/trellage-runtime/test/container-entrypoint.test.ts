@@ -5,6 +5,9 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
+// unix(...) tests cover the comparison harness's Linux container entrypoint.
+const unix = test.skipIf(process.platform === "win32")
+
 const roots: string[] = []
 const repository = fileURLToPath(new URL("../../../", import.meta.url))
 
@@ -67,7 +70,7 @@ function fixture(includeRuntime: boolean) {
   return { root, workspace, source, codexHome, cwd, calls, result }
 }
 
-test("comparison entrypoint uses workspace TS helpers and preserves the final command status and cwd", () => {
+unix("comparison entrypoint uses workspace TS helpers and preserves the final command status and cwd", () => {
   const { root, source, codexHome, cwd, calls, result } = fixture(true)
   expect(result.error).toBeUndefined()
   expect(result.stderr).toBe("")
@@ -105,7 +108,7 @@ test("comparison entrypoint uses workspace TS helpers and preserves the final co
   expect(readFileSync(`${codexHome}/agents/custom.toml`, "utf8")).toBe('name = "custom"\n')
 })
 
-test("comparison entrypoint fails before workspace mutation when the source runtime is absent", () => {
+unix("comparison entrypoint fails before workspace mutation when the source runtime is absent", () => {
   const { workspace, calls, result } = fixture(false)
   expect(result.status).toBe(1)
   expect(result.stderr).toContain("missing or unsafe source runtime helper")

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+root="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/trx-run-list-contract.XXXXXX")"
-work="$(CDPATH= cd -- "$work" && pwd -P)"
+work="$(CDPATH='' cd -- "$work" && pwd -P)"
 trap 'rm -rf -- "$work"' EXIT
 real_bun="$(command -v bun)"
+# The router needs jq; keep its real directory (outside /usr/bin on Windows) on the pinned PATH.
+jq_dir="$(dirname -- "$(command -v jq)")"
 # Explicit fixture preparation is outside the command under test.
 "$root/scripts/install-source-runtime.sh" --stage "$work/source" >"$work/prepare.log" 2>&1 \
   || { tail -40 "$work/prepare.log" >&2; exit 1; }
@@ -28,7 +30,7 @@ for command in pi curl git; do
 done
 router="$work/source/prototypes/trellage-router/bin/trx"
 run() {
-  env HOME="$work/home" XDG_CACHE_HOME="$work/home/.cache" TRELLAGE_READINESS_MEMO=1 PATH="$work/bin:/usr/bin:/bin" TRELLAGE_BUN_EXECUTABLE="$real_bun" \
+  env HOME="$work/home" XDG_CACHE_HOME="$work/home/.cache" TRELLAGE_READINESS_MEMO=1 PATH="$work/bin:/usr/bin:/bin:$jq_dir" TRELLAGE_BUN_EXECUTABLE="$real_bun" \
     TRELLAGE_TRX_SOURCE_ROOT="$work/source/prototypes/trellage-router" \
     TRELLAGE_CONFIG="$work/home/.config/trellage/config.toml" "$router" "$@"
 }

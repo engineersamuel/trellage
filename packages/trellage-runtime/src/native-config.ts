@@ -371,7 +371,7 @@ export const expandTrellagePath = (candidate: string, home: string, base: string
 export const loadTrellageConfigDocument = (location: TrellageConfigLocation = {}) =>
   Effect.gen(function* () {
     const environment = location.environment ?? process.env
-    const home = location.home ?? os.homedir()
+    const home = location.home ?? (environment.HOME || os.homedir())
     const cwd = location.cwd ?? process.cwd()
     const configDirectory = environment.XDG_CONFIG_HOME
       ? path.resolve(cwd, environment.XDG_CONFIG_HOME, "trellage")

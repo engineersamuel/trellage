@@ -1,0 +1,3 @@
+#!/bin/sh
+printf '%s\n' "$@" > 'C:\Users\Samue\.herdr\worktrees\trellage\windows-offline-tests\prototypes\software-factory\coordinator\.todo-routes-test-DNoeT1/args'
+cat 'C:\Users\Samue\.herdr\worktrees\trellage\windows-offline-tests\prototypes\software-factory\coordinator\.todo-routes-test-DNoeT1/prs.json'

@@ -7,6 +7,9 @@ import { buildNodecodeSnapshot, nodecodeManifestFor } from "../../src/native-run
 import { digestDirectory } from "../../src/native-run/source.ts"
 import { cleanupFixtures, tempRoot } from "./fixtures.ts"
 
+// unix(...) tests cover Nodecode, a harness native Windows does not run.
+const unix = test.skipIf(process.platform === "win32")
+
 afterEach(cleanupFixtures)
 
 const fixture = async () => {
@@ -83,44 +86,47 @@ const fixture = async () => {
   return { root, owner, source, plan }
 }
 
-test("Nodecode snapshot consumes canonical policy, keeps manual prose private and includes alwaysOn instructions/assets", async () => {
-  const f = await fixture()
-  const plan = await f.plan()
-  expect(plan.instructions.map(({ id }) => id)).toEqual(["rules", "skill-office"])
-  const snapshot = await buildNodecodeSnapshot(f.owner, plan)
-  expect(snapshot.manifest.skills.map(({ name }) => name)).toEqual(["common", "i-have-adhd", "office"])
-  expect(snapshot.manifest.alwaysProfiles).toEqual(["common"])
-  expect(snapshot.manifest.sources[0]).toMatchObject({
-    repository: "example/fixture",
-    selector: { kind: "default" },
-    commit: "a".repeat(40),
-  })
-  expect(snapshot.manifest.generator).toMatch(/^[a-f0-9]{64}$/)
-  expect((await readdir(path.join(snapshot.directory, "trellage-knowledge"))).sort()).toEqual([
-    "common.lisp",
-    "office.lisp",
-    "trellage-knowledge.asd",
-  ])
-  const knowledge = await readFile(path.join(snapshot.directory, "trellage-knowledge", "office.lisp"), "utf8")
-  expect(knowledge).toContain('#.(error \\"must not execute\\")')
-  expect(knowledge).toContain(path.join(snapshot.directory, "ordinary", "office"))
-  const manual = await readFile(path.join(snapshot.directory, "private", "i-have-adhd", "SKILL.md"), "utf8")
-  expect(manual).toContain("disable-model-invocation: true")
-  const instructions = await readFile(path.join(snapshot.directory, "instructions.md"), "utf8")
-  expect(instructions).toContain("COMPOSED_RULE")
-  expect(instructions).toContain("# Managed skill: office")
-  expect(instructions).toContain(path.join(snapshot.directory, "ordinary", "office"))
-  expect(instructions).not.toContain("i-have-adhd")
-  const bridgePointer = await readFile(
-    path.join(snapshot.directory, "nodecode-trellage-manual", "snapshot.lisp"),
-    "utf8",
-  )
-  expect(bridgePointer).toContain(snapshot.directory)
-  expect(bridgePointer).not.toContain("current")
-  expect(await readdir(path.join(f.owner, "managed", "nodecode-skills"))).toEqual(["snapshots"])
-})
+unix(
+  "Nodecode snapshot consumes canonical policy, keeps manual prose private and includes alwaysOn instructions/assets",
+  async () => {
+    const f = await fixture()
+    const plan = await f.plan()
+    expect(plan.instructions.map(({ id }) => id)).toEqual(["rules", "skill-office"])
+    const snapshot = await buildNodecodeSnapshot(f.owner, plan)
+    expect(snapshot.manifest.skills.map(({ name }) => name)).toEqual(["common", "i-have-adhd", "office"])
+    expect(snapshot.manifest.alwaysProfiles).toEqual(["common"])
+    expect(snapshot.manifest.sources[0]).toMatchObject({
+      repository: "example/fixture",
+      selector: { kind: "default" },
+      commit: "a".repeat(40),
+    })
+    expect(snapshot.manifest.generator).toMatch(/^[a-f0-9]{64}$/)
+    expect((await readdir(path.join(snapshot.directory, "trellage-knowledge"))).sort()).toEqual([
+      "common.lisp",
+      "office.lisp",
+      "trellage-knowledge.asd",
+    ])
+    const knowledge = await readFile(path.join(snapshot.directory, "trellage-knowledge", "office.lisp"), "utf8")
+    expect(knowledge).toContain('#.(error \\"must not execute\\")')
+    expect(knowledge).toContain(path.join(snapshot.directory, "ordinary", "office"))
+    const manual = await readFile(path.join(snapshot.directory, "private", "i-have-adhd", "SKILL.md"), "utf8")
+    expect(manual).toContain("disable-model-invocation: true")
+    const instructions = await readFile(path.join(snapshot.directory, "instructions.md"), "utf8")
+    expect(instructions).toContain("COMPOSED_RULE")
+    expect(instructions).toContain("# Managed skill: office")
+    expect(instructions).toContain(path.join(snapshot.directory, "ordinary", "office"))
+    expect(instructions).not.toContain("i-have-adhd")
+    const bridgePointer = await readFile(
+      path.join(snapshot.directory, "nodecode-trellage-manual", "snapshot.lisp"),
+      "utf8",
+    )
+    expect(bridgePointer).toContain(snapshot.directory)
+    expect(bridgePointer).not.toContain("current")
+    expect(await readdir(path.join(f.owner, "managed", "nodecode-skills"))).toEqual(["snapshots"])
+  },
+)
 
-test("Nodecode retains snapshots across no-always, provenance changes and source/generation removal", async () => {
+unix("Nodecode retains snapshots across no-always, provenance changes and source/generation removal", async () => {
   const f = await fixture()
   const plan = await f.plan()
   const first = await buildNodecodeSnapshot(f.owner, plan)

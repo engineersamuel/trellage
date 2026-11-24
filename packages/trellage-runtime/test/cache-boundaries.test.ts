@@ -12,7 +12,11 @@ import {
 } from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { bunArguments, bunExecutable, sourceWorkspaceRoot } from "../src/index.ts"
+
+// unix(...) tests cover shebang execution of bin/trx and the Unix harness installers.
+const unix = test.skipIf(process.platform === "win32")
 
 const roots: string[] = []
 // Bun skips its disk cache for small source files.
@@ -51,7 +55,7 @@ function fixture() {
   return { root, home, cwd, write, copy, isolatedEnv }
 }
 
-test.each(["trx", "trx.ts"])("initial bin/%s disables the transpiler cache before importing large source", (entry) => {
+unix.each(["trx", "trx.ts"])("initial bin/%s disables the transpiler cache before importing large source", (entry) => {
   const f = fixture()
   const name = path.basename(entry, ".ts")
   for (const relative of [
@@ -120,7 +124,7 @@ test("non-Bun executable validation cannot write a transpiler cache into the con
     [
       "--no-warnings",
       "--eval",
-      `import(${JSON.stringify(module)}).then(({bunExecutable})=>console.log(bunExecutable()))`,
+      `import(${JSON.stringify(pathToFileURL(module).href)}).then(({bunExecutable})=>console.log(bunExecutable()))`,
     ],
     { cwd: f.cwd, encoding: "utf8", env: { ...process.env, ...f.isolatedEnv } },
   )
@@ -129,7 +133,7 @@ test("non-Bun executable validation cannot write a transpiler cache into the con
   expect(readdirSync(f.home, { recursive: true })).toEqual([])
 })
 
-test.each([
+unix.each([
   ["agency", "--install"],
   ["copilot", "--install"],
   ["claude", "--install"],
@@ -173,7 +177,7 @@ test.each([
   expect(readdirSync(f.home, { recursive: true })).toEqual([])
 })
 
-test.each([undefined, "", "test", "development", "production"])(
+unix.each([undefined, "", "test", "development", "production"])(
   "launcher startup selects production before imports without changing ambient NODE_ENV=%j",
   (nodeEnv) => {
     const f = fixture()

@@ -221,7 +221,7 @@ function updateDigest(hash: Hash, file: string, contents: Uint8Array): void {
 const digestMemoLimit = 64
 
 function digestMemoPath(): string {
-  const cache = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache")
+  const cache = process.env.XDG_CACHE_HOME || path.join(process.env.HOME || os.homedir(), ".cache")
   return path.join(cache, "trellage", "source-digest-memo.json")
 }
 

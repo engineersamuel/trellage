@@ -14,6 +14,18 @@ TEST_TIMING ?= 0
 ifeq ($(TEST_TIMING),1)
 %: SHELL = python3 scripts/test-command.py $@
 endif
+# Suites for features native Windows does not run (the comparison harness's Linux containers, PTYs, Herdr
+# sockets, and non-Claude harnesses; see README "Native Windows"). Windows prints these commands instead of
+# running them. Use it only on simple command lines: shell operators after it would still run.
+ifeq ($(OS),Windows_NT)
+UNIX_ONLY = @echo skipped on Windows:
+# Nodecode is not a native Windows harness; this file is also a hash-pinned public secret fixture, so it stays unedited.
+WINDOWS_RUNTIME_TEST_IGNORES := --path-ignore-patterns='**/nodecode-mcp.test.ts'
+# These exhaustive matrices mock harness CLIs as /bin/sh scripts, which native Windows cannot execute.
+WINDOWS_SCRIPT_TEST_IGNORES := $(foreach name,admission-mocks clean-run-world firstmate github-bridge guide-json \
+  host-admission run-dry-command run-launch run-selection runtime-admission, \
+  --path-ignore-patterns='**/exhaustive-$(name).test.ts')
+endif
 PARALLEL_TEST_TARGETS := test-command native-copilot-profiles launcher conversation-source source-runtime dependency-bootstrap development-resolution-contract rebuild-profiles-bun-runtime publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge azure-fresh-install-contract agent-harness native-harness-version manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test trellage-statusline
 TIMING_SENSITIVE_TEST_TARGETS := native-claude-profile native-tui-matrix-test
 # Not in the full run: these profiles' contracts run only when a PR changes that profile
@@ -48,11 +60,11 @@ test-exhaustive-plan:
 
 .PHONY: cli-matrix-contract
 cli-matrix-contract:
-	bun test tests/exhaustive/*.test.ts
-	python3 scripts/test-offline.py -- python3 tests/exhaustive/router-help-processes.py
-	python3 scripts/test-offline.py -- bun tests/exhaustive/guide-process-regression.ts
-	python3 scripts/test-offline.py -- bun tests/exhaustive/controlling-input-regression.ts
-	python3 scripts/test-offline.py -- bun tests/exhaustive/run-selector-regression.ts
+	$(UNIX_ONLY) bun test tests/exhaustive/*.test.ts
+	$(UNIX_ONLY) python3 scripts/test-offline.py -- python3 tests/exhaustive/router-help-processes.py
+	$(UNIX_ONLY) python3 scripts/test-offline.py -- bun tests/exhaustive/guide-process-regression.ts
+	$(UNIX_ONLY) python3 scripts/test-offline.py -- bun tests/exhaustive/controlling-input-regression.ts
+	$(UNIX_ONLY) python3 scripts/test-offline.py -- bun tests/exhaustive/run-selector-regression.ts
 
 .PHONY: test-offline-workload offline-llm-contract offline-install-contract test-prepare
 test-prepare:
@@ -86,11 +98,12 @@ quality-contract:
 # Process-spawning contract tests (each mock call starts a program): Bun's 5 s unit-test default is too tight when
 # the pre-push hook runs them beside the whole suite.
 script-tests:
-	bash scripts/test-offline.sh --native-sources bun test --isolate --timeout 30000 scripts/*.test.ts
+	bash scripts/test-offline.sh --native-sources bun test --isolate --timeout 30000 scripts/*.test.ts \
+	  $(WINDOWS_SCRIPT_TEST_IGNORES)
 	uv run --offline --no-project python tests/test_benchmark_tests.py
-	uv run --offline --no-project python tests/test_exhaustive_terminal.py
+	$(UNIX_ONLY) uv run --offline --no-project python tests/test_exhaustive_terminal.py
 	uv run --offline --no-project python tests/test_exhaustive_runner.py
-	@if [ "$${TRELLAGE_TEST_SCOPE-}" != essential ]; then \
+	@if [ "$${TRELLAGE_TEST_SCOPE-}" != essential ] && [ "$(OS)" != Windows_NT ]; then \
 	  uv run --offline --no-project python tests/test_exhaustive_guide_process.py; fi
 
 publication-policy:
@@ -112,10 +125,11 @@ source-checks:
 	bun run format:check
 	bun run check:root
 
+# scripts/test-performance.py needs ps, process groups, and the load average.
 test-command:
 	python3 tests/test_command.py
-	python3 tests/test_performance.py
-	python3 tests/test_performance_clean_start.py
+	$(UNIX_ONLY) python3 tests/test_performance.py
+	$(UNIX_ONLY) python3 tests/test_performance_clean_start.py
 
 dependency-bootstrap:
 	bash tests/dependency_bootstrap_contract.sh
@@ -155,18 +169,26 @@ profile-guide-contract: profile-guide-core
 profile-guide-live-evaluation:
 	bun --no-install --no-env-file scripts/evaluate-profile-guides.ts --live
 
+# Guide, the run composer, and Herdr handoff are Unix-only (README "Native Windows"); Windows still typechecks.
 launcher: profile-guide-core
-	cd packages/trellage-launcher && bun run check && bun run test
+	cd packages/trellage-launcher && bun run check && \
+	  if [ "$(OS)" = Windows_NT ]; then \
+	    echo "launcher: tests skipped on Windows (Guide and run composer need PTYs and Unix sockets)"; \
+	  else bun run test; fi
 
 profile-compiler-fingerprint:
 	bash tests/profile_compiler_fingerprint_contract.sh
 
+# Herdr conversation capture uses Unix sockets and POSIX paths; native Windows does not support it.
 conversation-source:
-	cd packages/trellage-conversation-source && bun run check && bun run test
+	cd packages/trellage-conversation-source && bun run check && \
+	  if [ "$(OS)" = Windows_NT ]; then \
+	    echo "conversation-source: tests skipped on Windows (Herdr capture needs Unix sockets)"; \
+	  else bun run test; fi
 
 # OMP-only process tests skip in the essential scope, like the OMP profile contract.
 source-runtime:
-	cd packages/trellage-runtime && bun run check && bun run test \
+	cd packages/trellage-runtime && bun run check && bun run test $(WINDOWS_RUNTIME_TEST_IGNORES) \
 	  $$([ "$${TRELLAGE_TEST_SCOPE-}" = essential ] && echo --path-ignore-patterns='**/omp-process.test.ts')
 	bash tests/source_startup_contract.sh
 
@@ -174,7 +196,7 @@ trellage-identity:
 	bash tests/trellage_identity_contract.sh
 
 trellage-session-bridge:
-	python3 tests/trellage_session_bridge_test.py
+	$(UNIX_ONLY) python3 tests/trellage_session_bridge_test.py
 
 trellage-statusline:
 	bash tests/trellage_statusline.sh
@@ -188,8 +210,8 @@ agent-harness:
 
 
 native-copilot-profiles:
-	bash prototypes/trellage-copilot-profiles/tests/version_cache_contract.sh
-	bash prototypes/trellage-copilot-profiles/tests/contract.sh
+	$(UNIX_ONLY) bash prototypes/trellage-copilot-profiles/tests/version_cache_contract.sh
+	$(UNIX_ONLY) bash prototypes/trellage-copilot-profiles/tests/contract.sh
 
 native-agency-profile:
 	bash prototypes/trellage-agency-profiles/tests/contract.sh
@@ -197,11 +219,12 @@ native-agency-profile:
 # Skills management for every harness (agx, cldx, cpx, jcx, omp, prx). In the full run it runs here, in parallel, so
 # the serial Claude contract can skip it in essential scope.
 native-skills:
-	bun --no-install --no-env-file --config=packages/trellage-runtime/bunfig.toml \
+	$(UNIX_ONLY) bun --no-install --no-env-file --config=packages/trellage-runtime/bunfig.toml \
 	  test prototypes/trellage-claude-common/tests/native-skills.test.ts
 
+# The cldx Bash backend; native Windows launches Claude through windows-claude.ts.
 native-claude-profile:
-	bash prototypes/trellage-claude-profiles/tests/contract.sh
+	$(UNIX_ONLY) bash prototypes/trellage-claude-profiles/tests/contract.sh
 
 native-jcode-profile:
 	bun test prototypes/trellage-claude-common/tests/manual-skills.test.ts prototypes/trellage-claude-common/tests/source-helpers.test.ts
@@ -215,39 +238,40 @@ native-omp-profile:
 native-prime-profile:
 	bash prototypes/trellage-prime-profiles/tests/contract.sh
 
+# The Bash router and its trx install; native Windows installs with scripts/install-windows.ps1.
 native-profile-router:
-	bash prototypes/trellage-router/tests/contract.sh
+	$(UNIX_ONLY) bash prototypes/trellage-router/tests/contract.sh
 
 manifest:
 	bash tests/manifest_contract.sh
 
 contract:
-	bash tests/harness_contract.sh
+	$(UNIX_ONLY) bash tests/harness_contract.sh
 
 adapter:
 	bash tests/agent_kit_adapter.sh
 
 awesome-adapter:
-	bash tests/awesome_copilot_adapter.sh
+	$(UNIX_ONLY) bash tests/awesome_copilot_adapter.sh
 
 copilot-image:
 	bash tests/copilot_agent_image.sh
 
 runner:
-	bash tests/harness_runner.sh
+	$(UNIX_ONLY) bash tests/harness_runner.sh
 
 session:
-	bash tests/run_agent_session.sh
-	bash tests/harness_session_discovery.sh
+	$(UNIX_ONLY) bash tests/run_agent_session.sh
+	$(UNIX_ONLY) bash tests/harness_session_discovery.sh
 
 workspace-checks:
-	bash tests/workspace_checks.sh
+	$(UNIX_ONLY) bash tests/workspace_checks.sh
 
 playwright-matrix:
-	bash tests/playwright_matrix.sh
+	$(UNIX_ONLY) bash tests/playwright_matrix.sh
 
 evidence:
-	bash tests/evidence_contract.sh
+	$(UNIX_ONLY) bash tests/evidence_contract.sh
 
 profile-matrix:
 	scripts/verify-agent-profiles $(PROFILE_MATRIX_ARGS)
@@ -262,7 +286,7 @@ native-tui-matrix-live:
 	scripts/verify-native-tuis --live $(NATIVE_TUI_MATRIX_ARGS)
 
 native-tui-matrix-test:
-	python3 tests/native_tui_matrix_test.py
+	$(UNIX_ONLY) python3 tests/native_tui_matrix_test.py
 
 headless-matrix:
 	scripts/verify-headless-contracts $(HEADLESS_MATRIX_ARGS)

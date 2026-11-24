@@ -82,10 +82,11 @@ jq -e '
   )
 ' "$ledger" >/dev/null || fail 'evidence ledger summary differs'
 
+# Windows jq.exe ends lines with CRLF.
 while IFS= read -r evidence_path; do
   [[ -f "$evidence_path" && ! -L "$evidence_path" ]] \
     || fail "unsafe or missing deterministic evidence path: $evidence_path"
-done < <(jq -r '.contracts[].deterministicEvidence[].path' "$ledger" | sort -u)
+done < <(jq -r '.contracts[].deterministicEvidence[].path' "$ledger" | tr -d '\r' | sort -u)
 
 headless_section="$({
   awk '

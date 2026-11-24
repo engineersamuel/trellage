@@ -122,7 +122,10 @@ assert_help() {
         || fail "$label did not print the public Trellage help"
       ;;
     trx)
-      grep -Fqx '  trx run HARNESS [PROFILE...] [OPTIONS] [-- ARGS...]' "$output" \
+      # Native Windows routes to the Claude-only Windows router and its own help.
+      local usage='  trx run HARNESS [PROFILE...] [OPTIONS] [-- ARGS...]'
+      [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]] && usage='  trx run claude [PROFILE...] [OPTIONS] [-- CLAUDE_ARGS...]'
+      grep -Fqx "$usage" "$output" \
         || fail "$label did not print the public trx help"
       ;;
     *) fail "unknown help command: $command_name" ;;
@@ -172,9 +175,11 @@ for location in cwd cwd-with-home cwd-with-xdg; do
 
   assert_help source-shell-trx trx "$repo_root/bin/trx"
   assert_help source-ts-trx trx "$repo_root/bin/trx.ts"
+  assert_installer_refusal source-installer "$repo_root/scripts/install-source-runtime.sh"
+  # Native Windows runs the checkout in place (scripts/install-windows.ps1); the installed copy is Unix-only.
+  [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]] && continue
   assert_help installed-shell-trx trx "$fixture_bin/trx"
   assert_help installed-ts-trx trx "$installed_root/bin/trx.ts"
-  assert_installer_refusal source-installer "$repo_root/scripts/install-source-runtime.sh"
   assert_installer_refusal installed-installer "$installed_root/scripts/install-source-runtime.sh"
 done
 

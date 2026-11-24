@@ -4,6 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import { createProcessLifecycle, POSIX_ALARM_SCRIPT, runCleanupStages } from "./process-lifecycle.ts"
 
+const unix = test.skipIf(process.platform === "win32")
+
 test("managed process settlement waits for close after a spawn error", async () => {
   const lifecycle = createProcessLifecycle({ settleDeadline: 100 })
   const managed = lifecycle.spawn("/definitely/missing/trellage-process", [], { stdio: "ignore" })
@@ -66,7 +68,8 @@ test("cleanup waits only for registered children to close and does not signal th
   expect(result.code).toBe(0)
 })
 
-test("a TERM-ignoring hung command self-terminates from the inherited POSIX alarm", async () => {
+unix("a TERM-ignoring hung command self-terminates from the inherited POSIX alarm", async () => {
+  // Tests marked skipIf(win32) cover POSIX alarms, process groups, and signals.
   const lifecycle = createProcessLifecycle({ settleDeadline: 2_000 })
   const managed = lifecycle.spawn(
     "perl",
@@ -84,7 +87,7 @@ test("a TERM-ignoring hung command self-terminates from the inherited POSIX alar
   expect(result.signal).toBe("SIGALRM")
 })
 
-test("the inherited alarm survives the shell-router to Bash to Bun chain", async () => {
+unix("the inherited alarm survives the shell-router to Bash to Bun chain", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "trellage-router-alarm-"))
   const router = path.join(directory, "router")
   await writeFile(

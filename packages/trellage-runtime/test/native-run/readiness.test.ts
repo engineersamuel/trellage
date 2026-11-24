@@ -5,6 +5,9 @@ import path from "node:path"
 import { inspectHarnessReadiness, inspectProfileReadiness } from "../../src/native-run/readiness.ts"
 import { resolveNamedRunProfile } from "../../src/native-run/selection.ts"
 import { loadEffectiveRunConfig } from "../../src/native-run/catalog-config.ts"
+
+// unix(...) tests cover POSIX execute bits.
+const unix = test.skipIf(process.platform === "win32")
 const roots: string[] = []
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
@@ -45,7 +48,7 @@ test("binary inspection does not execute the agent or prepare first-run state", 
   expect((await inspectProfileReadiness(profile, ready, f.context)).status).toBe("ready")
   expect(await readdir(f.home)).toEqual(before)
 })
-test("a missing/nonexecutable binary cannot be ready and an explicit override is authoritative", async () => {
+unix("a missing/nonexecutable binary cannot be ready and an explicit override is authoritative", async () => {
   const f = await fixture()
   await chmod(f.binary, 0o644)
   expect((await inspectHarnessReadiness("pi", f.context)).status).toBe("unavailable")

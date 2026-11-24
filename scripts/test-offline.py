@@ -24,7 +24,8 @@ def isolated_command(command: list[str]) -> list[str]:
     if platform.system() == "Windows":
         # Windows has no OS network denial here yet: only the provider tripwire and environment scrubbing apply.
         print("offline tests: OS network isolation is disabled on Windows.", file=sys.stderr)
-        return command
+        # CreateProcess searches System32 (WSL's bash.exe) before PATH; resolve the program like a shell would.
+        return [shutil.which(command[0]) or command[0], *command[1:]]
     raise RuntimeError("offline tests require macOS sandbox-exec, Linux libseccomp, or Windows")
 
 

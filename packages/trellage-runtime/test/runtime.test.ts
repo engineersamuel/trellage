@@ -38,6 +38,9 @@ import {
 import { runtimeTreeHash, socketIsListening } from "../src/native-tools.ts"
 import { packageSources } from "../src/source-package.ts"
 
+// unix(...) tests cover the Unix shell router, owned installer, or POSIX signals; Windows launches through trx.cmd.
+const unix = test.skipIf(process.platform === "win32")
+
 const fixtures: string[] = []
 const workspaceCli = path.join(sourceWorkspaceRoot(), "packages/trellage-runtime/src/workspace-cli.ts")
 
@@ -69,7 +72,7 @@ test("source archive preserves locked workspace and assets without registry work
   packageSources(root, destination)
   expect(() => packageSources(root, destination)).toThrow()
   const extracted = fixture()
-  const unpack = spawnSync("tar", ["-xzf", destination, "-C", extracted])
+  const unpack = spawnSync("tar", ["-xzf", "-"], { cwd: extracted, input: readFileSync(destination) })
   expect(unpack.status).toBe(0)
   const packaged = path.join(extracted, "package")
   expect(readFileSync(path.join(packaged, "package.source.json"), "utf8")).toBe(manifest)
@@ -83,7 +86,7 @@ test("source archive preserves locked workspace and assets without registry work
   expect(sourceFingerprint(packaged)).toBe(sourceFingerprint(root))
 })
 
-test("ignores generated native profile state while retaining source link safety", () => {
+unix("ignores generated native profile state while retaining source link safety", () => {
   const { root, destination } = sourceFixture(true)
   write(root, "README.md", "Source fixture")
   write(root, "LICENSE", "MIT")
@@ -118,7 +121,7 @@ test("ignores generated native profile state while retaining source link safety"
 
   packageSources(root, destination)
   const extracted = fixture()
-  expect(spawnSync("tar", ["-xzf", destination, "-C", extracted]).status).toBe(0)
+  expect(spawnSync("tar", ["-xzf", "-"], { cwd: extracted, input: readFileSync(destination) }).status).toBe(0)
   const packaged = path.join(extracted, "package")
   expect(existsSync(path.join(packaged, "prototypes/trellage-jcode-profiles/mise"))).toBe(false)
   expect(existsSync(path.join(packaged, "prototypes/trellage-jcode-profiles/cache"))).toBe(false)
@@ -181,7 +184,7 @@ function hostileBunEnvironment(cwd: string): NodeJS.ProcessEnv {
   }
 }
 
-test("source copies preserve sibling files and executable modes without sharing mutable state", () => {
+unix("source copies preserve sibling files and executable modes without sharing mutable state", () => {
   const { root } = sourceFixture()
   write(root, "scripts/nested/first.sh", "#!/bin/sh\necho first\n")
   write(root, "scripts/nested/second.txt", "second")
@@ -229,7 +232,7 @@ test("native profile state is excluded from source fingerprints and staging", as
   await expect(sourceFingerprintAsync(root)).rejects.toThrow("source workspace contains a symlink")
 })
 
-test("source execution automatically prepares safe workspace drift", () => {
+unix("source execution automatically prepares safe workspace drift", () => {
   const { root } = sourceFixture(true)
   expect(run("prepare", root).status).toBe(0)
   write(root, "packages/library/src/index.ts", 'export const value: string = "changed";')
@@ -247,7 +250,7 @@ test("source execution automatically prepares safe workspace drift", () => {
   expect(() => requireReady(root)).not.toThrow()
 })
 
-test("installed source execution heals a removed or previously pinned readiness record", () => {
+unix("installed source execution heals a removed or previously pinned readiness record", () => {
   const { root, destination, home } = sourceFixture(true)
   expect(run("install", root, destination, { HOME: home }).status).toBe(0)
   const runner = path.join(destination, "scripts/run-source.sh")
@@ -279,7 +282,7 @@ test("installed source execution heals a removed or previously pinned readiness 
   expect(() => requireReady(destination)).not.toThrow()
 })
 
-test("installed source execution heals inventory drift without accepting source or top-level changes", () => {
+unix("installed source execution heals inventory drift without accepting source or top-level changes", () => {
   const { root, destination, home } = sourceFixture(true)
   expect(run("install", root, destination, { HOME: home }).status).toBe(0)
   const runner = path.join(destination, "scripts/run-source.sh")
@@ -355,7 +358,7 @@ test("upgrades an owned legacy config.toml snapshot without changing user config
   expect(() => requireOwnedWorkspace(destination)).not.toThrow()
 })
 
-test("replaceable owned validation accepts a previous Bun pin but rejects changed contents", () => {
+unix("replaceable owned validation accepts a previous Bun pin but rejects changed contents", () => {
   const { root, destination, home } = sourceFixture(true)
   expect(run("install", root, destination, { HOME: home }).status).toBe(0)
   const readiness = path.join(destination, ".trellage-source-ready.json")
@@ -553,7 +556,7 @@ function developmentFixture() {
   write(tool, "package.json", '{"name":"fixture-dev-tool","version":"1.0.0"}')
   write(tool, "index.js", "module.exports = true;\n")
   const archive = path.join(f.parent, "dev-tool.tgz")
-  const packed = spawnSync("tar", ["-czf", archive, "-C", f.parent, "dev-tool"], { encoding: "utf8" })
+  const packed = spawnSync("tar", ["-czf", path.basename(archive), "dev-tool"], { cwd: f.parent, encoding: "utf8" })
   expect(packed.status, packed.stderr).toBe(0)
   const manifestPath = path.join(f.root, "package.json")
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
@@ -657,7 +660,7 @@ afterEach(() => {
   for (const directory of fixtures.splice(0)) rmSync(directory, { recursive: true })
 })
 
-test.each([undefined, "after-staging"])("contains default installer caches without changing HOME (%s)", (failure) => {
+unix.each([undefined, "after-staging"])("contains default installer caches without changing HOME (%s)", (failure) => {
   const { root, home, parent, destination } = sourceFixture()
   const before = readdirSync(home)
   const probe = path.join(parent, "cache-paths")
@@ -700,7 +703,7 @@ test.each([undefined, "after-staging"])("contains default installer caches witho
   expect(readdirSync(home), JSON.stringify(readdirSync(home, { recursive: true }))).toEqual(before)
 })
 
-test("shares the Bun download cache through the Git common directory", () => {
+unix("shares the Bun download cache through the Git common directory", () => {
   const { root, home, parent, destination } = sourceFixture()
   // Git hooks export GIT_DIR; it must not redirect the fixture to the enclosing repository.
   const gitLocation = { GIT_DIR: undefined, GIT_WORK_TREE: undefined, GIT_COMMON_DIR: undefined }
@@ -799,7 +802,7 @@ describe("Bun invocation", () => {
     expect(child.stdout.trim()).toBe("clean")
   })
 
-  test("retains shell exit status and arguments through a thin bridge", () => {
+  unix("retains shell exit status and arguments through a thin bridge", () => {
     const cwd = fixture()
     const command = path.join(cwd, "command.sh")
     writeFileSync(command, '#!/usr/bin/env bash\nprintf "%s\\n" "$PWD" "$@"\nexit 37\n')
@@ -817,7 +820,7 @@ describe("Bun invocation", () => {
     expect(child.stdout).toBe(`${cwd}\nspaces here\n--flag\n\n`)
   })
 
-  test("retains the terminating shell signal", () => {
+  unix("retains the terminating shell signal", () => {
     const cwd = fixture()
     const command = path.join(cwd, "command.sh")
     writeFileSync(command, '#!/usr/bin/env bash\nkill -TERM "$$"\n')
@@ -832,7 +835,7 @@ describe("Bun invocation", () => {
     expect(child.signal).toBe("SIGTERM")
   })
 
-  test("requires an explicit Bun executable when controlled by Node", () => {
+  unix("requires an explicit Bun executable when controlled by Node", () => {
     const node = Bun.which("node")
     expect(node).not.toBeNull()
     if (node === null) throw new Error("Node is required for the controller contract")
@@ -858,7 +861,7 @@ describe("Bun invocation", () => {
     expect(wrong.stderr).toContain("is not Bun 1.4.4")
   })
 
-  test.each(["trx"])("preserves every public %s argument from a symlink and foreign cwd", (name) => {
+  unix.each(["trx"])("preserves every public %s argument from a symlink and foreign cwd", (name) => {
     const root = fixture()
     const cwd = path.join(root, "foreign")
     mkdirSync(cwd)
@@ -961,7 +964,7 @@ describe("Owned source installation", () => {
     expect(existsSync(destination)).toBe(false)
   })
 
-  test("installs a frozen source workspace and preserves shell runner arguments from another cwd without dist", () => {
+  unix("installs a frozen source workspace and preserves shell runner arguments from another cwd without dist", () => {
     const { root, destination, home, parent } = sourceFixture(true)
     write(root, "packages/application/dist/cli.js", 'throw new Error("must not use emitted output")')
     const installed = run("install", root, destination, { HOME: home })
@@ -1053,7 +1056,7 @@ describe("Owned source installation", () => {
     },
   )
 
-  test.each(["after-staging", "during-publication", "after-publication"])("rolls back termination at %s", (point) => {
+  unix.each(["after-staging", "during-publication", "after-publication"])("rolls back termination at %s", (point) => {
     const { root, destination, home } = sourceFixture()
     expect(run("install", root, destination, { HOME: home }).status).toBe(0)
     const before = sourceFingerprint(destination)
@@ -1184,7 +1187,7 @@ describe("Owned source installation", () => {
     expect(() => validateOwnedTree(destination)).toThrow("unpermitted runtime link")
   })
 
-  test("refuses escaping dependency links but accepts workspace links", () => {
+  unix("refuses escaping dependency links but accepts workspace links", () => {
     const { root, destination, home } = sourceFixture()
     expect(run("install", root, destination, { HOME: home }).status).toBe(0)
     expect(() => validateOwnedTree(destination)).not.toThrow()

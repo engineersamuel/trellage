@@ -6,12 +6,15 @@ import { promisify } from "node:util"
 import path from "node:path"
 import { cleanupFixtures, tempRoot } from "./fixtures.ts"
 
+// unix(...) tests cover POSIX process groups, ps, and signals.
+const unix = test.skipIf(process.platform === "win32")
+
 const lifecycle = path.resolve(import.meta.dir, "../../src/native-run/lifecycle-cli.ts")
 const exec = promisify(execFile)
 
 afterEach(cleanupFixtures)
 
-test("maintenance cancellation stays nonzero when its lifecycle child handles TERM successfully", async () => {
+unix("maintenance cancellation stays nonzero when its lifecycle child handles TERM successfully", async () => {
   const home = await tempRoot("lifecycle-cancellation")
   const root = path.join(home, ".local/share/trellage/cpx")
   await mkdir(path.join(root, "bin"), { recursive: true })
@@ -27,7 +30,10 @@ wait
     { mode: 0o755 },
   )
   const child = spawn(process.execPath, [lifecycle, "setup", "copilot", "hve"], {
-    env: { HOME: home, PATH: [process.env.TRELLAGE_TEST_BIN, "/usr/bin", "/bin"].filter(Boolean).join(path.delimiter) },
+    env: {
+      HOME: home,
+      PATH: [process.env.TRELLAGE_TEST_BIN, "/usr/bin", "/bin"].filter(Boolean).join(path.delimiter),
+    },
     stdio: ["ignore", "pipe", "pipe"],
   })
   try {
@@ -65,7 +71,7 @@ printf '%s\\n' "$@" > "$HOME/unexpected-mutation"
   expect(await Bun.file(path.join(home, "unexpected-mutation")).exists()).toBe(false)
 })
 
-test("workflow-check reports the schemaVersion 2 composition identity", async () => {
+unix("workflow-check reports the schemaVersion 2 composition identity", async () => {
   const home = await tempRoot("lifecycle-workflow-check")
   const root = path.join(home, ".local/share/trellage/cpx")
   await mkdir(path.join(root, "bin"), { recursive: true })
@@ -106,7 +112,7 @@ test("retired Pi and Codex lifecycle maintenance points to inventory", async () 
   }
 })
 
-test("Nodecode upgrades use the native updater and propagate failures", async () => {
+unix("Nodecode upgrades use the native updater and propagate failures", async () => {
   const home = await tempRoot("nodecode-upgrade")
   const command = path.join(home, "custom-nodecode")
   await writeFile(

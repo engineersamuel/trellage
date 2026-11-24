@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import os
 import importlib.util
 from unittest.mock import patch
 import subprocess
@@ -11,6 +12,7 @@ import unittest
 BENCHMARK = Path(__file__).resolve().parents[1] / "scripts/benchmark-tests.py"
 
 
+@unittest.skipIf(os.name == "nt", "scripts/benchmark-tests.py needs ps and the load average")
 class BenchmarkTests(unittest.TestCase):
     def run_batch(self, candidate_target="fixture", reference_exit=0, phase="warm", first="reference"):
         with tempfile.TemporaryDirectory(prefix="trellage-benchmark-check-") as temporary:

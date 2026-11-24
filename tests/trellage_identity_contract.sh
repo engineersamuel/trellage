@@ -82,11 +82,11 @@ if grep -Eq '^(PARALLEL_TEST_TARGETS|TIMING_SENSITIVE_TEST_TARGETS|FINAL_TEST_TA
 fi
 [[ "$(sed -n '/^launcher:/,/^$/p' "$repo_root/Makefile")" != *profile_compiler_fingerprint_contract.sh* ]] \
   || fail 'parallel launcher target must not run the fingerprint performance contract'
-grep -Fqx $'\tbash prototypes/trellage-copilot-profiles/tests/contract.sh' \
+grep -Fqx $'\t$(UNIX_ONLY) bash prototypes/trellage-copilot-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Copilot profiles target is stale'
 grep -Fqx $'\tbash prototypes/trellage-agency-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Agency profile target is stale'
-grep -Fqx $'\tbash prototypes/trellage-claude-profiles/tests/contract.sh' \
+grep -Fqx $'\t$(UNIX_ONLY) bash prototypes/trellage-claude-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Claude profile target is stale'
 grep -Fqx $'\tbash prototypes/trellage-jcode-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile jcode profile target is stale'

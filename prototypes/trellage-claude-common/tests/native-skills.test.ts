@@ -92,7 +92,13 @@ const copy = async (source: string, target: string) => {
 }
 
 const commandPath = (name: string) => {
-  const result = spawnSync("/bin/bash", ["-c", 'command -v "$1"', "skills-test", name], { encoding: "utf8" })
+  const result = spawnSync(
+    process.platform === "win32" ? "bash" : "/bin/bash",
+    ["-c", 'command -v "$1"', "skills-test", name],
+    {
+      encoding: "utf8",
+    },
+  )
   assert.equal(result.status, 0, `${name} is required for Native contracts`)
   return result.stdout.trim()
 }
@@ -282,7 +288,7 @@ const installSourceFixture = async (fixture: Fixture) => {
     if (copied.has(dependency)) return
     copied.add(dependency)
     const packagePath = path.dirname(
-      import.meta.resolve(`${dependency}/package.json`, path.join(parent, "package.json")).replace("file://", ""),
+      fileURLToPath(import.meta.resolve(`${dependency}/package.json`, path.join(parent, "package.json"))),
     )
     await cp(packagePath, path.join(workspace, "node_modules", dependency), { recursive: true })
     const manifest = JSON.parse(await readFile(path.join(packagePath, "package.json"), "utf8"))

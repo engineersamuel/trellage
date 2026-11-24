@@ -47,6 +47,13 @@ export const selectorOf = (source: NativeSource): SourceSelector =>
       ? { kind: "tag", value: source.tag }
       : { kind: "default" }
 
+// A local Windows repository path (C:\x) cannot be a directory name, and flattening it can pass the
+// 248-character directory limit; hash it. owner/name keys and every POSIX key are unchanged.
+const cacheKey = (repository: string): string =>
+  process.platform === "win32" && /[:\\/]/.test(repository.replace("/", ""))
+    ? `local-${createHash("sha256").update(repository).digest("hex").slice(0, 16)}`
+    : repository.replace("/", "__")
+
 const run = async (cwd: string, args: ReadonlyArray<string>, timeout: number): Promise<string> =>
   (
     await execFilePromise("git", args, {
@@ -226,7 +233,7 @@ export const createSourceResolver = (options: SourceResolverOptions): SourceReso
   }
 
   const cacheDirectory = (repository: string, commit: string): string =>
-    path.join(paths.cache, "sources", repository.replace("/", "__"), commit)
+    path.join(paths.cache, "sources", cacheKey(repository), commit)
 
   /** Returns the cached directory only when its recorded digest still matches its bytes. */
   const validCache = async (

@@ -2516,7 +2516,11 @@ const ompDefaults = (plan: CompositionPlan | undefined): HostDefaults =>
     : { model: "gpt-5.6-sol", effort: DEFAULT_EFFORT }
 
 /** The model a launch uses when the caller names none; effort defaults to medium when supported. */
-export const hostDefaults = (harness: string, home: string = os.homedir(), plan?: CompositionPlan): HostDefaults => {
+export const hostDefaults = (
+  harness: string,
+  home: string = process.env.HOME || os.homedir(),
+  plan?: CompositionPlan,
+): HostDefaults => {
   const adapter = adapterFor(harness)
   const effort = adapter.efforts.includes(DEFAULT_EFFORT) ? DEFAULT_EFFORT : undefined
   if (harness === "pi") return { model: PI_DEFAULT_MODEL, effort }

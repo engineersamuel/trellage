@@ -19,6 +19,9 @@ import path from "node:path"
 import { bunArguments, bunExecutable, sourceWorkspaceRoot } from "../src/index.ts"
 import { copySources, normalizeDependencyPermissions, requireReady, writeReadiness } from "../src/workspace.ts"
 
+// unix(...) tests cover POSIX bin modes and uid ownership; Windows checks NTFS DACLs instead (windows.test.ts).
+const unix = test.skipIf(process.platform === "win32")
+
 const fixtures: string[] = []
 
 afterEach(() => {
@@ -76,7 +79,7 @@ function fixture(relativeRoot = "source") {
   return { parent, root, home, binary, other, manifest, env, install, write }
 }
 
-test("Bun local workspace bin drift is repaired before source copying and readiness", () => {
+unix("Bun local workspace bin drift is repaired before source copying and readiness", () => {
   const f = fixture()
   const original = readFileSync(f.binary)
   const inode = lstatSync(f.binary).ino
@@ -98,7 +101,7 @@ test("Bun local workspace bin drift is repaired before source copying and readin
   expect(() => copySources(f.root, copied)).not.toThrow()
 })
 
-test("explicit prepare recovers Bun bin drift without remote dependencies", () => {
+unix("explicit prepare recovers Bun bin drift without remote dependencies", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   expect(lstatSync(f.binary).mode & 0o777).toBe(0o777)
@@ -113,7 +116,7 @@ test("explicit prepare recovers Bun bin drift without remote dependencies", () =
   expect(() => requireReady(f.root)).not.toThrow()
 })
 
-test.each(["prepare", "ensure"])("%s removes retired workspace links left by Bun", (action) => {
+unix.each(["prepare", "ensure"])("%s removes retired workspace links left by Bun", (action) => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   normalizeDependencyPermissions(f.root)
@@ -144,7 +147,7 @@ test.each(["prepare", "ensure"])("%s removes retired workspace links left by Bun
   expect(repeated.status, repeated.stderr).toBe(0)
 })
 
-test("normalization removes links to a completely deleted workspace", () => {
+unix("normalization removes links to a completely deleted workspace", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   const modules = path.join(f.root, "node_modules")
@@ -157,7 +160,7 @@ test("normalization removes links to a completely deleted workspace", () => {
   expect(lstatSync(binLink, { throwIfNoEntry: false })).toBeUndefined()
 })
 
-test("normalization refuses an absolute link to a retired workspace", () => {
+unix("normalization refuses an absolute link to a retired workspace", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   const link = path.join(f.root, "node_modules/retired")
@@ -178,7 +181,7 @@ test("normalization refuses a redirected retired workspace", () => {
   expect(lstatSync(link).isSymbolicLink()).toBe(true)
 })
 
-test("normalization removes retired links from workspace-local dependencies", () => {
+unix("normalization removes retired links from workspace-local dependencies", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   const modules = path.join(f.root, "packages/tool/node_modules")
@@ -204,7 +207,7 @@ test.each(["../missing/cli.ts", "../../scripts/missing.ts", "../../../outside/cl
   },
 )
 
-test("automatic preparation normalizes existing dependency permissions before validation", () => {
+unix("automatic preparation normalizes existing dependency permissions before validation", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   expect(lstatSync(f.binary).mode & 0o777).toBe(0o777)
@@ -284,7 +287,7 @@ test("automatic preparation refuses unsafe readiness without replacing its targe
   expect(existsSync(`${f.root}.prepare.lock`)).toBe(false)
 })
 
-test("declared bin normalization works inside a global package source runtime", () => {
+unix("declared bin normalization works inside a global package source runtime", () => {
   const f = fixture("prefix/lib/node_modules/trellage/.trellage-runtime")
   expect(f.install().status).toBe(0)
   expect(lstatSync(f.binary).mode & 0o777).toBe(0o777)
@@ -294,7 +297,7 @@ test("declared bin normalization works inside a global package source runtime", 
   expect(() => requireReady(f.root)).not.toThrow()
 })
 
-test("normalization does not repair unrelated shared-writable source", () => {
+unix("normalization does not repair unrelated shared-writable source", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   chmodSync(f.other, 0o777)
@@ -304,7 +307,7 @@ test("normalization does not repair unrelated shared-writable source", () => {
   expect(() => writeReadiness(f.root)).toThrow("not shared-writable")
 })
 
-test("normalization refuses a linked manifest rather than trusting an external declaration", () => {
+unix("normalization refuses a linked manifest rather than trusting an external declaration", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   const outside = path.join(f.parent, "external-package.json")
@@ -314,7 +317,7 @@ test("normalization refuses a linked manifest rather than trusting an external d
   expect(lstatSync(f.binary).mode & 0o777).toBe(0o777)
 })
 
-test("normalization refuses a redirected bin source and leaves the outside target unchanged", () => {
+unix("normalization refuses a redirected bin source and leaves the outside target unchanged", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   const outside = path.join(f.parent, "external.ts")
@@ -324,7 +327,7 @@ test("normalization refuses a redirected bin source and leaves the outside targe
   expect(lstatSync(outside).mode & 0o777).toBe(0o777)
 })
 
-test("normalization refuses a hard-linked bin source without changing either link", () => {
+unix("normalization refuses a hard-linked bin source without changing either link", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   const outside = path.join(f.parent, "linked.ts")
@@ -334,7 +337,7 @@ test("normalization refuses a hard-linked bin source without changing either lin
   expect(lstatSync(outside).mode & 0o777).toBe(0o777)
 })
 
-test("declared bin recovery does not depend on a remaining node_modules bin link", () => {
+unix("declared bin recovery does not depend on a remaining node_modules bin link", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   expect(lstatSync(f.binary).mode & 0o777).toBe(0o777)
@@ -346,7 +349,7 @@ test("declared bin recovery does not depend on a remaining node_modules bin link
   expect(() => writeReadiness(f.root)).toThrow("missing source dependency")
 })
 
-test("normalization refuses redirected source parents before changing the target", () => {
+unix("normalization refuses redirected source parents before changing the target", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   const original = path.dirname(f.binary)
@@ -357,7 +360,7 @@ test("normalization refuses redirected source parents before changing the target
   expect(lstatSync(path.join(outside, "cli.ts")).mode & 0o777).toBe(0o777)
 })
 
-test("prepare rejects an unsafe manifest before Bun can link or change source permissions", () => {
+unix("prepare rejects an unsafe manifest before Bun can link or change source permissions", () => {
   const f = fixture()
   const outside = path.join(f.parent, "external-package.json")
   renameSync(f.manifest, outside)
@@ -375,7 +378,7 @@ test("prepare rejects an unsafe manifest before Bun can link or change source pe
   expect(existsSync(path.join(f.root, "bun.lock"))).toBe(false)
 })
 
-test("normalization rejects a bin declaration outside its package", () => {
+unix("normalization rejects a bin declaration outside its package", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   const outside = path.join(f.parent, "external.ts")
@@ -394,7 +397,7 @@ test("normalization rejects a bin declaration outside its package", () => {
   expect(lstatSync(f.binary).mode & 0o777).toBe(0o777)
 })
 
-test("normalization does not chmod an unrelated source target exposed as a dependency command", () => {
+unix("normalization does not chmod an unrelated source target exposed as a dependency command", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   chmodSync(f.other, 0o777)
@@ -404,7 +407,7 @@ test("normalization does not chmod an unrelated source target exposed as a depen
   expect(lstatSync(f.other).mode & 0o777).toBe(0o777)
 })
 
-test("normalization refuses a workspace not owned by the active user", () => {
+unix("normalization refuses a workspace not owned by the active user", () => {
   const f = fixture()
   expect(f.install().status).toBe(0)
   if (process.getuid === undefined) throw new Error("POSIX ownership is required for this contract")

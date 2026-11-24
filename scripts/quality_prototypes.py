@@ -3,6 +3,7 @@
 
 import argparse
 import platform
+import shutil
 import subprocess
 import sys
 
@@ -54,9 +55,16 @@ def commands(name: str) -> list[tuple[str, list[str], bool]]:
             ("test", ["bash", "scripts/test.sh", "--disable-sandbox"], True),
         ]
     if name == "coordinator":
-        return [
+        checks = [
             ("prepare", ["bun", "install", "--frozen-lockfile"], False),
             ("types", ["bun", "run", "check"], True),
+        ]
+        if platform.system() == "Windows":
+            # The software factory is not part of the native Windows port (POSIX paths, open-file deletes).
+            print("[quality] coordinator: tests skipped on Windows; types still checked", file=sys.stderr)
+            return checks
+        return [
+            *checks,
             ("test", ["bun", "test"], True),
             ("shared-test", ["bun", "test", "../shared/test"], True),
         ]
@@ -85,6 +93,9 @@ def run(name: str) -> bool:
     before = {name: digest(root / name) for name in lock_names if (root / name).is_file()}
     results = []
     for label, args, offline in commands(name):
+        if platform.system() == "Windows":
+            # CreateProcess finds only .exe names; npm and friends are .cmd shims that which() resolves.
+            args = [shutil.which(args[0]) or args[0], *args[1:]]
         if offline:
             args = [sys.executable, str(ROOT / "scripts/test-offline.py"), "--", *args]
         result = run_command(f"{name}-{label}", args, root, timeout=900)

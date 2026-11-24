@@ -18,6 +18,9 @@ import { acquirePreparationLock } from "../src/preparation-lock.ts"
 import { bunExecutable, sourceEnvironment, sourceWorkspaceRoot } from "../src/index.ts"
 import { preparationLockName } from "../src/workspace.ts"
 
+// unix(...) tests cover a shell-script Bun wrapper and POSIX directory write bits.
+const unix = test.skipIf(process.platform === "win32")
+
 const fixtures: string[] = []
 
 afterEach(() => {
@@ -184,7 +187,7 @@ test("does not remove a lock replaced after acquisition", async () => {
   expect(() => writeFileSync(path.join(lock, "owner"), "still held")).not.toThrow()
 })
 
-test("competing ensure callers perform one install and both observe readiness", async () => {
+unix("competing ensure callers perform one install and both observe readiness", async () => {
   const f = sourceFixture()
   expect(existsSync(path.join(f.root, ".trellage-source-ready.json"))).toBe(false)
   const [first, second] = await Promise.all([
@@ -198,27 +201,31 @@ test("competing ensure callers perform one install and both observe readiness", 
   expect(existsSync(path.join(f.root, preparationLockName))).toBe(false)
 })
 
-test("ensure waits for an explicit prepare and reuses its completed install", async () => {
-  const f = sourceFixture()
-  let installed!: () => void
-  const started = new Promise<void>((resolve) => {
-    installed = resolve
-  })
-  const preparePromise = runCli("prepare", f.root, f.home, f.log, f.barrier, installed)
-  await Promise.race([
-    started,
-    preparePromise.then((result) => {
-      throw new Error(`Preparation exited before installation: ${result.stderr}`)
-    }),
-  ])
-  const [prepare, ensure] = await Promise.all([preparePromise, runCli("ensure", f.root, f.home, f.log, f.barrier)])
-  expect(prepare.status, prepare.stderr).toBe(0)
-  expect(ensure.status, ensure.stderr).toBe(0)
-  expect(readFileSync(f.log, "utf8").trim().split("\n")).toHaveLength(1)
-  expect(existsSync(path.join(f.root, ".trellage-source-ready.json"))).toBe(true)
-}, 15_000)
+unix(
+  "ensure waits for an explicit prepare and reuses its completed install",
+  async () => {
+    const f = sourceFixture()
+    let installed!: () => void
+    const started = new Promise<void>((resolve) => {
+      installed = resolve
+    })
+    const preparePromise = runCli("prepare", f.root, f.home, f.log, f.barrier, installed)
+    await Promise.race([
+      started,
+      preparePromise.then((result) => {
+        throw new Error(`Preparation exited before installation: ${result.stderr}`)
+      }),
+    ])
+    const [prepare, ensure] = await Promise.all([preparePromise, runCli("ensure", f.root, f.home, f.log, f.barrier)])
+    expect(prepare.status, prepare.stderr).toBe(0)
+    expect(ensure.status, ensure.stderr).toBe(0)
+    expect(readFileSync(f.log, "utf8").trim().split("\n")).toHaveLength(1)
+    expect(existsSync(path.join(f.root, ".trellage-source-ready.json"))).toBe(true)
+  },
+  15_000,
+)
 
-test("preparation works when the workspace parent is non-writable", async () => {
+unix("preparation works when the workspace parent is non-writable", async () => {
   const f = sourceFixture()
   chmodSync(f.parent, 0o555)
   try {

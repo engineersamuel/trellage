@@ -21,6 +21,9 @@ import {
   verifyTarget,
 } from "../scripts/floating-skills.ts"
 
+// unix(...) tests need POSIX read-only mode bits or directory-lock rename semantics.
+const unix = process.platform === "win32" ? test.skip : test
+
 const execFilePromise = promisify(execFile)
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)))
 const temporaryRoots = []
@@ -537,7 +540,7 @@ test("refresh removes stale managed skills and preserves unmanaged skills", asyn
   assert.equal(await readFile(path.join(fixture.target, "unmanaged", "SKILL.md"), "utf8"), "keep\n")
 })
 
-test("read-only image snapshots can be published and replaced by their owner", async () => {
+unix("read-only image snapshots can be published and replaced by their owner", async () => {
   const fixture = await createFixture()
   await updateNative({ catalog: fixture.catalog, bundleIds: ["test"], cache: fixture.cache })
   const source = path.join(fixture.cache, "skills", "fixture")
@@ -724,7 +727,7 @@ exec /bin/mv "$@"
   assert.equal(await readFile(path.join(destination, "previous"), "utf8"), "preserve\n")
 })
 
-test("concurrent first use shares one cache and reclaims malformed locks", async () => {
+unix("concurrent first use shares one cache and reclaims malformed locks", async () => {
   const fixture = await createFixture()
   await mkdir(`${fixture.cache}.lock`, { recursive: true })
   const secondTarget = path.join(fixture.root, "second-target")

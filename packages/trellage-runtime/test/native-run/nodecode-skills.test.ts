@@ -6,6 +6,9 @@ import { reconcileNodecodeSkills } from "../../src/native-run/nodecode-skills.ts
 import { digestDirectory } from "../../src/native-run/source.ts"
 import { cleanupFixtures, tempRoot } from "./fixtures.ts"
 
+// unix(...) tests cover Nodecode, a harness native Windows does not run.
+const unix = test.skipIf(process.platform === "win32")
+
 afterEach(cleanupFixtures)
 const fixture = async () => {
   const root = await tempRoot("nodecode-activation")
@@ -41,7 +44,7 @@ const fixture = async () => {
 const agents = (home: string) => path.join(home, "AGENTS.md")
 const link = (home: string) => path.join(home, "cells", "trellage-knowledge")
 
-test("reconciliation preserves user rules, learning, settings and old assets; repeats are idempotent", async () => {
+unix("reconciliation preserves user rules, learning, settings and old assets; repeats are idempotent", async () => {
   const f = await fixture()
   const user = "# Operator rules\nPreserve these byte for byte.\n"
   await writeFile(agents(f.home), user)
@@ -98,7 +101,7 @@ test("instruction overflow and symlink instruction ownership fail before activat
   expect(await readFile(outside, "utf8")).toBe("OUTSIDE")
 })
 
-test("every interrupted activation surface rolls back the prior registration and rules", async () => {
+unix("every interrupted activation surface rolls back the prior registration and rules", async () => {
   const f = await fixture()
   await reconcileNodecodeSkills(f.owner, f.plan)
   const previous = await readlink(link(f.home))
@@ -123,33 +126,36 @@ test("every interrupted activation surface rolls back the prior registration and
   }
 })
 
-test("a persisted partial transaction recovers on next launch, but unknown user edits are never rolled back", async () => {
-  const f = await fixture()
-  await reconcileNodecodeSkills(f.owner, f.plan)
-  let journal = ""
-  await expect(
-    reconcileNodecodeSkills(
-      f.owner,
-      { ...f.plan, skills: [], instructions: [] },
-      {
-        afterWrite: async () => {
-          journal = await readFile(path.join(f.managed, "activation-journal.json"), "utf8")
-          throw new Error("interrupt")
+unix(
+  "a persisted partial transaction recovers on next launch, but unknown user edits are never rolled back",
+  async () => {
+    const f = await fixture()
+    await reconcileNodecodeSkills(f.owner, f.plan)
+    let journal = ""
+    await expect(
+      reconcileNodecodeSkills(
+        f.owner,
+        { ...f.plan, skills: [], instructions: [] },
+        {
+          afterWrite: async () => {
+            journal = await readFile(path.join(f.managed, "activation-journal.json"), "utf8")
+            throw new Error("interrupt")
+          },
         },
-      },
-    ),
-  ).rejects.toThrow("interrupt")
-  const pending = JSON.parse(journal)
-  // Emulate process death after the first atomic write, leaving its journal intact.
-  await writeFile(agents(f.home), pending.after.agents)
-  await writeFile(path.join(f.managed, "activation-journal.json"), journal)
-  await reconcileNodecodeSkills(f.owner, f.plan)
-  expect(await readFile(agents(f.home), "utf8")).toBe(pending.before.agents)
-  await writeFile(path.join(f.managed, "activation-journal.json"), journal)
-  await writeFile(agents(f.home), "NEW USER EDIT AFTER CRASH")
-  await expect(reconcileNodecodeSkills(f.owner, f.plan)).rejects.toThrow("recovery conflict")
-  expect(await readFile(agents(f.home), "utf8")).toBe("NEW USER EDIT AFTER CRASH")
-})
+      ),
+    ).rejects.toThrow("interrupt")
+    const pending = JSON.parse(journal)
+    // Emulate process death after the first atomic write, leaving its journal intact.
+    await writeFile(agents(f.home), pending.after.agents)
+    await writeFile(path.join(f.managed, "activation-journal.json"), journal)
+    await reconcileNodecodeSkills(f.owner, f.plan)
+    expect(await readFile(agents(f.home), "utf8")).toBe(pending.before.agents)
+    await writeFile(path.join(f.managed, "activation-journal.json"), journal)
+    await writeFile(agents(f.home), "NEW USER EDIT AFTER CRASH")
+    await expect(reconcileNodecodeSkills(f.owner, f.plan)).rejects.toThrow("recovery conflict")
+    expect(await readFile(agents(f.home), "utf8")).toBe("NEW USER EDIT AFTER CRASH")
+  },
+)
 
 test("first activation rolls back to absent managed state at every write boundary", async () => {
   const f = await fixture()
