@@ -387,6 +387,26 @@ The evaluation runs before the push, so every check runs locally; there is no PR
 
 A coordinator restart marks a running evaluation failed; the next ship request runs it again.
 
+## Worker accountability
+
+Every factory worker (not a coordinator) receives a short role card appended to its harness system prompt. The card
+names the step and one-line task purpose, the step's exclusions, its USD budget, autonomy reporting duties and the
+factory tools it was granted. The same text is retained on `factory.worker_started`. Cards come from
+`coordinator/defaults/prompts/role-cards/<step>.md`, with `default.md` as the fallback, and are limited to 200
+`o200k_base` tokens.
+
+When a worker becomes idle after its task or stops, the factory records one **record-only** grade in
+`$SF_STATE_DIR/accountability.db`. Worker controls cover scoped purpose (3.1), own-cost budget (3.5), granted-tool
+use ratio (4.2, metric only), authority in content (4.6), intent (4.7), refused execution (4.8/4.9), reporting
+deviations (5.2/6.3), and evaluator performance (5.5). Four decision checks use one `systemOne` call; the action
+extract excludes reasoning, redacts credentials and keeps at most 15,000 characters. A completed evaluation later
+patches only 5.5 in code, without another model call.
+
+Grades never block, stop, reroute or ship a run. Their consumers are the accountability CLI/API, the Accountability
+view and the weekly calibrated-control rule R31. `[accountability] enabled = false` is the complete rollback: new
+workers receive no role card and no grade. Per-step budgets in `[accountability.worker_usd]` are p90 own-cost budgets
+from the 2026-11-04 through 2026-11-24 sample, rounded upward to $0.50; undersampled steps use `default`.
+
 ## How to test (manual test guide)
 
 After a sub-coordinator's `report_up status=done`, a read-only worker in its worktree writes how a human tries the
