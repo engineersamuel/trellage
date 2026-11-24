@@ -80,7 +80,7 @@ tag = "factory"
 design = 0.6
 codeReview = 0.6
 supplyChain = 0.5
-docs = 0.5
+docs = 0.65
 postMerge = 0.5
 
 # Guided goal page (Goals in the UI).

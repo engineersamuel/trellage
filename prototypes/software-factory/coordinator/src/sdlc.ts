@@ -109,6 +109,7 @@ export type Tier = "T0" | "T1" | "T2"
 export type DiffFile = { path: string; added: number; removed: number }
 
 const DOC = /(^|\/)(docs?\/|README|CHANGELOG|CONTRIBUTING|LICENSE)|\.(md|mdx|txt|rst)$/i
+const USER_DOC = /(?:^|\/)(?:README|CHANGELOG|CONTRIBUTING)[^/]*$|(?:^|\/)(?:docs|doc)(?:\/|$)|\.(?:mdx|rst)$/i
 const SENSITIVE =
   /(auth|secret|token|password|credential|crypto|session|permission|cors|bind|listen|\.github\/|Dockerfile|compose\.ya?ml|(^|\/)scripts\/|\.sh$|mise\.toml|process-compose)/i
 const DEPS =
@@ -444,7 +445,13 @@ export const waiveGate = (s: Sdlc, id: string, reason: string): { sdlc: Sdlc } |
       error:
         "only the docs gate can be waived; floors (security, verify, criteria) and other gates can never be waived",
     }
-  if (!reason.trim() || !s.request.includes(reason))
+  const trimmed = reason.trim()
+  if (
+    !trimmed ||
+    trimmed.split(/\s+/).length < 3 ||
+    !s.request.includes(reason) ||
+    (!/\b(?:only|minimal|tests?|regex|comparison|scope)\b/i.test(trimmed) && !/\bno docs\b/i.test(trimmed))
+  )
     return { error: "The reason must quote the words of the request that limit the scope." }
   if (!isOn(s, "docs")) return { error: "The docs gate is not chosen; nothing to waive." }
   return {
@@ -486,9 +493,9 @@ export const shipBlockers = (
     isOn(s, "docs") &&
     !docs?.detail?.startsWith("waived:") &&
     base &&
-    !diffFiles(workdir, base).some((f) => DOC.test(f.path))
+    !diffFiles(workdir, base).some((f) => USER_DOC.test(f.path))
   )
-    out.push("docs gate: the diff changes no README, docs or CHANGELOG")
+    out.push("docs gate: the diff changes no user documentation")
   return out
 }
 
