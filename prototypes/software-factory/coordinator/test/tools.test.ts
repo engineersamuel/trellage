@@ -1,5 +1,5 @@
 import { startFinalSecurity } from "../src/gates.ts"
-import { artifact, decide, ensureFactoryDir, newSdlc, withGates } from "../src/sdlc.ts"
+import { artifact, decide, ensureFactoryDir, newSdlc, shipBlockers, withGates } from "../src/sdlc.ts"
 import { expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
@@ -155,37 +155,44 @@ test("waive_gate stores a docs waiver and sdlc_status writes it in the PR body",
       request: "code and tests only",
       criteria: ["works"],
       implementDoneAt: 2,
-      verifyDoneAt: 3,
+      verifyDoneAt: 1,
     },
     decide("diff", { docs: 0.9, codeReview: 0.1, supplyChain: 0.1 }, null),
   )
   f.sdlc.set(scope.id, s)
   writeFileSync(artifact(repo, "evidence.md"), "AC-1: PASS — bun test — ok\n")
-  f.securityReviews.set("sr", { scopeId: scope.id, status: "done", at: 0 })
+  f.securityReviews.set("sr", { scopeId: scope.id, status: "started", at: 0 })
 
   const tools = coordinatorTools(f, scope)
   expect(tools.some((t) => t.name === "waive_gate")).toBe(true)
   const status = tool(tools, "sdlc_status")
   const pendingStatus = JSON.parse(await status({}))
   expect(pendingStatus.blockers.some((b: string) => b.startsWith("docs gate:"))).toBe(true)
+  expect(pendingStatus.blockers.some((b: string) => b.startsWith("security review not done"))).toBe(true)
+  expect(pendingStatus.blockers.some((b: string) => b === "no verify step after the last implement")).toBe(true)
 
   for (const gate of ["design", "codeReview", "supplyChain", "postMerge", "security", "verify", "unknown"]) {
     const sdlcSnapshot = JSON.stringify(f.sdlc.get(scope.id))
-    const blockersSnapshot = JSON.stringify(pendingStatus.blockers)
     const rejected = JSON.parse(await tool(tools, "waive_gate")({ gate, reason: "code and tests only" }))
     expect(rejected.error).toContain("only the docs gate")
     expect(JSON.stringify(f.sdlc.get(scope.id))).toBe(sdlcSnapshot)
-    expect(JSON.stringify(JSON.parse(await status({})).blockers)).toBe(blockersSnapshot)
+    const refusedStatus = JSON.parse(await status({}))
+    expect(refusedStatus.blockers.some((b: string) => b.startsWith("security review not done"))).toBe(true)
+    expect(refusedStatus.blockers.some((b: string) => b === "no verify step after the last implement")).toBe(true)
   }
   for (const reason of ["", "documentation updates"]) {
     const sdlcSnapshot = JSON.stringify(f.sdlc.get(scope.id))
-    const blockersSnapshot = JSON.stringify(pendingStatus.blockers)
     const rejected = JSON.parse(await tool(tools, "waive_gate")({ gate: "docs", reason }))
     expect(rejected.error).toMatch(/reason.*request|request.*reason|words of the request/i)
     expect(JSON.stringify(f.sdlc.get(scope.id))).toBe(sdlcSnapshot)
-    expect(JSON.stringify(JSON.parse(await status({})).blockers)).toBe(blockersSnapshot)
+    const refusedStatus = JSON.parse(await status({}))
+    expect(refusedStatus.blockers.some((b: string) => b.startsWith("security review not done"))).toBe(true)
+    expect(refusedStatus.blockers.some((b: string) => b === "no verify step after the last implement")).toBe(true)
   }
 
+  const beforeSuccessStatus = JSON.parse(await status({}))
+  const otherGatesBefore = f.sdlc.get(scope.id)!.gates.filter((g: { id: string }) => g.id !== "docs")
+  const nonDocsBlockersBefore = beforeSuccessStatus.blockers.filter((b: string) => !b.startsWith("docs gate:"))
   const waive = tool(tools, "waive_gate")
   const accepted = JSON.parse(await waive({ gate: "docs", reason: "code and tests only" }))
   expect(accepted.blockers.some((b: string) => b.startsWith("docs gate:"))).toBe(false)
@@ -194,9 +201,21 @@ test("waive_gate stores a docs waiver and sdlc_status writes it in the PR body",
     status: "done",
     detail: "waived: code and tests only",
   })
+  expect(stored.gates.filter((g: { id: string }) => g.id !== "docs")).toEqual(
+    otherGatesBefore,
+  )
+  expect(accepted.blockers.filter((b: string) => !b.startsWith("docs gate:"))).toEqual(
+    nonDocsBlockersBefore,
+  )
+  expect(shipBlockers(stored, repo, head, false, false).some((b: string) => b.startsWith("docs gate:"))).toBe(false)
 
   const withSummary = JSON.parse(await status({ summary: "Adds code-only behavior with tests." }))
   expect(withSummary.prBody).toBe(path.join(repo, ".factory/pr.md"))
+  expect(withSummary.gates.find((g: { id: string }) => g.id === "docs")).toMatchObject({
+    status: "done",
+    detail: "waived: code and tests only",
+  })
+  expect(withSummary.blockers.some((b: string) => b.startsWith("docs gate:"))).toBe(false)
   const body = readFileSync(withSummary.prBody, "utf8")
   expect(body).toMatch(/## Gates[\s\S]*- docs: done \([^)]*\) — waived: code and tests only/)
 })
