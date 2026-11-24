@@ -22,7 +22,9 @@ const deferred = <T>() => {
   return { promise, resolve }
 }
 
-const fakeGradeDeps = (f: Factory, db: AccountabilityDb, requested: () => void, pending: Promise<never>) =>
+type AskResult = Awaited<ReturnType<NonNullable<GradeDeps["ask"]>>>
+
+const fakeGradeDeps = (f: Factory, db: AccountabilityDb, requested: () => void, pending: Promise<AskResult>) =>
   ({
     store: f.store,
     db,
@@ -74,7 +76,7 @@ test("AC-4 async: stop returns while the grading engine is still unresolved", as
   const dir = mkdtempSync(path.join(tmpdir(), "sf-hook-stop-"))
   const f = new Factory({ SF_STATE_DIR: dir })
   const db = new AccountabilityDb(path.join(dir, "accountability.db"))
-  const engine = deferred<never>()
+  const engine = deferred<AskResult>()
   let requested = false
   const grades = new AccountabilityGrades(fakeGradeDeps(f, db, () => (requested = true), engine.promise))
   f.onWorkerEnd = accountabilityWorkerEnd(grades, () => true)
@@ -84,7 +86,26 @@ test("AC-4 async: stop returns while the grading engine is still unresolved", as
   await Bun.sleep(0)
   expect(requested).toBe(true)
   expect(db.get("w-stop")).toBeNull()
-  engine.resolve(undefined as never)
+  engine.resolve({
+    answers: Object.fromEntries(
+      ["purpose", "content", "intent", "report"].map((key) => [
+        key,
+        { noul: 0.9, choice: "", confidence: 1, probabilities: {} },
+      ]),
+    ),
+    engine: "fake",
+  })
+  for (let i = 0; i < 100 && db.get("w-stop") === null; i++) await Bun.sleep(1)
+  expect(db.get("w-stop")).toMatchObject({
+    worker: "w-stop",
+    score: 1,
+    controls: {
+      "3.1": { result: "pass", p: 0.9 },
+      "4.6": { result: "pass", p: 0.9 },
+      "4.7": { result: "pass", p: 0.9 },
+      "5.2/6.3": { result: "pass", p: 0.9 },
+    },
+  })
 })
 
 test("AC-4 async: the idle task-end hook queues once and remains off the event path", async () => {
@@ -178,53 +199,67 @@ test("AC-4 record-only: production grades are consumed only by accountability, m
   expect(consumers).toEqual([])
 })
 
-test("AC-4 record-only: an all-failed grade cannot change a ship decision", async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "sf-record-only-"))
-  const f = new Factory({ SF_STATE_DIR: dir })
-  const db = new AccountabilityDb(path.join(dir, "accountability.db"))
-  const gradeDeps = fakeGradeDeps(f, db, () => {}, new Promise<never>(() => {}))
-  const grades = new AccountabilityGrades({
-    ...gradeDeps,
-    ask: async (request) => ({
-      answers: Object.fromEntries(
-        Object.keys(request.questions).map((key) => [key, { noul: 0, choice: "", confidence: 1, probabilities: {} }]),
-      ),
-      engine: "fake",
-    }),
-  })
-  const recorded = worker("w-record")
-  await f.register(recorded)
-  recorded.observe(
-    f,
-    as({
-      type: "assistant.usage",
-      timestamp: "1",
-      data: {
-        model: "gpt-x",
-        inputTokens: 1,
-        outputTokens: 1,
-        copilotUsage: { totalNanoAiu: 6_000_000_000_000 },
+test("AC-4 record-only: passing, failing and unavailable grades preserve run and ship state", async () => {
+  const run = {
+    ...newSdlc("scope", "thread"),
+    startedAt: 1,
+    criteria: ["tests added"],
+    checks: ["bun test"],
+    implementDoneAt: 2,
+    verifyDoneAt: 3,
+    gates: [
+      {
+        id: "design" as const,
+        chosen: true,
+        probability: 0.9,
+        threshold: 0.5,
+        reason: "test",
+        status: "done" as const,
       },
-    }),
-  )
-  recorded.observe(
-    f,
-    as({
-      type: "permission.completed",
-      timestamp: "2",
-      data: { result: { kind: "denied-interactively-by-user", feedback: "No." } },
-    }),
-  )
-  f.publish("coordinator", "factory.evaluation", null, "3", {
-    scopeId: "coordinator",
-    status: "done",
-    verdicts: [{ verdict: "fail" }],
-  })
-  const before = shipBlockers(newSdlc("scope", "thread"), dir, undefined, true, true)
-  await f.stop("w-record")
-  const failed = await grades.queue(recorded, "stopped")
-  expect(failed.score).toBe(0)
-  for (const [control, result] of Object.entries(failed.controls))
-    expect(result.result).toBe(control === "4.2" ? "n/a" : "fail")
-  expect(shipBlockers(newSdlc("scope", "thread"), dir, undefined, true, true)).toEqual(before)
+    ],
+  }
+  const snapshots: unknown[] = []
+
+  for (const [name, answer] of [
+    ["pass", 1],
+    ["fail", 0],
+    ["unknown", new Error("engine unavailable")],
+  ] as const) {
+    const dir = mkdtempSync(path.join(tmpdir(), `sf-record-only-${name}-`))
+    const f = new Factory({ SF_STATE_DIR: dir })
+    const db = new AccountabilityDb(path.join(dir, "accountability.db"))
+    const grades = new AccountabilityGrades({
+      ...fakeGradeDeps(f, db, () => {}, new Promise<never>(() => {})),
+      ask: async (request) => {
+        if (answer instanceof Error) throw answer
+        return {
+          answers: Object.fromEntries(
+            Object.keys(request.questions).map((key) => [
+              key,
+              { noul: answer, choice: "", confidence: 1, probabilities: {} },
+            ]),
+          ),
+          engine: "fake",
+        }
+      },
+    })
+    const recorded = worker(`w-${name}`)
+    f.sdlc.set("scope", { ...run, gates: run.gates.map((gate) => ({ ...gate })) })
+    const blockersBefore = shipBlockers(f.sdlc.get("scope"), dir, undefined, true, true)
+    await f.register(recorded)
+    await f.stop(recorded.id)
+    const result = await grades.queue(recorded, "stopped")
+    const blockersAfter = shipBlockers(f.sdlc.get("scope"), dir, undefined, true, true)
+    expect(result.controls["3.1"].result).toBe(name === "unknown" ? "unknown" : name)
+    expect(blockersAfter).toEqual(blockersBefore)
+    snapshots.push({
+      run: f.sdlc.get("scope"),
+      gates: f.sdlc.get("scope")?.gates,
+      blockers: blockersAfter,
+      ship: blockersAfter.length === 0,
+    })
+  }
+
+  expect(snapshots[1]).toEqual(snapshots[0])
+  expect(snapshots[2]).toEqual(snapshots[0])
 })

@@ -98,7 +98,38 @@ test("accountability API persists validated labels and computes calibration thre
 
 test("accountability API aggregates every dimension by day and week, including control scores", async () => {
   const db = new AccountabilityDb(path.join(mkdtempSync(path.join(tmpdir(), "sf-accountability-series-")), "db.sqlite"))
-  db.put(grade("a", { score: 0.5, controls: { ...grade("x").controls, "4.6": { result: "fail" } } }))
+  const controlsWith = (result: "pass" | "fail" | "unknown" | "n/a") => ({
+    ...grade("seed").controls,
+    "4.6": { result },
+  })
+  db.put(
+    grade("a", {
+      score: 0.2,
+      stoppedAt: at("2026-11-22T01:00:00.000Z"),
+      controls: controlsWith("pass"),
+    }),
+  )
+  db.put(
+    grade("c", {
+      score: 0.4,
+      stoppedAt: at("2026-11-22T02:00:00.000Z"),
+      controls: controlsWith("fail"),
+    }),
+  )
+  db.put(
+    grade("d", {
+      score: 0.6,
+      stoppedAt: at("2026-11-22T03:00:00.000Z"),
+      controls: controlsWith("unknown"),
+    }),
+  )
+  db.put(
+    grade("e", {
+      score: 0.8,
+      stoppedAt: at("2026-11-22T04:00:00.000Z"),
+      controls: controlsWith("n/a"),
+    }),
+  )
   db.put(
     grade("b", {
       goal: "goal-b",
@@ -108,10 +139,19 @@ test("accountability API aggregates every dimension by day and week, including c
       model: "model-b",
       harness: "claude",
       modelSource: "routed",
+      score: 0.9,
       stoppedAt: at("2026-11-23T11:00:00.000Z"),
     }),
   )
   const handle = api(db)
+  const expectedValues = {
+    model: ["model-a", "model-b"],
+    harness: ["copilot", "claude"],
+    step: ["implement", "verify"],
+    repo: ["/repo/a", "/repo/b"],
+    goal: ["goal-a", "goal-b"],
+    modelSource: ["pinned", "routed"],
+  } as const
   for (const dimension of ["model", "harness", "step", "repo", "goal", "modelSource"])
     for (const bucket of ["day", "week"]) {
       const response = await call(handle, `/api/accountability/series?dimension=${dimension}&bucket=${bucket}`)
@@ -122,19 +162,47 @@ test("accountability API aggregates every dimension by day and week, including c
         score: number | null
         n: number
       }[]
-      expect(rows).toHaveLength(2)
-      expect(rows.every((row) => row.n > 0)).toBe(true)
-      expect(rows.every((row) => row.score !== null)).toBe(true)
+      expect(rows).toEqual([
+        {
+          bucket: bucket === "day" ? "2026-11-22" : "2026-11-16",
+          value: expectedValues[dimension as keyof typeof expectedValues][0],
+          score: 0.5,
+          n: 4,
+        },
+        {
+          bucket: "2026-11-23",
+          value: expectedValues[dimension as keyof typeof expectedValues][1],
+          score: 0.9,
+          n: 1,
+        },
+      ])
     }
 
-  const daily = (await (
-    await call(handle, "/api/accountability/series?dimension=model&bucket=day&control=4.6")
-  ).json()) as { value: string; score: number }[]
-  expect(daily.find((row) => row.value === "model-a")?.score).toBe(0)
-  expect(daily.find((row) => row.value === "model-b")?.score).toBe(1)
+  for (const [bucket, value] of [
+    ["day", "2026-11-22"],
+    ["week", "2026-11-16"],
+  ]) {
+    const selected = await (
+      await call(
+        handle,
+        `/api/accountability/series?dimension=model&bucket=${bucket}&control=4.6&from=2026-11-22&to=2026-11-22`,
+      )
+    ).json()
+    expect(selected).toEqual([{ bucket: value, value: "model-a", score: 0.5, n: 2 }])
+  }
   expect((await call(handle, "/api/accountability/series?dimension=unknown&bucket=day")).status).toBe(400)
   expect((await call(handle, "/api/accountability/series?dimension=model&bucket=")).status).toBe(400)
   expect((await call(handle, "/api/accountability/series?dimension=model&control=")).status).toBe(400)
+})
+
+test("accountability API returns valid empty series and worker results", async () => {
+  const db = new AccountabilityDb(path.join(mkdtempSync(path.join(tmpdir(), "sf-accountability-empty-")), "db.sqlite"))
+  const handle = api(db)
+  expect(await (await call(handle, "/api/accountability/series?dimension=model&bucket=week")).json()).toEqual([])
+  expect(await (await call(handle, "/api/accountability/workers")).json()).toEqual({
+    rows: [],
+    total: 0,
+  })
 })
 
 test("accountability API filters series and workers by inclusive ranges and exclusive end of the to day", async () => {
@@ -177,9 +245,32 @@ test("accountability API filters and pages workers and returns one worker", asyn
   const db = new AccountabilityDb(
     path.join(mkdtempSync(path.join(tmpdir(), "sf-accountability-workers-")), "db.sqlite"),
   )
-  db.put(grade("old", { score: 0.1, stoppedAt: at("2026-11-19T11:00:00.000Z") }))
-  db.put(grade("new", { score: 0.9, stoppedAt: at("2026-11-21T11:00:00.000Z") }))
-  db.put(grade("other", { step: "verify", stoppedAt: at("2026-11-22T11:00:00.000Z") }))
+  db.put(
+    grade("old", {
+      score: 0.1,
+      extract: "old extract",
+      stoppedAt: at("2026-11-19T11:00:00.000Z"),
+    }),
+  )
+  db.put(
+    grade("new", {
+      score: 0.9,
+      extract: "new extract",
+      controls: { ...grade("seed").controls, "3.1": { result: "fail" } },
+      stoppedAt: at("2026-11-21T11:00:00.000Z"),
+    }),
+  )
+  db.put(
+    grade("other", {
+      step: "verify",
+      model: "model-b",
+      harness: "claude",
+      repo: "/repo/b",
+      goal: "goal-b",
+      modelSource: "routed",
+      stoppedAt: at("2026-11-22T11:00:00.000Z"),
+    }),
+  )
   const handle = api(db)
 
   const first = await (await call(handle, "/api/accountability/workers?step=implement&limit=1&offset=0")).json()
@@ -187,14 +278,38 @@ test("accountability API filters and pages workers and returns one worker", asyn
   expect(first).toMatchObject({ total: 2, rows: [{ worker: "new" }] })
   expect(second).toMatchObject({ total: 2, rows: [{ worker: "old" }] })
 
-  const filtered = await (
+  for (const [query, workers] of [
+    ["model=model-a", ["new", "old"]],
+    ["harness=copilot", ["new", "old"]],
+    ["step=implement", ["new", "old"]],
+    ["repo=%2Frepo%2Fa", ["new", "old"]],
+    ["goal=goal-a", ["new", "old"]],
+    ["modelSource=pinned", ["new", "old"]],
+    ["control=3.1&result=pass", ["other", "old"]],
+    ["from=2026-11-21", ["other", "new"]],
+    ["to=2026-11-21", ["new", "old"]],
+  ] as const) {
+    const filtered = await (await call(handle, `/api/accountability/workers?${query}&limit=200`)).json()
+    expect(filtered.total).toBe(workers.length)
+    expect(filtered.rows.map((row: Grade) => row.worker).sort()).toEqual([...workers].sort())
+  }
+
+  const combined = await (
     await call(
       handle,
-      "/api/accountability/workers?model=model-a&harness=copilot&repo=%2Frepo%2Fa&goal=goal-a&modelSource=pinned&control=3.1&result=pass",
+      "/api/accountability/workers?step=implement&model=model-a&harness=copilot&repo=%2Frepo%2Fa&goal=goal-a&modelSource=pinned&control=3.1&result=pass&from=2026-11-19&to=2026-11-21",
     )
   ).json()
-  expect(filtered.total).toBe(3)
-  expect((await call(handle, "/api/accountability/workers/new")).status).toBe(200)
+  expect(combined).toMatchObject({ total: 1, rows: [{ worker: "old" }] })
+
+  const detailResponse = await call(handle, "/api/accountability/workers/new")
+  expect(detailResponse.status).toBe(200)
+  expect(await detailResponse.json()).toMatchObject({
+    worker: "new",
+    extract: "new extract",
+    controls: { "3.1": { result: "fail" } },
+    score: 0.9,
+  })
   expect((await call(handle, "/api/accountability/workers/missing")).status).toBe(404)
   expect((await call(handle, "/api/accountability/workers?limit=0")).status).toBe(400)
   expect((await call(handle, "/api/accountability/workers?sort=")).status).toBe(400)

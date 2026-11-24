@@ -2,11 +2,11 @@ import { expect, test } from "bun:test"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { AccountabilityDb, accountabilityDbPath } from "../src/accountability.ts"
+import { AccountabilityDb, accountabilityDbPath, backfillAccountability } from "../src/accountability.ts"
 import { EventStore } from "../src/events.ts"
 import type { FeedEvent } from "../src/factory.ts"
 import { accountabilityCommand } from "../accountability-cli.ts"
-import { resetConfigStore } from "../src/config.ts"
+import { factoryConfig, resetConfigStore } from "../src/config.ts"
 
 const cli = async (state: string, args: string[]) => {
   const child = Bun.spawn([process.execPath, "cli.ts", "accountability", ...args], {
@@ -80,6 +80,36 @@ test("accountability CLI backfills five recorded workers once and persists valid
   const second = await cli(state, ["backfill", "--limit", "5"])
   expect(second.code).toBe(0)
   expect(JSON.parse(second.stdout)).toEqual({ graded: 0, skipped: 5 })
+  let engineCalls = 0
+  const idempotentStore = new EventStore(path.join(state, "events.db"))
+  const idempotentDb = new AccountabilityDb(accountabilityDbPath(state))
+  expect(
+    await backfillAccountability({
+      store: idempotentStore,
+      db: idempotentDb,
+      config: factoryConfig(),
+      available: () => true,
+      ask: async (request) => {
+        engineCalls++
+        return {
+          answers: Object.fromEntries(
+            Object.keys(request.questions).map((key) => [
+              key,
+              { noul: 1, choice: "", confidence: 1, probabilities: {} },
+            ]),
+          ),
+          engine: "fake",
+        }
+      },
+      publish: () => {},
+      dimensions: (owner) => ({ owner, thread: null, goal: null, folderId: null, repo: null }),
+      limit: 5,
+    }),
+  ).toEqual({ graded: 0, skipped: 5 })
+  expect(engineCalls).toBe(0)
+  expect(idempotentDb.rows()).toHaveLength(5)
+  idempotentDb.close()
+  idempotentStore.close()
   expect(await local(state, ["budgets"])).toEqual({ default: 1, implement: 1 })
   await expect(local(state, [])).rejects.toThrow("usage")
   await expect(local(state, ["backfill", "--limit", "0"])).rejects.toThrow("positive integer")
@@ -154,4 +184,79 @@ test("accountability CLI backfill stops at the requested limit", async () => {
   const db = new AccountabilityDb(accountabilityDbPath(state))
   expect(db.rows()).toHaveLength(5)
   db.close()
+})
+
+test("AC-9 accountability CLI budgets own completed worker cost with n<10 fallback and unpriced calls at zero", async () => {
+  const state = mkdtempSync(path.join(tmpdir(), "sf-accountability-budgets-"))
+  const store = new EventStore(path.join(state, "events.db"))
+  let seq = 0
+  const append = (worker: string, type: string, timestamp: string, data: unknown) =>
+    store.append({ seq: ++seq, workerId: worker, type, agentId: null, timestamp, data })
+  const complete = (worker: string, step: string, startedAt = "2026-11-10T00:00:00.000Z") => {
+    append(worker, "factory.worker_started", startedAt, { id: worker, role: "worker", step })
+    append(worker, "factory.worker_stopped", "2026-11-20T00:00:00.000Z", { id: worker })
+  }
+
+  for (let i = 1; i <= 10; i++) {
+    const worker = `implement-${i}`
+    complete(worker, "implement")
+    append(worker, "assistant.usage", "2026-11-10T01:00:00.000Z", {
+      model: "priced",
+      inputTokens: 1,
+      outputTokens: 1,
+      copilotUsage: { totalNanoAiu: i * 10_000_000_000 },
+    })
+  }
+  for (let i = 1; i <= 9; i++) complete(`verify-${i}`, "verify")
+  for (let i = 1; i <= 10; i++) {
+    const worker = `unpriced-${i}`
+    complete(worker, "unpriced")
+    append(worker, "assistant.usage", "2026-11-10T01:00:00.000Z", {
+      model: "unknown",
+      inputTokens: 100,
+      outputTokens: 100,
+    })
+  }
+
+  append("descendant", "assistant.usage", "2026-11-10T01:00:00.000Z", {
+    model: "priced",
+    inputTokens: 1,
+    outputTokens: 1,
+    copilotUsage: { totalNanoAiu: 999_000_000_000_000 },
+  })
+  append("coordinator", "factory.worker_started", "2026-11-10T00:00:00.000Z", {
+    id: "coordinator",
+    role: "coordinator",
+    step: "implement",
+  })
+  append("coordinator", "factory.worker_stopped", "2026-11-20T00:00:00.000Z", {
+    id: "coordinator",
+  })
+  complete("before", "implement", "2026-11-03T23:59:59.999Z")
+  append("after", "factory.worker_started", "2026-11-25T00:00:00.000Z", {
+    id: "after",
+    role: "worker",
+    step: "implement",
+  })
+  append("after", "factory.worker_stopped", "2026-11-25T00:00:00.000Z", { id: "after" })
+  append("incomplete", "factory.worker_started", "2026-11-10T00:00:00.000Z", {
+    id: "incomplete",
+    role: "worker",
+    step: "implement",
+  })
+  for (const excluded of ["coordinator", "before", "after", "incomplete"])
+    append(excluded, "assistant.usage", "2026-11-10T01:00:00.000Z", {
+      model: "priced",
+      inputTokens: 1,
+      outputTokens: 1,
+      copilotUsage: { totalNanoAiu: 999_000_000_000_000 },
+    })
+  store.close()
+
+  expect(await local(state, ["budgets"])).toEqual({
+    default: 1,
+    implement: 1,
+    verify: 1,
+    unpriced: 0.5,
+  })
 })
