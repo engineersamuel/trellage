@@ -1,7 +1,10 @@
 import {
+  closeSync,
   cpSync,
+  fstatSync,
   mkdirSync,
   lstatSync,
+  openSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -423,8 +426,22 @@ try {
         const launcher = path.join(root, name)
         if (!(await present(launcher))) continue
         safePath(launcher, "file")
-        if (lstatSync(launcher).nlink !== 1 || readFileSync(launcher, "utf8").split(/\r?\n/, 1)[0] !== marker)
-          throw new Error(`refusing unmanaged Windows launcher: ${launcher}`)
+        // Read through one handle and require it to be the file safePath inspected, so a swap cannot slip in.
+        const checked = lstatSync(launcher)
+        const handle = openSync(launcher, "r")
+        try {
+          const opened = fstatSync(handle)
+          if (
+            opened.dev !== checked.dev ||
+            opened.ino !== checked.ino ||
+            !opened.isFile() ||
+            opened.nlink !== 1 ||
+            readFileSync(handle, "utf8").split(/\r?\n/, 1)[0] !== marker
+          )
+            throw new Error(`refusing unmanaged Windows launcher: ${launcher}`)
+        } finally {
+          closeSync(handle)
+        }
       }
       break
     }

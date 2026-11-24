@@ -14,7 +14,7 @@ type Status = {
 const clean = (value: unknown, limit: number): string =>
   typeof value === "string" ? value.replace(/[\x00-\x1f\x7f]/g, "").slice(0, limit) : ""
 const percentage = (value: unknown, label: string): string =>
-  typeof value === "number" && Number.isFinite(value) ? label.replace("%", `${Math.floor(value)}%`) : ""
+  typeof value === "number" && Number.isFinite(value) ? label.replaceAll("%", `${Math.floor(value)}%`) : ""
 
 export const formatStatusline = (status: Status): string => {
   const name = clean(status.worktree?.name ?? status.workspace?.git_worktree, 1024)

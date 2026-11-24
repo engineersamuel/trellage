@@ -2,10 +2,11 @@
 import path from "node:path"
 import { runShellBridge } from "../packages/trellage-runtime/src/index.ts"
 import { commandWorkspace } from "./source-workspace.ts"
-import { runWindowsRouter } from "../packages/trellage-runtime/src/windows-router.ts"
 
 if (process.platform === "win32") {
   try {
+    // Loaded only on Windows, so Unix startup never imports the Windows router.
+    const { runWindowsRouter } = await import("../packages/trellage-runtime/src/windows-router.ts")
     process.exitCode = await runWindowsRouter(commandWorkspace(), process.argv.slice(2))
   } catch (cause) {
     console.error(`trx: ${cause instanceof Error ? cause.message : String(cause)}`)
