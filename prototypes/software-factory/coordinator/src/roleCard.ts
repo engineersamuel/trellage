@@ -62,7 +62,7 @@ const renderCard = (
     purpose,
     exclusions,
     budget: cardBudget(step, c),
-    tools: tools.join(", "),
+    tools: tools.join(","),
   })
 
 const fitPurpose = (
@@ -71,65 +71,21 @@ const fitPurpose = (
   exclusions: string,
   tools: readonly string[],
   c: FactoryConfig,
-): { summary: string; card: string } => {
-  let summary = tokensThrough(purpose, Math.min(24, encode(purpose).length))
+): string => {
+  let summary = purpose
   let card = renderCard(step, summary, exclusions, tools, c)
-  while (encode(card).length > 200 && encode(summary).length > 1) {
+  const minimum = Math.min(3, encode(summary).length)
+  while (encode(card).length > 200 && encode(summary).length > minimum) {
     summary = tokensThrough(summary, encode(summary).length - 1)
     card = renderCard(step, summary, exclusions, tools, c)
   }
-  return { summary, card }
+  return card
 }
-
-const commonPrefixGroups = (tools: readonly string[], firstSeparator: boolean): Map<string, string[]> => {
-  const groups = new Map<string, string[]>()
-  for (const name of tools) {
-    if (name.includes("*")) continue
-    const separators = [name.indexOf("_"), name.indexOf("-")].filter((index) => index >= 0)
-    const separator = firstSeparator
-      ? separators.length
-        ? Math.min(...separators)
-        : -1
-      : Math.max(name.lastIndexOf("_"), name.lastIndexOf("-"))
-    if (separator > 2)
-      groups.set(name.slice(0, separator + 1), [...(groups.get(name.slice(0, separator + 1)) ?? []), name])
-  }
-  return groups
-}
-
-const compactCommonPrefixes = (tools: readonly string[], firstSeparator = false): string[] => {
-  const grouped = new Set<string>()
-  const groups = commonPrefixGroups(tools, firstSeparator)
-  const compact: string[] = []
-  for (const [prefix, members] of groups)
-    if (members.length >= 2) {
-      for (const member of members) grouped.add(member)
-      compact.push(`${prefix}*`)
-    }
-  return [...new Set([...tools.filter((name) => !grouped.has(name)), ...compact])].sort()
-}
-
-const compactByInitial = (tools: readonly string[]): string[] => [...new Set(tools.map((name) => `${name[0]}*`))].sort()
 
 export const budgetFromRoleCard = (roleCard: string | null): number | null => {
   if (!roleCard) return null
   const match = roleCard.match(/Budget:\s*\$([0-9]+(?:\.[0-9]+)?)(?:\s|USD)/)
   return match ? Number(match[1]) : null
-}
-
-const fitTools = (
-  step: string | null,
-  purpose: string,
-  exclusions: string,
-  tools: readonly string[],
-  c: FactoryConfig,
-): string => {
-  const variants = [compactCommonPrefixes(tools), compactCommonPrefixes(tools, true), compactByInitial(tools), ["*"]]
-  for (const toolNames of variants) {
-    const card = renderCard(step, purpose, exclusions, toolNames, c)
-    if (encode(card).length <= 200) return card
-  }
-  return renderCard(step, purpose, exclusions, ["*"], c)
 }
 
 const boundedCard = (
@@ -143,8 +99,8 @@ const boundedCard = (
   if (encode(complete).length <= 200) return complete
 
   const fitted = fitPurpose(step, purpose, exclusions, tools, c)
-  const summary = fitted.summary
-  return encode(fitted.card).length <= 200 ? fitted.card : fitTools(step, summary, exclusions, tools, c)
+  if (encode(fitted).length <= 200) return fitted
+  throw new Error(`role card exceeds 200 tokens with ${tools.length} literal tool names`)
 }
 
 export const roleCard = (
