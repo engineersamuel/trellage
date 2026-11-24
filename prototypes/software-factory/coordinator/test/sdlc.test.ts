@@ -98,7 +98,9 @@ describe("test paths", () => {
 const repo = () => {
   const r = mkdtempSync(path.join(tmpdir(), "sf-sdlc-"))
   const git = (...a: string[]) =>
-    execFileSync("git", ["-C", r, "-c", "user.email=t@t", "-c", "user.name=t", ...a], { encoding: "utf8" }).trim()
+    execFileSync("git", ["-C", r, "-c", "user.email=t@t", "-c", "user.name=t", ...a], {
+      encoding: "utf8",
+    }).trim()
   git("init", "-q")
   git("commit", "-q", "--allow-empty", "-m", "base")
   return { r, git, base: git("rev-parse", "HEAD") }
@@ -130,7 +132,12 @@ describe("worktree artifacts", () => {
     expect(shipBlockers(undefined, r, base, true, true)).toEqual([
       "no SDLC plan: call sdlc_plan with the acceptance criteria first",
     ])
-    let s: Sdlc = { ...newSdlc("sub", "t"), criteria: ["works"], implementDoneAt: 2, verifyDoneAt: 1 }
+    let s: Sdlc = {
+      ...newSdlc("sub", "t"),
+      criteria: ["works"],
+      implementDoneAt: 2,
+      verifyDoneAt: 1,
+    }
     s = withGates(s, decide("plan", { design: 0.9 }, null))
     s = withGates(
       s,
@@ -196,12 +203,27 @@ describe("worktree artifacts", () => {
   })
 
   test("waiveGate rejects other gates and unquoted reasons without changing state", () => {
+    const { r, base } = repo()
+    ensureFactoryDir(r)
+    writeFileSync(path.join(r, "src.ts"), "base")
+    writeFileSync(path.join(r, "src.test.ts"), "test")
     let s: Sdlc = withGates(
-      { ...newSdlc("sub", null), request: "Keep the change minimal: code and tests only", criteria: ["works"] },
+      {
+        ...newSdlc("sub", null),
+        request: "Keep the change minimal: code and tests only",
+        criteria: ["works"],
+        implementDoneAt: 2,
+        verifyDoneAt: 1,
+      },
       decide("diff", { docs: 0.9, codeReview: 0.9, supplyChain: 0.9 }, null),
     )
+    writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — bun test — ok\n")
     for (const id of ["design", "codeReview", "supplyChain", "postMerge", "security", "verify", "unknown"]) {
       const before = structuredClone(s)
+      const blockersBefore = shipBlockers(s, r, base, false, false)
+      expect(blockersBefore.some((b) => b.startsWith("docs gate:"))).toBe(true)
+      expect(blockersBefore.some((b) => b.startsWith("security review not done"))).toBe(true)
+      expect(blockersBefore).toContain("no verify step after the last implement")
       const result = waiveGate(s, id, "code and tests only")
       expect("error" in result).toBe(true)
       if (!("error" in result)) throw new Error("expected refusal")
@@ -209,14 +231,20 @@ describe("worktree artifacts", () => {
       expect(result.error).toContain("floors")
       expect(result.error).toContain("never be waived")
       expect(s).toEqual(before)
+      expect(shipBlockers(s, r, base, false, false)).toEqual(blockersBefore)
+      expect(shipBlockers(s, r, base, false, false).some((b) => b.startsWith("docs gate:"))).toBe(true)
     }
     for (const reason of ["", " documentation updates "]) {
       const before = structuredClone(s)
+      const blockersBefore = shipBlockers(s, r, base, false, false)
+      expect(blockersBefore.some((b) => b.startsWith("docs gate:"))).toBe(true)
       const result = waiveGate(s, "docs", reason)
       expect("error" in result).toBe(true)
       expect(s).toEqual(before)
       if (!("error" in result)) throw new Error("expected refusal")
       expect(result.error).toMatch(/reason.*request|request.*reason|words of the request/i)
+      expect(shipBlockers(s, r, base, false, false)).toEqual(blockersBefore)
+      expect(shipBlockers(s, r, base, false, false).some((b) => b.startsWith("docs gate:"))).toBe(true)
     }
   })
 
@@ -258,11 +286,15 @@ describe("lessons", () => {
 describe("code review", () => {
   test("lens pick: threshold, cap, at least one, default without Jev", () => {
     expect(pickLenses(null)).toEqual(["correctness", "tests"])
-    expect(pickLenses({ correctness: 0.9, tests: 0.7, design: 0.65, performance: 0.8, operability: 0.1 })).toEqual([
-      "correctness",
-      "performance",
-      "tests",
-    ])
+    expect(
+      pickLenses({
+        correctness: 0.9,
+        tests: 0.7,
+        design: 0.65,
+        performance: 0.8,
+        operability: 0.1,
+      }),
+    ).toEqual(["correctness", "performance", "tests"])
     expect(pickLenses({ correctness: 0.1, tests: 0.2, design: 0.1, performance: 0.1, operability: 0.3 })).toEqual([
       "operability",
     ])
@@ -277,7 +309,15 @@ describe("code review", () => {
   test("findings parse and score", () => {
     const fs = parseReviewFindings(JSON.stringify([{ title: "t", problem: "p", severity: "high" }, { nope: 1 }]))
     expect(fs).toEqual([
-      { id: "cr1", title: "t", file: "unknown", severity: "high", problem: "p", fix: "", lenses: [] },
+      {
+        id: "cr1",
+        title: "t",
+        file: "unknown",
+        severity: "high",
+        problem: "p",
+        fix: "",
+        lenses: [],
+      },
     ])
     expect(parseReviewFindings("not json")).toEqual([])
     expect(score(fs[0]!, 0.8, 0.7).keep).toBe(true)
@@ -336,7 +376,9 @@ describe("reviewer model", () => {
     const { reviewerRoute } = await import("../src/review.ts")
     expect(reviewerRoute("gemini-4-argon", "copilot")).toEqual({ auth: "proxy" })
     expect(reviewerRoute("gemini-4-argon", "auto")).toEqual({ auth: "proxy" })
-    expect(reviewerRoute("gemini-4-argon", "claude")).toEqual({ harness: { kind: "claude", profiles: ["default"] } })
+    expect(reviewerRoute("gemini-4-argon", "claude")).toEqual({
+      harness: { kind: "claude", profiles: ["default"] },
+    })
     expect(reviewerRoute("gpt-6-astra", "copilot")).toEqual({})
     expect(reviewerRoute("gemini-4-argon", "pi")).toEqual({})
     expect(reviewModelFor("gpt-6-astra", "")).toBe("claude-opus-5.5")
@@ -358,7 +400,11 @@ test("osv flags: advisories and license violations per package", () => {
             vulnerabilities: [{ id: "RUSTSEC-1" }],
             license_violations: [],
           },
-          { package: { name: "subtle", version: "2.6.1" }, vulnerabilities: [], license_violations: ["BSD-3-Clause"] },
+          {
+            package: { name: "subtle", version: "2.6.1" },
+            vulnerabilities: [],
+            license_violations: ["BSD-3-Clause"],
+          },
           { package: { name: "toml", version: "1.2.1" } },
         ],
       },
@@ -370,7 +416,9 @@ test("osv flags: advisories and license violations per package", () => {
 test("rebaseChangedLines: 0 for a clean rebase, conflict resolutions count", () => {
   const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "sf-rebase-")))
   const g = (...a: string[]) =>
-    execFileSync("git", ["-C", dir, "-c", "user.email=t@t", "-c", "user.name=t", ...a], { encoding: "utf8" }).trim()
+    execFileSync("git", ["-C", dir, "-c", "user.email=t@t", "-c", "user.name=t", ...a], {
+      encoding: "utf8",
+    }).trim()
   g("init", "-q", "-b", "main")
   writeFileSync(path.join(dir, "f.txt"), "1\n2\n3\n")
   g("add", ".")
