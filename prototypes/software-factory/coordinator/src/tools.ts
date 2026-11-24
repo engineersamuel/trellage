@@ -440,7 +440,7 @@ const sdlcStatusTool = (f: Factory, scope: Scope) =>
 const waiveGateTool = (f: Factory, scope: Scope) =>
   defineTool("waive_gate", {
     description:
-      "Waive the docs gate only. The reason must be a literal substring of the current request, quoting the scope-limiting words.",
+      'Waive the docs gate only. The reason must contain at least 3 words and be a literal substring of the current request, containing scope-limiting words (e.g. "only", "tests", "minimal").',
     parameters: obj(
       {
         gate: { type: "string", description: "Gate to waive; only docs is allowed." },

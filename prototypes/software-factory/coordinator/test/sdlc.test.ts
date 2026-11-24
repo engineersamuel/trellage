@@ -35,6 +35,19 @@ const f = (p: string, added = 10, removed = 0) => ({ path: p, added, removed })
 describe("risk tier", () => {
   test("T0 small docs, T1 normal code, T2 size, deps or sensitive paths", () => {
     expect(classify([f("README.md", 5)]).tier).toBe("T0")
+    expect(classify([f("coordinator/defaults/prompts/x.md", 5)])).toMatchObject({
+      tier: "T0",
+      docsOnly: true,
+      touchesDocs: true,
+    })
+    for (const added of [21, 401]) {
+      const risk = classify([f("coordinator/defaults/prompts/x.md", added)])
+      expect(risk).toMatchObject({
+        tier: added === 21 ? "T1" : "T2",
+        docsOnly: true,
+        touchesDocs: true,
+      })
+    }
     expect(classify([f("src/a.ts", 50)]).tier).toBe("T1")
     expect(classify([f("src/a.ts", 401)]).reasons).toEqual(["401 changed lines (> 400)"])
     expect(classify([f("Cargo.lock", 2)]).touchesDeps).toBe(true)
@@ -149,7 +162,7 @@ describe("worktree artifacts", () => {
       "security review not done (it runs last, when everything else is ready)",
       "design gate: .factory/design.md missing",
       "code review gate not done",
-      "docs gate: the diff changes no README, docs or CHANGELOG",
+      "docs gate: the diff changes no user documentation",
     ])
     writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS — cargo test — ok\n")
     writeFileSync(artifact(r, "design.md"), "# Design\n## Rollback\nRevert and restart.\n")
@@ -171,6 +184,59 @@ describe("worktree artifacts", () => {
     const linked = prBody(s, r, "Adds a.", undefined, id)
     expect(linked).toContain(`## Factory\nthread=${id}\nhttp://localhost:5174/?thread=${id}`)
     expect(factoryThreadUrl(id, "http://factory.test:9000/ui")).toBe(`http://factory.test:9000/ui?thread=${id}`)
+  })
+
+  test("ship docs gate blocks only for non-user-documentation diffs", () => {
+    const nonDocs = ["coordinator/defaults/prompts/x.md", "skills/a/SKILL.md", "notes.txt", "src/a.ts"]
+    const userDocs = [
+      "README.md",
+      "prototypes/x/README.md",
+      "CHANGELOG.md",
+      "docs/guide.md",
+      "doc/a.md",
+      "site/page.mdx",
+      "manual.rst",
+      "CONTRIBUTING.md",
+      "nested/CONTRIBUTING-guide.md",
+      "nested/CHANGELOG.md",
+    ]
+    for (const changed of nonDocs) {
+      const { r, git, base } = repo()
+      ensureFactoryDir(r)
+      mkdirSync(path.dirname(path.join(r, changed)), { recursive: true })
+      writeFileSync(path.join(r, changed), "changed")
+      git("add", "--", changed)
+      const s: Sdlc = {
+        ...newSdlc("sub", null),
+        criteria: ["works"],
+        implementDoneAt: 2,
+        verifyDoneAt: 3,
+        gates: withGates(newSdlc("sub", null), decide("diff", { docs: 0.9 }, null)).gates,
+      }
+      writeFileSync(artifact(r, "evidence.md"), "AC-1: PASS\n")
+      const blockers = shipBlockers(s, r, base, true, true)
+      expect(blockers.filter((b) => b.startsWith("docs gate:"))).toHaveLength(1)
+      for (const userDoc of userDocs) {
+        const paired = repo()
+        ensureFactoryDir(paired.r)
+        mkdirSync(path.dirname(path.join(paired.r, changed)), { recursive: true })
+        mkdirSync(path.dirname(path.join(paired.r, userDoc)), { recursive: true })
+        writeFileSync(path.join(paired.r, changed), "changed")
+        writeFileSync(path.join(paired.r, userDoc), "docs")
+        paired.git("add", "--", changed, userDoc)
+        const pairedSdlc: Sdlc = {
+          ...newSdlc("sub", null),
+          criteria: ["works"],
+          implementDoneAt: 2,
+          verifyDoneAt: 3,
+          gates: withGates(newSdlc("sub", null), decide("diff", { docs: 0.9 }, null)).gates,
+        }
+        writeFileSync(artifact(paired.r, "evidence.md"), "AC-1: PASS\n")
+        expect(
+          shipBlockers(pairedSdlc, paired.r, paired.base, true, true).filter((b) => b.startsWith("docs gate:")),
+        ).toHaveLength(0)
+      }
+    }
   })
 
   test("waiveGate marks only a chosen docs gate done and removes its blocker", () => {
@@ -234,7 +300,7 @@ describe("worktree artifacts", () => {
       expect(shipBlockers(s, r, base, false, false)).toEqual(blockersBefore)
       expect(shipBlockers(s, r, base, false, false).some((b) => b.startsWith("docs gate:"))).toBe(true)
     }
-    for (const reason of ["", " documentation updates ", " code and tests only "]) {
+    for (const reason of ["", " documentation updates ", "Fix a defect in the software factory"]) {
       const before = structuredClone(s)
       const blockersBefore = shipBlockers(s, r, base, false, false)
       expect(blockersBefore.some((b) => b.startsWith("docs gate:"))).toBe(true)

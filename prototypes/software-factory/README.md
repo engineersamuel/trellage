@@ -50,11 +50,12 @@ per gate against its threshold, `GATES` in `coordinator/src/sdlc.ts`); a risk ti
 | Design note | Jev ≥ 0.6 | `.factory/design.md` (decision, alternatives, rollback) |
 | Code review | Jev ≥ 0.6, or tier T2 | `review.ts`: Jev picks ≤3 lenses, parallel reviewers, synthesis, Jev scores each finding (real ≥ 0.7 and worth ≥ 0.6), fix + verify |
 | Supply chain | Jev ≥ 0.5, or a dependency change | betterleaks on the new commits, osv-scanner (vulnerabilities, license allowlist) on changed lockfiles |
-| Docs | Jev ≥ 0.5 | the diff changes README, docs or CHANGELOG |
+| Docs | Jev ≥ 0.65 | user docs: basename starts README, CHANGELOG or CONTRIBUTING, a file under `docs/` or `doc/` at any depth, or a `.mdx`/`.rst` file |
 | Post-merge | Jev ≥ 0.5 | after the human merges, the merge commit's checks on the default branch |
 
 For a code-and-tests-only request, the sub-coordinator may waive the chosen docs gate with
-`waive_gate` when the reason is an exact literal substring of that conversation's recorded request.
+`waive_gate` when the reason has at least 3 words and is an exact literal substring of that conversation's recorded request,
+including a scope-limiting whole word such as "only", "tests", "minimal", "regex", "comparison", "scope", or "no docs".
 The reason is preserved as `waived: <exact reason>` in the SDLC state and PR body; other gates remain enforceable.
 
 Risk tier (`classify`): T0 small docs-only, T2 > 400 lines, dependency manifests or sensitive paths (auth, secrets,
