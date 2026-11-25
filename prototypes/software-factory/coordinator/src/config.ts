@@ -14,8 +14,9 @@ import {
 const Probability = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 const Model = Schema.String.check(Schema.isNonEmpty())
+const Usd = Schema.Number.check(Schema.isGreaterThan(0))
 
-const FactoryConfigSchema = Schema.Struct({
+export const FactoryConfigSchema = Schema.Struct({
   models: Schema.Struct({
     coordinator: Model,
     sub_coordinator: Model,
@@ -100,6 +101,17 @@ const FactoryConfigSchema = Schema.Struct({
     contract_rounds: Count,
     max_rounds: Count,
   }),
+  /** Record-only accountability grade for each worker (ADR 0010). */
+  accountability: Schema.Struct({
+    enabled: Schema.Boolean,
+    pass_threshold: Probability,
+    extract_max_chars: Count,
+    args_chars: Count,
+    max_parallel: Count,
+    calibration_min_labels: Count,
+    calibration_min_agreement: Probability,
+    worker_usd: Schema.StructWithRest(Schema.Struct({ default: Usd }), [Schema.Record(Schema.String, Usd)]),
+  }),
   /** Chief of Staff rules (src/cos.ts, ADR 0008): each rule on or off, and R1's Jev threshold. */
   cos: Schema.Struct({
     auto_answer_confidence: Probability,
@@ -128,6 +140,7 @@ const FactoryConfigSchema = Schema.Struct({
       r27: Schema.Boolean,
       r28: Schema.Boolean,
       r29: Schema.Boolean,
+      r31: Schema.Boolean,
     }),
   }),
   /** Gate workers (gateWorker.ts): when one counts as stuck, how often it is replaced, and the backstop wait. */
@@ -210,7 +223,8 @@ const readToml = (file: string): unknown => {
 export const loadFactoryConfig = (user: string, defaults = defaultsPath): FactoryConfig => {
   const base = readToml(defaults)
   if (!existsSync(user)) return decode(base)
-  const merged = overlay(base, readToml(user))
+  const own = readToml(user)
+  const merged = overlay(base, own)
   try {
     return decode(merged)
   } catch (e) {

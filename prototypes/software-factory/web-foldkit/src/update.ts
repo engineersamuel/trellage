@@ -18,6 +18,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
+import * as Accountability from "./accountability"
 import * as Goals from "./goals"
 import * as Todo from "./todo"
 import * as Tournaments from "./tournaments"
@@ -30,6 +31,8 @@ type Step = Update.Step<Model, Message, ChatBackend>
 export const toGotWorkersMessage = (message: Workers.Message): Message => Message.GotWorkersMessage({ message })
 export const toGotSettingsMessage = (message: Settings.Message): Message => Message.GotSettingsMessage({ message })
 export const toGotGoalsMessage = (message: Goals.Message): Message => Message.GotGoalsMessage({ message })
+export const toGotAccountabilityMessage = (message: Accountability.Message): Message =>
+  Message.GotAccountabilityMessage({ message })
 export const toGotTodoMessage = (message: Todo.Message): Message => Message.GotTodoMessage({ message })
 export const toGotTournamentsMessage = (message: Tournaments.Message): Message =>
   Message.GotTournamentsMessage({ message })
@@ -74,6 +77,13 @@ const foldGoals = Update.foldChild({
     next === model.goals ? model : modifyFields(model, { goals: () => next }),
   toParentMessage: toGotGoalsMessage,
   update: Goals.update,
+})
+const foldAccountability = Update.foldChild({
+  read: (model: Model) => Option.some(model.accountability),
+  write: (model: Model, next: Accountability.Model): Model =>
+    next === model.accountability ? model : modifyFields(model, { accountability: () => next }),
+  toParentMessage: toGotAccountabilityMessage,
+  update: Accountability.update,
 })
 const foldTodo = Update.foldChild({
   read: (m: Model) => Option.some(m.todo),
@@ -169,6 +179,14 @@ const handleMessage = (model: Model, message: Message) =>
     GotWorkersMessage: ({ message: childMessage }) => foldWorkers(model, childMessage),
     GotSettingsMessage: ({ message: childMessage }) => foldSettings(model, childMessage),
     GotGoalsMessage: ({ message: childMessage }) => foldGoals(model, childMessage),
+    GotAccountabilityMessage: ({ message: childMessage }) =>
+      // eslint-disable-next-line no-underscore-dangle -- Foldkit messages are tagged unions
+      childMessage._tag === "ClickedWorker"
+        ? selectInboxNode(
+            childMessage.thread ? Option.some(childMessage.thread) : Option.none(),
+            Option.some(childMessage.worker),
+          )(model)
+        : foldAccountability(model, childMessage),
     GotTodoMessage: ({ message: childMessage }) => foldTodo(model, childMessage),
     GotTournamentsMessage: ({ message: childMessage }) => foldTournaments(model, childMessage),
     GotDiffPanelMessage: ({ message: childMessage }) => foldDiffPanel(model, childMessage),
@@ -295,6 +313,7 @@ export const init = (
   const workers = Workers.init()
   const settings = Settings.init()
   const goals = Goals.init()
+  const accountability = Accountability.init()
   const todo = Todo.init()
   const tournaments = Tournaments.init()
   const diffPanel = DiffPanel.init()
@@ -306,6 +325,7 @@ export const init = (
       workers: workers.model,
       settings: settings.model,
       goals: goals.model,
+      accountability: accountability.model,
       todo: todo.model,
       tournaments: tournaments.model,
       diffPanel: diffPanel.model,

@@ -16,6 +16,12 @@ import { prepareRun } from "../../../../packages/trellage-runtime/src/native-run
 
 export type HarnessEvent = { type: string; timestamp: string; agentId?: string; data: Record<string, unknown> }
 
+export const permissionDeniedEvent = (toolCallId: string, feedback: string): HarnessEvent => ({
+  type: "permission.completed",
+  timestamp: new Date().toISOString(),
+  data: { toolCallId, result: { kind: "denied-interactively-by-user", feedback } },
+})
+
 export type ClaudeLaunch = {
   plugins: string[]
   env: Record<string, string>
@@ -74,7 +80,7 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
   }
 }
 
-const textOf = (c: unknown): string =>
+export const textOf = (c: unknown): string =>
   typeof c === "string"
     ? c
     : Array.isArray(c)

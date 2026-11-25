@@ -4,6 +4,7 @@ import { Message as ChatMessage, ChatMessageSchema, ThreadSchema } from "@plana-
 import { Decision as Approval } from "../../shared/approvals"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
+import * as Accountability from "./accountability"
 import * as Goals from "./goals"
 import * as Todo from "./todo"
 import * as Tournaments from "./tournaments"
@@ -15,6 +16,7 @@ export const Message = defineMessageUnion({
   GotWorkersMessage: { message: Workers.Message },
   GotSettingsMessage: { message: Settings.Message },
   GotGoalsMessage: { message: Goals.Message },
+  GotAccountabilityMessage: { message: Accountability.Message },
   GotTodoMessage: { message: Todo.Message },
   GotTournamentsMessage: { message: Tournaments.Message },
   GotDiffPanelMessage: { message: DiffPanel.Message },

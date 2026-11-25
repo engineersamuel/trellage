@@ -3,6 +3,7 @@ import { Decision as Approval } from "../../shared/approvals"
 import { chat } from "./chatProgram"
 import * as DiffPanel from "./diffPanel"
 import * as ReportViewer from "./reportViewer"
+import * as Accountability from "./accountability"
 import * as Goals from "./goals"
 import * as Todo from "./todo"
 import * as Tournaments from "./tournaments"
@@ -14,6 +15,7 @@ export const Model = Schema.Struct({
   workers: Workers.Model,
   settings: Settings.Model,
   goals: Goals.Model,
+  accountability: Accountability.Model,
   todo: Todo.Model,
   tournaments: Tournaments.Model,
   diffPanel: DiffPanel.Model,

@@ -34,6 +34,7 @@ import {
   prState,
   type PrState,
   ledgerOf,
+  r31Tick,
   mainChecks,
   modelErrorWorkers,
   r14Blocker,
@@ -136,6 +137,15 @@ import { makeTournaments, STOP_TOURNAMENT } from "./tournamentRun.ts"
 import { assetUrl, leaderboardTable, thumbUrl, tournamentTools } from "./tournamentTools.ts"
 import { presetOf, presetPrompt, PRESETS } from "./tournamentPresets.ts"
 import { checkNames } from "./uiJudge.ts"
+import {
+  AccountabilityDb,
+  AccountabilityGrades,
+  accountabilityDbPath,
+  accountabilityDimensions,
+  accountabilityEvaluation,
+  accountabilityRoutes,
+  accountabilityWorkerEnd,
+} from "./accountability.ts"
 
 const asset = (name: string) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")
 const landing = asset("landing.html")
@@ -204,6 +214,20 @@ for (const [k, s] of factory.sdlc) {
   })
 }
 const threads = new Threads(factory.root)
+const accountabilityDb = new AccountabilityDb(accountabilityDbPath(factory.root))
+const accountabilityGrades = new AccountabilityGrades({
+  store: factory.store,
+  db: accountabilityDb,
+  config: factoryConfig(),
+  dimensions: accountabilityDimensions(threads),
+  publish: (worker, type, data) => factory.publish(worker, type, null, now(), data),
+})
+factory.onWorkerEnd = accountabilityWorkerEnd(accountabilityGrades, () => factoryConfig().accountability.enabled)
+factory.feed.subscribe(
+  accountabilityEvaluation(accountabilityDb, (worker, type, value) =>
+    factory.publish(worker, type, null, now(), value),
+  ),
+)
 /** Warn when FACTORY.md sections and the repo folders disagree: a section only reaches a matching folder. */
 const checkHome = () => {
   const w = homeWarning(
@@ -1837,6 +1861,18 @@ const archiveDone = (t: Thread) => {
   cosLog("R25", t.id, "archive as successful", "done", t.cleanedAt ? "PR merged" : "done")
 }
 loop("cos-idle", "1 minute", idleSweep)
+loop(
+  "cos-r31",
+  "1 hour",
+  () =>
+    r31Tick({
+      root: factory.root,
+      db: accountabilityDb,
+      config: factoryConfig(),
+      publish: (entry) => factory.publish("coordinator", "factory.cos_action", null, now(), entry),
+    }),
+  "5 minutes",
+)
 // The ledger keeps 90 days.
 loop("cos-ledger-prune", "1 day", () => ledgerOf(factory.root).prune(), "1 minute")
 
@@ -2368,6 +2404,7 @@ if (GRADING) {
 }
 
 const routes: [string, RegExp, Handler][] = [
+  ...accountabilityRoutes(accountabilityDb, factoryConfig),
   ["GET", /^\/$/, () => new Response(landing, { headers: { "content-type": "text/html" } })],
   [
     "GET",

@@ -9,6 +9,7 @@ import { findingTask } from "../src/reports.ts"
 import { lenses, lensTask, synthesisTask } from "../src/review.ts"
 import { implementAddendum, newSdlc, verifyAddendum, withGates, type GateId } from "../src/sdlc.ts"
 import { OPTIMIZE_SKILLS, optimizeTask, researchTask } from "../src/workflows.ts"
+import { roleCard } from "../src/roleCard.ts"
 
 let home = ""
 const user = () => path.join(home, "config.toml")
@@ -48,6 +49,9 @@ test("rendered prompts equal the text that was in the code (re-review drift fixe
     ),
     verify_checks: verifyAddendum({ ...newSdlc("s", null), criteria: ["c1", "c2"], checks: ["bun test", "tsc"] }),
     verify_none: verifyAddendum({ ...newSdlc("s", null), criteria: ["c1"] }),
+    role_card_implement: roleCard("implement", "Fix the parser.", ["generate_image", "shell"])!,
+    role_card_verify: roleCard("verify", "Run the checks.", ["generate_image"])!,
+    role_card_fallback: roleCard("plan", "Plan it.", ["generate_image"])!,
   }
   for (const [k, v] of Object.entries(golden)) expect({ k, v: now[k] }).toEqual({ k, v })
 })

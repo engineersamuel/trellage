@@ -44,7 +44,7 @@ import {
   type SkillCheck,
   type Step,
 } from "./steps.ts"
-import { claudeGate, ClaudeSession, composeClaude, type HarnessEvent } from "./claude.ts"
+import { claudeGate, ClaudeSession, composeClaude, permissionDeniedEvent, type HarnessEvent } from "./claude.ts"
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
 import { composePi, piBudgetFile, PiSession, usePiSubagentDir, withProxyModel } from "./pi.ts"
 import { configStore, factoryConfig, missingProfiles, userConfigPath, type FactoryConfig } from "./config.ts"
@@ -52,6 +52,7 @@ import { decisionsAvailable, setDecisionEngine, systemOne } from "./decide.ts"
 import { noul } from "@typesafe-ai/sdk"
 import { acquireStateLock, migrateLegacyState, stateDir } from "./statedir.ts"
 import { trackSubagent } from "./subagents.ts"
+import { grantedTools, roleCard } from "./roleCard.ts"
 
 const LOG_CAP = 4000
 
@@ -88,6 +89,7 @@ export type WorkerSummary = {
   rssKb: number | null
   home: string
   task: string | null
+  roleCard: string | null
   lastMessage: string | null
   eventCount: number
   contextTokens: number | null
@@ -113,7 +115,12 @@ export type WorkerSummary = {
 export type GateGroup = { id: string; title: string; after: string | null }
 
 /** A subagent an agent started inside its harness (Copilot task, Claude Agent, Pi subagent); id = the spawning tool call. */
-export type SubagentInfo = { id: string; name: string; description: string; status: "running" | "done" | "failed" }
+export type SubagentInfo = {
+  id: string
+  name: string
+  description: string
+  status: "running" | "done" | "failed"
+}
 
 /** One event in the factory feed. `seq` is global so a client can resume. */
 export type FeedEvent = {
@@ -166,6 +173,8 @@ export type SpawnSpec = {
   toolGuard?: (toolName: string) => string | null
   /** The Perplexity limits behind toolGuard; Pi shares them with its subagent children through a file. */
   perplexityLimits?: { max: number; maxResearch: number }
+  /** Rendered accountability role card, retained on the worker record. */
+  roleCard?: string | null
 }
 
 export type WorkerSpec = {
@@ -233,6 +242,8 @@ export class Worker {
   /** Pending onDone hook; armed by the first turn so an idle before the task starts does not fire it. */
   onDone: ((w: Worker) => void) | null = null
   private doneArmed = false
+  private gradeArmed = false
+  graded = false
   /** Runtime shared with another worker: stop disconnects the session but leaves the process. */
   sharedRuntime = false
   /** The one conversation this agent serves (General chats); its answers are tagged with it. */
@@ -246,6 +257,7 @@ export class Worker {
   tools: Tool<Record<string, unknown>>[] = []
   /** Names of the client tools the session has now; "" when it has only its own. */
   clientToolKey = ""
+  roleCard: string | null = null
 
   constructor(
     readonly id: string,
@@ -279,6 +291,7 @@ export class Worker {
       rssKb: this.pid === null ? null : rssKb(this.pid),
       home: this.home,
       task: this.task,
+      roleCard: this.roleCard,
       lastMessage: this.lastMessage,
       eventCount: this.log.length,
       contextTokens: this.context?.[0] ?? null,
@@ -320,7 +333,7 @@ export class Worker {
     // Model-layer events are large and duplicate assistant.*; keep them out of the log.
     if (!ev.type.startsWith("model.")) this.persistEvent(fe)
     if (changed) factory.publish(this.id, "factory.worker_updated", null, now(), this.summary())
-    this.settleDone(ev.type)
+    this.settleDone(factory, ev.type)
   }
 
   private observeToolResult(type: string, agentId: string | null, data: Record<string, unknown>): void {
@@ -370,11 +383,15 @@ export class Worker {
     appendCompact(this.log, event, LOG_CAP)
   }
 
-  /** Arm onDone on the task's first turn; fire it once on the next idle. */
-  private settleDone(type: string): void {
-    if (!this.onDone) return
-    if (type === "assistant.turn_start") this.doneArmed = true
-    if (type !== "session.idle" || !this.doneArmed) return
+  /** Arm task-end hooks on the first turn; fire them once on the next idle. */
+  private settleDone(factory: Factory, type: string): void {
+    if (type === "assistant.turn_start") {
+      this.doneArmed = true
+      this.gradeArmed = true
+    }
+    if (type !== "session.idle") return
+    if (this.gradeArmed && !this.graded) factory.onWorkerEnd?.(this, "idle")
+    if (!this.onDone || !this.doneArmed) return
     const done = this.onDone
     this.onDone = null
     done(this)
@@ -670,7 +687,10 @@ export class Factory {
     // worker, so verify, security and code review still follow it.
     if (step && (await this.isUiImplement(step.id, spec))) {
       step = { ...stepById(UI_STEP), id: step.id }
-      this.publish("coordinator", "factory.ui_step", null, now(), { worker: spec.name, step: UI_STEP })
+      this.publish("coordinator", "factory.ui_step", null, now(), {
+        worker: spec.name,
+        step: UI_STEP,
+      })
     }
     // A step with a measured best model (e.g. the UI step) uses it unless the coordinator pins another.
     if (step?.model && !spec.model) spec = { ...spec, model: step.model }
@@ -682,7 +702,11 @@ export class Factory {
     if (mcp.servers.perplexity) {
       const limits = factoryConfig().mcp
       const [max, maxResearch] = [limits.perplexity_max_calls, limits.perplexity_research_max_calls]
-      spec = { ...spec, toolGuard: perplexityBudget(max, maxResearch), perplexityLimits: { max, maxResearch } }
+      spec = {
+        ...spec,
+        toolGuard: perplexityBudget(max, maxResearch),
+        perplexityLimits: { max, maxResearch },
+      }
     }
     // Skill preflight runs first, so a worker with an unusable skill fails before any model call.
     const { workdir, setup, skills } = this.prepareSpawn(spec, id, home, step)
@@ -698,6 +722,14 @@ export class Factory {
       id.startsWith("sub-"),
       routed?.model ?? spec.model,
     )
+    const c = factoryConfig()
+    if (spec.role === "worker" && c.accountability.enabled) {
+      const actualHarness = harness?.kind ?? "copilot"
+      const card = roleCard(spec.step ?? null, spec.task ?? "", grantedTools(spec, mcp.servers, actualHarness), c)
+      spec = card
+        ? { ...spec, roleCard: card, system: spec.system ? `${spec.system}\n\n${card}` : card }
+        : { ...spec, roleCard: null }
+    }
     if (harness) {
       const pinned = routed ? { ...spec, model: routed.model } : spec
       return this.spawnHarness(pinned, id, home, workdir, harness, skills, routed?.source, mcp.servers)
@@ -843,6 +875,7 @@ export class Factory {
         canUseTool: withToolGuard(
           spec.toolGuard,
           spec.permissions ? gateFromPermissions(spec.permissions) : claudeGate,
+          emit,
         ),
         disallowedTools: ["AskUserQuestion"],
         // Its tools (above) and its role prompt after Claude Code's. A step's MCP servers (src/mcp.ts) join them.
@@ -910,7 +943,7 @@ export class Factory {
           spec.perplexityLimits,
         )
       : undefined
-    const session = await PiSession.start(ready, workdir, emit, servers, budget)
+    const session = await PiSession.start(ready, workdir, emit, servers, budget, spec.system ? [spec.system] : [])
     return {
       session,
       model: session.model,
@@ -966,7 +999,10 @@ export class Factory {
   async uiTask(task: string): Promise<number> {
     if (!decisionsAvailable()) return 0
     try {
-      const res = await systemOne({ state: task.slice(0, 16_000), questions: { ui: noul(loadPrompt("jev/ui-task")) } })
+      const res = await systemOne({
+        state: task.slice(0, 16_000),
+        questions: { ui: noul(loadPrompt("jev/ui-task")) },
+      })
       return res.answers?.ui?.noul ?? 0
     } catch {
       return 0
@@ -982,7 +1018,10 @@ export class Factory {
     try {
       const res = await systemOne({
         state: task.slice(0, 16_000),
-        questions: { low: noul(loadPrompt("jev/low-complexity")), ui: noul(loadPrompt("jev/ui-task")) },
+        questions: {
+          low: noul(loadPrompt("jev/low-complexity")),
+          ui: noul(loadPrompt("jev/ui-task")),
+        },
       })
       const [p, ui] = [res.answers?.low?.noul, res.answers?.ui?.noul]
       return typeof p === "number" ? { p, ui: typeof ui !== "number" || ui >= 0.5 } : null
@@ -1015,7 +1054,11 @@ export class Factory {
     try {
       const res = await fetch(`${this.proxyUrl}/messages`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-api-key": "factory", "anthropic-version": "2023-06-01" },
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": "factory",
+          "anthropic-version": "2023-06-01",
+        },
         body: JSON.stringify({
           model,
           max_tokens: 2048,
@@ -1074,6 +1117,8 @@ export class Factory {
 
   /** Called with the ids of the workers whose runtime exited without a stop. */
   onRuntimeExit: ((ids: string[]) => void) | null = null
+  /** Non-blocking accountability hook for a completed worker task. */
+  onWorkerEnd: ((worker: Worker, why: "idle" | "stopped" | "runtime") => void) | null = null
 
   /**
    * A runtime exited that no stop asked for (killed or crashed): every worker on it ends its turn with a
@@ -1092,6 +1137,7 @@ export class Factory {
       w.events.send(ev)
       this.workers.delete(w.id)
       this.publish(w.id, "factory.worker_stopped", null, now(), { id: w.id, reason: message })
+      this.onWorkerEnd?.(w, "runtime")
     }
     if (dead.length) this.onRuntimeExit?.(dead.map((w) => w.id))
   }
@@ -1104,6 +1150,7 @@ export class Factory {
     if (spec.onDone) worker.onDone = spec.onDone
     if (spec.shareRuntimeOf) worker.sharedRuntime = true
     if (spec.threadId) worker.threadId = spec.threadId
+    worker.roleCard = spec.roleCard ?? null
   }
 
   /** A session's own tools: the spec's, plus generate_image for every worker. */
@@ -1475,17 +1522,26 @@ export class Factory {
     this.workers.delete(id)
     // Release every read_worker wait on it: a stopped session sends no idle.
     w.status = "stopped"
-    w.events.send({ type: WORKER_STOPPED, timestamp: new Date().toISOString(), data: {} } as unknown as SessionEvent)
+    w.events.send({
+      type: WORKER_STOPPED,
+      timestamp: new Date().toISOString(),
+      data: {},
+    } as unknown as SessionEvent)
     await w.session.disconnect().catch(() => {})
     if (!w.sharedRuntime) await w.client.stop().catch(() => {})
     this.publish(id, "factory.worker_stopped", null, now(), { id })
+    this.onWorkerEnd?.(w, "stopped")
   }
 
   /** Stop a worker so that whoever waits on it sees it end with an error (`reason`), as a dead runtime would. */
   async interrupt(id: string, reason: string): Promise<void> {
     const w = this.workers.get(id)
     if (!w) return
-    const ev = { type: "session.error", timestamp: new Date().toISOString(), data: { message: reason } } as SessionEvent
+    const ev = {
+      type: "session.error",
+      timestamp: new Date().toISOString(),
+      data: { message: reason },
+    } as SessionEvent
     w.observe(this, ev)
     w.events.send(ev)
     await this.stop(id).catch(() => {})
@@ -1605,11 +1661,18 @@ export const finishPermissions =
 
 /** Default gate for Copilot workers: never merge, push, or delete branches or worktrees; approve the rest. */
 /** A Claude permission gate with the worker's tool guard in front (it also sees subagent calls). */
-const withToolGuard =
-  (guard: SpawnSpec["toolGuard"], gate: CanUseTool): CanUseTool =>
+export const withToolGuard =
+  (guard: SpawnSpec["toolGuard"], gate: CanUseTool, emit: (event: HarnessEvent) => void = () => {}): CanUseTool =>
   async (toolName, input, options) => {
     const reason = guard?.(toolName)
-    return reason ? { behavior: "deny", message: reason } : gate(toolName, input, options)
+    if (reason) {
+      emit(permissionDeniedEvent(options.toolUseID, reason))
+      return { behavior: "deny", message: reason }
+    }
+    const result = await gate(toolName, input, options)
+    if (result?.behavior === "deny")
+      emit(permissionDeniedEvent(options.toolUseID, String(result.message ?? "Refused by the factory.")))
+    return result
   }
 
 /** The tool guard as a Copilot pre-tool hook. */

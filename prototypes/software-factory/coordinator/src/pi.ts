@@ -16,7 +16,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync }
 import { registerRequiredChildExtensions } from "pi-subagents/required-child-extensions"
 import { takeFromFile } from "./pi-budget.ts"
 import { prepareRun } from "../../../../packages/trellage-runtime/src/native-run/run.ts"
-import type { HarnessEvent } from "./claude.ts"
+import { permissionDeniedEvent, textOf, type HarnessEvent } from "./claude.ts"
 import { forbiddenCommand } from "./guard.ts"
 
 export type PiLaunch = {
@@ -115,15 +115,23 @@ export const withProxyModel = (launch: PiLaunch, model: string, dest: string): P
   return { ...launch, agentDir: dest, model }
 }
 
-const textOf = (c: unknown): string =>
-  typeof c === "string"
-    ? c
-    : Array.isArray(c)
-      ? c.map((b: { type?: unknown; text?: unknown } | null) => (b?.type === "text" ? String(b.text) : "")).join("")
-      : ""
-
 /** A skill the session loaded: Pi has no skill tool, the model reads `filePath` to use it. */
 export type PiSkill = { name: string; filePath: string }
+
+export const piToolCallDecision = (
+  event: { toolName: string; toolCallId: string; input: unknown },
+  toolGuard: ((name: string) => string | null) | undefined,
+  emit: (event: HarnessEvent) => void,
+): { block: true; reason: string } | undefined => {
+  const command = String((event.input as { command?: unknown } | null)?.command ?? "")
+  const reason =
+    event.toolName === "bash" && forbiddenCommand(command)
+      ? "Workers never merge, push, delete branches or worktrees, change git config, or point git at another repository (GIT_DIR and the like). Report it to the coordinator."
+      : toolGuard?.(event.toolName)
+  if (!reason) return undefined
+  emit(permissionDeniedEvent(event.toolCallId, reason))
+  return { block: true, reason }
+}
 
 /**
  * One Pi session event as factory events. Calls made by another tool carry their parent as agentId.
@@ -251,6 +259,7 @@ export class PiSession {
     emit: (ev: HarnessEvent) => void,
     mcp: McpServerEntry[] = [],
     budget?: string,
+    appendSystemPrompt: string[] = [],
   ): Promise<PiSession> {
     const toolGuard = budget ? (name: string) => takeFromFile(budget, name, fs) : undefined
     const resourceLoader = new DefaultResourceLoader({
@@ -258,6 +267,7 @@ export class PiSession {
       agentDir: launch.agentDir,
       noSkills: true,
       additionalSkillPaths: launch.skills,
+      appendSystemPrompt,
       noExtensions: true,
       additionalExtensionPaths: [
         ...launch.extensions.filter((e) => e !== "builtin:mcp"),
@@ -269,14 +279,7 @@ export class PiSession {
       extensionFactories: [
         (pi) => {
           pi.on("tool_call", (e) => {
-            if (e.toolName === "bash" && forbiddenCommand(String((e.input as { command?: unknown }).command ?? "")))
-              return {
-                block: true,
-                reason:
-                  "Workers never merge, push, delete branches or worktrees, change git config, or point git at another repository (GIT_DIR and the like). Report it to the coordinator.",
-              }
-            const reason = toolGuard?.(e.toolName)
-            return reason ? { block: true, reason } : undefined
+            return piToolCallDecision(e, toolGuard, emit)
           })
         },
         // Reads mcp.json from the factory-owned agent dir (usePiSubagentDir): pi-subagents hands only servers

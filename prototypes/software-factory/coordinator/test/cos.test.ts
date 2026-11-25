@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { CONTROLS, type ControlId, type Grade } from "../../shared/accountability.ts"
+import { AccountabilityDb } from "../src/accountability.ts"
 import type { Approval } from "../src/approvals.ts"
+import { factoryConfig } from "../src/config.ts"
 import {
   blockerKey,
   costAlert,
@@ -26,6 +29,7 @@ import {
   pullMain,
   r14Blocker,
   r1Pick,
+  r31Tick,
   r25Action,
   r3aBlocker,
   r3Blockers,
@@ -35,6 +39,7 @@ import {
   type PrView,
 } from "../src/cos.ts"
 import type { Evaluation } from "../src/evaluate.ts"
+import { lessonsFile, readLessons } from "../src/sdlc.ts"
 
 const approval = (over: Partial<Approval> = {}): Approval => ({
   id: "a1",
@@ -428,4 +433,142 @@ test("R3a: a pull that cannot fast-forward fails and leaves the checkout as it w
   expect(out).toStartWith("pull failed")
   expect(git(checkout, "status", "--porcelain").trim()).toBe("")
   expect(git(checkout, "log", "--format=%s", "-1").trim()).toBe("local commit")
+})
+
+const DAY = 86_400_000
+const r31Grade = (worker: string, folderId: string, stoppedAt: number, failures: ControlId[]): Grade => ({
+  worker,
+  owner: `sub-${worker}`,
+  thread: `thread-${worker}`,
+  goal: "goal",
+  folderId,
+  repo: `/repo/${folderId}`,
+  step: "implement",
+  model: "model",
+  harness: "copilot",
+  modelSource: "pinned",
+  roleCardSha256: null,
+  startedAt: stoppedAt - 1000,
+  stoppedAt,
+  costUsd: 1,
+  budgetUsd: 4,
+  controls: Object.fromEntries(
+    CONTROLS.map(({ id }) => [id, { result: failures.includes(id) ? "fail" : "pass" }]),
+  ) as Grade["controls"],
+  score: 1,
+  engine: "fake",
+  graderVersion: "test",
+  gradedAt: stoppedAt,
+  extract: "",
+})
+
+const r31Config = (r31 = true, enabled = true) => {
+  const c = factoryConfig()
+  return {
+    ...c,
+    accountability: { ...c.accountability, enabled },
+    cos: { ...c.cos, rules: { ...c.cos.rules, r31 } },
+  }
+}
+
+const r31Fixture = (seed: (db: AccountabilityDb) => void) => {
+  const root = mkdtempSync(path.join(tmpdir(), "cos-r31-"))
+  const db = new AccountabilityDb(path.join(root, "accountability.db"))
+  seed(db)
+  return { root, db }
+}
+
+test("R31 writes at most three recent calibrated failures per repo and excludes old and uncalibrated failures", () => {
+  const now = Date.parse("2026-11-24T12:00:00.000Z")
+  const controls: ControlId[] = ["3.1", "3.5", "4.6", "4.7", "5.2/6.3"]
+  const counts = [5, 4, 3, 2, 1]
+  const { root, db } = r31Fixture((store) => {
+    for (const folder of ["repo-a", "repo-b"]) {
+      for (let i = 0; i < 20; i++) {
+        const failures = controls.filter((_control, index) => i < counts[index]!)
+        if (i < 6) failures.push("5.5")
+        const grade = r31Grade(`${folder}-w-${i}`, folder, now - 2 * DAY + i, failures)
+        store.put(grade)
+        for (const control of controls)
+          store.label(grade.worker, control, grade.controls[control].result as "pass" | "fail", i)
+      }
+      for (let i = 0; i < 8; i++) {
+        const grade = r31Grade(`${folder}-old-${i}`, folder, now - 8 * DAY + i, ["5.2/6.3"])
+        store.put(grade)
+        store.label(grade.worker, "5.2/6.3", "fail", i)
+      }
+    }
+  })
+
+  const result = r31Tick({ root, db, config: r31Config(), now })
+  expect(result.ran).toBe(true)
+  for (const folder of ["repo-a", "repo-b"]) {
+    const lessons = readLessons(root, folder)
+    expect(lessons).toHaveLength(3)
+    expect(lessons.map((lesson) => lesson.match(/^3\.1|^3\.5|^4\.6|^4\.7|^5\.2\/6\.3/)?.[0])).toEqual([
+      "3.1",
+      "3.5",
+      "4.6",
+    ])
+    expect(lessons.join("\n")).not.toContain("5.5")
+    expect(lessons[0]).toContain(`${folder}-w-4`)
+  }
+  const entries = new Ledger(root).list()
+  expect(entries).toHaveLength(1)
+  expect(entries[0]).toMatchObject({ rule: "R31", result: "done" })
+  expect(entries[0]!.detail).toContain("repo-a: 3 lessons")
+  expect(entries[0]!.detail).toContain("repo-b: 3 lessons")
+})
+
+test("R31 records the run and preserves earlier repo lessons when a later filesystem write fails", () => {
+  const now = Date.parse("2026-11-24T12:00:00.000Z")
+  const { root, db } = r31Fixture((store) => {
+    for (const folder of ["repo-a", "repo-b"]) {
+      for (let i = 0; i < 10; i++) {
+        const grade = r31Grade(`${folder}-w-${i}`, folder, now - DAY + i, ["3.1"])
+        store.put(grade)
+        store.label(grade.worker, "3.1", "fail", i)
+      }
+    }
+  })
+  mkdirSync(path.join(root, "lessons"), { recursive: true })
+  mkdirSync(path.join(root, "lessons", "repo-b.md"))
+
+  expect(r31Tick({ root, db, config: r31Config(), now })).toEqual({ ran: true, lessons: 1 })
+  expect(readLessons(root, "repo-a")).toHaveLength(1)
+  expect(new Ledger(root).list()).toEqual([
+    expect.objectContaining({
+      rule: "R31",
+      result: "failed",
+    }),
+  ])
+})
+
+test("R31 records a no-lessons run with no calibrated controls", () => {
+  const now = Date.parse("2026-11-24T12:00:00.000Z")
+  const { root, db } = r31Fixture((store) => store.put(r31Grade("uncalibrated", "repo-a", now - DAY, ["3.1"])))
+
+  expect(r31Tick({ root, db, config: r31Config(), now })).toEqual({ ran: true, lessons: 0 })
+  expect(existsSync(lessonsFile(root, "repo-a"))).toBe(false)
+  expect(new Ledger(root).list()).toEqual([
+    expect.objectContaining({
+      rule: "R31",
+      result: "refused",
+      detail: "no calibrated control; nothing written",
+    }),
+  ])
+})
+
+test("R31 runs weekly, and is fully off when its toggle or accountability is disabled", () => {
+  const now = Date.parse("2026-11-24T12:00:00.000Z")
+  const { root, db } = r31Fixture((store) => store.put(r31Grade("worker", "repo-a", now - DAY, ["3.1"])))
+
+  expect(r31Tick({ root, db, config: r31Config(false), now }).ran).toBe(false)
+  expect(r31Tick({ root, db, config: r31Config(true, false), now }).ran).toBe(false)
+  expect(new Ledger(root).list()).toHaveLength(0)
+
+  expect(r31Tick({ root, db, config: r31Config(), now }).ran).toBe(true)
+  expect(r31Tick({ root, db, config: r31Config(), now: now + 6 * DAY }).ran).toBe(false)
+  expect(r31Tick({ root, db, config: r31Config(), now: now + 7 * DAY }).ran).toBe(true)
+  expect(new Ledger(root).list()).toHaveLength(2)
 })
