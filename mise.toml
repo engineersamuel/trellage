@@ -75,19 +75,21 @@ run = "./scripts/azure-fresh-install.sh"
 # (process-compose.yaml). Its API is a unix socket because copilot-proxy-rs uses port 8080.
 # Every process-compose call prints two "config home" debug lines when ~/.config/process-compose is
 # absent; the tasks drop them from stderr.
+# Which instance runs (ports, state dir) is decided by prototypes/software-factory/instance.sh: the main checkout
+# uses 7700/5174 and ~/.local/state/trellage/factory; a linked git worktree gets its own ports and state dir.
 [vars]
-# Must match coordinator/src/statedir.ts. Outside $TMPDIR, which macOS cleans; shared by every git worktree.
-sf_state = '{{ get_env(name="SF_STATE_DIR", default=get_env(name="XDG_STATE_HOME", default=get_env(name="HOME") ~ "/.local/state") ~ "/trellage/factory") }}'
+sf_instance = 'source "{{config_root}}/prototypes/software-factory/instance.sh"'
 
 [tasks."factory:up"]
 description = "Start the software factory detached: Copilot SDK on gh auth token, every other model call through copilot-proxy-rs"
 dir = "{{config_root}}/prototypes/software-factory"
 shell = "bash -c"
 quiet = true
-env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock", SF_LOGS = "{{vars.sf_state}}/logs", PC_DISABLE_DOTENV = "1" }
+env = { PC_DISABLE_DOTENV = "1" }
 run = """
 set -euo pipefail
 exec 2> >(grep -v 'process compose config home' >&2)
+{{vars.sf_instance}}
 export SF_MODEL="${SF_MODEL:-claude-sonnet-5.5}"
 # Copilot SDK workers use gh auth token; Claude, Pi, routing, decisions and other model calls need copilot-proxy-rs.
 if ! curl -fsS -o /dev/null "${SF_PROXY_URL:-http://localhost:8080/v1}/models"; then
@@ -98,7 +100,7 @@ fi
 [[ -d coordinator/node_modules ]] || (cd coordinator && bun install --frozen-lockfile)
 [[ -d web-foldkit/node_modules ]] || (cd web-foldkit && npm ci -q --legacy-peer-deps)
 # Move an old $TMPDIR/software-factory here once (before anything creates the new folder).
-[[ -n "${SF_STATE_DIR:-}" ]] || (cd coordinator && bun src/statedir.ts)
+[[ "$SF_INSTANCE" != main || "$SF_STATE_DIR" != "${XDG_STATE_HOME:-$HOME/.local/state}/trellage/factory" ]] || (cd coordinator && bun src/statedir.ts)
 # Coordinator reload on save (stops running workers): only with SF_WATCH=1.
 export SF_BUN_WATCH=$([[ "${SF_WATCH:-0}" == 1 ]] && echo --watch || true)
 mkdir -p "$SF_LOGS"
@@ -106,17 +108,18 @@ process-compose process list >/dev/null 2>&1 && process-compose down && sleep 2
 rm -f "$PC_SOCKET_PATH"
 process-compose up -D -L "$SF_LOGS/process-compose.log" -f process-compose.yaml
 echo "copilot=gh-token other=${SF_PROXY_URL:-http://localhost:8080/v1} model=$SF_MODEL watch=${SF_WATCH:-0}  (mise run factory:tui | factory:logs | factory:down)"
-echo "  Factory UI         : http://localhost:5174/"
-echo "  Coordinator API     : http://127.0.0.1:7700/"
+echo "  Instance           : $SF_INSTANCE (state $SF_STATE_DIR)"
+echo "  Factory UI         : $SF_UI_URL"
+echo "  Coordinator API     : $SF_URL/"
 """
 
 [tasks."factory:down"]
 description = "Stop the software factory"
 shell = "bash -c"
 quiet = true
-env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock" }
 run = """
 exec 2> >(grep -v 'process compose config home' >&2)
+{{vars.sf_instance}}
 process-compose process list >/dev/null 2>&1 && process-compose down && echo stopped || echo "not running"
 """
 
@@ -125,10 +128,10 @@ description = "Restart one software factory service, or all of them"
 usage = 'arg "[service]" help="coordinator or foldkit; none restarts all"'
 shell = "bash -c"
 quiet = true
-env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock" }
 run = """
 set -euo pipefail
 exec 2> >(grep -v 'process compose config home' >&2)
+{{vars.sf_instance}}
 for s in ${usage_service:-coordinator foldkit}; do process-compose process restart "$s"; done
 """
 
@@ -136,11 +139,12 @@ for s in ${usage_service:-coordinator foldkit}; do process-compose process resta
 description = "Show software factory services and URL health"
 shell = "bash -c"
 quiet = true
-env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock" }
 run = """
 exec 2> >(grep -v 'process compose config home' >&2)
+{{vars.sf_instance}}
 process-compose process list -o wide 2>/dev/null || echo "not running"
-for u in http://127.0.0.1:7700/api/info http://localhost:5174/ "${SF_PROXY_URL:-http://localhost:8080/v1}/models"; do
+echo "instance $SF_INSTANCE  state $SF_STATE_DIR"
+for u in "$SF_URL/api/info" "$SF_UI_URL" "${SF_PROXY_URL:-http://localhost:8080/v1}/models"; do
   printf '%-42s %s\\n' "$u" "$(curl -s -o /dev/null -m 3 -w '%{http_code}' "$u" || true)"
 done
 """
@@ -150,8 +154,7 @@ description = "Open the process-compose TUI (status, live logs); q leaves it, th
 shell = "bash -c"
 quiet = true
 raw = true
-env = { PC_SOCKET_PATH = "{{vars.sf_state}}/pc.sock" }
-run = "process-compose attach 2> >(grep -v 'process compose config home' >&2)"
+run = '{{vars.sf_instance}}; process-compose attach 2> >(grep -v "process compose config home" >&2)'
 
 [tasks."factory:skill"]
 description = "Link the factory-loop skill into ~/.claude/skills (and ~/.agents/skills) so /factory-loop works"
@@ -166,7 +169,8 @@ done
 description = "Follow the software factory service logs"
 quiet = true
 raw = true
-run = "tail -n 30 -F '{{vars.sf_state}}'/logs/{coordinator,foldkit}.log"
+shell = "bash -c"
+run = '{{vars.sf_instance}}; tail -n 30 -F "$SF_LOGS"/{coordinator,foldkit}.log'
 
 [tools]
 bun = "1.4.4"

@@ -26,14 +26,29 @@ version). Each service restarts when it exits. The coordinator does not reload o
 reload stops running workers. Only one coordinator may use a state folder: it writes `coordinator.lock` and a second one
 exits. `factory:tui` attaches the process-compose TUI (status and live logs; `q` leaves it, the services keep running).
 The API is the unix socket `$SF_STATE_DIR/pc.sock`, not TCP, because copilot-proxy-rs uses port 8080. Logs are in
-`$SF_STATE_DIR/logs` (default state dir: `~/.local/state/trellage/factory`, or `$XDG_STATE_HOME/trellage/factory`; every
-git worktree shares it). The first start moves an old `$TMPDIR/software-factory` there, repairs its git worktrees, and
+`$SF_STATE_DIR/logs`. The first start moves an old `$TMPDIR/software-factory` there, repairs its git worktrees, and
 leaves a link at the old path (`coordinator/src/statedir.ts`).
 
 | Service | URL |
 |---|---|
 | Factory UI (Foldkit + agent-interface) | <http://localhost:5174/> |
 | Coordinator API | <http://127.0.0.1:7700/> |
+
+### Instances: main checkout and git worktrees
+
+`instance.sh` (sourced by the `factory:*` tasks and by `./sf`) decides which factory a checkout runs:
+
+| Checkout | Ports (API, UI) | State dir | Run worktrees |
+|---|---|---|---|
+| Main checkout, or `SF_PRIMARY=1` | 7700, 5174 | `~/.local/state/trellage/factory` | `~/.trellage/worktrees` |
+| Linked git worktree | 20000-23998 from a hash of the worktree name, UI = API + 1 | `~/.local/state/trellage/factory-wt/<name>` | `<state dir>/worktrees` |
+
+A worktree instance starts empty and has its own Chief of Staff, ledger, daily cap and lessons; it shares
+copilot-proxy-rs, the GitHub token and `~/.config/trellage/factory`. `mise run factory:up` prints its URLs. Any of
+`SF_STATE_DIR`, `SF_COORD_PORT`, `SF_UI_PORT`, `SF_ADDR`, `SF_UI_URL`, `SF_WORKTREES` set in the environment wins.
+
+Every worker gets 10 free test ports in its task (`src/testPorts.ts`) and is told to start servers only there, never on
+a port the repo's docs name (such as 18080), so workers of one or several factories do not collide.
 
 ## SDLC gates
 
