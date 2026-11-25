@@ -144,7 +144,8 @@ Metrics, each reported separately on every grade:
   line in `.factory/evidence.md`), `fail` (a `FAIL` line) or `missing`. Missing criteria are not evaluated, so the rate
   is `-` when none were evaluated; `total` is reported beside it. Any `FAIL` takes precedence over conflicting `PASS` lines.
 - **PR checks**: the PR's check rollup (`SUCCESS`, `FAILURE`, `PENDING`, `NONE`, `missing`). Checks are required when
-  the goal sets `expect.pr.checks`; for a prompted `done` run, when the PR reported any.
+  the goal sets `expect.pr.checks`; for a prompted `done` run, when the PR reported any. The main-branch check state
+  ignores Dependabot update runs, which cannot be fixed by a code change.
 - **Benchmarks**: `expect.benchmarks` is a list of `{id, baseline, higherIsBetter, tolerance}` with fixed baselines.
   The run writes the values to `.factory/benchmarks.json` (`{"id": number}`); a value worse than the baseline by more
   than the tolerance has regressed. Editing a goal in Foldkit preserves its benchmarks and improvement policy,
