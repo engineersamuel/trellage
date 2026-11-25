@@ -472,10 +472,11 @@ export const defaultBranch = async (repo: string): Promise<string> => {
   return r.ok && r.out.startsWith("origin/") ? r.out.slice("origin/".length) : "main"
 }
 
-/** The check state of the newest commit on the default branch, or null when gh cannot tell (no GitHub remote). */
+/** R15: the check state of main without Dependabot update runs, which a code change cannot fix. */
 export const mainCheckState = (runs: (Check & { name?: string })[]): string =>
   checksState(runs.filter((check) => check.name !== "Dependabot"))
 
+/** The check state of the newest commit on the default branch, or null when gh cannot tell (no GitHub remote). */
 export const mainChecks = async (repo: string): Promise<{ sha: string; state: string } | null> => {
   const sha = await run(
     "git",
