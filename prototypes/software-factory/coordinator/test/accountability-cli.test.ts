@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { mkdtempSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { AccountabilityDb, accountabilityDbPath } from "../src/accountability.ts"
@@ -13,7 +13,22 @@ const cli = async (state: string, args: string[], proxyUrl?: string) => {
     ? [
         process.execPath,
         "--eval",
-        `import { setDecisionEngine } from "./src/decide.ts";
+        `import { appendFileSync } from "node:fs";
+import { setDecisionEngine } from "./src/decide.ts";
+// The offline test sandbox forbids sockets, so the child answers decision-engine calls in-process.
+// Response shape from the real copilot-proxy-rs /v1/systemone contract documented in src/decide.ts.
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (input, init) => {
+  const url = String(input instanceof Request ? input.url : input);
+  if (!url.startsWith(process.env.SF_TEST_PROXY_URL!)) return realFetch(input, init);
+  appendFileSync(process.env.SF_TEST_ENGINE_LOG!, "call\\n");
+  const { questions } = JSON.parse(String(init?.body));
+  return Response.json({
+    answers: Object.fromEntries(
+      Object.keys(questions).map((key) => [key, { noul: 1, choice: "", confidence: 1, probabilities: {} }]),
+    ),
+  });
+}) as typeof fetch;
 setDecisionEngine("microsoft-decision-1", process.env.SF_TEST_PROXY_URL);
 process.argv = ["bun", "cli.ts", "accountability", ...JSON.parse(process.env.SF_TEST_CLI_ARGS!)];
 await import("./cli.ts");`,
@@ -27,7 +42,13 @@ await import("./cli.ts");`,
       SF_CONFIG: path.join(state, "missing-config.toml"),
       XDG_CONFIG_HOME: path.join(state, "config"),
       TYPESAFE_API_KEY: "",
-      ...(proxyUrl ? { SF_TEST_PROXY_URL: proxyUrl, SF_TEST_CLI_ARGS: JSON.stringify(args) } : {}),
+      ...(proxyUrl
+        ? {
+            SF_TEST_PROXY_URL: proxyUrl,
+            SF_TEST_CLI_ARGS: JSON.stringify(args),
+            SF_TEST_ENGINE_LOG: path.join(state, "engine-calls.log"),
+          }
+        : {}),
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -85,41 +106,26 @@ test("accountability CLI backfills five recorded workers once and persists valid
   }
   store.close()
 
-  let engineCalls = 0
-  const engine = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    async fetch(request) {
-      engineCalls++
-      const { questions } = (await request.json()) as { questions: Record<string, unknown> }
-      // Response shape from the real copilot-proxy-rs /v1/systemone contract documented in src/decide.ts.
-      return Response.json({
-        answers: Object.fromEntries(
-          Object.keys(questions).map((key) => [key, { noul: 1, choice: "", confidence: 1, probabilities: {} }]),
-        ),
-      })
-    },
-  })
-  const proxyUrl = `http://${engine.hostname}:${engine.port}/v1`
-  try {
-    const first = await cli(state, ["backfill", "--limit", "5"], proxyUrl)
-    expect(first.code).toBe(0)
-    expect(JSON.parse(first.stdout)).toEqual({ graded: 5, skipped: 0 })
-    const firstDb = new AccountabilityDb(accountabilityDbPath(state))
-    expect(firstDb.rows()).toHaveLength(5)
-    firstDb.close()
-    expect(engineCalls).toBe(5)
-
-    const second = await cli(state, ["backfill", "--limit", "5"], proxyUrl)
-    expect(second.code).toBe(0)
-    expect(JSON.parse(second.stdout)).toEqual({ graded: 0, skipped: 5 })
-    expect(engineCalls).toBe(5)
-    const secondDb = new AccountabilityDb(accountabilityDbPath(state))
-    expect(secondDb.rows()).toHaveLength(5)
-    secondDb.close()
-  } finally {
-    engine.stop(true)
+  const engineCalls = () => {
+    const log = path.join(state, "engine-calls.log")
+    return existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).length : 0
   }
+  const proxyUrl = "http://decision-engine.test/v1"
+  const first = await cli(state, ["backfill", "--limit", "5"], proxyUrl)
+  expect(first.code).toBe(0)
+  expect(JSON.parse(first.stdout)).toEqual({ graded: 5, skipped: 0 })
+  const firstDb = new AccountabilityDb(accountabilityDbPath(state))
+  expect(firstDb.rows()).toHaveLength(5)
+  firstDb.close()
+  expect(engineCalls()).toBe(5)
+
+  const second = await cli(state, ["backfill", "--limit", "5"], proxyUrl)
+  expect(second.code).toBe(0)
+  expect(JSON.parse(second.stdout)).toEqual({ graded: 0, skipped: 5 })
+  expect(engineCalls()).toBe(5)
+  const secondDb = new AccountabilityDb(accountabilityDbPath(state))
+  expect(secondDb.rows()).toHaveLength(5)
+  secondDb.close()
   expect(await local(state, ["budgets"])).toEqual({ default: 1, implement: 1 })
   await expect(local(state, [])).rejects.toThrow("usage")
   await expect(local(state, ["backfill", "--limit", "0"])).rejects.toThrow("positive integer")
