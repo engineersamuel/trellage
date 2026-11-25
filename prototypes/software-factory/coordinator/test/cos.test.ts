@@ -25,6 +25,7 @@ import {
   mainCheckout,
   mergeHold,
   mergePr,
+  mainCheckState,
   modelErrorWorkers,
   pullMain,
   r14Blocker,
@@ -71,6 +72,9 @@ test("R1 answers at or above the threshold and never for excluded decisions", ()
   expect(r1Pick(approval(), 0.95, false)).toBe("Apply")
   expect(r1Pick(approval({ shadow: { ...approval().shadow!, confidence: 0.94 } }), 0.95, false)).toBeNull()
   for (const topic of ["ship", "budget", "goal"] as const) expect(r1Pick(approval({ topic }), 0.95, false)).toBeNull()
+  expect(r1Pick(approval({ topic: "budget" }), 0.95, false)).toBeNull()
+  expect(r1Pick(approval({ topic: "goal" }), 0.95, false)).toBeNull()
+  expect(r1Pick(approval({ topic: "findings" }), 0.95, false)).toBe("Apply")
   expect(r1Pick(approval({ title: "Review and merge PR #325?" }), 0.95, false)).toBeNull()
   expect(r1Pick(approval({ options: ["Delete the branch", "Keep"] }), 0.95, false)).toBeNull()
   expect(r1Pick(approval(), 0.95, true)).toBeNull()
@@ -217,6 +221,27 @@ test("the ledger keeps every action, newest first, filterable by conversation", 
 
 test("R1 never answers a decision a rule opened for the human", () => {
   expect(r1Pick(approval({ context: "Chief of Staff · R24" }), 0.95, false)).toBeNull()
+})
+
+test("mainCheckState ignores the Dependabot check run", () => {
+  expect(
+    mainCheckState([
+      { name: "CI", status: "COMPLETED", conclusion: "SUCCESS" },
+      { name: "Dependabot", status: "COMPLETED", conclusion: "FAILURE" },
+    ]),
+  ).toBe("SUCCESS")
+  expect(
+    mainCheckState([
+      { name: "CI", status: "COMPLETED", conclusion: "FAILURE" },
+      { name: "Dependabot", status: "COMPLETED", conclusion: "SUCCESS" },
+    ]),
+  ).toBe("FAILURE")
+  expect(
+    mainCheckState([
+      { name: "CI", status: "IN_PROGRESS" },
+      { name: "Dependabot", status: "COMPLETED", conclusion: "FAILURE" },
+    ]),
+  ).toBe("PENDING")
 })
 
 test("R15/R17: a red main holds every merge but its fix; a fresh merge holds the next one; waiters are kept", () => {

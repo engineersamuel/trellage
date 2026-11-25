@@ -54,9 +54,14 @@ const run = (over: Partial<Run>): Run => ({
 test("a budget pause is always the human's: the runner never auto-answers it, and a stop ends the watch", () => {
   const policy = { plan: "auto", findings: "auto", ship: "auto", other: "auto" } as const
   const r = run({
-    approvals: [{ id: "a", title: "Cost limit", topic: "budget", status: "pending", answer: null, options: ["x"] }],
+    approvals: [
+      { id: "budget", title: "Cost limit", topic: "budget", status: "pending", answer: null, options: ["Continue"] },
+      { id: "goal", title: "Next loop", topic: "goal", status: "pending", answer: null, options: ["Continue"] },
+    ],
   })
-  expect(splitPending(r, policy).auto).toEqual([])
+  const split = splitPending(r, policy)
+  expect(split.auto).toEqual([])
+  expect(split.human.map((a) => a.id)).toEqual(["budget", "goal"])
   expect(stopReason(r, policy)?.code).toBe(2)
   const stopped = run({ budget: { limitUsd: 250, spentUsd: 251, runUsd: 40, status: "stopped" } })
   expect(stopReason(stopped, policy)).toEqual({

@@ -39,7 +39,7 @@ export const Decision = Schema.Struct({
   /** Only the human answers it: no rule (Chief of Staff R1) may. */
   humanOnly: Schema.optionalKey(Schema.Boolean),
   /** What is decided: a plan before implement, review findings, shipping the branch, or anything else. */
-  topic: Schema.Literals(["plan", "findings", "ship", "other"]).pipe(withDefault("other")),
+  topic: Schema.Literals(["plan", "findings", "ship", "other", "budget", "goal"]).pipe(withDefault("other")),
   /** Shadow mode: undefined while Jev predicts, null when no prediction is available. */
   shadow: Schema.optionalKey(Schema.NullOr(Shadow)),
 })
