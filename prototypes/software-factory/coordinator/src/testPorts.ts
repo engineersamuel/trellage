@@ -6,21 +6,29 @@ export const TEST_PORT_BLOCK = 10
 const LOW = 30_000
 const HIGH = 60_000
 
-const free = (port: number): Promise<boolean> =>
+export const portFree = (port: number): Promise<boolean> =>
   new Promise((resolve) => {
     const s = createServer()
     s.once("error", () => resolve(false))
     s.listen({ port, host: "127.0.0.1", exclusive: true }, () => s.close(() => resolve(true)))
   })
 
-/** First port of a block of `size` ports that are all free now; random start, so parallel spawns rarely meet. */
-export const freePortBlock = async (size = TEST_PORT_BLOCK, random = Math.random): Promise<number> => {
-  for (let attempt = 0; attempt < 50; attempt++) {
-    const base = LOW + Math.floor(random() * ((HIGH - LOW) / size)) * size
+const randomBase = (size: number, random: () => number): number =>
+  LOW + Math.floor(random() * ((HIGH - LOW) / size)) * size
+
+/** First port of a block of `size` ports that are all free now; random start, so parallel spawns rarely meet. When
+ * no block can be probed (a sandbox that refuses listen), an unchecked random block: a spawn never fails on this. */
+export const freePortBlock = async (
+  size = TEST_PORT_BLOCK,
+  random = Math.random,
+  free: (port: number) => Promise<boolean> = portFree,
+): Promise<number> => {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const base = randomBase(size, random)
     const ports = Array.from({ length: size }, (_, i) => base + i)
     if ((await Promise.all(ports.map(free))).every(Boolean)) return base
   }
-  throw new Error("no free test port block")
+  return randomBase(size, random)
 }
 
 export const testPortNote = (base: number, size = TEST_PORT_BLOCK): string =>
