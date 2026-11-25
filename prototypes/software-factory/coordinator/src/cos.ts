@@ -473,6 +473,9 @@ export const defaultBranch = async (repo: string): Promise<string> => {
 }
 
 /** The check state of the newest commit on the default branch, or null when gh cannot tell (no GitHub remote). */
+export const mainCheckState = (runs: (Check & { name?: string })[]): string =>
+  checksState(runs.filter((check) => check.name !== "Dependabot"))
+
 export const mainChecks = async (repo: string): Promise<{ sha: string; state: string } | null> => {
   const sha = await run(
     "git",
@@ -488,12 +491,12 @@ export const mainChecks = async (repo: string): Promise<{ sha: string; state: st
       "api",
       `repos/{owner}/{repo}/commits/${head}/check-runs`,
       "--jq",
-      '[.check_runs[] | {status: (.status|ascii_upcase), conclusion: ((.conclusion // "")|ascii_upcase)}]',
+      '[.check_runs[] | {name: .name, status: (.status|ascii_upcase), conclusion: ((.conclusion // "")|ascii_upcase)}]',
     ],
     repo,
     30_000,
   )
-  return runs.ok ? { sha: head, state: checksState(JSON.parse(runs.out) as Check[]) } : null
+  return runs.ok ? { sha: head, state: mainCheckState(JSON.parse(runs.out) as (Check & { name?: string })[]) } : null
 }
 
 /** The merge commit of a merged PR, for R17's wait on main CI. */

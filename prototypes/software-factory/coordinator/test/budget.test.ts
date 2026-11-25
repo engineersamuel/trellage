@@ -56,7 +56,9 @@ test("a budget pause is always the human's: the runner never auto-answers it, an
   const r = run({
     approvals: [{ id: "a", title: "Cost limit", topic: "budget", status: "pending", answer: null, options: ["x"] }],
   })
-  expect(splitPending(r, policy).auto).toEqual([])
+  const split = splitPending(r, policy)
+  expect(split.auto).toEqual([])
+  expect(split.human.map((a) => a.id)).toEqual(["a"])
   expect(stopReason(r, policy)?.code).toBe(2)
   const stopped = run({ budget: { limitUsd: 250, spentUsd: 251, runUsd: 40, status: "stopped" } })
   expect(stopReason(stopped, policy)).toEqual({
