@@ -95,10 +95,11 @@ export class EventStore {
     }
   }
 
-  /** Keep the newest `keep` rows of each agent. Usage rows stay: cost totals need every call. */
+  /** Keep the newest `keep` rows of each agent. Usage rows stay (cost totals need every call), and so does the start
+   * record (the accountability grader reads the worker's step, role card and task from it). */
   prune(keep: number): void {
     this.db.run(
-      "DELETE FROM events WHERE seq IN (SELECT seq FROM (SELECT seq, ROW_NUMBER() OVER (PARTITION BY worker ORDER BY seq DESC) AS n FROM events WHERE type != 'assistant.usage') WHERE n > ?)",
+      "DELETE FROM events WHERE seq IN (SELECT seq FROM (SELECT seq, ROW_NUMBER() OVER (PARTITION BY worker ORDER BY seq DESC) AS n FROM events WHERE type NOT IN ('assistant.usage', 'factory.worker_started')) WHERE n > ?)",
       [keep],
     )
   }

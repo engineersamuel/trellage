@@ -5,7 +5,14 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { EventStore, ftsQuery } from "../src/events.ts"
 
-const ev = (seq: number, workerId = "coordinator", type = "user.message") => ({ seq, workerId, type, agentId: null, timestamp: "1", data: { content: `m${seq}` } })
+const ev = (seq: number, workerId = "coordinator", type = "user.message") => ({
+  seq,
+  workerId,
+  type,
+  agentId: null,
+  timestamp: "1",
+  data: { content: `m${seq}` },
+})
 const tmpFile = () => path.join(mkdtempSync(path.join(tmpdir(), "sf-db-")), "events.db")
 
 test("events append one row each and survive a restart; deltas and status pings are not stored", () => {
@@ -25,11 +32,22 @@ test("events append one row each and survive a restart; deltas and status pings 
 
 test("load returns the newest N oldest first; prune keeps the newest N per agent", () => {
   const s = new EventStore(tmpFile())
-  for (let i = 1; i <= 5; i++) s.append(ev(i)), s.append(ev(100 + i, "w-1"))
+  for (let i = 1; i <= 5; i++) {
+    s.append(ev(i))
+    s.append(ev(100 + i, "w-1"))
+  }
   expect(s.load("coordinator", 2).map((e) => e.seq)).toEqual([4, 5])
   s.prune(3)
   expect(s.load("coordinator", 100).map((e) => e.seq)).toEqual([3, 4, 5])
   expect(s.load("w-1", 100).map((e) => e.seq)).toEqual([103, 104, 105])
+})
+
+test("prune keeps a worker's start record, however old", () => {
+  const s = new EventStore(tmpFile())
+  s.append(ev(1, "w-1", "factory.worker_started"))
+  for (let i = 2; i <= 6; i++) s.append(ev(i, "w-1"))
+  s.prune(2)
+  expect(s.load("w-1", 100).map((e) => e.seq)).toEqual([1, 5, 6])
 })
 
 test("timeline merges agents in seq order, filtered by agent, type, per-agent count and since", () => {
@@ -38,8 +56,13 @@ test("timeline merges agents in seq order, filtered by agent, type, per-agent co
   s.append(ev(2, "b", "assistant.message"))
   s.append(ev(3, "a", "assistant.message"))
   s.append(ev(4, "c"))
-  const seqs = (q: Parameters<EventStore["timeline"]>[0]) => JSON.parse(s.timeline(q)).map((e: any) => e.seq)
-  expect(JSON.parse(s.timeline({ workers: ["a", "b"], perWorker: 10 }))).toEqual([ev(1, "a"), ev(2, "b", "assistant.message"), ev(3, "a", "assistant.message")])
+  const seqs = (q: Parameters<EventStore["timeline"]>[0]) =>
+    JSON.parse(s.timeline(q)).map((e: { seq: number }) => e.seq)
+  expect(JSON.parse(s.timeline({ workers: ["a", "b"], perWorker: 10 }))).toEqual([
+    ev(1, "a"),
+    ev(2, "b", "assistant.message"),
+    ev(3, "a", "assistant.message"),
+  ])
   expect(seqs({ types: ["assistant.message"], perWorker: 10 })).toEqual([2, 3])
   expect(seqs({ perWorker: 1 })).toEqual([2, 3, 4])
   expect(seqs({ since: 2, perWorker: 10 })).toEqual([3, 4])
@@ -55,7 +78,9 @@ test("latest returns the data of the newest events of one type across agents", (
 test("a version 1 store (one JSON blob per row) is migrated in place", () => {
   const file = tmpFile()
   const v1 = new Database(file)
-  v1.run("CREATE TABLE events (worker TEXT NOT NULL, seq INTEGER NOT NULL, event TEXT NOT NULL, PRIMARY KEY (worker, seq))")
+  v1.run(
+    "CREATE TABLE events (worker TEXT NOT NULL, seq INTEGER NOT NULL, event TEXT NOT NULL, PRIMARY KEY (worker, seq))",
+  )
   v1.run("INSERT INTO events VALUES (?, ?, ?)", ["w-1", 7, JSON.stringify(ev(7, "w-1"))])
   v1.close()
   expect(new EventStore(file).load("w-1", 10)).toEqual([ev(7, "w-1")])
@@ -79,7 +104,10 @@ test("importAll imports every agent directory's events.json", () => {
     writeFileSync(path.join(root, id, "events.json"), JSON.stringify([ev(id === "w-1" ? 1 : 2, id)]))
   }
   s.importAll(root)
-  expect(JSON.parse(s.timeline({ perWorker: 10 })).map((e: any) => e.workerId)).toEqual(["w-1", "sub-2"])
+  expect(JSON.parse(s.timeline({ perWorker: 10 })).map((e: { workerId: string }) => e.workerId)).toEqual([
+    "w-1",
+    "sub-2",
+  ])
 })
 
 test("after replays stored events past a seq, scoped to one agent plus factory events, or null past the limit", () => {
@@ -100,7 +128,12 @@ test("full-text search finds messages, errors and tool calls across agents, and 
   s.append({ ...ev(2, "b", "session.error"), data: { message: "sqlite busy" } })
   s.append({ ...ev(3, "b", "tool.execution_start"), data: { toolName: "bash", arguments: { command: "git status" } } })
   s.append({ ...ev(4, "b", "session.usage_info"), data: { content: "sqlite" } })
-  expect(s.search("sqlite", 10).map((h) => h.seq).sort()).toEqual([1, 2])
+  expect(
+    s
+      .search("sqlite", 10)
+      .map((h) => h.seq)
+      .sort(),
+  ).toEqual([1, 2])
   expect(s.search("SQLite migr", 10)).toMatchObject([{ seq: 1, workerId: "a", type: "assistant.message" }])
   expect(s.search("sqlite", 10)[0]!.snippet).toContain("«")
   expect(s.search("sqlite", 10, ["b"]).map((h) => h.seq)).toEqual([2])
@@ -119,7 +152,9 @@ test("search text is quoted for FTS5, so operators and quotes in it are plain wo
 test("a version 2 store gets the search index of its existing rows", () => {
   const file = tmpFile()
   const v2 = new Database(file)
-  v2.run("CREATE TABLE events (seq INTEGER PRIMARY KEY, worker TEXT NOT NULL, type TEXT NOT NULL, agent TEXT, ts TEXT NOT NULL, data TEXT NOT NULL)")
+  v2.run(
+    "CREATE TABLE events (seq INTEGER PRIMARY KEY, worker TEXT NOT NULL, type TEXT NOT NULL, agent TEXT, ts TEXT NOT NULL, data TEXT NOT NULL)",
+  )
   v2.run("INSERT INTO events VALUES (5, 'w', 'user.message', NULL, '1', '{\"content\":\"find the needle\"}')")
   v2.run("PRAGMA user_version = 2")
   v2.close()
@@ -136,7 +171,14 @@ test("between returns one agent's events in [from, before), oldest first", () =>
 
 test("skillsInvoked lists each worker's invoked skills once", () => {
   const s = new EventStore(tmpFile())
-  const inv = (seq: number, worker: string, name: string) => ({ seq, workerId: worker, type: "skill.invoked", agentId: null, timestamp: "1", data: { name } })
+  const inv = (seq: number, worker: string, name: string) => ({
+    seq,
+    workerId: worker,
+    type: "skill.invoked",
+    agentId: null,
+    timestamp: "1",
+    data: { name },
+  })
   s.append(inv(1, "w-1", "ub-mode"))
   s.append(inv(2, "w-1", "ub-mode"))
   s.append(inv(3, "w-2", "security-audit"))
