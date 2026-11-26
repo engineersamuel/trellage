@@ -1,2 +1,4 @@
 #!/usr/bin/env bash
+# instance.sh points SF_URL at this checkout's factory (main checkout or this git worktree).
+source "$(dirname "$(readlink -f "$0")")/instance.sh"
 exec bun "$(dirname "$(readlink -f "$0")")/coordinator/cli.ts" "$@"

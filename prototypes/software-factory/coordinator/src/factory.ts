@@ -53,6 +53,7 @@ import { noul } from "@typesafe-ai/sdk"
 import { acquireStateLock, migrateLegacyState, stateDir } from "./statedir.ts"
 import { trackSubagent } from "./subagents.ts"
 import { grantedTools, roleCard } from "./roleCard.ts"
+import { freePortBlock, testPortNote } from "./testPorts.ts"
 
 const LOG_CAP = 4000
 
@@ -699,6 +700,8 @@ export class Factory {
     const mcp = stepMcp(step?.mcp ?? [])
     const note = mcpNote(mcp)
     if (note && spec.task) spec = { ...spec, task: `${spec.task}\n\n${note}` }
+    if (spec.role === "worker" && spec.task)
+      spec = { ...spec, task: `${spec.task}\n\n${testPortNote(await freePortBlock())}` }
     if (mcp.servers.perplexity) {
       const limits = factoryConfig().mcp
       const [max, maxResearch] = [limits.perplexity_max_calls, limits.perplexity_research_max_calls]

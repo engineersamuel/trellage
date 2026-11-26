@@ -13,7 +13,7 @@ Changed files:
 {{diff}}
 
 Rules:
-- Run every check yourself, on the code in this worktree. Build it and start the deliverable on test ports when a check needs it; stop what you started.
+- Run every check yourself, on the code in this worktree. Build it and start the deliverable on your test ports (given below) when a check needs it; stop what you started.
 - Never edit, commit, stash or reset tracked files in the worktree. Write your own notes and scripts only under {{out}}.
 - Checks may write the outputs they normally write (git-ignored results, build and cache folders, temp files).
   Never sandbox or block a check's own writes; a check that fails only because you blocked its writes is not evidence.

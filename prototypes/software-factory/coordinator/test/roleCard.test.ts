@@ -6,7 +6,7 @@ import { encode } from "gpt-tokenizer/encoding/o200k_base"
 import type { CopilotClient, SessionConfig, Tool } from "@github/copilot-sdk"
 import { ConfigStore, setConfigStore } from "../src/config.ts"
 import { Factory } from "../src/factory.ts"
-import { grantedTools, roleCard } from "../src/roleCard.ts"
+import { grantedTools, PI_TOOLS, roleCard } from "../src/roleCard.ts"
 
 const as = <T>(value: unknown): T => value as T
 
@@ -240,6 +240,44 @@ test("role card golden values are stable for step and fallback cards", () => {
 test("AC-1: granted tools are harness-specific", () => {
   const spec = { tools: [tool("read_goal"), tool("apply_patch")] }
   expect(grantedTools(spec, {}, "copilot")).toEqual(["apply_patch", "generate_image", "read_goal"])
-  expect(grantedTools(spec, {}, "pi")).toEqual(["apply_patch", "bash", "edit", "read", "read_goal", "write"])
+  expect(grantedTools(spec, {}, "pi")).toEqual([
+    "apply_patch",
+    "bash",
+    "bg_wait",
+    "contact_supervisor",
+    "edit",
+    "read",
+    "read_goal",
+    "subagent",
+    "subagent_supervisor",
+    "subagents_enable",
+    "write",
+  ])
   expect(grantedTools(spec, {}, "claude")).toEqual(["apply_patch", "generate_image", "read_goal"])
 })
+
+test("AC-1: the Pi tool list matches the active tools of a real Pi worker session", async () => {
+  const { createAgentSession, DefaultResourceLoader, SessionManager } = await import("@earendil-works/pi-coding-agent")
+  const { piSubagentsExtension } = await import("../src/pi.ts")
+  const cwd = mkdtempSync(path.join(tmpdir(), "sf-pi-tools-"))
+  const agentDir = path.join(cwd, "agent")
+  const resourceLoader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    noSkills: true,
+    noExtensions: true,
+    additionalExtensionPaths: [piSubagentsExtension()],
+    noPromptTemplates: true,
+  })
+  await resourceLoader.reload()
+  const { session } = await createAgentSession({
+    cwd,
+    agentDir,
+    resourceLoader,
+    sessionManager: SessionManager.inMemory(),
+  })
+  for (const name of session.getActiveToolNames()) expect(PI_TOOLS).toContain(name)
+  // An MCP step binds extensions (src/pi.ts): its tools stay within the list.
+  await session.bindExtensions({ mode: "print" })
+  for (const name of session.getActiveToolNames()) expect(PI_TOOLS).toContain(name)
+}, 30_000)

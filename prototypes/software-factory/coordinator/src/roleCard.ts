@@ -27,6 +27,20 @@ export const purposeLine = (task: string): string => {
   return encode(line).length > 32 ? `${tokensThrough(line, 31)}…` : line
 }
 
+/** Tools a Pi worker session can have active: Pi's built-ins plus pi-subagents' (always loaded, src/pi.ts). Binding
+ * extensions (steps with MCP servers) can add subagent_supervisor. A test starts a real Pi session and checks it. */
+export const PI_TOOLS = [
+  "read",
+  "bash",
+  "edit",
+  "write",
+  "bg_wait",
+  "contact_supervisor",
+  "subagent",
+  "subagent_supervisor",
+  "subagents_enable",
+]
+
 export const grantedTools = (
   spec: { tools?: Tool<Record<string, unknown>>[] },
   mcp: Record<string, McpServer>,
@@ -35,7 +49,7 @@ export const grantedTools = (
   [
     ...new Set([
       ...(spec.tools ?? []).map((tool) => tool.name),
-      ...(harness === "pi" ? ["read", "bash", "edit", "write"] : []),
+      ...(harness === "pi" ? PI_TOOLS : []),
       ...(harness === "pi" ? [] : ["generate_image"]),
       ...Object.keys(mcp).map((x) => `mcp:${x}`),
     ]),

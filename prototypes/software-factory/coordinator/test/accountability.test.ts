@@ -179,7 +179,7 @@ test("AC-2: a config budget change after spawn does not replace the recorded rol
   expect(grade.controls["3.5"]).toEqual({ result: "fail", value: 6 })
 })
 
-test("AC-2: grading retains start metadata from a 20004-event worker log", async () => {
+test("AC-2: grading retains start metadata from a 20004-event worker log after the store reopens and prunes", async () => {
   const dir = root()
   const store = new EventStore(path.join(dir, "events.db"))
   store.append(feed(1, "factory.worker_started", started))
@@ -187,10 +187,13 @@ test("AC-2: grading retains start metadata from a 20004-event worker log", async
     store.append(feed(seq, "assistant.turn_start", {}))
   }
   store.append(feed(20004, "factory.worker_stopped", { id: "w-1" }))
+  // Reopening prunes to KEEP_PER_WORKER rows per worker; the start record must survive it.
+  store.close()
+  const reopened = new EventStore(path.join(dir, "events.db"))
   const db = new AccountabilityDb(path.join(dir, "accountability.db"))
   const grade = await gradeWorker(
     {
-      store,
+      store: reopened,
       db,
       config: factoryConfig(),
       available: () => true,
