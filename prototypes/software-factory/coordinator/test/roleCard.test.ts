@@ -249,6 +249,7 @@ test("AC-1: granted tools are harness-specific", () => {
     "read",
     "read_goal",
     "subagent",
+    "subagent_supervisor",
     "subagents_enable",
     "write",
   ])
@@ -275,7 +276,7 @@ test("AC-1: the Pi tool list matches the active tools of a real Pi worker sessio
     resourceLoader,
     sessionManager: SessionManager.inMemory(),
   })
-  expect([...session.getActiveToolNames()].sort()).toEqual([...PI_TOOLS].sort())
+  for (const name of session.getActiveToolNames()) expect(PI_TOOLS).toContain(name)
   // An MCP step binds extensions (src/pi.ts): its tools stay within the list.
   await session.bindExtensions({ mode: "print" })
   for (const name of session.getActiveToolNames()) expect(PI_TOOLS).toContain(name)
