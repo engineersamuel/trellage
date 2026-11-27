@@ -291,6 +291,12 @@ test("run text prints model totals after its agent rows in descending USD order"
     agents: result.agents!.filter((agent) => agent.id !== result.agent),
   }
   expect(runText(missingRootRow).split("\n")[2]!.startsWith("  child")).toBe(true)
+
+  const missingOwner = {
+    ...result,
+    agents: result.agents!.map((agent) => (agent.id === "child" ? { ...agent, owner: "not-in-tree" } : agent)),
+  }
+  expect(runText(missingOwner).split("\n")[3]!.startsWith("  child")).toBe(true)
 })
 
 test("the store sums usage per agent and model, reads Copilot's rates, and never prunes usage", () => {
