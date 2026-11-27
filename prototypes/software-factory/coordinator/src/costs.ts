@@ -199,6 +199,7 @@ export type RunCost = {
   /** The sub-coordinator's agent id. */
   agent: string
   total: Totals
+  byModel?: Record<string, Totals>
   /** Every agent of the run, sub-coordinator first; only in the one-run report. */
   agents?: Omit<AgentCost, "children">[]
 }
@@ -224,18 +225,26 @@ export const runCost = (
   costs: Map<string, AgentCost>,
   t: RunThread,
   agentOf: (threadId: string) => string,
-  withAgents: boolean,
+  detail: boolean,
 ): RunCost | null => {
   if (!t.worktree) return null
   const agent = agentOf(t.id)
   const tree = subtree(costs, agent)
+  const byModel: Record<string, Totals> = {}
+  if (detail) {
+    for (const a of tree) {
+      for (const [model, totals] of Object.entries(a.byModel)) {
+        byModel[model] = add(byModel[model] ?? zero(), totals)
+      }
+    }
+  }
   return {
     threadId: t.id,
     title: t.title,
     createdAt: t.createdAt,
     agent,
     total: costs.get(agent)?.total ?? zero(),
-    ...(withAgents ? { agents: tree.map(slim) } : {}),
+    ...(detail ? { byModel, agents: tree.map(slim) } : {}),
   }
 }
 
@@ -271,7 +280,7 @@ export const reportText = (r: CostReport): string =>
     NOTE,
   ].join("\n")
 
-/** One run as a text table: the run, then each agent (own calls), indented by depth. */
+/** One run as a text table: the run, each agent (own calls), then model totals. */
 export const runText = (r: RunCost): string => {
   const depth = new Map<string, number>([[r.agent, 0]])
   const rows = (r.agents ?? []).map((a) => {
@@ -279,7 +288,10 @@ export const runText = (r: RunCost): string => {
     depth.set(a.id, d)
     return line(`${"  ".repeat(d)}${a.name}${a.step ? ` [${a.step}]` : ""}`, a.own)
   })
-  return [HEAD, line(`RUN ${r.title}`, r.total), ...rows, NOTE].join("\n")
+  const models = Object.entries(r.byModel ?? {})
+    .sort(([, a], [, b]) => b.usd - a.usd)
+    .map(([model, totals]) => line(model, totals))
+  return [HEAD, line(`RUN ${r.title}`, r.total), ...rows, "BY MODEL", ...models, NOTE].join("\n")
 }
 
 type ChatUsage = {

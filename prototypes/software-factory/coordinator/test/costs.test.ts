@@ -10,6 +10,7 @@ import {
   gradeCost,
   rollUp,
   runCost,
+  runText,
   type UsageRow,
 } from "../src/costs.ts"
 import { EventStore } from "../src/events.ts"
@@ -115,6 +116,181 @@ test("the report lists repo conversations newest first; one run lists its agents
     ["w-1", 4],
   ])
   expect(runCost(c, threads[2]!, agentOf, true)).toBeNull()
+})
+
+test("a detailed run sums own usage by model, excluding agents outside the run", () => {
+  const modelZ = "model-z-with-a-deliberately-long-name-for-line-truncation"
+  const modelA = "model-a-with-a-deliberately-long-name-for-line-truncation"
+  const agents = [
+    { id: "run", name: "run", role: "coordinator", owner: "coordinator" },
+    { id: "child", name: "child", role: "worker", owner: "run" },
+    { id: "grandchild", name: "grandchild", role: "worker", owner: "child" },
+    { id: "outside", name: "outside", role: "worker", owner: "coordinator" },
+  ]
+  const rows = [
+    row("run", {
+      model: modelZ,
+      nanoAiu: 500_000_000,
+      inputTokens: 10,
+      outputTokens: 2,
+      cacheReadTokens: 3,
+      cacheWriteTokens: 1,
+    }),
+    row("child", {
+      model: modelA,
+      calls: 2,
+      nanoAiu: 5e9,
+      inputTokens: 20,
+      outputTokens: 4,
+      cacheReadTokens: 5,
+      cacheWriteTokens: 2,
+    }),
+    row("grandchild", {
+      model: modelZ,
+      reported: false,
+      calls: 3,
+      inputTokens: 1_000,
+      outputTokens: 1_000,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 2,
+    }),
+    row("grandchild", {
+      model: modelA,
+      reported: false,
+      calls: 4,
+      inputTokens: 1_200_000,
+      outputTokens: 1_300_000,
+      cacheReadTokens: 200_000,
+      cacheWriteTokens: 1_000,
+    }),
+    row("outside", { model: modelZ, nanoAiu: 10e9 }),
+    row("outside", { model: "outside-only-model", nanoAiu: 20e9 }),
+  ]
+  const costs = rollUp(
+    rows,
+    agents,
+    { [modelZ]: { input: 1e6, cache_read: 0.5e6, cache_write: 1.5e6, output: 2e6 } },
+    0.01,
+  )
+  const thread = { id: "run-thread", title: "detailed run", createdAt: 1, worktree: "/worktree" }
+  const result = runCost(costs, thread, () => "run", true)!
+
+  expect(result.byModel).toEqual({
+    [modelZ]: {
+      calls: 4,
+      inputTokens: 1_010,
+      outputTokens: 1_002,
+      cacheReadTokens: 7,
+      cacheWriteTokens: 3,
+      totalTokens: 2_012,
+      aicReported: 0.5,
+      aicEstimated: 2.999,
+      aic: 3.499,
+      usd: 0.03499,
+      unpricedCalls: 0,
+    },
+    [modelA]: {
+      calls: 6,
+      inputTokens: 1_200_020,
+      outputTokens: 1_300_004,
+      cacheReadTokens: 200_005,
+      cacheWriteTokens: 1_002,
+      totalTokens: 2_500_024,
+      aicReported: 5,
+      aicEstimated: 0,
+      aic: 5,
+      usd: 0.05,
+      unpricedCalls: 4,
+    },
+  })
+  expect(
+    Math.abs(Object.values(result.byModel!).reduce((sum, totals) => sum + totals.usd, 0) - result.total.usd),
+  ).toBeLessThanOrEqual(1e-9)
+
+  const withoutDetails = runCost(costs, thread, () => "run", false)!
+  expect(withoutDetails).not.toBeNull()
+  expect(Object.hasOwn(withoutDetails, "byModel")).toBe(false)
+  expect(withoutDetails.total).toEqual(result.total)
+
+  const missingAgent = runCost(new Map(), thread, () => "missing", true)!
+  expect(missingAgent.total).toMatchObject({ calls: 0, usd: 0 })
+  expect(missingAgent.byModel).toEqual({})
+})
+
+test("run text prints model totals after its agent rows in descending USD order", () => {
+  const modelZ = "model-z-with-a-deliberately-long-name-for-line-truncation"
+  const modelA = "model-a-with-a-deliberately-long-name-for-line-truncation"
+  const costs = rollUp(
+    [
+      row("run", {
+        model: modelZ,
+        nanoAiu: 500_000_000,
+        inputTokens: 10,
+        outputTokens: 2,
+        cacheReadTokens: 3,
+        cacheWriteTokens: 1,
+      }),
+      row("child", {
+        model: modelA,
+        nanoAiu: 5e9,
+        inputTokens: 20,
+        outputTokens: 4,
+        cacheReadTokens: 5,
+        cacheWriteTokens: 2,
+      }),
+      row("grandchild", {
+        model: modelZ,
+        reported: false,
+        inputTokens: 1_000,
+        outputTokens: 1_000,
+        cacheReadTokens: 4,
+        cacheWriteTokens: 2,
+      }),
+      row("grandchild", {
+        model: modelA,
+        reported: false,
+        calls: 4,
+        inputTokens: 1_200_000,
+        outputTokens: 1_300_000,
+        cacheReadTokens: 200_000,
+        cacheWriteTokens: 1_000,
+      }),
+    ],
+    [
+      { id: "run", name: "run", role: "coordinator", owner: "coordinator" },
+      { id: "child", name: "child", role: "worker", owner: "run" },
+      { id: "grandchild", name: "grandchild", role: "worker", owner: "child" },
+    ],
+    { [modelZ]: { input: 1e6, cache_read: 0.5e6, cache_write: 1.5e6, output: 2e6 } },
+    0.01,
+  )
+  const result = runCost(
+    costs,
+    { id: "run-thread", title: "detailed run", createdAt: 1, worktree: "/worktree" },
+    () => "run",
+    true,
+  )!
+  const output = runText(result).split("\n")
+  const byModel = output.indexOf("BY MODEL")
+  const note = output.indexOf(
+    "~ = includes AIC estimated from tokens at Copilot's rates; +? = calls with no known rate, left out",
+  )
+  expect(output.slice(byModel - 3, byModel + 3)).toEqual([
+    "run                                              $0.01        0.5      12      2      1",
+    "  child                                          $0.05        5.0      24      4      1",
+    "    grandchild                                   $0.03     ~3.0+?    2.5M   1.3M      5",
+    "BY MODEL",
+    "model-a-with-a-deliberately-long-name-for-li     $0.05      5.0+?    2.5M   1.3M      5",
+    "model-z-with-a-deliberately-long-name-for-li     $0.03       ~3.5      2k     1k      2",
+  ])
+  expect(note).toBe(output.length - 1)
+  expect(byModel).toBe(note - 3)
+
+  const missingRootRow = {
+    ...result,
+    agents: result.agents!.filter((agent) => agent.id !== result.agent),
+  }
+  expect(runText(missingRootRow).split("\n")[2]!.startsWith("  child")).toBe(true)
 })
 
 test("the store sums usage per agent and model, reads Copilot's rates, and never prunes usage", () => {
@@ -240,7 +416,10 @@ test("a Pi assistant message carries its call's usage", () => {
 test("a chat completion's usage keeps Copilot's charge when the reply carries it", () => {
   expect(chatUsage("m", {})).toBeNull()
   expect(
-    chatUsage("m", { usage: { prompt_tokens: 10, completion_tokens: 2 }, copilot_usage: { total_nano_aiu: 5e8 } }),
+    chatUsage("m", {
+      usage: { prompt_tokens: 10, completion_tokens: 2 },
+      copilot_usage: { total_nano_aiu: 5e8 },
+    }),
   ).toMatchObject({
     inputTokens: 10,
     outputTokens: 2,
