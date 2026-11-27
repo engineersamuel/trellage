@@ -20,8 +20,12 @@ export const lenses = (_c?: FactoryConfig): { id: string; focus: string }[] =>
 export type Lens = ReturnType<typeof lenses>[number]
 export type LensId = string
 
-/** Reviewer model family. Models per family come from [models.review]; Gemini is reached through copilot-proxy-rs. */
-type Family = "claude" | "gpt" | "gemini"
+/**
+ * Model family. Reviewer models per family come from [models.review]; Gemini is reached through copilot-proxy-rs.
+ * Microsoft's mai models have no frontier reviewer, so a mai implementer is read by every reviewer family.
+ */
+type Family = "claude" | "gpt" | "gemini" | "mai"
+type ReviewFamily = Exclude<Family, "mai">
 
 export const familyOf = (model: string | null | undefined): Family | null =>
   /^claude/i.test(model ?? "")
@@ -30,7 +34,9 @@ export const familyOf = (model: string | null | undefined): Family | null =>
       ? "gpt"
       : /^gemini/i.test(model ?? "")
         ? "gemini"
-        : null
+        : /^mai-/i.test(model ?? "")
+          ? "mai"
+          : null
 
 /**
  * Frontier reviewer models from the families other than the implementer's (a rubber-duck read), in a fixed order.
@@ -42,7 +48,7 @@ export const reviewModels = (
   c: FactoryConfig = factoryConfig(),
 ): string[] => {
   const own = familyOf(implementerModel)
-  return (["gpt", "claude", "gemini"] as Family[])
+  return (["gpt", "claude", "gemini"] as ReviewFamily[])
     .filter((f) => f !== own && (gemini || f !== "gemini"))
     .map((f) => c.models.review[f])
 }

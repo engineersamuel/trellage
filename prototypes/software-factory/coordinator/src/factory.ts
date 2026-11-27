@@ -47,7 +47,14 @@ import {
 import { claudeGate, ClaudeSession, composeClaude, permissionDeniedEvent, type HarnessEvent } from "./claude.ts"
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
 import { composePi, piBudgetFile, PiSession, usePiSubagentDir, withProxyModel } from "./pi.ts"
-import { configStore, factoryConfig, missingProfiles, userConfigPath, type FactoryConfig } from "./config.ts"
+import {
+  configStore,
+  factoryConfig,
+  missingProfiles,
+  userConfigPath,
+  type FactoryConfig,
+  type Profile,
+} from "./config.ts"
 import { decisionsAvailable, setDecisionEngine, systemOne } from "./decide.ts"
 import { noul } from "@typesafe-ai/sdk"
 import { acquireStateLock, migrateLegacyState, stateDir } from "./statedir.ts"
@@ -176,6 +183,8 @@ export type SpawnSpec = {
   perplexityLimits?: { max: number; maxResearch: number }
   /** Rendered accountability role card, retained on the worker record. */
   roleCard?: string | null
+  /** Reasoning effort of the session (set by spawn from the model profile; absent = the model's default). */
+  reasoningEffort?: string
 }
 
 export type WorkerSpec = {
@@ -468,6 +477,17 @@ const SDK_MOVE_WAIT_MS = 30 * 60_000
 
 const CLAUDE_DEFAULT: HarnessSpec = { kind: "claude", profiles: ["default"] }
 
+/** Steps whose workers keep frontier models under a model profile; they run at the profile's review_effort. */
+const REVIEW_STEPS = new Set(["review", "synthesis", "security", "evaluate"])
+
+/** A profile's worker for a routed ranking: the first ranked model in the profile's list, else the list's first. */
+export const profileWorker = (ranked: readonly string[], p: Profile): string =>
+  ranked.find((id) => p.workers.includes(id)) ?? p.workers[0]!
+
+/** The effort a profile sets for a worker of `step`, or undefined (the model's default). */
+export const profileEffort = (p: Profile | null, step: string | undefined): string | undefined =>
+  p && step && REVIEW_STEPS.has(step) && p.review_effort !== "default" ? p.review_effort : undefined
+
 /**
  * The harness a worker runs in. `auto`: the step's or the spawn's choice; else a Claude model runs in the Claude
  * Agent SDK, any other model in the Copilot SDK. A forced SDK applies to every worker; a step's own profiles
@@ -565,6 +585,23 @@ export class Factory {
   /** Worker model when routing gives none: SF_MODEL, else [models] worker in the factory config (read live). */
   get defaultModel(): string {
     return this.env.SF_MODEL ?? factoryConfig().models.worker
+  }
+  /** main.ts: the model profile name of an agent id's conversation (or its goal's); null/undefined = none set. */
+  profileHook: ((id: string) => string | undefined) | null = null
+  /** The model profile name for an agent id: its conversation's, else models.profile. */
+  profileName(id: string): string {
+    return this.profileHook?.(id) ?? factoryConfig().models.profile
+  }
+  /** The model profile of an agent id, or null (none, or a name the config no longer has). */
+  profileFor(id: string): Profile | null {
+    const name = this.profileName(id)
+    return (name && factoryConfig().profiles[name]) || null
+  }
+  /** A coordinator's model and effort: a sub-coordinator under a profile uses the profile's, else the settings'. */
+  coordinatorModel(id: string, s: S.Settings = this.settings): { model: string; reasoningEffort: string } {
+    if (!id.startsWith("sub-")) return s.agent
+    const p = this.profileFor(id)
+    return p ? { model: p.sub_coordinator, reasoningEffort: p.sub_coordinator_effort } : s.subAgent
   }
   /** Stored settings (settings.json). Coordinator models are not stored here: see `settings`. */
   private stored: S.Settings
@@ -711,12 +748,16 @@ export class Factory {
         perplexityLimits: { max, maxResearch },
       }
     }
+    // A worker's model profile comes from its owner's conversation (or models.profile); coordinators pass a model.
+    const profile = spec.role === "worker" ? this.profileFor(spec.owner ?? id) : null
+    const effort = profileEffort(profile, spec.step)
+    if (effort) spec = { ...spec, reasoningEffort: effort }
     // Skill preflight runs first, so a worker with an unusable skill fails before any model call.
     const { workdir, setup, skills } = this.prepareSpawn(spec, id, home, step)
     const setting = this.settings.workers.harness
     const chosen = spec.harness ?? step?.harness
     // With no harness chosen, the worker's model (pinned, routed or default) decides the SDK: route it first.
-    const routed = spec.role === "worker" && !chosen && setting === "auto" ? await this.spawnModel(spec) : null
+    const routed = spec.role === "worker" && !chosen && setting === "auto" ? await this.spawnModel(spec, profile) : null
     const harness = workerHarness(
       setting,
       spec.role,
@@ -734,10 +775,14 @@ export class Factory {
         : { ...spec, roleCard: null }
     }
     if (harness) {
-      const pinned = routed ? { ...spec, model: routed.model } : spec
-      return this.spawnHarness(pinned, id, home, workdir, harness, skills, routed?.source, mcp.servers)
+      // Under a profile the Claude Agent SDK runs Claude models only: a routed other model becomes claude_worker.
+      const claudeOnly = profile && harness.kind === "claude" && spec.model === undefined
+      const own = routed && !(claudeOnly && !/^claude/.test(routed.model)) ? routed.model : undefined
+      const model = own ?? (claudeOnly ? profile.claude_worker : undefined)
+      const pinned = model ? { ...spec, model } : spec
+      return this.spawnHarness(pinned, id, home, workdir, harness, skills, routed?.source, mcp.servers, profile)
     }
-    const { model, source } = routed ?? (await this.spawnModel(spec))
+    const { model, source } = routed ?? (await this.spawnModel(spec, profile))
     // A worker model the native Copilot runtime does not serve goes through copilot-proxy-rs (BYOK).
     if (spec.role === "worker" && auth === "native" && !(await this.nativeServes(model))) auth = "proxy"
     const host = spec.shareRuntimeOf ? this.workers.get(spec.shareRuntimeOf) : undefined
@@ -779,6 +824,7 @@ export class Factory {
     skills: SkillCheck[] = [],
     source?: ModelSource,
     mcp: Record<string, McpServer> = {},
+    profile: Profile | null = null,
   ): Promise<Worker> {
     let worker: Worker | undefined
     const emit = (ev: HarnessEvent) => {
@@ -795,7 +841,9 @@ export class Factory {
             emit,
             stepSkills,
             home,
-            await this.subagentModel(spec, spec.step ? stepById(spec.step) : null),
+            profile
+              ? await this.profileSubagentModel(profile)
+              : await this.subagentModel(spec, spec.step ? stepById(spec.step) : null),
             mcp,
           )
         : await this.piSession(spec, workdir, harness, emit, stepSkills, mcp)
@@ -872,7 +920,9 @@ export class Factory {
         ...(skillRoot ? { additionalDirectories: [skillRoot] } : {}),
         ...(skillPlugin ? { settingSources: [], skills: skillPlugin.names } : {}),
         model,
-        ...(launch.effort ? { effort: launch.effort as never } : {}),
+        ...((spec.reasoningEffort ?? launch.effort)
+          ? { effort: (spec.reasoningEffort ?? launch.effort) as never }
+          : {}),
         // default mode, so every permission prompt goes through the factory gate; bypassPermissions skips canUseTool.
         permissionMode: "default",
         canUseTool: withToolGuard(
@@ -954,8 +1004,12 @@ export class Factory {
     }
   }
 
-  private async spawnModel(spec: SpawnSpec): Promise<{ model: string; source: ModelSource }> {
+  private async spawnModel(
+    spec: SpawnSpec,
+    profile: Profile | null = null,
+  ): Promise<{ model: string; source: ModelSource }> {
     if (spec.model) return { model: spec.model, source: { kind: "pinned" } }
+    if (profile) return this.profileModel(spec, profile)
     if (spec.role !== "worker" || !spec.task) return { model: this.defaultModel, source: { kind: "default" } }
     const { small_model, small_threshold, implement_model, implement_small_model } = factoryConfig().routing
     const implement = spec.step === "implement"
@@ -979,14 +1033,37 @@ export class Factory {
     }
   }
 
+  /**
+   * A worker under a model profile: low-complexity non-UI work gets its small_model; other work the router's first
+   * pick in its workers list, else that list's first model. [routing] implement keys do not apply.
+   */
+  private async profileModel(spec: SpawnSpec, p: Profile): Promise<{ model: string; source: ModelSource }> {
+    const name = this.profileName(spec.owner ?? spec.id ?? "")
+    if (!spec.task) return this.recordRoute(spec, p.workers[0]!, "profile-default", 0, name)
+    const low = await this.lowComplexity(spec.task)
+    if (low && !low.ui && low.p >= factoryConfig().routing.small_threshold)
+      return this.recordRoute(spec, p.small_model, "profile-small", low.p, name)
+    const routed = await this.routeModel(spec.task)
+    const model = profileWorker(routed?.ranked ?? [], p)
+    return this.recordRoute(spec, model, "profile", routed?.confidence ?? 0, name, routed?.ranked ?? [model])
+  }
+
   /** Publish a routing decision made from a config key or Jev's low-complexity score, and return it. */
-  private recordRoute(spec: SpawnSpec, model: string, by: string, confidence: number) {
+  private recordRoute(
+    spec: SpawnSpec,
+    model: string,
+    by: string,
+    confidence: number,
+    profile?: string,
+    ranked: string[] = [model],
+  ) {
     this.publish("coordinator", "factory.model_routed", null, now(), {
       worker: spec.name,
       id: model,
       confidence,
       routedBy: by,
-      ranked: [model],
+      ranked,
+      ...(profile ? { profile } : {}),
     })
     return { model, source: { kind: "routed" as const, by, confidence } }
   }
@@ -1049,6 +1126,13 @@ export class Factory {
       })
       return id
     }
+    return null
+  }
+
+  /** Under a profile, Claude Code subagents stay on a Claude model: its claude_worker, else models.claude_worker. */
+  async profileSubagentModel(p: Profile): Promise<string | null> {
+    for (const id of new Set([p.claude_worker, factoryConfig().models.claude_worker]))
+      if (await this.acceptsThinking(id)) return id
     return null
   }
 
@@ -1176,6 +1260,7 @@ export class Factory {
       ...(spec.toolGuard ? { hooks: { onPreToolUse: copilotToolGuard(spec.toolGuard) } } : {}),
       streaming: true,
       model,
+      ...(spec.reasoningEffort ? { reasoningEffort: spec.reasoningEffort as never } : {}),
       workingDirectory: workdir,
       tools: this.sessionTools(spec, workdir),
       ...(setup.skillDirectories.length ? { skillDirectories: setup.skillDirectories } : {}),
@@ -1375,7 +1460,7 @@ export class Factory {
     const live = [...this.workers.values()].filter((w) => w.role === "coordinator")
     await Promise.all(
       live.map(async (w) => {
-        const c = w.id.startsWith("sub-") ? next.subAgent : next.agent
+        const c = this.coordinatorModel(w.id, next)
         if (w.model === c.model) return
         if (this.moveSdk(w, c.model)) return
         try {
@@ -1398,7 +1483,7 @@ export class Factory {
         [...this.workers.values()]
           .filter((w) => w.role === "coordinator")
           .map((w) => {
-            const c = w.id.startsWith("sub-") ? next.subAgent : next.agent
+            const c = this.coordinatorModel(w.id, next)
             return this.moveSdk(w, c.model) ? undefined : w.setModel(c.model, c.reasoningEffort)
           }),
       )

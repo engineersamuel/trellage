@@ -270,6 +270,30 @@ No TickTick tool is included in a worker's MCP configuration.
   - The Jev router pick, then the default model.
 - UI implement work keeps the UI step model (claude-opus-5.5), because the UI step pins its model first.
 
+### Model profiles
+
+A model profile (`[profiles.<name>]` in the config) sets the models of one goal or conversation. It replaces
+`[models] sub_coordinator` and the worker routing above for that work only. The shipped profile is `budget`.
+
+- Select it, most specific first:
+  - Conversation: `start_conversation` with `profile: "budget"` (the Chief of Staff tool).
+  - Goal: `"profile": "budget"` in the goal spec. Every loop of the goal uses it. The guided goal page has a
+    Models row (step 6, under Limits) to pick it; the goal edit form has a Model profile field.
+  - Default: `[models] profile = "budget"`. Empty means no profile.
+- Sub-coordinator: `sub_coordinator` at `sub_coordinator_effort`.
+- Worker model, first match wins:
+  - A pinned model on the spawn spec (reviewers, evaluator, security, the UI step).
+  - Low-complexity, non-UI work (Jev p >= `[routing] small_threshold`): `small_model`.
+  - The Jev router's first ranked model that is in `workers`, else the first model in `workers`.
+  - `[routing] implement_model` and `implement_small_model` do not apply.
+- `spawn_worker` with a `model` that is not in the profile: the model is dropped, and the result has a `note`.
+- Claude Agent SDK workers run Claude models only. A routed model that is not a Claude model becomes `claude_worker`.
+  Claude Code subagents use `claude_worker` too.
+- Reviewers, synthesis, security and evaluate workers keep their frontier models (`[models.review]`) at
+  `review_effort`.
+- `mai-*` models are their own family. A mai implementer is reviewed by all three frontier families.
+- Each `factory.model_routed` event of a profile worker has `profile` and `routedBy` `profile` or `profile-small`.
+
 ## Coordinator
 
 - `src/factory.ts`: one `CopilotClient` per worker, `RuntimeConnection.forTcp({ port: 0 })`, own `COPILOT_HOME`

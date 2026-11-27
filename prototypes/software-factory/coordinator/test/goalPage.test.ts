@@ -83,6 +83,19 @@ test("launch saves the spec with locked criteria and the override, then starts a
   expect(spec.readinessOverride).toBe("tests come later")
 })
 
+test("info lists the model profiles; launch saves the picked profile and refuses an unknown one", async () => {
+  const info = await (await page().call("info")).json()
+  expect(info.defaultProfile).toBe("")
+  expect(info.profiles.map((p: { name: string }) => p.name)).toContain("budget")
+  const { call, goals } = page([])
+  const r = await call("launch", { repo: root, base: "main", doc, expect: expectations, profile: "budget" })
+  expect(r.status).toBe(200)
+  expect(goals.get("cpr-retry")!.profile).toBe("budget")
+  const bad = await call("launch", { repo: root, base: "main", doc, expect: expectations, profile: "nope" })
+  expect(bad.status).toBe(400)
+  expect((await bad.json()).error).toContain("unknown profile nope")
+})
+
 test("launch refuses an unknown step", async () => {
   const { call } = page()
   const step = await call("launch", {

@@ -156,13 +156,19 @@ export const GoalSpec = Schema.Struct({
   improve: ImprovePolicy.pipe(withDefault({})),
   /** Why the goal was launched while Jev scored it below the readiness bar (guided goal page). */
   readinessOverride: Schema.optionalKey(Schema.String),
+  /** Model profile ([profiles.<name>] in the factory config) for every loop of the goal. Absent: models.profile. */
+  profile: Schema.optionalKey(Schema.String),
 })
 export type GoalSpec = typeof GoalSpec.Type
 
 export const decodeGoal = Schema.decodeUnknownExit(GoalSpec)
 
 /** Problems a spec has beyond its shape: bad id, empty prompt, a relative repo path, bad counts. */
-export const goalProblems = (g: GoalSpec, knownSteps?: readonly string[]): string[] => {
+export const goalProblems = (
+  g: GoalSpec,
+  knownSteps?: readonly string[],
+  knownProfiles?: readonly string[],
+): string[] => {
   const out: string[] = []
   if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(g.id)) out.push("id: lowercase letters, digits and dashes, 2-64 chars")
   if (!g.prompt.trim()) out.push("prompt is empty")
@@ -172,6 +178,8 @@ export const goalProblems = (g: GoalSpec, knownSteps?: readonly string[]): strin
     if (c.min < 0 || (c.max !== undefined && c.max < c.min)) out.push(`step ${s}: need 0 <= min <= max`)
   }
   if (!(g.limits.usd > 0)) out.push("limits: usd above 0")
+  if (g.profile !== undefined && knownProfiles && !knownProfiles.includes(g.profile))
+    out.push(`unknown profile ${g.profile} (known: ${knownProfiles.join(", ") || "none"})`)
   if (!Number.isInteger(g.improve.maxRetries) || g.improve.maxRetries < 0)
     out.push("improve.maxRetries must be a whole number >= 0")
   return out
@@ -676,6 +684,8 @@ export type GoalDraft = {
   gatesSkipped: readonly string[]
   approvals: Approvals
   usd: string
+  /** Model profile name; empty = none (models.profile). */
+  profile: string
   benchmarks: readonly Benchmark[]
   improve: ImprovePolicy
 }
@@ -704,6 +714,7 @@ export const emptyDraft = (): GoalDraft => ({
   gatesSkipped: [],
   approvals: { plan: "auto", findings: "auto", ship: "auto", other: "human" },
   usd: String(DEFAULT_RUN_USD),
+  profile: "",
   benchmarks: [],
   improve: DEFAULT_IMPROVE,
 })
@@ -757,6 +768,7 @@ export const draftToSpec = (
     approvals: d.approvals,
     improve: d.improve,
     limits: { usd: usd > 0 ? usd : DEFAULT_RUN_USD },
+    ...(d.profile.trim() ? { profile: d.profile.trim() } : {}),
   }
   const exit = decodeGoal(raw)
   if (!Exit.isSuccess(exit)) return { ok: false, problems: [...problems, "the form does not make a valid goal"] }
@@ -787,6 +799,7 @@ export const specToDraft = (s: GoalSpec): GoalDraft => ({
   gatesSkipped: [...(s.expect.sdlc?.gatesSkipped ?? [])],
   approvals: s.approvals,
   usd: String(s.limits.usd),
+  profile: s.profile ?? "",
   benchmarks: s.expect.benchmarks,
   improve: s.improve,
 })

@@ -707,11 +707,12 @@ const spawnWorker = (f: Factory, scope: Scope) =>
       if (typeof ship === "string") return json({ error: ship })
       const scopeAuth = f.workers.get(scope.id)?.auth
       const auth = scopeAuth ?? "native"
+      const dropped = profileDrops(f, scope.id, a.model)
       const w = await spawnHealing(f, scope, {
         name: str(a, "name"),
         role: "worker",
         auth,
-        ...(typeof a.model === "string" ? { model: a.model } : {}),
+        ...(typeof a.model === "string" && !dropped ? { model: a.model } : {}),
         task: withHome(sdlcTask(f, scope, a.step as string | undefined, str(a, "task")), scope),
         ...(typeof a.step === "string" ? { step: a.step } : {}),
         ...(ship
@@ -745,9 +746,20 @@ const spawnWorker = (f: Factory, scope: Scope) =>
       return json({
         ...w.summary(),
         ...(scope.workdir ? { worktree: scope.workdir } : { run: f.run }),
+        ...(dropped ? { note: dropped } : {}),
       })
     },
   })
+
+/** Under a model profile, a model the profile does not list is not used: the reason, or null to keep it. */
+export const profileDrops = (f: Factory, scopeId: string, model: unknown): string | null => {
+  const p = f.profileFor(scopeId)
+  if (!p || typeof model !== "string") return null
+  const allowed = new Set([...p.workers, p.small_model, p.claude_worker])
+  return allowed.has(model)
+    ? null
+    : `model ${model} is not in this conversation's model profile ${f.profileName(scopeId)}; the profile chose the model (allowed: ${[...allowed].join(", ")})`
+}
 
 /** request_approval and ask_user: open a decision card for the human. */
 const decisionTool = (f: Factory, scope: Scope, name: "request_approval" | "ask_user") => {
@@ -1183,7 +1195,7 @@ export type Conversations = {
   list: () => unknown
   folders: () => unknown
   /** `fresh`: a new conversation even when one in the folder has the same task (optimize_repo; skips R26). */
-  start: (folder: string, task: string, fresh?: boolean) => Promise<unknown>
+  start: (folder: string, task: string, fresh?: boolean, profile?: string) => Promise<unknown>
   message: (threadId: string, text: string) => Promise<void>
   read: (threadId: string, wait: boolean) => Promise<unknown>
   /** Compact live snapshot of every conversation, worker and pending decision. */
@@ -1215,10 +1227,23 @@ export const globalTools = (c: Conversations): Tool<Args>[] => [
             "Folder id from list_conversations, or an absolute path inside a git repo (adds the repo as a folder).",
         },
         task: { type: "string", description: "Self-contained task for the sub-coordinator." },
+        profile: {
+          type: "string",
+          description:
+            "Optional model profile from [profiles] in the factory config (e.g. budget: low-cost worker models, frontier reviewers). Omit for the default models.",
+        },
       },
       ["folder", "task"],
     ),
-    handler: async (a: Args) => json(await c.start(str(a, "folder"), str(a, "task"))),
+    handler: async (a: Args) =>
+      json(
+        await c.start(
+          str(a, "folder"),
+          str(a, "task"),
+          undefined,
+          typeof a.profile === "string" && a.profile.trim() ? a.profile.trim() : undefined,
+        ),
+      ),
   }),
   defineTool("optimize_repo", {
     description:

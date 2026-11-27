@@ -487,6 +487,14 @@ const approvalsSection = (model: Model, h: HtmlBuilder<Message>): Html =>
         (value) => Message.UpdatedUsd({ value }),
         h,
       ),
+      input(
+        "goal-profile",
+        "Model profile (e.g. budget; empty = default models)",
+        model.draft.profile,
+        "",
+        (value) => Message.UpdatedProfile({ value }),
+        h,
+      ),
     ],
     h,
   )

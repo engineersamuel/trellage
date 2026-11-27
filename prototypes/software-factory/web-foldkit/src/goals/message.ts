@@ -33,6 +33,7 @@ export const Message = defineMessageUnion({
   ToggledExpectSdlc: { isChecked: Schema.Boolean },
   ClickedGateExpectation: { gate: Schema.String, expectation: Schema.Literals(["run", "skip", "any"]) },
   UpdatedUsd: { value: Schema.String },
+  UpdatedProfile: { value: Schema.String },
   ClickedEditGoal: { id: Schema.String },
   SubmittedGoal: {},
   SucceededSaveGoal: { saved: LoopPrompt },

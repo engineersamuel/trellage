@@ -55,10 +55,20 @@ export type Thread = {
   /** All proposals, keyed by source grade; older approvals must remain routable. */ improvements?: ImprovementProposal[]
   /** Source thread when this is a Factory improvement run. */ improvementOf?: string
   /** The tournament this conversation runs; its sub-coordinator has the tournament tools. */ tournamentId?: string
+  /** Model profile ([profiles.<name>]) chosen when the conversation started; a goal run uses its goal's. */
+  profile?: string
 } & Partial<Worktree>
 type Meta = Pick<
   Thread,
-  "parentThreadId" | "desk" | "goalId" | "goalSpec" | "improvement" | "improvements" | "improvementOf" | "tournamentId"
+  | "parentThreadId"
+  | "desk"
+  | "goalId"
+  | "goalSpec"
+  | "improvement"
+  | "improvements"
+  | "improvementOf"
+  | "tournamentId"
+  | "profile"
 >
 export type ChatMessage =
   | { id: string; role: "user"; content: string }

@@ -15,6 +15,22 @@ const Probability = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 const Model = Schema.String.check(Schema.isNonEmpty())
 const Usd = Schema.Number.check(Schema.isGreaterThan(0))
+const Effort = Schema.Literals(["default", "low", "medium", "high", "xhigh"])
+
+/** A model profile (src/factory.ts profileOf): one goal's or conversation's models, in place of [models] and [routing]. */
+const Profile = Schema.Struct({
+  sub_coordinator: Model,
+  sub_coordinator_effort: Effort,
+  /** Workers the routed pick may use, best first; the router's first pick in this list wins, else the first one. */
+  workers: Schema.Array(Model).check(Schema.isMinLength(1)),
+  /** Low-complexity, non-UI workers (Jev p >= routing.small_threshold). */
+  small_model: Model,
+  /** Claude Agent SDK workers with no model of their own: a Claude model only. */
+  claude_worker: Model.check(Schema.isPattern(/^claude/)),
+  /** Reasoning effort of review, synthesis, security and evaluate workers (frontier models, pinned). */
+  review_effort: Effort,
+})
+export type Profile = typeof Profile.Type
 
 export const FactoryConfigSchema = Schema.Struct({
   models: Schema.Struct({
@@ -26,7 +42,10 @@ export const FactoryConfigSchema = Schema.Struct({
     goal_page: Model,
     /** Security audit model (SF_SECURITY_MODEL wins). Empty: the routed or default reviewer model. */
     security: Schema.String,
+    /** Model profile of goals and conversations that name none. Empty: no profile. */
+    profile: Schema.String,
   }),
+  profiles: Schema.Record(Schema.String, Profile),
   /** Small-model gate in Factory.spawnModel: Jev's low-complexity score at or above the threshold picks small_model. */
   routing: Schema.Struct({
     small_model: Model,
@@ -193,7 +212,12 @@ export const missingProfiles = (
     )
 }
 
-const decode = (raw: unknown): FactoryConfig => decodeSchema(raw)
+const decode = (raw: unknown): FactoryConfig => {
+  const c = decodeSchema(raw)
+  if (c.models.profile && !c.profiles[c.models.profile])
+    throw new Error(`models.profile: no [profiles.${c.models.profile}]`)
+  return c
+}
 
 export const defaultsPath = path.join(import.meta.dir, "..", "defaults", "config.toml")
 
@@ -458,9 +482,10 @@ export const snapshotConfig = (root: string, c: FactoryConfig = factoryConfig())
 /** Snapshots saved before these fields existed decode with empty defaults; every stored value is kept. */
 const decodeSnapshot = (raw: { models: object; routing: object }): FactoryConfig =>
   decode({
+    profiles: {},
     ...raw,
     todo: { enabled: true, tag: "factory", ...(raw as { todo?: object }).todo },
-    models: { security: "", ...raw.models },
+    models: { security: "", profile: "", ...raw.models },
     routing: { implement_model: "", implement_small_model: "", ...raw.routing },
   })
 

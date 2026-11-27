@@ -208,7 +208,7 @@ export const agreeContract = async (
 ): Promise<ContractItem[] | null> => {
   if (!scope.workdir) return null
   const { id, out } = outDir(f)
-  const model = evaluatorModel(f, f.workers.get(scope.id)?.model ?? f.settings.subAgent.model, p.c)
+  const model = evaluatorModel(f, f.workers.get(scope.id)?.model ?? f.coordinatorModel(scope.id).model, p.c)
   const r: Run = { f, scope, workdir: scope.workdir, auth: f.workers.get(scope.id)?.auth, c: p.c }
   try {
     const locked = lockedCount(p.request)

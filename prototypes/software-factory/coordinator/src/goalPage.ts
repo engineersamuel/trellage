@@ -1319,6 +1319,7 @@ export const makeGoalPage = (d: GoalPageDeps) => {
       override,
       research: artifact,
       draftId,
+      profile,
     } = decode(
       Schema.Struct({
         repo: Schema.String,
@@ -1330,6 +1331,7 @@ export const makeGoalPage = (d: GoalPageDeps) => {
         override: Schema.optionalKey(Schema.NullOr(Schema.String)),
         research: Schema.optionalKey(Schema.NullOr(Schema.String)),
         draftId: Schema.optionalKey(Schema.String),
+        profile: Schema.optionalKey(Schema.NullOr(Schema.String)),
       }),
       body,
       "launch request",
@@ -1344,10 +1346,11 @@ export const makeGoalPage = (d: GoalPageDeps) => {
       approvals: approvals ?? {},
       limits: limits ?? {},
       ...(override?.trim() ? { readinessOverride: override.trim() } : {}),
+      ...(profile?.trim() ? { profile: profile.trim() } : {}),
     }
     const exit = decodeGoal(raw)
     if (!Exit.isSuccess(exit)) throw new PageError(400, `not a valid goal: ${String(exit.cause)}`.slice(0, 500))
-    const problems = goalProblems(exit.value, d.knownSteps())
+    const problems = goalProblems(exit.value, d.knownSteps(), Object.keys(factoryConfig().profiles))
     if (problems.length) throw new PageError(400, `not a valid goal: ${problems.join("; ")}`)
     const spec = d.goals.save(exit.value)
     const threadId = await d.startRun(spec.id)
@@ -1412,7 +1415,16 @@ export const makeGoalPage = (d: GoalPageDeps) => {
   const handle = async (req: Request, name: string): Promise<Response> => {
     try {
       if (req.method === "GET" && name === "info")
-        return json({ model: model(), effort: cfg().effort, proxy: d.proxyUrl(), liveLaunch: true, calls })
+        return json({
+          model: model(),
+          effort: cfg().effort,
+          proxy: d.proxyUrl(),
+          liveLaunch: true,
+          calls,
+          // Model profiles the launch may pick; defaultProfile applies when it picks none ("" = no profile).
+          profiles: Object.entries(factoryConfig().profiles).map(([id, p]) => ({ name: id, ...p })),
+          defaultProfile: factoryConfig().models.profile,
+        })
       if (req.method === "GET" && name === "repos") return json(await reposList())
       if (req.method === "GET" && name === "draft") {
         const seed = d.draft?.(new URL(req.url).searchParams.get("id") ?? "")
