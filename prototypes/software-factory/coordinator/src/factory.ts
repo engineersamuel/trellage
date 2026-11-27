@@ -788,7 +788,9 @@ export class Factory {
     const host = spec.shareRuntimeOf ? this.workers.get(spec.shareRuntimeOf) : undefined
     if (host && !(host.client instanceof CopilotClient))
       throw new Error(`cannot share the runtime of ${host.id}: not a Copilot runtime`)
-    const client = host ? (host.client as CopilotClient) : await this.startClient(home, workdir, auth, setup)
+    const client = host
+      ? (host.client as CopilotClient)
+      : await this.startClient(home, workdir, auth, setup, spec.role === "worker")
     const worker = new Worker(id, spec.name, spec.role, auth, home, spec.task ?? null, client, model)
     worker.modelSource = source
     this.configureWorker(worker, spec)
@@ -912,7 +914,7 @@ export class Factory {
     const session = new ClaudeSession(
       {
         cwd: workdir,
-        env: { ...launch.env, ...claudeServers.env },
+        env: { ...(spec.role === "worker" ? workerEnv(launch.env) : launch.env), ...claudeServers.env },
         plugins: [...launch.plugins, ...(spec.plugins ?? []), ...(skillPlugin ? [skillPlugin.dir] : [])].map((p) => ({
           type: "local" as const,
           path: p,
@@ -1179,7 +1181,15 @@ export class Factory {
     return { workdir, setup: { ...setup, skillDirectories: [stepDir] }, skills }
   }
 
-  private async startClient(home: string, workdir: string, auth: Auth, setup: ReturnType<typeof stepSetup>) {
+  private async startClient(
+    home: string,
+    workdir: string,
+    auth: Auth,
+    setup: ReturnType<typeof stepSetup>,
+    worker = false,
+  ) {
+    const base = worker ? workerEnv(process.env) : process.env
+    const env = setup.extraPath.length ? { ...base, PATH: [...setup.extraPath, process.env.PATH].join(":") } : base
     const client = new CopilotClient({
       // Own process group: a group kill in a worker's tool tree cannot reach the coordinator.
       connection: RuntimeConnection.forTcp({
@@ -1191,9 +1201,7 @@ export class Factory {
       ...(auth === "native" ? { gitHubToken: githubToken() } : {}),
       useLoggedInUser: false,
       logLevel: "error",
-      ...(setup.extraPath.length
-        ? { env: { ...process.env, PATH: [...setup.extraPath, process.env.PATH].join(":") } }
-        : {}),
+      ...(worker || setup.extraPath.length ? { env } : {}),
     })
     await client.start()
     const proc = (client as unknown as { cliProcess?: ChildProcess }).cliProcess
@@ -1786,6 +1794,21 @@ const rssKb = (pid: number): number | null => {
     return null
   }
 }
+
+/**
+ * A worker's environment: the coordinator's, without the factory's own settings. A worker runs the repo's tests, and
+ * the factory instance variables (SF_URL, SF_UI_URL, SF_ADDR, SF_STATE_DIR, ... from instance.sh) change what those
+ * tests expect. Kept: SF_MCP_* (MCP headers for Claude workers) and SF_PERPLEXITY_BUDGET_FILE (shared call budget).
+ */
+export const workerEnv = (env: NodeJS.ProcessEnv): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(env).filter(
+      (e): e is [string, string] =>
+        typeof e[1] === "string" &&
+        e[0] !== "PC_SOCKET_PATH" &&
+        (!e[0].startsWith("SF_") || e[0].startsWith("SF_MCP_") || e[0] === "SF_PERPLEXITY_BUDGET_FILE"),
+    ),
+  )
 
 const githubToken = (): string => {
   for (const key of ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]) {

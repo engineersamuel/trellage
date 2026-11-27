@@ -7,6 +7,19 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { resetConfigStore } from "../src/config.ts"
 
+// A shell or worker that sourced instance.sh has a factory instance's address and paths; tests use the defaults.
+for (const k of [
+  "SF_URL",
+  "SF_UI_URL",
+  "SF_ADDR",
+  "SF_COORD_PORT",
+  "SF_UI_PORT",
+  "SF_WORKTREES",
+  "SF_INSTANCE",
+  "SF_LOGS",
+])
+  delete process.env[k]
+
 const root = mkdtempSync(path.join(tmpdir(), "sf-test-"))
 const env = { SF_CONFIG: path.join(root, "factory", "config.toml"), SF_STATE_DIR: path.join(root, "state") }
 Object.assign(process.env, env)
