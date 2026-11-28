@@ -292,3 +292,41 @@ test("a grade's cost has the run total and each step's own calls; agents with no
     ["aic", "aicEstimated", "calls", "outputTokens", "totalTokens", "unpricedCalls", "usd"].sort(),
   )
 })
+
+test("a model priced only by a rates probe gets an estimate; the probe asks the proxy once and is not a call", async () => {
+  const { Factory } = await import("../src/factory.ts")
+  const dir = mkdtempSync(path.join(tmpdir(), "sf-rates-"))
+  const realFetch = globalThis.fetch
+  let asked = 0
+  globalThis.fetch = (async () => {
+    asked++
+    return new Response(
+      JSON.stringify({
+        copilot_usage: {
+          token_details: [
+            { batch_size: 1_000_000, cost_per_batch: 100_000_000_000, token_type: "input", model: "claude-haiku-4.5" },
+            { batch_size: 1_000_000, cost_per_batch: 500_000_000_000, token_type: "output", model: "claude-haiku-4.5" },
+          ],
+        },
+      }),
+    )
+  }) as unknown as typeof fetch
+  try {
+    const f = new Factory({ SF_STATE_DIR: dir })
+    await f.ensureRates("claude-haiku-4.5")
+    await f.ensureRates("claude-haiku-4.5")
+    expect(asked).toBe(1)
+    expect(f.store.rates()["claude-haiku-4.5"]).toEqual({ input: 100_000, output: 500_000 })
+    expect(f.store.usageRows()).toEqual([])
+    const t = rollUp(
+      [{ ...row("w-1"), model: "claude-haiku-4.5", reported: false, inputTokens: 1000, outputTokens: 100 }],
+      [],
+      f.store.rates(),
+      0.01,
+    ).get("w-1")!.own
+    expect([t.unpricedCalls, t.aicEstimated]).toEqual([0, 0.15])
+  } finally {
+    globalThis.fetch = realFetch
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

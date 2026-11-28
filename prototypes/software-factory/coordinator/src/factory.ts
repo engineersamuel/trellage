@@ -830,6 +830,8 @@ export class Factory {
   ): Promise<Worker> {
     let worker: Worker | undefined
     const emit = (ev: HarnessEvent) => {
+      // Claude and Pi calls carry no Copilot charge: costs.ts estimates it from the model's rates, so get them once.
+      if (ev.type === "assistant.usage") void this.ensureRates(String((ev.data as { model?: unknown }).model ?? ""))
       worker?.observe(this, ev as SessionEvent)
       worker?.events.send(ev as SessionEvent)
     }
@@ -1136,6 +1138,42 @@ export class Factory {
     for (const id of new Set([p.claude_worker, factoryConfig().models.claude_worker]))
       if (await this.acceptsThinking(id)) return id
     return null
+  }
+
+  private ratesAsked = new Set<string>()
+  /**
+   * Copilot's per-token rates of a model no Copilot worker has priced yet: one 1-token Messages call through the proxy,
+   * whose `copilot_usage.token_details` lists every token type's rate. Saved as `factory.model_rates`, which
+   * EventStore.rates() reads. Once per model per process; a failure leaves the calls unpriced, as before.
+   */
+  async ensureRates(model: string): Promise<void> {
+    if (!model || this.ratesAsked.has(model)) return
+    this.ratesAsked.add(model)
+    if (this.store.rates()[model]) return
+    try {
+      const res = await fetch(`${this.proxyUrl}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": "factory", "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: "user", content: "ok" }] }),
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (!res.ok) return
+      const body = (await res.json()) as {
+        copilot_usage?: {
+          token_details?: { batch_size?: number; cost_per_batch?: number; token_type?: string; model?: string }[]
+        }
+      }
+      const tokenDetails = (body.copilot_usage?.token_details ?? []).map((d) => ({
+        batchSize: d.batch_size,
+        costPerBatch: d.cost_per_batch,
+        tokenType: d.token_type,
+        model: d.model ?? model,
+      }))
+      if (tokenDetails.length)
+        this.publish("coordinator", "factory.model_rates", null, now(), { model, copilotUsage: { tokenDetails } })
+    } catch {
+      // Unpriced, as before.
+    }
   }
 
   /** One tiny Messages call through the proxy with `thinking` on, as a Claude Code subagent sends it. */
