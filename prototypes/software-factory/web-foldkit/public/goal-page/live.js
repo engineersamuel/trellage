@@ -100,7 +100,7 @@
     research: (action, repo, doc, onEvent) => stream("/research", { action, repo, doc: cleanDoc(doc) }, onEvent),
     expectations: (doc) => post("/expectations", { doc: cleanDoc(doc) }),
     readiness: (doc, notes = true) => post("/readiness", { doc: cleanDoc(doc), notes }),
-    launch: ({ repo, base, doc, expectations, override, research, draftId }) =>
+    launch: ({ repo, base, doc, expectations, override, research, draftId, profile }) =>
       post("/launch", {
         repo,
         base,
@@ -111,6 +111,7 @@
         override: override || null,
         research: research || null,
         ...(draftId ? { draftId } : {}),
+        ...(profile ? { profile } : {}),
       }),
     /** history: [{role:"user"|"assistant", content}] — the newest user turn last. → {reply} */
     ask: (doc, question, options, history) => post("/ask", { doc: cleanDoc(doc), question, options, history }),

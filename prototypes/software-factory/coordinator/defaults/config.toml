@@ -16,6 +16,8 @@ claude_worker = "claude-sonnet-5.5"
 goal_page = "gpt-6.1-sol"
 # Security audit model. Empty = the routed or default reviewer model. SF_SECURITY_MODEL overrides it.
 security = ""
+# Model profile of goals and conversations that name none (a [profiles.<name>] below). Empty = no profile.
+profile = ""
 
 # Frontier reviewer model per family. Reviewers use a family other than the implementer's.
 [models.review]
@@ -36,6 +38,22 @@ implement_small_model = ""
 # An implement task that Jev rates UI work (prompts/jev/ui-task.md, p >= 0.5) gets the UI step's worker setup
 # (prompts/steps/ui.md: Owl-Listener designer-skills + Impeccable on claude-opus-5.5); it stays an implement worker.
 ui_step = true
+
+# Model profiles. A goal ("profile" in its spec), a conversation (start_conversation profile=...) or models.profile
+# selects one. It replaces [models] sub_coordinator and the worker routing for that work only. Reviewers, the
+# evaluator and security keep their frontier models ([models.review]) at review_effort.
+# Budget models: 2026-11-25 bench (6 tasks x 3, hidden tests): mai-code-2 18/18 $0.020 per task; mai-code-2-flash
+# 17/18 $0.0027; gpt-6-luna 17/18 $0.0026, 3x faster than mai-code-2-flash.
+[profiles.budget]
+sub_coordinator = "claude-opus-5.5"
+sub_coordinator_effort = "low"
+# The router's first pick in this list wins; when it picks none of them, the first one.
+workers = ["mai-code-2", "mai-code-2-flash", "gpt-6-luna"]
+# Low-complexity, non-UI work (Jev p >= routing.small_threshold).
+small_model = "gpt-6-luna"
+# Claude Agent SDK workers (UI step, Claude steps) with no model of their own. A Claude model only.
+claude_worker = "claude-haiku-5.5"
+review_effort = "low"
 
 [review]
 # Jev probability at or above which a review lens runs.

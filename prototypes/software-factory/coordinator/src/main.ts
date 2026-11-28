@@ -222,6 +222,11 @@ const accountabilityGrades = new AccountabilityGrades({
   dimensions: accountabilityDimensions(threads),
   publish: (worker, type, data) => factory.publish(worker, type, null, now(), data),
 })
+// Model profile of an agent: its conversation's (set at start), else its goal's, else models.profile.
+factory.profileHook = (id) => {
+  const t = threads.list().find((x) => subId(x.id) === id)
+  return t?.profile ?? t?.goalSpec?.profile
+}
 factory.onWorkerEnd = accountabilityWorkerEnd(accountabilityGrades, () => factoryConfig().accountability.enabled)
 factory.feed.subscribe(
   accountabilityEvaluation(accountabilityDb, (worker, type, value) =>
@@ -277,9 +282,13 @@ const globalScopeTools = (
         ...(isUnstartedDraft(t) ? { note: DRAFT_NOTE } : {}),
       })),
     folders: () => threads.folders(),
-    start: (folder, task, fresh) => {
-      const held = startHold(folder, task, fresh)
-      return held ? Promise.resolve({ error: held }) : startConversation(folder, task, chat)
+    start: (folder, task, fresh, profile) => {
+      const held =
+        startHold(folder, task, fresh) ??
+        (profile && !factoryConfig().profiles[profile]
+          ? `no model profile ${profile}; known: ${Object.keys(factoryConfig().profiles).join(", ") || "none"}`
+          : null)
+      return held ? Promise.resolve({ error: held }) : startConversation(folder, task, chat, profile)
     },
     message: async (tid, text) => logFailure(await deliverToThread(tid, `[from the global coordinator] ${text}`)),
     read: async (tid, wait) => {
@@ -580,13 +589,13 @@ const coordinatorFor = (t: Thread | undefined): Promise<Worker> => {
         tools: coordinatorTools(factory, subScope(t)),
         permissions: factory.subPermissions,
         workdir: t.worktree,
-        model: factory.settings.subAgent.model,
+        model: factory.coordinatorModel(id).model,
         // A goal's loop n > 1 is a fresh session (a fresh context) of the same sub-coordinator (ADR 0007).
         sessionId: loopSessionId(id, (t.goalId && goalStates.get(t.goalId)?.loop) || 1, subRenewals(id)),
       })
       .then(async (w) => {
-        // Resumed sessions keep their old model: always apply the sub-coordinator model and effort.
-        const { model: subModel, reasoningEffort: subEffort } = factory.settings.subAgent
+        // Resumed sessions keep their old model: always apply the sub-coordinator model and effort (its profile's).
+        const { model: subModel, reasoningEffort: subEffort } = factory.coordinatorModel(id)
         await w
           .setModel(subModel, subEffort)
           .catch((e) => console.error(`sub-coordinator model ${subModel}/${subEffort} not applied: ${e}`))
@@ -757,7 +766,7 @@ const rewriteGuide = (t: Thread) => {
 const openConversation = async (
   folder: string,
   task: string,
-  meta: Pick<Thread, "parentThreadId" | "improvementOf"> = {},
+  meta: Pick<Thread, "parentThreadId" | "improvementOf" | "profile"> = {},
 ) => {
   const f = threads.folder(folder) ?? threads.addFolder(folder)
   const t = createThread(task, f.id)
@@ -775,8 +784,16 @@ const openConversation = async (
 }
 
 /** Global coordinator tool: open a conversation and give its sub-coordinator a task. */
-const startConversation = async (folder: string, task: string, parentThreadId: string | null = null) => {
-  const { info, sent } = await openConversation(folder, task, parentThreadId ? { parentThreadId } : {})
+const startConversation = async (
+  folder: string,
+  task: string,
+  parentThreadId: string | null = null,
+  profile?: string,
+) => {
+  const { info, sent } = await openConversation(folder, task, {
+    ...(parentThreadId ? { parentThreadId } : {}),
+    ...(profile ? { profile } : {}),
+  })
   logFailure(sent)
   return info
 }

@@ -239,7 +239,7 @@ export class EventStore {
            json_extract(d.value, '$.tokenType') AS type,
            json_extract(d.value, '$.costPerBatch') * 1.0 / json_extract(d.value, '$.batchSize') AS rate
          FROM events e, json_each(e.data, '$.copilotUsage.tokenDetails') d
-         WHERE e.seq IN (SELECT max(seq) FROM events WHERE type = 'assistant.usage'
+         WHERE e.seq IN (SELECT max(seq) FROM events WHERE type IN ('assistant.usage', 'factory.model_rates')
            AND json_extract(data, '$.copilotUsage.tokenDetails') IS NOT NULL GROUP BY json_extract(data, '$.model'))
            AND json_extract(d.value, '$.batchSize') > 0`,
       )

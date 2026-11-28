@@ -153,6 +153,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
             : Array.filter(draft.gatesSkipped, (g) => g !== gate),
       })),
     UpdatedUsd: ({ value }) => field(model, "usd", value),
+    UpdatedProfile: ({ value }) => field(model, "profile", value),
     ClickedEditGoal: ({ id }) => editGoal(model, id),
     SubmittedGoal: () => submit(model),
     SucceededSaveGoal: ({ saved }) => ({

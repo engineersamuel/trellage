@@ -61,6 +61,14 @@ describe("goal dialog", () => {
     const draft = Schema.decodeUnknownSync(GoalDraft)(specToDraft(saved))
     assert.deepEqual(draftToSpec({ ...draft, title: "Edited" }), { ok: true, spec: { ...saved, title: "Edited" } })
   })
+  test("the form keeps a goal's model profile, and an empty one leaves it out", () => {
+    const saved: GoalSpec = { ...specOf("cheap"), profile: "budget" }
+    const draft = Schema.decodeUnknownSync(GoalDraft)(specToDraft(saved))
+    assert.equal(draft.profile, "budget")
+    assert.deepEqual(draftToSpec(draft), { ok: true, spec: saved })
+    const cleared = draftToSpec({ ...draft, profile: "" })
+    assert.isTrue(cleared.ok && !("profile" in cleared.spec))
+  })
   test("a new goal opens the guided page; the form is only for a saved goal", () => {
     scene(
       { update, view },

@@ -13,6 +13,7 @@ import {
   writeFileSync,
 } from "node:fs"
 import path from "node:path"
+import { factoryConfig } from "./config.ts"
 import { decodeGoal, decodeGoalRun, goalProblems, type GoalRun, type GoalSpec, type Grade } from "../../shared/goal.ts"
 
 export const goalsDir = (env = process.env): string =>
@@ -64,7 +65,7 @@ const writeGrade = (target: string, line: GoalRun, regrade: boolean): GoalRun | 
 export const decodeGoalOrThrow = (u: unknown, knownSteps?: readonly string[]): GoalSpec => {
   const exit = decodeGoal(u)
   if (!Exit.isSuccess(exit)) throw new GoalError(`invalid goal: ${errorText(exit)}`)
-  const problems = goalProblems(exit.value, knownSteps)
+  const problems = goalProblems(exit.value, knownSteps, Object.keys(factoryConfig().profiles))
   if (problems.length) throw new GoalError(`invalid goal: ${problems.join("; ")}`)
   return exit.value
 }

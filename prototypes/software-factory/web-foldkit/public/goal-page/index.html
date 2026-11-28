@@ -751,7 +751,7 @@ function init(){
     ideaOpen:null, research:{running:null, done:null, err:null, events:[]},
     exp:null, expJev:null,
     rdy:null, notesFor:null, moved:null, rescoring:null,
-    override:"", launched:null, launchErr:null, launching:false,
+    override:"", launched:null, launchErr:null, launching:false, profile: S?.profile ?? null,
     lastLevel:1, passed:[false,false,false], ideaN:0,
     deep: freshDeep(),
   };
@@ -1607,6 +1607,7 @@ function pExpect(){
   <div class="sec"><h3>PR expectations</h3><div class="xrow" style="flex-wrap:wrap;gap:8px"><span class="nm">PR</span><span class="chips"><span class="chip">state ${esc(x.pr.state)}</span><span class="chip">checks ${esc(x.pr.checks)}</span>${x.pr.bodyIncludes.map(b=>`<span class="chip">body ∋ ${esc(b)}</span>`).join("")}${x.pr.untouched.map(u=>`<span class="chip">untouched ${esc(u)}</span>`).join("")}</span></div></div>
   <div class="sec"><h3>Approvals</h3>${Object.keys(x.approvals).map(k => `<div class="xrow"><span class="nm">${k[0].toUpperCase()+k.slice(1)}</span><span class="rs2">${x.approvals[k]!==Jv.approvals[k]?`<span class="ovr">You flipped Jev's pick</span>`:"Jev's pick"}</span><span class="seg">${["auto","human"].map(v=>`<button class="${x.approvals[k]===v?"on":""}" data-act="appr" data-v="${k}:${v}">${v}</button>`).join("")}</span></div>`).join("")}</div>
   <div class="sec"><h3>Limits</h3><div class="xrow"><span class="nm">Runs</span><span class="rs2">Max scored runs for this goal</span><input class="input num" type="number" min="1" data-lim="runs" value="${x.limits.runs}"></div><div class="xrow"><span class="nm">Minutes / run</span><span class="rs2">Hard stop per run</span><input class="input num" type="number" min="5" data-lim="minutesPerRun" value="${x.limits.minutesPerRun}"></div></div>
+  ${profileSec()}
   ${next("Check readiness", 7)}`;
 }
 function pReady(){
@@ -1705,7 +1706,7 @@ function renderCard(){
   const head = `<div class="ghead"><div class="meta">
       <div class="lvl">Lv ${lv} · ${lvName(lv)} <span class="pipsL">${[1,2,3,4,5].map(i=>`<i class="${i<=lv?"on":""}"></i>`).join("")}</span></div>
       <h1 class="gtitle" ${S.started?`contenteditable="plaintext-only" spellcheck="false" data-edit="title"`:""}>${esc(S.started?S.title:"Untitled goal")}</h1>
-      <div class="gmeta"><span>${repo?`${esc(repo.name)} · ${esc(repo.base)}`:"no repo yet"}</span>${S.started?`<span class="mono">${esc(S.docId)}</span>`:""}${x?`<span>${esc(x.tier.value)} · ${x.limits.runs} runs × ${x.limits.minutesPerRun} min</span>`:""}</div>
+      <div class="gmeta"><span>${repo?`${esc(repo.name)} · ${esc(repo.base)}`:"no repo yet"}</span>${S.started?`<span class="mono">${esc(S.docId)}</span>`:""}${x?`<span>${esc(x.tier.value)} · ${x.limits.runs} runs × ${x.limits.minutesPerRun} min</span>`:""}${chosenProfile()?`<span>models: ${esc(chosenProfile())}</span>`:""}</div>
       ${S.proposals.length?`<button class="pendchip" data-act="go" data-v="3">● ${S.proposals.length} proposal${S.proposals.length>1?"s":""} waiting</button>`:""}
     </div>
     <div class="gauge">${gaugeSVG(r)}<div class="legend">${r.map((x,i)=>`<div><span class="sw" style="background:${DIMHEX[i]}"></span>${x.dim}<span class="v ${passes(x)?"":"low"}">${p2(x.p)}</span><span class="ok">${passes(x)?"✓":""}</span></div>`).join("")}${S.deep.result ? `<div class="rpi" title="Planning Readiness from the RPI research artifact. Not part of the readiness gauge."><span class="sw" style="background:transparent;border:1px solid var(--muted)"></span>Plan-ready (RPI)<span class="rv ${READINESS_CLS[S.deep.result.readiness]||""}">${esc(S.deep.result.readiness)}</span></div>` : ""}<div class="lock" style="margin-top:2px">bar ${T} ┃ · Jev</div></div></div></div>`;
@@ -2105,6 +2106,17 @@ function deepAnswer(qid, opt, other){
   say(opt===q.jev ? "Agreed. It's a proposal in the card now (green)." : `You overrode me (I had “${q.options[q.jev]}”, ${pct(q.confidence)}). It's a proposal in the card now.`, opt===q.jev ? "happy" : "neutral", 1300);
 }
 
+// Model profile ([profiles.<name>] in the factory config): "" = default models; null = the config's default profile.
+const chosenProfile = () => S.profile ?? info?.defaultProfile ?? "";
+function profileSec(){
+  const list = info?.profiles ?? [];
+  if(!list.length) return "";
+  const cur = S.profile ?? "", p = list.find(x => x.name===(cur || info?.defaultProfile));
+  const opts = [{name:"", label:`Default${info?.defaultProfile?` (${info.defaultProfile})`:""}`}, ...list.map(x => ({name:x.name, label:x.name}))];
+  const why = p ? `Sub-coordinator ${p.sub_coordinator} (${p.sub_coordinator_effort}) · workers ${p.workers.join(", ")} · small work ${p.small_model} · reviewers frontier at ${p.review_effort}`
+    : "The factory's normal models";
+  return `<div class="sec"><h3>Models</h3><div class="xrow"><span class="nm">Profile</span><span class="rs2">${esc(why)}</span><span class="seg">${opts.map(o=>`<button class="${cur===o.name?"on":""}" data-act="profile" data-v="${esc(o.name)}">${esc(o.label)}</button>`).join("")}</span></div></div>`;
+}
 const ACT = {
   reset(){ L.abortAll(); init(); toast("Flow reset"); },
   go(v){ go(+v); },
@@ -2173,6 +2185,7 @@ const ACT = {
   gate(v){ const g=S.exp.gates.find(x=>x.id===v); g.run=!g.run; render(); flipLine("gate", v, g.run); },
   tier(v){ const Jt = S.expJev.tier; S.exp.tier.value=v; render(); say(v===Jt.value ? "Back to my pick." : `${v} it is. I picked ${Jt.value}: ${Jt.reason}`, isLow(Jt.p)?"worried":"neutral", null, Jt.p, true); },
   appr(v){ const [k,val]=v.split(":"); S.exp.approvals[k]=val; render(); },
+  profile(v){ S.profile = v; render(); },
   launch(v){
     const weak = scores().filter(x=>!passes(x));
     if(deepActive() && v!=="nores") return;   // must pick: wait, or launch without research
@@ -2181,7 +2194,7 @@ const ACT = {
     const repo = repoObj(), g = gen, t0 = performance.now();
     S.launching = true; S.launchErr = null; render();
     const research = v!=="nores" && (S.deep.result?.artifactPath || fromDraft?.research) || null;
-    L.launch({repo:repo.path, base:repo.base, doc:docNow(), expectations:S.exp, override: weak.length ? S.override.trim() : null, research, draftId: draftId || undefined}).then(res => {
+    L.launch({repo:repo.path, base:repo.base, doc:docNow(), expectations:S.exp, override: weak.length ? S.override.trim() : null, research, draftId: draftId || undefined, profile: chosenProfile() || undefined}).then(res => {
       if(g!==gen) return;
       window.__coachLat.push({name:"launch", ms:Math.round(performance.now()-t0)});
       S.launching = false; S.launched = res; S.launchedRes = research;
@@ -2309,7 +2322,7 @@ function loadRepos(){
     render();
   }, e => { reposErr = e.message; render(); });
 }
-L.info().then(d => { info = d; renderTop(); }, e => { infoErr = e.message; renderTop(); });
+L.info().then(d => { info = d; renderTop(); if(S?.stage===6) render(); }, e => { infoErr = e.message; renderTop(); });
 
 init();
 loadRepos();
